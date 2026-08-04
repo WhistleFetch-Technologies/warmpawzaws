@@ -12,6 +12,8 @@ import {
   safeMoneyAmount,
 } from './delivery-settlement-finance';
 import { calculateFinalFees, mapCatalogCategoryToBusinessType } from './feeCalculator';
+import { resolveLockedBookingGrossFromNotes } from './booking-financial-gross';
+import { resolveServiceBookingTaxItem } from './resolve-service-booking-tax-item';
 
 export type VendorAccrualFeeBreakdown = {
   platformFee: number;
@@ -73,6 +75,7 @@ export type BookingAccrualResolveContext = {
   vendorRoleId?: unknown;
   taxCategoryId?: unknown;
   hsnCodeId?: unknown;
+  bookingNotes?: unknown;
   payment?: PaymentAccrualSnapshot | null;
 };
 
@@ -204,11 +207,6 @@ async function resolveGstForAccrual(
     };
   }
 
-  const bookingTax = safeMoneyAmount(ctx.taxAmount);
-  if (bookingTax > 0.009) {
-    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: round2(bookingTax) };
-  }
-
   if (fromPayment.gstTotal > 0.009) {
     return {
       cgstAmount: fromPayment.cgstAmount,
@@ -218,39 +216,40 @@ async function resolveGstForAccrual(
     };
   }
 
+  const lockedGross = ctx.bookingNotes != null ? resolveLockedBookingGrossFromNotes(ctx.bookingNotes) : null;
+  if (lockedGross && lockedGross.grossTotal > 0) {
+    return {
+      cgstAmount: round2(lockedGross.cgst),
+      sgstAmount: round2(lockedGross.sgst),
+      igstAmount: round2(lockedGross.igst),
+      gstTotal: round2(lockedGross.totalTax),
+    };
+  }
+
+  if (ctx.taxAmount !== undefined && ctx.taxAmount !== null && ctx.taxAmount !== '') {
+    const bookingTax = safeMoneyAmount(ctx.taxAmount);
+    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: round2(bookingTax) };
+  }
+
   if (feeBase <= 0.009) {
     return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
   }
 
   try {
-    const serviceStyleNorm = String(ctx.serviceStyle || ctx.serviceType || '')
-      .toLowerCase()
-      .trim();
-    const serviceStyle =
-      serviceStyleNorm === 'at_center' ||
-      serviceStyleNorm === 'at_home' ||
-      serviceStyleNorm === 'tele' ||
-      serviceStyleNorm === 'hybrid'
-        ? (serviceStyleNorm as 'at_center' | 'at_home' | 'tele' | 'hybrid')
-        : undefined;
+    const { taxItem } = await resolveServiceBookingTaxItem({
+      serviceId: ctx.serviceId ? String(ctx.serviceId) : undefined,
+      vendorId: ctx.vendorId ? String(ctx.vendorId) : undefined,
+      bookingId: ctx.bookingId,
+      vendorRoleId: ctx.vendorRoleId ? String(ctx.vendorRoleId) : undefined,
+      amount: feeBase,
+      quantity: 1,
+      category: String(ctx.categoryName || ctx.vsCategory || ctx.serviceType || '') || undefined,
+      serviceStyle: String(ctx.serviceStyle || ctx.serviceType || '') || undefined,
+    });
 
     const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
     const taxResult = await taxCalculationService.calculateTax({
-      items: [
-        {
-          id: String(ctx.serviceId || ctx.bookingId),
-          type: 'service',
-          hsnCodeId: ctx.hsnCodeId ? String(ctx.hsnCodeId) : undefined,
-          taxCategoryId: ctx.taxCategoryId ? String(ctx.taxCategoryId) : undefined,
-          amount: feeBase,
-          quantity: 1,
-          category: String(ctx.categoryName || ctx.vsCategory || ctx.serviceType || '') || undefined,
-          serviceStyle,
-          roleId: ctx.vendorRoleId ? String(ctx.vendorRoleId) : undefined,
-          catalogCategoryId: ctx.categoryId ? String(ctx.categoryId) : undefined,
-          gstApplicationScope: 'service_booking',
-        },
-      ],
+      items: [taxItem],
       vendorId: ctx.vendorId ? String(ctx.vendorId) : undefined,
       serviceType: String(ctx.categoryName || ctx.vsCategory || ctx.serviceType || '') || undefined,
       category: String(ctx.categoryName || ctx.vsCategory || ctx.serviceType || '') || undefined,
@@ -360,6 +359,7 @@ type BookingAccrualRow = {
   vendor_role_id?: unknown;
   tax_category_id?: unknown;
   hsn_code_id?: unknown;
+  booking_notes?: unknown;
   platform_fee?: unknown;
   convenience_fee?: unknown;
   delivery_fee?: unknown;
@@ -389,6 +389,7 @@ function rowToResolveContext(row: BookingAccrualRow): BookingAccrualResolveConte
     vendorRoleId: row.vendor_role_id,
     taxCategoryId: row.tax_category_id,
     hsnCodeId: row.hsn_code_id,
+    bookingNotes: row.booking_notes,
     payment: {
       platform_fee: row.platform_fee,
       convenience_fee: row.convenience_fee,
@@ -430,6 +431,7 @@ async function aggregateBookingFeeBreakdownsForIstRange(
             v.role_id::text AS vendor_role_id,
             sc.tax_category_id::text AS tax_category_id,
             sc.hsn_code_id::text AS hsn_code_id,
+            b.notes AS booking_notes,
             p.platform_fee,
             p.convenience_fee,
             p.delivery_fee,

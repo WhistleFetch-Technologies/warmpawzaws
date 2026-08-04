@@ -27,17 +27,37 @@ jest.mock('../../lib/services/tax-calculation-service', () => ({
   },
 }));
 
+jest.mock('../resolve-service-booking-tax-item', () => ({
+  resolveServiceBookingTaxItem: jest.fn(),
+}));
+
 import { calculateFinalFees } from '../feeCalculator';
 import { taxCalculationService } from '../../lib/services/tax-calculation-service';
+import { resolveServiceBookingTaxItem } from '../resolve-service-booking-tax-item';
 
 const mockedCalculateFinalFees = calculateFinalFees as jest.MockedFunction<typeof calculateFinalFees>;
 const mockedCalculateTax = taxCalculationService.calculateTax as jest.MockedFunction<
   typeof taxCalculationService.calculateTax
 >;
+const mockedResolveServiceBookingTaxItem = resolveServiceBookingTaxItem as jest.MockedFunction<
+  typeof resolveServiceBookingTaxItem
+>;
 
 describe('vendor-accrual-fee-breakdown', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedResolveServiceBookingTaxItem.mockResolvedValue({
+      taxItem: {
+        id: 'bk-tele',
+        type: 'service',
+        amount: 400,
+        quantity: 1,
+        catalogCategoryId: 'veterinary-uuid',
+        serviceStyle: 'tele',
+        roleId: 'role-vet',
+        gstApplicationScope: 'service_booking',
+      },
+    });
   });
 
   test('VENDOR_ACCRUAL_FEE_CSV_HEADERS lists investor columns', () => {
@@ -185,11 +205,57 @@ describe('vendor-accrual-fee-breakdown', () => {
     expect(mockedCalculateFinalFees).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 1000, type: 'booking', serviceStyle: 'at_home' }),
     );
+    expect(mockedResolveServiceBookingTaxItem).toHaveBeenCalled();
     expect(b.platformFee).toBe(20);
     expect(b.deliveryFee).toBe(30);
     expect(b.cgstAmount).toBe(90);
     expect(b.sgstAmount).toBe(90);
     expect(b.gstTotal).toBe(180);
+  });
+
+  test('recomputeBookingCustomerPaidFeeBreakdown uses wp_financial_meta totalTax before tax service', async () => {
+    mockedCalculateFinalFees.mockResolvedValue({
+      platformFee: 40,
+      convenienceFee: 0,
+      deliveryFee: 0,
+      packagingFee: 0,
+      total: 40,
+    });
+
+    const b = await recomputeBookingCustomerPaidFeeBreakdown({
+      bookingId: 'bk-tele',
+      basePrice: 400,
+      serviceStyle: 'tele',
+      categoryName: 'Veterinary',
+      bookingNotes:
+        'wp_financial_meta:{"servicePrice":400,"subtotalAfterDiscounts":400,"cgst":0,"sgst":0,"igst":0,"totalTax":0,"platformFee":40,"finalPaid":40}',
+      payment: { amount: 40 },
+    });
+
+    expect(b.gstTotal).toBe(0);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
+  });
+
+  test('recomputeBookingCustomerPaidFeeBreakdown respects explicit zero bookings.tax_amount', async () => {
+    mockedCalculateFinalFees.mockResolvedValue({
+      platformFee: 0,
+      convenienceFee: 0,
+      deliveryFee: 0,
+      packagingFee: 0,
+      total: 0,
+    });
+
+    const b = await recomputeBookingCustomerPaidFeeBreakdown({
+      bookingId: 'bk-zero-tax',
+      basePrice: 400,
+      taxAmount: 0,
+      serviceStyle: 'tele',
+      categoryName: 'Veterinary',
+      payment: { amount: 400 },
+    });
+
+    expect(b.gstTotal).toBe(0);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
 
   test('recomputeBookingCustomerPaidFeeBreakdown uses bookings.tax_amount before tax service', async () => {

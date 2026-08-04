@@ -1,6 +1,6 @@
 /**
  * Resolve every vendor / vendor_identity id that may own meal_orders for a logged-in vendor.
- * Customer orders store meal_orders.vendor_id from meal_plans (or products); those ids can differ
+ * Customer orders store meal_orders.vendor_id from meal_plans; those ids can differ
  * from the vendors.id shown in the vendor app when identity rows and phone-linked duplicates exist.
  */
 
@@ -84,20 +84,6 @@ export async function getMealOrderVendorLookupIds(paramVendorId: string): Promis
       }
     } catch {
       /* non-fatal */
-    }
-
-    try {
-      const productVendors = await query(
-        `SELECT DISTINCT vendor_id::text AS vid FROM products
-         WHERE vendor_id::text = ANY($1::text[])
-           AND category IN ('meal_plan', 'nutrition', 'food')`,
-        [idArr],
-      );
-      for (const row of productVendors.rows || []) {
-        addId(ids, row.vid);
-      }
-    } catch {
-      /* products.category may be missing on older DBs */
     }
   }
 

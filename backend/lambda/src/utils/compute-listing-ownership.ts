@@ -62,7 +62,7 @@ export class ListingOwnershipRequiredError extends Error {
   constructor(vendorId: string, message?: string) {
     super(
       message ??
-        "Listing ownership is required (use 'Own brand' or 'Third party') for vendors on the ownership commission model"
+        "Listing ownership is required (use 'Own brand' or 'Third party')"
     );
     this.name = 'ListingOwnershipRequiredError';
     this.vendorId = vendorId;
@@ -145,9 +145,8 @@ function extractDeclaredOwnership(
 /**
  * Apply vendor-declared listing ownership from bulk upload / product create/update.
  *
- * - Ownership commission model: required (throws if missing/invalid).
- * - Category / unset model: optional, but when provided it is persisted so promo
- *   targeting (Owned / Third party) can filter seller inventory.
+ * Required for all vendors (independent of commission model). Commission model only
+ * consumes the stored value later for rate resolution / promo targeting.
  */
 export async function validateAndApplyVendorDeclaredOwnership(
   vendorId: string,
@@ -157,21 +156,10 @@ export async function validateAndApplyVendorDeclaredOwnership(
 ): Promise<void> {
   if (!cols.has('listing_ownership')) return;
 
-  const model = await getVendorCommissionModel(vendorId);
   const parsed = extractDeclaredOwnership(declaredOwnership);
-
-  if (model === 'ownership') {
-    if (!parsed) {
-      throw new ListingOwnershipRequiredError(vendorId);
-    }
-    payload.listing_ownership = parsed;
-    if (cols.has('listing_ownership_source')) {
-      payload.listing_ownership_source = 'manual';
-    }
-    return;
+  if (!parsed) {
+    throw new ListingOwnershipRequiredError(vendorId);
   }
-
-  if (!parsed) return;
 
   payload.listing_ownership = parsed;
   if (cols.has('listing_ownership_source')) {

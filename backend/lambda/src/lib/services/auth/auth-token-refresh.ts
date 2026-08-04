@@ -5,6 +5,8 @@
 
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
 import { refreshCognitoUserSession } from '../../../utils/cognito-client';
+import { selectCustomerIdAndAuthVersion } from './customer-auth-version-support';
+import { selectVendorIdAndAuthVersion } from './vendor-auth-version-support';
 
 /** Machine-readable hint for logs / optional client telemetry (avoid leaking PII). */
 export type RefreshFailureCode =
@@ -25,6 +27,21 @@ function isJwtShape(token: string): boolean {
 
 /** JWT peek (issuer / token_use). `decodeTokenUnsafe` narrows Cognito-ish claims; `iss` is omitted from that interface. */
 type JwtRefreshPeek = { iss?: string; token_use?: string };
+
+async function resolveAuthVersionForJwtRefresh(
+  role: 'customer' | 'vendor' | 'admin',
+  sub: string
+): Promise<number | undefined> {
+  if (role === 'customer') {
+    const row = await selectCustomerIdAndAuthVersion(sub);
+    return row?.auth_version ?? 0;
+  }
+  if (role === 'vendor') {
+    const row = await selectVendorIdAndAuthVersion(sub);
+    return row?.auth_version ?? 0;
+  }
+  return undefined;
+}
 
 /**
  * Produce new access + id tokens plus expiresIn seconds.
@@ -116,20 +133,35 @@ export async function executeAuthRefresh(refreshToken: string): Promise<{
       const roleRaw = payload['custom:user_type'];
       const role: 'customer' | 'vendor' | 'admin' =
         roleRaw === 'vendor' || roleRaw === 'admin' || roleRaw === 'customer' ? roleRaw : 'customer';
-      const authVersion: number | undefined = payload.auth_version;
+      const authVersion = await resolveAuthVersionForJwtRefresh(role, sub);
       const expiresIn = 24 * 60 * 60;
 
       let accessToken: string;
       let idToken: string;
 
+      const tokenGenAuthVersion =
+        role === 'customer' || role === 'vendor' ? authVersion : undefined;
+
       if (iss === 'warmpawz-uat') {
         const { generateUATJWTToken } = await import('../../../utils/jwt-generator');
-        const result = await generateUATJWTToken({ userId: sub, phone, role, expiresIn, authVersion });
+        const result = await generateUATJWTToken({
+          userId: sub,
+          phone,
+          role,
+          expiresIn,
+          authVersion: tokenGenAuthVersion,
+        });
         accessToken = result.accessToken;
         idToken = result.idToken;
       } else {
         const { generateProductionJWTToken } = await import('../../../utils/jwt-generator');
-        const result = await generateProductionJWTToken({ userId: sub, phone, role, expiresIn, authVersion });
+        const result = await generateProductionJWTToken({
+          userId: sub,
+          phone,
+          role,
+          expiresIn,
+          authVersion: tokenGenAuthVersion,
+        });
         accessToken = result.accessToken;
         idToken = result.idToken;
       }

@@ -4,7 +4,13 @@ export const dynamic = 'force-dynamic';
 
 import nextDynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
-import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
+import {
+  clearVendorSession,
+  getStoredVendorJwtForSession,
+  hasRecoverableVendorSession,
+  initializeSession,
+  isStaleTempVendorSession,
+} from '@/lib/session-utils';
 
 const VendorApp = nextDynamic(
   () => import('@/components/vendor/landingPage/VendorApp').then((m) => ({ default: m.VendorApp })),
@@ -24,13 +30,10 @@ export default function VendorHomePage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // ✅ CRITICAL: Don't render this page if we're on a video route
-    // Static hosting can route all paths to root HTML; force redirect to /video with query param fallback.
     if (typeof window !== 'undefined') {
       const pathname = window.location.pathname;
       const isVideoRoute = pathname === '/video' || pathname.startsWith('/video/');
       if (isVideoRoute) {
-        console.log('[VendorHomePage] Skipping render - on video route:', pathname);
         try {
           const parts = pathname.split('/').filter(Boolean);
           const bookingIdFromPath = parts[1] || '';
@@ -39,7 +42,6 @@ export default function VendorHomePage() {
             url.pathname = '/video';
             url.searchParams.set('bookingId', bookingIdFromPath);
           }
-          // Preserve vendorId / meetingId if already present
           if (!url.searchParams.get('vendorId')) {
             const storedVendorId = localStorage.getItem('vendorId') || localStorage.getItem('vendor_id');
             if (storedVendorId) {
@@ -50,28 +52,26 @@ export default function VendorHomePage() {
             window.location.replace(url.pathname + url.search);
             return;
           }
-        } catch (err) {
-          console.warn('[VendorHomePage] Video route redirect failed:', err);
+        } catch {
+          /* ignore */
         }
-        return; // Don't render anything, let the video page handle it
+        return;
       }
     }
+
+    initializeSession();
 
     const bootstrap =
       typeof sessionStorage !== 'undefined' &&
       sessionStorage.getItem('_warmpawz_vendor_just_logged_in') === 'true';
 
-    const readSession = () => ({
-      phone: localStorage.getItem('vendorPhone'),
-      token: localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken'),
-    });
-
     const trySession = (attempt: number) => {
-      const { phone: storedPhone, token: storedToken } = readSession();
+      const storedPhone = localStorage.getItem('vendorPhone');
+      const storedToken = getStoredVendorJwtForSession();
 
-      // After /session/from-admin, storage is synchronous; retry briefly for Strict Mode / static shell edge cases
       if (
         (!storedPhone || !storedToken || storedToken.length < 10) &&
+        !hasRecoverableVendorSession() &&
         bootstrap &&
         attempt < 8
       ) {
@@ -79,18 +79,13 @@ export default function VendorHomePage() {
         return;
       }
 
-      if (!storedPhone || !storedToken || storedToken.length < 10) {
+      if (!storedPhone || (!storedToken && !hasRecoverableVendorSession())) {
         window.location.replace('/auth');
         return;
       }
 
-      if (isTokenExpired(storedToken)) {
-        clearVendorSession();
-        window.location.replace('/auth');
-        return;
-      }
-
-      if (isStaleTempVendorSession(storedToken)) {
+      const tokenForStaleCheck = storedToken || getStoredVendorJwtForSession();
+      if (isStaleTempVendorSession(tokenForStaleCheck)) {
         clearVendorSession();
         window.location.replace('/auth');
         return;
@@ -105,12 +100,11 @@ export default function VendorHomePage() {
       }
 
       const storedVendorId = localStorage.getItem('vendorId');
-
       sessionStorage.removeItem('_vendor_redirected_to_auth');
 
       setSession({
-        phone: storedPhone,
-        sessionToken: storedToken,
+        phone: storedPhone!,
+        sessionToken: tokenForStaleCheck || undefined,
         verified: true,
         vendor: vendorData,
         vendorId: storedVendorId || (vendorData?.id as string | undefined),
@@ -119,12 +113,10 @@ export default function VendorHomePage() {
     };
 
     trySession(0);
-  }, []); // Empty dependency - run once
+  }, []);
 
-  // ✅ CRITICAL: Don't render if we're on a video route
   if (typeof window !== 'undefined' && (window.location.pathname === '/video' || window.location.pathname.startsWith('/video/'))) {
-    console.log('[VendorHomePage] Returning null - on video route');
-    return null; // Let the video page render
+    return null;
   }
 
   if (isLoading) {
@@ -139,7 +131,7 @@ export default function VendorHomePage() {
   }
 
   if (!session) {
-    return null; // Will redirect to /auth
+    return null;
   }
 
   return <VendorApp initialSession={session} />;

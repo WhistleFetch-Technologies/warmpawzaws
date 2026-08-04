@@ -226,7 +226,6 @@ export async function executevendorFacilityUpload(c: Context) {
 
       const allPhotos = [...existingPhotos, ...photoUrls];
 
-      const { update } = await import('../../../database/rds-connection');
       const vendorPatch: Record<string, unknown> = {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
         updated_at: new Date().toISOString(),

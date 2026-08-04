@@ -84,6 +84,7 @@ import {
   rememberProviderProfileContext,
 } from '@/lib/provider-profile-nav';
 import { syncIosShellStackDepth } from '@/lib/navigation/ios-shell-history';
+import { resolveServiceBookingCommerceRouteForNavigation } from '@/lib/commerce-switch-routing';
 import {
   BACK_HANDLER_PRIORITY,
   registerBackHandler,
@@ -1332,6 +1333,17 @@ export function CustomerHomeWrapper({
 
   const executeNavigateToService = (service: string, _data?: any) => {
     const data = _data;
+    resolveServiceBookingCommerceRouteForNavigation({
+      serviceKey: service,
+      category: typeof data?.category === 'string' ? data.category : undefined,
+      serviceStyle:
+        typeof data?.serviceStyle === 'string'
+          ? data.serviceStyle
+          : typeof data?.service_style === 'string'
+            ? data.service_style
+            : undefined,
+      serviceType: typeof data?.serviceType === 'string' ? data.serviceType : undefined,
+    });
     captureBannerNavigationOrigin(data);
     const vendorRow: Record<string, unknown> =
       data && typeof data === 'object' ? { ...(data as Record<string, unknown>) } : {};

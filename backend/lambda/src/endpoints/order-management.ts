@@ -20,7 +20,12 @@ import { buildStructuredTracking } from '../utils/logistics/shipment-tracking';
 import { notifyShopOrderStatusChange, type ShopOrderLifecycleStatus } from '../utils/shop-order-notifications';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import { getRazorpayClient } from '../utils/payments/razorpay-client';
+import {
+  cancelPaidShopOrder,
+  VENDOR_ALLOWED_STATUSES,
+  CUSTOMER_CANCEL_STATUSES,
+} from '../utils/payments/shop-order-refund';
+import { resolveCustomerIdFromHonoContext } from '../utils/customer-id-from-auth';
 
 const validTransitions: Record<string, string[]> = {
   'pending': ['confirmed', 'cancelled'],
@@ -33,6 +38,15 @@ const validTransitions: Record<string, string[]> = {
   'refunded': [],
 };
 
+function resolveOrderActor(c: { get: (key: string) => unknown }) {
+  const userId = String(c.get('userId') || '');
+  const userRole = String(c.get('userRole') || '').toLowerCase();
+  const isVendor = userRole === 'vendor';
+  const isCustomer = userRole === 'customer' || userRole === 'user' || userRole === 'pet_parent';
+  const isAdmin = userRole === 'admin' || userRole.startsWith('admin');
+  return { userId, userRole, isVendor, isCustomer, isAdmin };
+}
+
 export function registerOrderManagementEndpoints(app: Hono) {
   /**
    * PUT /orders/:orderId/status
@@ -41,10 +55,65 @@ export function registerOrderManagementEndpoints(app: Hono) {
   app.put("/orders/:orderId/status", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const { status, trackingNumber, notes } = await c.req.json();
+      const body = await c.req.json();
+      const { status, trackingNumber, notes } = body;
+      const cancellationReason =
+        typeof body?.cancellation_reason === 'string' ? body.cancellation_reason : undefined;
+
+      const { userId, isVendor, isCustomer, isAdmin } = resolveOrderActor(c);
+      if (!userId) {
+        return c.json({ error: 'Authentication required' }, 401);
+      }
 
       if (!status) {
         return c.json({ error: 'status is required' }, 400);
+      }
+
+      if (status === 'cancelled') {
+        if (!isVendor && !isCustomer) {
+          return c.json({ error: 'Forbidden' }, 403);
+        }
+
+        let customerOwnerId: string | undefined;
+        if (isCustomer && !isVendor) {
+          const resolvedCustomerId = await resolveCustomerIdFromHonoContext(c);
+          if (!resolvedCustomerId) {
+            return c.json({ error: 'Customer account not found' }, 401);
+          }
+          customerOwnerId = resolvedCustomerId;
+        }
+
+        const cancelResult = await cancelPaidShopOrder({
+          orderId,
+          reason: notes || cancellationReason || (isVendor ? 'Vendor cancellation' : 'Customer request'),
+          cancelledBy: isVendor ? 'provider' : 'pet_parent',
+          customerId: customerOwnerId,
+          vendorId: isVendor ? userId : undefined,
+          allowedStatuses: isVendor
+            ? [...VENDOR_ALLOWED_STATUSES]
+            : [...CUSTOMER_CANCEL_STATUSES],
+        });
+
+        if (!cancelResult.success) {
+          if (cancelResult.error === 'Order not found') {
+            return c.json({ error: 'Order not found' }, 404);
+          }
+          return c.json({ error: cancelResult.error || 'Cancellation failed' }, 400);
+        }
+
+        return c.json({
+          success: true,
+          orderId: cancelResult.orderId,
+          status: cancelResult.status,
+          cancelledBy: cancelResult.cancelledBy,
+          refundStatus: cancelResult.refundStatus,
+          stockRestored: cancelResult.stockRestored,
+          message: 'Order cancelled successfully',
+        });
+      }
+
+      if (isCustomer && !isVendor && !isAdmin) {
+        return c.json({ error: 'Forbidden' }, 403);
       }
 
       // Get order
@@ -78,10 +147,6 @@ export function registerOrderManagementEndpoints(app: Hono) {
 
       if (status === 'delivered') {
         updateData.delivered_at = new Date().toISOString();
-      }
-
-      if (status === 'cancelled') {
-        updateData.cancelled_at = new Date().toISOString();
       }
 
       // Update order
@@ -229,111 +294,54 @@ export function registerOrderManagementEndpoints(app: Hono) {
   app.post("/orders/:orderId/cancel", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const { reason } = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
+      const reason = body?.reason as string | undefined;
 
-      const orders = await select('orders', { id: orderId });
-      if (orders.length === 0) {
-        return c.json({ error: 'Order not found' }, 404);
+      const userId = String(c.get('userId') || '');
+      const userRole = String(c.get('userRole') || '').toLowerCase();
+      if (!userId) {
+        return c.json({ error: 'Authentication required' }, 401);
       }
 
-      const order = orders[0];
+      const isVendor = userRole === 'vendor';
+      const isCustomer = userRole === 'customer' || userRole === 'user' || userRole === 'pet_parent';
 
-      // Check if order can be cancelled
-      if (!['pending', 'confirmed'].includes(order.order_status)) {
-        return c.json({
-          error: `Order cannot be cancelled. Current status: ${order.order_status}`,
-        }, 400);
+      if (!isVendor && !isCustomer) {
+        return c.json({ error: 'Forbidden' }, 403);
       }
 
-      // Update order
-      const updated = await update('orders',
-        { id: orderId },
-        {
-          order_status: 'cancelled',
-          cancelled_at: new Date().toISOString(),
-          cancellation_reason: reason || null,
+      let customerOwnerId: string | undefined;
+      if (isCustomer && !isVendor) {
+        const resolvedCustomerId = await resolveCustomerIdFromHonoContext(c);
+        if (!resolvedCustomerId) {
+          return c.json({ error: 'Customer account not found' }, 401);
         }
-      );
-
-      // Process refund if payment was made
-      try {
-        const { insert: dbInsert } = await import('../database/rds-connection');
-        const payments = await select('payments', { order_id: orderId, payment_status: 'completed' });
-        if (payments.length > 0) {
-          const payment = payments[0];
-          const refundAmount = parseFloat(payment.amount || '0');
-          const refundReason = `Order cancelled: ${reason || 'Customer request'}`;
-
-          // Insert a refund tracking row (starts as 'pending')
-          const refundRows = await query(
-            `INSERT INTO refunds (
-              payment_id,
-              order_id,
-              customer_id,
-              vendor_id,
-              refund_amount,
-              refund_reason,
-              refund_status,
-              requested_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
-            RETURNING id`,
-            [
-              payment.id,
-              orderId,
-              order.customer_id,
-              order.vendor_id || null,
-              refundAmount,
-              refundReason,
-            ]
-          );
-          const refundRowId = refundRows.rows[0]?.id;
-
-          // Attempt Razorpay refund if a Razorpay payment ID is available
-          const razorpayPaymentId: string | null = payment.razorpay_payment_id || null;
-          if (razorpayPaymentId && refundAmount > 0) {
-            try {
-              const razorpayClient = await getRazorpayClient();
-              const rzRefund = await razorpayClient.payments.refund({
-                payment_id: razorpayPaymentId,
-                amount: Math.round(refundAmount * 100), // paise
-              });
-              const rzRefundId: string = (rzRefund as any)?.id || '';
-
-              // Update refund row with Razorpay refund ID and mark as initiated
-              if (refundRowId) {
-                await query(
-                  `UPDATE refunds
-                   SET refund_status = 'initiated',
-                       razorpay_refund_id = $1,
-                       updated_at = NOW()
-                   WHERE id = $2`,
-                  [rzRefundId, refundRowId]
-                );
-              }
-              console.log(`[ORDER-MGMT] Razorpay refund initiated: ${rzRefundId} for order ${orderId}`);
-            } catch (rzError: any) {
-              // Razorpay call failed — leave row as 'pending' for manual/retry processing
-              console.error(`[ORDER-MGMT] Razorpay refund call failed for order ${orderId}:`, rzError.message);
-            }
-          } else {
-            console.log(`[ORDER-MGMT] Refund row created (no Razorpay payment ID) for order ${orderId}`);
-          }
-        }
-      } catch (error: any) {
-        console.error('Error processing refund for cancelled order:', error);
-        // Cancellation succeeds even if refund processing fails
+        customerOwnerId = resolvedCustomerId;
       }
 
-      void notifyShopOrderStatusChange({
+      const result = await cancelPaidShopOrder({
         orderId,
-        previousStatus: order.order_status,
-        newStatus: 'cancelled',
-        cancellationReason: reason || undefined,
-      }).catch((err) => console.warn('[ORDER-MGMT] Cancel notification failed:', err));
+        reason: reason || (isVendor ? 'Vendor cancellation' : 'Customer request'),
+        cancelledBy: isVendor ? 'provider' : 'pet_parent',
+        customerId: customerOwnerId,
+        vendorId: isVendor ? userId : undefined,
+        allowedStatuses: isVendor ? VENDOR_ALLOWED_STATUSES : [...CUSTOMER_CANCEL_STATUSES],
+      });
+
+      if (!result.success) {
+        if (result.error === 'Order not found') {
+          return c.json({ error: 'Order not found' }, 404);
+        }
+        return c.json({ error: result.error || 'Cancellation failed' }, 400);
+      }
 
       return c.json({
         success: true,
-        order: updated[0],
+        orderId: result.orderId,
+        status: result.status,
+        cancelledBy: result.cancelledBy,
+        refundStatus: result.refundStatus,
+        stockRestored: result.stockRestored,
         message: 'Order cancelled successfully',
       });
     } catch (error: any) {

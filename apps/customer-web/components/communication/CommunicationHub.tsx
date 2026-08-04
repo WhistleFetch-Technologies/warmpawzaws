@@ -7,6 +7,7 @@ import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { ApiError } from '@/lib/error-handling';
 import { toast } from 'sonner';
+import { ChatAttachmentActions } from '@/components/shared/ChatAttachmentActions';
 
 // ============================================================================
 // TYPES
@@ -676,22 +677,32 @@ export function CommunicationHub({
                               </a>
                             )}
                             {message.message_type !== 'text' && message.message_type !== 'prescription' && message.message_type !== 'image' && (message.file_name || message.file_id) && (
-                              <a 
-                                href={message.file_url || `${getApiBaseUrl()}/chat/file/${encodeURIComponent(message.file_id || '')}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <div
                                 className={`flex items-center gap-2 p-2 rounded-lg mb-2 ${
                                   message.sender_type === 'customer'
-                                    ? 'bg-white/20 text-white hover:bg-white/30'
-                                    : 'bg-gray-50 text-blue-600 hover:bg-gray-100 border border-gray-200'
-                                } transition-colors`}
+                                    ? 'bg-white/20 text-white'
+                                    : 'bg-gray-50 border border-gray-200'
+                                }`}
                               >
                                 {getMessageIcon(message.message_type)}
                                 <div className="flex-1 min-w-0">
-                                  <span className="text-sm font-medium truncate block">{message.file_name || 'Document'}</span>
-                                  <span className="text-xs opacity-75">Tap to open</span>
+                                  <span className={`text-sm font-medium truncate block ${
+                                    message.sender_type === 'customer' ? 'text-white' : 'text-gray-900'
+                                  }`}>
+                                    {message.file_name || 'Document'}
+                                  </span>
+                                  <ChatAttachmentActions
+                                    fileUrl={message.file_url}
+                                    fileId={message.file_id}
+                                    fileName={message.file_name || 'Document'}
+                                    className={
+                                      message.sender_type === 'customer'
+                                        ? 'text-white hover:text-white/90'
+                                        : undefined
+                                    }
+                                  />
                                 </div>
-                              </a>
+                              </div>
                             )}
                             
                             {/* Message text - hide generic "Sent a document/photo" if we have a file */}

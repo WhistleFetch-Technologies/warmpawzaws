@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Search, Filter, Star, MapPin, Clock, ChevronRight,
   Video, Home, Building2, Shield, Award, GraduationCap, X, Sliders,
@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
-import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
@@ -24,6 +23,10 @@ import {
   applyVetHubDiscoveryToProviders,
   isVetHubDiscoveryConfig,
 } from '@/lib/filter-hub-services';
+import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
+import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
+import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
+import { DiscoveryProviderAvatar } from './DiscoveryProviderAvatar';
 
 // ============================================================================
 // TYPES
@@ -76,6 +79,7 @@ interface Provider {
   priceMin?: number;
   priceMax?: number;
   hasPackages?: boolean;
+  needsServiceFetch?: boolean;
   /** Resolved display labels from vendor profile (GET /customer/services/by-style). */
   specializations?: string[];
 }
@@ -98,6 +102,8 @@ interface UniversalServiceProviderListProps {
   problemTitle?: string; // Phase 2: "Best for [problem]" badge — passed to discover-services/by-style
   problems?: Problem[]; // ✅ NEW: List of problems to show as quick filters
   showProblemFilter?: boolean; // ✅ NEW: Whether to show the problem filter strip
+  /** When false, hides advanced filter UI (vet/grooming default off until filters work reliably). */
+  showProviderFilters?: boolean;
   previousProviderIds?: string[]; // Phase 2: Vendor IDs for "Used before" badge
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
@@ -361,10 +367,11 @@ function ProviderCard({ provider, serviceStyle, showPriceDisclaimer = false, isP
                 ))}
               </div>
             ) : provider.photo ? (
-              <img
-                src={provider.photo}
-                alt={provider.name}
+              <DiscoveryProviderAvatar
+                name={provider.name}
+                photo={provider.photo}
                 className="w-full h-full object-cover"
+                fallbackClassName="w-full h-full flex items-center justify-center text-2xl font-bold text-orange-500 bg-gradient-to-br from-orange-100 to-amber-100"
               />
             ) : (
 
@@ -596,6 +603,7 @@ export function UniversalServiceProviderList({
   problemTitle,
   problems,
   showProblemFilter = true,
+  showProviderFilters,
   previousProviderIds = [],
   onBack,
   onNavigate,
@@ -607,6 +615,13 @@ export function UniversalServiceProviderList({
 
   // ✅ NEW: Get problems for this category
   const categoryProblems = problems || DEFAULT_PROBLEMS[category] || [];
+
+  // Vet care + grooming: hide filter UI until distance/rating filters are reliable on discovery.
+  const providerFiltersEnabled =
+    showProviderFilters ?? !(category === 'vet' || category === 'grooming');
+  const problemFilterVisible =
+    providerFiltersEnabled && showProblemFilter && categoryProblems.length > 0;
+
   const [selectedProblem, setSelectedProblem] = useState<string | null>(specializationFilter || null);
 
   const [loading, setLoading] = useState(true);
@@ -623,6 +638,57 @@ export function UniversalServiceProviderList({
     sortBy: 'rating',
   });
 
+  const {
+    rows: feedRows,
+    loading: feedLoading,
+    loadingMore,
+    hasMore,
+    loadMore,
+    reload: reloadProviders,
+    error: feedError,
+  } = useByStyleDiscoveryFeed({
+    phone,
+    serviceStyle,
+    category,
+    roleId,
+    specialization: specializationFilter,
+    problemTitle,
+  });
+
+  const processFeedRows = useCallback(() => {
+    const cleanedProviders = feedRows.map((p) => {
+      const base = mapDiscoveryRowBaseFields(p);
+      return {
+        ...base,
+        providerType: 'vendor' as const,
+        services: [] as Service[],
+        needsServiceFetch: true,
+      } as Provider;
+    });
+
+    let finalProviders = cleanedProviders;
+    if (isVetHubDiscoveryConfig({ discoverCategory: category, servicesApiCategory: category })) {
+      finalProviders = applyVetHubDiscoveryToProviders(cleanedProviders, {
+        keepProvidersPendingServiceFetch: true,
+      });
+    }
+    setProviders(finalProviders);
+  }, [feedRows, category]);
+
+  useEffect(() => {
+    processFeedRows();
+  }, [processFeedRows]);
+
+  useEffect(() => {
+    setLoading(feedLoading);
+    if (feedError) {
+      setError(feedError);
+      toast.error('Failed to load service providers');
+    } else {
+      setError(null);
+    }
+  }, [feedLoading, feedError]);
+
   // Extract unique specializations from providers (by-style returns `specializations[]` + joined `specialization`)
   const specializations = [
     ...new Set(
@@ -633,11 +699,10 @@ export function UniversalServiceProviderList({
     ),
   ];
 
-  // Load providers on mount
+  // Load sponsored providers on mount
   useEffect(() => {
-    loadProviders();
     loadSponsoredProviders();
-  }, [category, roleId, serviceStyle, specializationFilter, problemTitle, phone]);
+  }, [category, serviceStyle]);
 
   // Load sponsored providers (ads)
   const loadSponsoredProviders = async () => {
@@ -649,79 +714,6 @@ export function UniversalServiceProviderList({
     } catch (error) {
       // Silent fail - sponsored ads are not critical
       console.debug('Error loading sponsored providers:', error);
-    }
-  };
-
-  const loadProviders = async () => {
-    try {
-      setLoading(true);
-
-      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
-      let locationParams = '';
-      if (latitude != null && longitude != null) {
-        locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
-      }
-
-      // Build specialization filter param
-      const specializationParam = specializationFilter
-        ? `&specialization=${encodeURIComponent(specializationFilter)}`
-        : '';
-      const problemTitleParam = problemTitle
-        ? `&problemTitle=${encodeURIComponent(problemTitle)}`
-        : '';
-
-      // Fetch providers for this service style and category
-      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}&roleId=${roleId}${locationParams}${specializationParam}${problemTitleParam}${phoneParam}`
-      ) as any;
-
-      if (response.success) {
-        let providerData = response.providers || response.vendors || [];
-
-        // ✅ FIX: Backend now correctly returns business/clinic vendors with at_home services
-        // No need to filter them out - clinics can offer at_home services (e.g., vaccinations at home)
-
-        // Clean provider names to remove trailing IDs and map nextAvailable to nextAvailableSlot
-        const cleanedProviders = providerData.map((p: any) => ({
-          ...p,
-          isOnline: p.isOnline ?? p.is_online,
-          name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Provider'),
-          vendorName: p.vendorName ? cleanProviderName(p.vendorName) : undefined,
-          businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,
-          providerId: p.providerId || p.vendorId || p.id,
-          vendorId: p.vendorId || p.id,
-          // Normalize role fields for UI badges/subtitles
-          role: p.role || p.roleDisplayName || p.roleName,
-          roleDisplayName: p.roleDisplayName || p.roleName || p.role,
-          roleName: p.roleName || p.role,
-          roleId: p.roleId || p.role_id || null,
-          roleIcon: p.roleIcon || null,
-          roleImage: p.roleImage || null,
-          // ✅ FIX: Map nextAvailable object to nextAvailableSlot string for display
-          nextAvailableSlot: resolveNextAvailableLabel(p),
-        }));
-
-        let finalProviders = cleanedProviders;
-        if (isVetHubDiscoveryConfig({ discoverCategory: category, servicesApiCategory: category })) {
-          finalProviders = applyVetHubDiscoveryToProviders(cleanedProviders);
-        }
-
-        // Set providers from primary endpoint
-        setProviders(finalProviders);
-        console.log(`✅ Loaded ${finalProviders.length} providers for ${category}/${serviceStyle}`);
-      } else {
-        console.warn(`⚠️ Primary endpoint returned success=false or no providers for ${category}/${serviceStyle}`);
-        setProviders([]);
-      }
-    } catch (error: any) {
-      console.error('Error loading providers:', error);
-      const errorMessage = error?.message || error?.response?.data?.error || 'Failed to load service providers. Please try again.';
-      setError(errorMessage);
-      toast.error('Failed to load service providers');
-      setProviders([]);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -837,7 +829,7 @@ export function UniversalServiceProviderList({
       {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
       <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-8 sm:rounded-t-[2rem]">
         {/*FILTER SECTION STARTS*/}
-        {showProblemFilter && categoryProblems.length > 0 && (
+        {problemFilterVisible && (
           <div className="mb-4">
             <p className="text-sm font-medium text-gray-700 mb-2">What's the concern?</p>
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
@@ -895,7 +887,8 @@ export function UniversalServiceProviderList({
         </div>
         {/*SEARCH BAR SECTION ENDS*/}
 
-        {/* Filters Row */}
+        {/* Filters Row — hidden for vet/grooming until filter logic is fixed */}
+        {providerFiltersEnabled && (
         <div className="mb-4">
           <div className="flex items-center gap-2 overflow-x-auto pb-2">
             <Button
@@ -929,6 +922,7 @@ export function UniversalServiceProviderList({
             ))}
           </div>
         </div>
+        )}
 
         {/* Results Count */}
         <p className="text-sm text-slate-500 mb-4">
@@ -952,7 +946,7 @@ export function UniversalServiceProviderList({
                 <Button
                   onClick={() => {
                     setError(null);
-                    loadProviders();
+                    reloadProviders();
                   }}
                   className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
                 >
@@ -1070,12 +1064,19 @@ export function UniversalServiceProviderList({
                   onClick={() => onSelectProvider(provider)}
                 />
               ))}
+              <DiscoveryVendorFeedSentinel
+                hasMore={hasMore}
+                loading={loading}
+                loadingMore={loadingMore}
+                onLoadMore={() => void loadMore()}
+              />
             </div>
           )}
         </div>
       </div>
 
       {/* Filter Modal */}
+      {providerFiltersEnabled && (
       <FilterModal
         isOpen={showFilters}
         onClose={() => setShowFilters(false)}
@@ -1084,6 +1085,7 @@ export function UniversalServiceProviderList({
         specializations={specializations}
         compact={compactFilterSheet}
       />
+      )}
     </div>
   );
 }

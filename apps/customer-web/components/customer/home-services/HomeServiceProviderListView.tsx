@@ -27,12 +27,12 @@ import {
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { apiClient } from '@/lib/api-client';
-import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
+import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
+import { useDiscoverServicesFeed } from '@/hooks/useDiscoverServicesFeed';
+import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/DiscoveryVendorFeedSentinel';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
-import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 interface ServiceConfig {
   roleId: string;
@@ -146,6 +146,69 @@ export function HomeServiceProviderListView({
   const [sortBy, setSortBy] = useState<SortOption>('relevance');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
 
+  const categoryMap: Record<string, string> = {
+    vet: 'vet',
+    grooming: 'grooming',
+    training: 'training',
+    walker: 'walker',
+    behaviourist: 'behaviourist',
+    sitting: 'sitting',
+    sitter: 'sitting',
+    diagnostics: 'diagnostics',
+    nutrition: 'nutritionist',
+    nutritionist: 'nutritionist',
+  };
+  const category = categoryMap[serviceType] || serviceType;
+
+  const feedEnabled = Boolean(userLocation);
+  const {
+    rows: feedRows,
+    loading: feedLoading,
+    loadingMore,
+    hasMore,
+    loadMore,
+  } = useDiscoverServicesFeed({
+    phone,
+    category,
+    serviceStyle: 'at_home',
+    roleId: config.roleId || category,
+    enabled: feedEnabled,
+    pageSize: 3,
+  });
+
+  const mapFeedRowToProvider = useCallback(
+    (row: Record<string, unknown>): Provider => {
+      const base = mapDiscoveryRowBaseFields(row);
+      const canonicalId =
+        pickCustomerVendorAccountId(row) || String(base.vendorId || base.providerId || '');
+      return {
+        id: canonicalId,
+        vendorId: canonicalId,
+        businessName: base.businessName || base.name,
+        fullName: base.name,
+        name: base.name,
+        photo: base.photo || '',
+        logo: base.photo || '',
+        address:
+          base.address || [base.city].filter(Boolean).join(', ') || 'Location not specified',
+        phone: base.phone || '',
+        distance: base.distance != null ? Number(base.distance) : 999,
+        rating: Number(base.rating) || 0,
+        reviewCount: base.reviewCount,
+        specializations: base.specializations || [],
+        amenities: [],
+        nextAvailableSlot: base.nextAvailableSlot,
+        consultationFee: base.priceMin ?? 0,
+        price: base.priceMin ?? 199,
+        isVerified: Boolean(base.isVerified),
+        experience: base.experienceYears ?? 0,
+        serviceCount: 1,
+        previouslyUsed: false,
+      };
+    },
+    []
+  );
+
   // Get user location on mount (silent fallback when permission denied)
   useEffect(() => {
     const { getCurrentPositionSafe, DEFAULT_COORDS } = require('@/lib/geolocation-utils');
@@ -155,169 +218,16 @@ export function HomeServiceProviderListView({
     );
   }, []);
 
-  // Load providers when location is available
   useEffect(() => {
-    if (userLocation) {
-      loadProviders();
-    }
-  }, [userLocation, serviceType]);
+    if (!feedEnabled) return;
+    setProviders(feedRows.map(mapFeedRowToProvider));
+    setLoading(feedLoading);
+  }, [feedEnabled, feedRows, feedLoading, mapFeedRowToProvider]);
 
   // Apply filters whenever filter states change
   useEffect(() => {
     applyFilters();
   }, [providers, searchQuery, selectedProblems, maxDistance, minRating, sortBy, verifiedOnly]);
-
-  const loadProviders = async () => {
-    try {
-      setLoading(true);
-      console.log(`📍 [HOME-SERVICE-LIST] Loading providers for roleId: ${config.roleId}, serviceType: ${serviceType}`);
-
-      // Map serviceType to discover-services category (vet, grooming, training, walker, etc.)
-      const categoryMap: Record<string, string> = {
-        vet: 'vet',
-        grooming: 'grooming',
-        training: 'training',
-        walker: 'walker',
-        behaviourist: 'behaviourist',
-        sitting: 'sitting',
-        sitter: 'sitting',
-        diagnostics: 'diagnostics',
-        nutrition: 'nutritionist',
-        nutritionist: 'nutritionist',
-      };
-      const category = categoryMap[serviceType] || serviceType;
-
-      let locationParams = '';
-      try {
-        const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
-        const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
-        if (lat && lng) locationParams = `&latitude=${lat}&longitude=${lng}`;
-      } catch (_) {}
-
-      // Primary: /customer/discover-services (solo providers only, at_home, enriched data)
-      try {
-        const discoverData = await apiClient.get<{ success: boolean; vendors?: any[]; providers?: any[] }>(
-          `/customer/discover-services?category=${category}&serviceStyle=at_home&roleId=${config.roleId || category}${locationParams}`
-        );
-
-        const list = discoverData.providers ?? discoverData.vendors ?? [];
-        if (discoverData.success && list.length > 0) {
-          const enrichedProviders: Provider[] = list.map((p: any) => {
-            const canonicalId = pickCustomerVendorAccountId(p as Record<string, unknown>) || String(p.vendorId || p.id || '');
-            return {
-            id: canonicalId,
-            vendorId: canonicalId,
-            businessName: p.businessName || p.name || p.fullName,
-            fullName: p.fullName ?? p.name ?? p.businessName,
-            name: p.businessName || p.name || p.fullName || 'Provider',
-            photo:
-              resolveVendorProfilePhotoUrl(p as Record<string, unknown>) ||
-              p.photoUrl ||
-              p.vendorProfileImage ||
-              p.photo ||
-              p.logo ||
-              '',
-            logo: p.photoUrl || p.vendorProfileImage || p.logo || p.photo || '',
-            address: [p.city, p.state].filter(Boolean).join(', ') || p.address || 'Location not specified',
-            phone: p.phone || '',
-            distance: typeof p.distance === 'number' ? p.distance : (userLocation ? calculateDistance(userLocation, p.latitude != null && p.longitude != null ? { lat: Number(p.latitude), lng: Number(p.longitude) } : undefined) : 999),
-            rating: (() => {
-              const rc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
-              const r = p.rating != null ? Number(p.rating) : NaN;
-              return rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
-            })(),
-            reviewCount: Number(p.totalReviews ?? p.reviewCount ?? 0),
-            specializations: Array.isArray(p.specializations) ? p.specializations : [],
-            amenities: Array.isArray(p.amenities) ? p.amenities : [],
-            nextAvailableSlot: resolveNextAvailableLabel(p) ?? undefined,
-            consultationFee: Number(p.consultationFee ?? p.price ?? 0),
-            price: Number(p.price ?? p.consultationFee ?? 199),
-            isVerified: Boolean(p.isVerified),
-            experience: Number(p.experience ?? p.yearsExperience ?? 0),
-            serviceCount: Number(p.completedBookings ?? p.serviceCount ?? 0),
-            previouslyUsed: Boolean(p.previouslyUsed),
-          };
-          });
-
-          console.log(`✅ [HOME-SERVICE-LIST] Found ${enrichedProviders.length} providers from discover-services`);
-          setProviders(enrichedProviders);
-          return;
-        }
-      } catch (e) {
-        console.warn('discover-services failed, trying fallback:', e);
-      }
-
-      // Fallback: /customer/services (extract unique vendors from services)
-      console.log('📍 [HOME-SERVICE-LIST] Fallback: customer/services');
-      const data = await apiClient.get<{ services: any[] }>(`/customer/services?roleId=${config.roleId}&serviceStyle=at_home`).catch(() => ({ services: [] }));
-      const services = data.services || [];
-
-      const vendorMap = new Map<string, Provider>();
-      services.forEach((service: any) => {
-        const vendorId = service.vendorId;
-        if (vendorId && !vendorMap.has(vendorId)) {
-          vendorMap.set(vendorId, {
-            id: vendorId,
-            vendorId: vendorId,
-            businessName: service.vendorName || 'Provider',
-            fullName: service.vendorName,
-            name: service.vendorName || 'Provider',
-            photo: service.vendorPhoto || service.vendorLogo || '',
-            logo: service.vendorLogo || service.vendorPhoto || '',
-            address: service.vendorAddress || service.vendorLocation || 'Location not specified',
-            phone: service.vendorPhone || '',
-            distance: 999,
-            rating: (() => {
-              const rc = Number(service.vendorReviewCount ?? service.review_count ?? 0) || 0;
-              const r =
-                service.vendorRating != null ? Number(service.vendorRating) : NaN;
-              return rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
-            })(),
-            reviewCount: Number(service.vendorReviewCount ?? service.review_count ?? 0) || 0,
-            specializations: service.specializations || [],
-            amenities: service.amenities || [],
-            nextAvailableSlot: resolveNextAvailableLabel(service) ?? undefined,
-            consultationFee: service.price || 0,
-            price: service.price || 199,
-            isVerified: Boolean(service.vendorVerified),
-            experience: 0,
-            serviceCount: service.vendorServiceCount || 0,
-            previouslyUsed: false,
-          });
-        }
-      });
-
-      const enrichedProviders = Array.from(vendorMap.values());
-      console.log(`✅ [HOME-SERVICE-LIST] Fallback: ${enrichedProviders.length} vendors from services`);
-      setProviders(enrichedProviders);
-    } catch (error) {
-      console.error('❌ [HOME-SERVICE-LIST] Exception:', error);
-      setProviders([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const calculateDistance = (
-    userLoc: { lat: number; lng: number } | null,
-    providerCoords?: { lat: number; lng: number }
-  ): number => {
-    if (!userLoc || !providerCoords) return 999;
-
-    const R = 6371; // Earth's radius in km
-    const dLat = toRad(providerCoords.lat - userLoc.lat);
-    const dLon = toRad(providerCoords.lng - userLoc.lng);
-    const lat1 = toRad(userLoc.lat);
-    const lat2 = toRad(providerCoords.lat);
-
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return Math.round(R * c * 10) / 10;
-  };
-
-  const toRad = (deg: number) => deg * (Math.PI / 180);
 
   const applyFilters = () => {
     let result = [...providers];
@@ -659,6 +569,12 @@ export function HomeServiceProviderListView({
             </motion.div>
           ))
         )}
+        <DiscoveryVendorFeedSentinel
+          hasMore={hasMore}
+          loading={loading}
+          loadingMore={loadingMore}
+          onLoadMore={() => void loadMore()}
+        />
       </div>
 
       {/* Filter Sheet */}

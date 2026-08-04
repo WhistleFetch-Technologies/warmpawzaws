@@ -17,6 +17,11 @@
  */
 
 import { query } from '../../database/rds-connection';
+import { SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL } from '../customer-booking-visibility';
+import {
+  backfillMissingBookingStartOtps,
+  scheduleBookingStartOtpIfNeeded,
+} from '../booking-start-otp';
 
 /**
  * Reconcile pending bookings against both local payment records AND Razorpay API.
@@ -27,6 +32,7 @@ import { query } from '../../database/rds-connection';
  * @param bookingRows - Array of booking row objects (will be mutated in place)
  */
 export async function reconcileBookingPayments(bookingRows: any[]): Promise<void> {
+  try {
   // ── Tier 1: DB-based reconciliation ──────────────────────────────────────
   // Check ALL bookings with payment_status != 'paid' (not just pending status)
   // This catches completed/cancelled bookings where payment was never recorded
@@ -34,8 +40,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
     (b: any) => b.payment_status !== 'paid'
   );
 
-  if (unpaidBookings.length === 0) return;
-
+  if (unpaidBookings.length > 0) {
   const pendingIds = unpaidBookings.map((b: any) => b.id);
 
   try {
@@ -58,18 +63,24 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
         query(
           `UPDATE bookings SET
              payment_status = 'paid',
-             status = CASE WHEN status IN ('pending', 'pending_payment') THEN 'confirmed' ELSE status END,
+             status = ${SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL},
              updated_at = NOW()
            WHERE id = $1 AND payment_status != 'paid'`,
           [bookingId]
         ).catch((err: any) => console.error(`[RECONCILE-T1] Update failed for ${bookingId}:`, err));
+        scheduleBookingStartOtpIfNeeded(String(bookingId), '[RECONCILE-T1]');
       }
 
       // Patch in-memory rows
       for (const row of bookingRows) {
         if (paidBookingIds.has(row.id)) {
           row.payment_status = 'paid';
-          if (row.status === 'pending' || row.status === 'pending_payment') {
+          if (
+            row.status === 'pending' ||
+            row.status === 'pending_payment' ||
+            (row.status === 'cancelled' &&
+              String(row.cancellation_reason || '') === 'payment_window_expired')
+          ) {
             row.status = 'confirmed';
           }
         }
@@ -77,6 +88,31 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
     }
   } catch (err: any) {
     console.error('[RECONCILE-T1] Error:', err);
+  }
+  }
+
+  // ── Tier 1a: Paid on booking row but hold-expiry left status cancelled ─────
+  const paidButCancelled = bookingRows.filter(
+    (b: any) =>
+      String(b.payment_status || '').toLowerCase() === 'paid' &&
+      String(b.status || '') === 'cancelled' &&
+      String(b.cancellation_reason || '') === 'payment_window_expired'
+  );
+  for (const row of paidButCancelled) {
+    console.log(`[RECONCILE-T1a] Re-confirming paid booking ${row.id} after hold-expiry cancel`);
+    query(
+      `UPDATE bookings SET
+         status = 'confirmed',
+         cancellation_reason = NULL,
+         cancelled_at = NULL,
+         updated_at = NOW()
+       WHERE id = $1::uuid
+         AND payment_status = 'paid'
+         AND status = 'cancelled'`,
+      [row.id]
+    ).catch((e: any) => console.error(`[RECONCILE-T1a] Update failed for ${row.id}:`, e));
+    row.status = 'confirmed';
+    scheduleBookingStartOtpIfNeeded(String(row.id), '[RECONCILE-T1a]');
   }
 
   // ── Tier 1b: Wallet ledger debits cover booking total but booking row never flipped to paid ──
@@ -126,16 +162,22 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
           query(
             `UPDATE bookings SET
                payment_status = 'paid',
-               status = CASE WHEN status IN ('pending_payment', 'pending') THEN 'confirmed' ELSE status END,
+               status = ${SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL},
                updated_at = NOW()
              WHERE id = $1::uuid
                AND payment_status IS DISTINCT FROM 'paid'`,
             [row.id]
           ).catch((e: any) => console.error(`[RECONCILE-T1b] Update failed for ${row.id}:`, e));
           row.payment_status = 'paid';
-          if (row.status === 'pending_payment' || row.status === 'pending') {
+          if (
+            row.status === 'pending_payment' ||
+            row.status === 'pending' ||
+            (row.status === 'cancelled' &&
+              String(row.cancellation_reason || '') === 'payment_window_expired')
+          ) {
             row.status = 'confirmed';
           }
+          scheduleBookingStartOtpIfNeeded(String(row.id), '[RECONCILE-T1b]');
         }
       }
     } catch (wErr: any) {
@@ -149,8 +191,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
     (b: any) => b.payment_status !== 'paid'
   );
 
-  if (stillUnpaidBookings.length === 0) return;
-
+  if (stillUnpaidBookings.length > 0) {
   const stillPendingIds = stillUnpaidBookings.map((b: any) => b.id);
 
   try {
@@ -160,12 +201,12 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
        FROM payments
        WHERE booking_id = ANY($1)
          AND razorpay_order_id IS NOT NULL
-         AND payment_status = 'pending'
+         AND LOWER(COALESCE(payment_status, '')) IN ('pending', 'failed')
        ORDER BY created_at DESC`,
       [stillPendingIds]
     );
 
-    if (pendingPaymentsWithRzp.rows.length === 0) return;
+    if (pendingPaymentsWithRzp.rows.length > 0) {
 
     // Limit to 3 API calls per request to keep response time reasonable
     const toCheck = pendingPaymentsWithRzp.rows.slice(0, 3);
@@ -231,20 +272,37 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
           query(
             `UPDATE bookings SET
                payment_status = 'paid',
-               status = CASE WHEN status IN ('pending', 'pending_payment') THEN 'confirmed' ELSE status END,
+               status = ${SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL},
+               cancellation_reason = CASE
+                 WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired'
+                 THEN NULL
+                 ELSE cancellation_reason
+               END,
+               cancelled_at = CASE
+                 WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired'
+                 THEN NULL
+                 ELSE cancelled_at
+               END,
                updated_at = NOW()
              WHERE id = $1 AND payment_status != 'paid'`,
             [payment.booking_id]
           ).catch((err: any) =>
             console.error(`[RECONCILE-T2] Failed to update booking ${payment.booking_id}:`, err)
           );
+          scheduleBookingStartOtpIfNeeded(String(payment.booking_id), '[RECONCILE-T2]');
 
           // Patch in-memory row
           for (const row of bookingRows) {
             if (row.id === payment.booking_id) {
               row.payment_status = 'paid';
-              if (row.status === 'pending' || row.status === 'pending_payment') {
+              if (
+                row.status === 'pending' ||
+                row.status === 'pending_payment' ||
+                (row.status === 'cancelled' &&
+                  String(row.cancellation_reason || '') === 'payment_window_expired')
+              ) {
                 row.status = 'confirmed';
+                row.cancellation_reason = null;
               }
             }
           }
@@ -261,7 +319,18 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
         // Non-critical: continue with next payment
       }
     }
+    }
   } catch (rzpReconcileErr: any) {
     console.error('[RECONCILE-T2] Error during Razorpay reconciliation:', rzpReconcileErr);
+  }
+  }
+
+  // ── Tier 3: Backfill OTP for paid in-person rows still missing otp_code ──
+  } finally {
+    try {
+      await backfillMissingBookingStartOtps(bookingRows);
+    } catch (t3Err: any) {
+      console.error('[RECONCILE-T3] OTP backfill error:', t3Err);
+    }
   }
 }

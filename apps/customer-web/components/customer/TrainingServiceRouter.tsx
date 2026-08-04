@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
@@ -34,6 +35,7 @@ import {
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_TRAINING } from '@/lib/service-hub-discovery-config';
@@ -88,9 +90,26 @@ function TrainingHeaderBackground() {
 }
 
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
-  const trainingGoals = useProblemGridByRole('trainer');
+  const { problems: bootstrapProblems } = useCategoryBootstrap({
+    category: 'training',
+    roleId: 'trainer',
+  });
+  const trainingGoalsLegacy = useProblemGridByRole('trainer');
+  const trainingGoals = useMemo(() => {
+    if (bootstrapProblems.length > 0) {
+      return bootstrapProblems.map((p) => ({
+        id: p.id,
+        name: p.title,
+        icon: <GraduationCap className="w-6 h-6 text-orange-600" />,
+      }));
+    }
+    return trainingGoalsLegacy;
+  }, [bootstrapProblems, trainingGoalsLegacy]);
   const {
     loading: vendorsLoading,
+    loadingMore: vendorsLoadingMore,
+    hasMore: vendorsHasMore,
+    loadMore: loadMoreVendors,
     vendors,
     relaxedFilter,
     selectedVendorId,
@@ -518,6 +537,12 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   );
                 })
               )}
+              <DiscoveryVendorFeedSentinel
+                hasMore={vendorsHasMore}
+                loading={vendorsLoading}
+                loadingMore={vendorsLoadingMore}
+                onLoadMore={() => void loadMoreVendors()}
+              />
             </div>
           </div>
         </div>

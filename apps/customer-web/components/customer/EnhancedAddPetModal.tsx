@@ -27,6 +27,16 @@ import {
 import { toast } from 'sonner';
 import { BloodTypeSelector } from '@/components/customer/pet-blood-type';
 import { getBloodTypeLabel, normalizeBloodTypeKey } from '@/lib/pet-blood-types';
+import {
+  hasRequiredPetFieldErrors,
+  validateRequiredPetFields,
+} from '@/lib/pet-profile-validation';
+import {
+  abandonPendingPetPhotoUploads,
+  collectUploadKeysFromResult,
+  extractPetImageKey,
+  keysToAbandon,
+} from '@/lib/pet-photo-upload';
 
 // ============================================================================
 // TYPES
@@ -222,7 +232,37 @@ export function EnhancedAddPetModal({
   onBack,
 }: EnhancedAddPetModalProps) {
   const isModal = variant === 'modal';
-  const handleHeaderDismiss = () => (onBack ?? onClose)();
+  const committedPhotoKeyRef = useRef<string | null>(
+    editPet ? extractPetImageKey(editPet.photo) : null,
+  );
+  const pendingUploadKeysRef = useRef<string[]>([]);
+  const tempPetIdRef = useRef<string>(buildInitialPetData(editPet).id);
+
+  const abandonUnsavedUploads = async () => {
+    const toAbandon = keysToAbandon(
+      pendingUploadKeysRef.current,
+      committedPhotoKeyRef.current,
+    );
+    if (toAbandon.length === 0) return;
+    const tempId = tempPetIdRef.current;
+    if (!/^pet_\d{10,}$/.test(tempId)) return;
+    await abandonPendingPetPhotoUploads(tempId, toAbandon);
+    pendingUploadKeysRef.current = pendingUploadKeysRef.current.filter(
+      (k) => !toAbandon.includes(k),
+    );
+  };
+
+  const handleHeaderDismiss = async () => {
+    if (uploadingPhoto) return;
+    await abandonUnsavedUploads();
+    (onBack ?? onClose)();
+  };
+
+  const handleClose = async () => {
+    if (uploadingPhoto) return;
+    await abandonUnsavedUploads();
+    onClose();
+  };
 
   const [step, setStep] = useState<Step>('photo');
   const [loading, setLoading] = useState(false);
@@ -245,11 +285,15 @@ export function EnhancedAddPetModal({
   /** Modal stays mounted while hidden — reset wizard when opening/closing (or when edit target changes). */
   useEffect(() => {
     if (!isOpen) {
+      void abandonUnsavedUploads();
       if (!editPet) {
         const data = createEmptyPetData();
         setPetData(data);
         setPhotoPreview('');
         prevPetTypeRef.current = data.type;
+        tempPetIdRef.current = data.id;
+        committedPhotoKeyRef.current = null;
+        pendingUploadKeysRef.current = [];
         setStep('photo');
         setLoading(false);
         setUploadingPhoto(false);
@@ -267,6 +311,9 @@ export function EnhancedAddPetModal({
     setPetData(data);
     setPhotoPreview(editPet?.photo || '');
     prevPetTypeRef.current = data.type;
+    tempPetIdRef.current = data.id;
+    committedPhotoKeyRef.current = editPet ? extractPetImageKey(editPet.photo) : null;
+    pendingUploadKeysRef.current = [];
     setStep('photo');
     setLoading(false);
     setUploadingPhoto(false);
@@ -317,6 +364,15 @@ export function EnhancedAddPetModal({
     setUploadingPhoto(true);
     setUploadProgress(0);
     try {
+      const previousPending = [...pendingUploadKeysRef.current];
+      const toAbandonBefore = keysToAbandon(previousPending, committedPhotoKeyRef.current);
+      if (toAbandonBefore.length > 0 && /^pet_\d{10,}$/.test(petData.id)) {
+        await abandonPendingPetPhotoUploads(petData.id, toAbandonBefore);
+        pendingUploadKeysRef.current = pendingUploadKeysRef.current.filter(
+          (k) => !toAbandonBefore.includes(k),
+        );
+      }
+
       const { uploadPetPhotoWithProgress } = await import('@/lib/photo-upload-enhanced');
       const result = await uploadPetPhotoWithProgress(file, petData.id, phone, {
         onProgress: (progress) => {
@@ -327,6 +383,11 @@ export function EnhancedAddPetModal({
       });
       
       if (result.success && result.publicUrl) {
+        const newKeys = collectUploadKeysFromResult(result);
+        pendingUploadKeysRef.current = [
+          ...pendingUploadKeysRef.current.filter((k) => !newKeys.includes(k)),
+          ...newKeys,
+        ];
         setPetData(prev => ({ ...prev, photo: result.publicUrl as string }));
         toast.success('Photo uploaded successfully!');
       } else {
@@ -478,28 +539,26 @@ export function EnhancedAddPetModal({
 
   // Validate current step
   const validateStep = (): boolean => {
-    const errors: Record<string, string> = {};
-    
+    const allErrors = validateRequiredPetFields(petData, photoPreview);
+    const stepErrors: Record<string, string> = {};
+
     switch (step) {
       case 'photo':
-        if (!petData.photo && !photoPreview) {
-          errors.photo = 'Photo is required';
-        }
+        if (allErrors.photo) stepErrors.photo = allErrors.photo;
+        if (allErrors.type) stepErrors.type = allErrors.type;
         break;
       case 'basic':
-        if (!petData.name.trim()) errors.name = 'Name is required';
-        if (!petData.breed) errors.breed = 'Breed is required';
-        if (!petData.dateOfBirth) errors.dateOfBirth = 'Date of birth is required';
-        if (!petData.gender) errors.gender = 'Gender is required';
+        if (allErrors.name) stepErrors.name = allErrors.name;
+        if (allErrors.breed) stepErrors.breed = allErrors.breed;
+        if (allErrors.dateOfBirth) stepErrors.dateOfBirth = allErrors.dateOfBirth;
+        if (allErrors.gender) stepErrors.gender = allErrors.gender;
         break;
-      case 'physical':
-        if (!petData.weight) errors.weight = 'Weight is required';
-        if (!petData.color) errors.color = 'Color is required';
+      default:
         break;
     }
-    
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
+
+    setValidationErrors(stepErrors);
+    return Object.keys(stepErrors).length === 0;
   };
 
   // Navigate to next step
@@ -540,8 +599,15 @@ export function EnhancedAddPetModal({
     }
   };
 
-  // Save pet
+  // Save pet (Review step only)
   const handleSavePet = async () => {
+    const requiredErrors = validateRequiredPetFields(petData, photoPreview);
+    if (hasRequiredPetFieldErrors(requiredErrors)) {
+      setValidationErrors(requiredErrors);
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
     setLoading(true);
     try {
       const customerId = await resolveCustomerIdForPetMutation();
@@ -634,6 +700,7 @@ export function EnhancedAddPetModal({
       }
 
       toast.success(`${petData.name} ${editPet ? 'updated' : 'added'} successfully!`);
+      pendingUploadKeysRef.current = [];
       onSuccess();
       if (isModal) {
         onClose();
@@ -689,7 +756,7 @@ export function EnhancedAddPetModal({
               {!isModal && (
                 <button
                   type="button"
-                  onClick={handleHeaderDismiss}
+                  onClick={() => void handleHeaderDismiss()}
                   className="w-10 h-10 shrink-0 bg-white/20 backdrop-blur rounded-full flex items-center justify-center hover:bg-white/30 transition"
                   aria-label="Back"
                 >
@@ -711,7 +778,7 @@ export function EnhancedAddPetModal({
             {isModal ? (
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => void handleClose()}
                 className="w-10 h-10 shrink-0 bg-white/20 backdrop-blur rounded-full flex items-center justify-center hover:bg-white/30 transition"
                 aria-label="Close"
               >
@@ -980,7 +1047,7 @@ export function EnhancedAddPetModal({
               {/* Weight */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Weight (kg) <span className="text-red-500">*</span>
+                  Weight (kg) <span className="text-gray-400 font-normal">(optional)</span>
                 </label>
                 <input
                   type="number"
@@ -1019,7 +1086,7 @@ export function EnhancedAddPetModal({
               {/* Color */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Color/Coat <span className="text-red-500">*</span>
+                  Color/Coat <span className="text-gray-400 font-normal">(optional)</span>
                 </label>
                 <input
                   type="text"
@@ -1591,16 +1658,6 @@ export function EnhancedAddPetModal({
               </Button>
             )}
           </div>
-          
-          {step !== 'photo' && step !== 'review' && (
-            <button
-              onClick={handleSavePet}
-              disabled={loading}
-              className="w-full mt-3 text-sm text-gray-500 hover:text-orange-600 font-medium"
-            >
-              Skip remaining & Save
-            </button>
-          )}
         </div>
       </div>
     </div>

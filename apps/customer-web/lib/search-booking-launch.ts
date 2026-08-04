@@ -21,6 +21,7 @@ import {
   isPharmacyCategory,
 } from '@/lib/search-category-detect';
 import type { NutritionVendorCardModel } from '@/components/customer/nutrition/NutritionVendorDetailsCard';
+import { resolveServiceBookingCommerceRouteForNavigation } from '@/lib/commerce-switch-routing';
 
 export const SEARCH_BOOKING_INTENT_KEY = 'warmpawz_search_booking_intent';
 export const SEARCH_NUTRITION_BOOKING_INTENT_KEY = 'warmpawz_search_nutrition_booking_intent';
@@ -598,6 +599,12 @@ export function launchSearchServiceBooking({
   router,
   returnSearchUrl,
 }: SearchBookingLaunchParams): void {
+  resolveServiceBookingCommerceRouteForNavigation({
+    serviceKey: category,
+    category,
+    serviceStyle: serviceStyleOpt,
+  });
+
   if (isNutritionCategory(category)) {
     launchSearchNutritionBooking({
       vendorId,

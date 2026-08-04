@@ -1,6 +1,6 @@
 /**
- * Keep nutrition / meal-plan catalog rows out of the public ecommerce shop.
- * Meal SKUs live in `meal_plans` (canonical) and may mirror into `products` with legacy text categories.
+ * Keep leftover nutrition meal-category product rows out of the public ecommerce shop.
+ * Canonical meal catalog lives in `meal_plans` only (not products).
  */
 
 import { query } from '../database/rds-connection';

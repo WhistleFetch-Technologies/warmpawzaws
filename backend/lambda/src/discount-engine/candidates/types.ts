@@ -16,6 +16,8 @@ export interface DiscountCandidateRules {
   applicableServiceStyles?: string[];
   serviceCategory?: string;
   vendorId?: string;
+  /** Platform coupon vendor allow-list (from admin selectedTargets.vendors). */
+  vendorIds?: string[];
   published?: boolean;
   minOrderValue?: number | null;
   minBookingValue?: number | null;

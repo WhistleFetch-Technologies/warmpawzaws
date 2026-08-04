@@ -48,6 +48,7 @@ import { promotionCategoriesMatch } from '../utils/platform-promotion-matching';
 import {
   buildCouponTargetingFromAdminBody,
   couponRowMatchesService,
+  couponRowMatchesVendor,
 } from '../utils/coupon-targeting';
 import { validateAdminPromotionTargeting } from '../utils/promotion-targeting-validation';
 import {
@@ -89,9 +90,21 @@ function buildCalculateBookingHttpPayload(quote: UnifiedResolverResponse) {
   };
 }
 
-async function persistPromotionInsert(promotionData: Record<string, unknown>) {
-  if (isEcommerceAdminPromotionDomain(promotionData)) {
-    const ecommerceRecord = buildEcommerceAdminPromotionRecord(promotionData);
+async function persistPromotionInsert(
+  promotionData: Record<string, unknown>,
+  rawWizardBody?: Record<string, unknown>
+) {
+  if (
+    isEcommerceAdminPromotionDomain(promotionData) ||
+    (rawWizardBody != null && isEcommerceAdminPromotionDomain(rawWizardBody))
+  ) {
+    // Prefer the original wizard body — intermediate persistence records only
+    // keep targeting under metadata, and a naive rebuild used to wipe it to
+    // listing_ownership_scope=all + empty applicable_products.
+    const ecommerceRecord = buildEcommerceAdminPromotionRecord({
+      ...(rawWizardBody ?? promotionData),
+      discount_domain: 'ECOMMERCE',
+    });
     try {
       return await insert('ecommerce_admin_promotions', ecommerceRecord);
     } catch (insertError: unknown) {
@@ -621,12 +634,16 @@ export function registerPromotionEndpoints(app: Hono) {
   const loadActivePlatformCouponsAsPromotions = async (
     now: string,
     serviceBucket?: string,
-    commercialDomain?: CommercialDiscountDomain | null
+    commercialDomain?: CommercialDiscountDomain | null,
+    vendorId?: string
   ): Promise<Record<string, unknown>[]> => {
     const mapCouponRows = (rows: Record<string, unknown>[]) =>
       rows
         .filter((row) => {
           if (commercialDomain && !rowMatchesDiscountDomain(row, commercialDomain)) {
+            return false;
+          }
+          if (!couponRowMatchesVendor(row, vendorId)) {
             return false;
           }
           // Shop galleries: never spill service-bucket coupons when no bucket is provided.
@@ -732,6 +749,7 @@ export function registerPromotionEndpoints(app: Hono) {
     try {
       const serviceType = c.req.query('serviceType') || 'all';
       const serviceBucket = c.req.query('service') || c.req.query('serviceCategory') || undefined;
+      const vendorId = String(c.req.query('vendorId') || c.req.query('vendor_id') || '').trim() || undefined;
       const customerId = c.req.query('customerId');
       const vendorRoleId = c.req.query('vendorRoleId');
       /** Checkout/coupon gallery only — discovery surfaces must not auto-apply platform coupons. */
@@ -847,7 +865,7 @@ export function registerPromotionEndpoints(app: Hono) {
       }
 
       const couponAsPromotions = includeCoupons
-        ? await loadActivePlatformCouponsAsPromotions(now, serviceBucket, commercialDomain)
+        ? await loadActivePlatformCouponsAsPromotions(now, serviceBucket, commercialDomain, vendorId)
         : [];
 
       const filterPromotionRowsForActive = (rows: Record<string, unknown>[]) => {
@@ -2040,7 +2058,7 @@ export function registerPromotionEndpoints(app: Hono) {
       }
 
       let promotion;
-      promotion = await persistPromotionInsert(promotionData);
+      promotion = await persistPromotionInsert(promotionData, body as Record<string, unknown>);
 
       return c.json({
         success: true,

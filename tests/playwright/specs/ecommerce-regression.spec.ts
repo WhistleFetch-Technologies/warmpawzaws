@@ -519,7 +519,15 @@ test.describe('Schema Validation - Admin APIs', () => {
       if (data.data) {
         expect(data.data).toHaveProperty('revenue');
         expect(data.data).toHaveProperty('totalRevenue');
+        expect(data.data).toHaveProperty('totalGMV');
         expect(data.data).toHaveProperty('totalOrders');
+        expect(data.data).toHaveProperty('growth');
+        expect(data.data).toHaveProperty('products');
+        expect(data.data).toHaveProperty('ordersByStatus');
+        expect(data.data.growth).toHaveProperty('gmv');
+        expect(data.data.growth).toHaveProperty('orders');
+        expect(data.data.products).toHaveProperty('active');
+        expect(data.data.products).toHaveProperty('total');
       }
     }
   });
@@ -546,6 +554,12 @@ test.describe('Schema Validation - Admin APIs', () => {
       expect(d).toHaveProperty('pendingSettlementAmount');
       expect(typeof d.totalGMV).toBe('number');
       expect(typeof d.pendingSettlementAmount).toBe('number');
+      expect(d).toHaveProperty('growth');
+      if (d.growth) {
+        expect(d.growth).toHaveProperty('gmv');
+        expect(d.growth).toHaveProperty('commission');
+        expect(d.growth).toHaveProperty('orders');
+      }
     }
   });
 

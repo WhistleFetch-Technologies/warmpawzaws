@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, type MouseEvent } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
 import {
   Star,
   MapPin,
@@ -15,9 +15,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { discoveryVendorList, discoveryNextCursor } from '@/lib/discovery-list';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
-import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
+import {
+  buildVendorServicesPageUrl,
+  vendorServicesNextCursor,
+  vendorServicesRowsFromResponse,
+} from '@/lib/vendor-services-page';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
@@ -39,6 +45,7 @@ import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
+import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
 
 interface ClinicListViewProps {
   phone: string;
@@ -86,6 +93,9 @@ export interface ClinicProvider {
   services: ClinicServiceRow[];
   /** When true, expand triggers GET vendor services */
   needsServiceFetch?: boolean;
+  servicesHydrated?: boolean;
+  servicesNextCursor?: string | null;
+  servicesLoadingMore?: boolean;
   vendorType?: string;
 }
 
@@ -240,6 +250,9 @@ export function ClinicListView({
   vetStyleProfileReturnScreen = 'vet-clinic-list',
 }: ClinicListViewProps) {
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const listCursorRef = useRef<string | null>(null);
   const [clinics, setClinics] = useState<ClinicProvider[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
@@ -248,43 +261,92 @@ export function ClinicListView({
   const launchGate = useServiceStyleLaunchGate(phone, 'vet', 'at_center');
 
   const fetchVendorServicesForClinic = useCallback(
-    async (clinicId: string) => {
-      setFetchingServicesFor(clinicId);
-      try {
-        const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-        const res = (await apiClient.get(
-          `/customer/vendor/${clinicId}/services?serviceStyle=at_center&category=${HUB_DISCOVERY_VET.servicesApiCategory}${phoneParam}`
-        ).catch(() => apiClient.get(`/vendor/${clinicId}/services`))) as any;
-        let services: any[] = [];
-        const servicesData = res;
-        if (servicesData?.services && Array.isArray(servicesData.services)) {
-          services = mergeCustomerVendorServicesPayload(servicesData);
-        } else if (
-          servicesData?.services?.at_home ||
-          servicesData?.services?.at_center ||
-          servicesData?.services?.tele
-        ) {
-          services = [
-            ...(servicesData.services.at_center?.services || []),
-            ...(servicesData.services.at_home?.services || []),
-            ...(servicesData.services.tele?.services || []),
-          ];
-        } else if (Array.isArray(servicesData)) {
-          services = servicesData;
-        }
-        const rows = filterServicesForVetHub<ClinicServiceRow>(
-          services.map((s: any, i: number) => mapApiServiceToRow(s, clinicId, i))
-        );
+    async (clinicId: string, append = false) => {
+      const clinic = clinics.find((c) => c.id === clinicId);
+      if (!clinic) return;
+      if (append) {
+        if (!clinic.servicesNextCursor || clinic.servicesLoadingMore) return;
+      } else if (clinic.servicesHydrated) {
+        return;
+      }
+      if (append) {
         setClinics((prev) =>
-          prev.map((c) => (c.id === clinicId ? { ...c, services: rows, needsServiceFetch: false } : c))
+          prev.map((c) =>
+            c.id === clinicId ? { ...c, servicesLoadingMore: true } : c
+          )
+        );
+      } else {
+        setFetchingServicesFor(clinicId);
+      }
+      try {
+        const res = (await apiClient
+          .get(
+            buildVendorServicesPageUrl({
+              vendorId: clinicId,
+              serviceStyle: 'at_center',
+              category: HUB_DISCOVERY_VET.servicesApiCategory,
+              customerPhone: phone || undefined,
+              cursor: append ? clinic.servicesNextCursor : undefined,
+            })
+          )
+          .catch(() =>
+            apiClient.get(
+              buildVendorServicesPageUrl({
+                vendorId: clinicId,
+                customerPhone: phone || undefined,
+                cursor: append ? clinic.servicesNextCursor : undefined,
+              })
+            )
+          )) as any;
+        const rawRows = vendorServicesRowsFromResponse(res);
+        const vetRows = mapVendorServicesForVetHub(rawRows);
+        const rows = filterServicesForVetHub<ClinicServiceRow>(
+          vetRows.map((s, i) => mapApiServiceToRow(s, clinicId, i))
+        );
+        const nextCursor = vendorServicesNextCursor(res);
+        setClinics((prev) =>
+          prev.map((c) => {
+            if (c.id !== clinicId) return c;
+            const seen = new Set(
+              append ? c.services.map((s) => s.stableKey) : []
+            );
+            const merged = append ? [...c.services] : [];
+            for (const row of rows) {
+              if (seen.has(row.stableKey)) continue;
+              seen.add(row.stableKey);
+              merged.push(row);
+            }
+            return {
+              ...c,
+              services: merged,
+              needsServiceFetch: false,
+              servicesHydrated: true,
+              servicesNextCursor: nextCursor,
+              servicesLoadingMore: false,
+            };
+          })
         );
       } catch (e) {
         console.error('[CLINIC-LIST] vendor services fetch failed', e);
+        setClinics((prev) =>
+          prev.map((c) =>
+            c.id === clinicId
+              ? { ...c, servicesHydrated: true, servicesLoadingMore: false }
+              : c
+          )
+        );
       } finally {
         setFetchingServicesFor(null);
       }
     },
-    [phone]
+    [phone, clinics]
+  );
+
+  const loadMoreClinicServices = useCallback(
+    (clinicId: string) => {
+      void fetchVendorServicesForClinic(clinicId, true);
+    },
+    [fetchVendorServicesForClinic]
   );
 
   useEffect(() => {
@@ -376,9 +438,15 @@ export function ClinicListView({
     return Array.from(vendorMap.values());
   };
 
-  const loadClinics = async () => {
+  const loadClinics = async (append = false) => {
     try {
-      setLoading(true);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        listCursorRef.current = null;
+        setHasMore(false);
+      }
       const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
       let locationParams = '';
       if (latitude != null && longitude != null) {
@@ -387,21 +455,48 @@ export function ClinicListView({
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
 
       let mapped: ClinicProvider[] = [];
-      const loadByStyle = async (roleId: string) => {
+      const loadByStyle = async (roleId: string, withCursor = false) => {
         const specParam = specialization
           ? `&specialization=${encodeURIComponent(specialization)}`
           : '';
+        const cursorParam =
+          withCursor && listCursorRef.current
+            ? `&cursor=${encodeURIComponent(listCursorRef.current)}`
+            : '';
         const response = (await apiClient.get(
-          `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}${locationParams}${phoneParam}${specParam}`
+          `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}&limit=3${cursorParam}${locationParams}${phoneParam}${specParam}`
         )) as any;
-        if (!response.success) return [];
-        const providerData = response.providers || response.vendors || [];
-        return providerData.map((p: any) => mapByStyleProvider(p)).filter(Boolean) as ClinicProvider[];
+        if (!response.success) return { rows: [] as ClinicProvider[], cursor: null as string | null };
+        const providerData = discoveryVendorList(response);
+        const rows = providerData.map((p: any) => mapByStyleProvider(p)).filter(Boolean) as ClinicProvider[];
+        return { rows, cursor: discoveryNextCursor(response) };
       };
+
+      if (append) {
+        const { rows, cursor } = await loadByStyle('veterinarian', true);
+        mapped = rows;
+        listCursorRef.current = cursor;
+        setHasMore(!!cursor);
+        if (mapped.length > 0) {
+          setClinics((prev) =>
+            applyVetHubDiscoveryToProviders<ClinicProvider, ClinicServiceRow>([...prev, ...mapped], {
+              keepProvidersPendingServiceFetch: true,
+            })
+          );
+        }
+        return;
+      }
+
       try {
-        mapped = await loadByStyle('veterinarian');
+        const primary = await loadByStyle('veterinarian');
+        mapped = primary.rows;
+        listCursorRef.current = primary.cursor;
+        setHasMore(!!primary.cursor);
         if (mapped.length === 0) {
-          mapped = await loadByStyle('vet_clinic');
+          const fallback = await loadByStyle('vet_clinic');
+          mapped = fallback.rows;
+          listCursorRef.current = fallback.cursor;
+          setHasMore(!!fallback.cursor);
         }
       } catch (e) {
         console.warn('[CLINIC-LIST] by-style failed', e);
@@ -456,8 +551,14 @@ export function ClinicListView({
       setClinics([]);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
+
+  const loadMoreClinics = useCallback(() => {
+    if (!hasMore || loadingMore || loading) return;
+    void loadClinics(true);
+  }, [hasMore, loadingMore, loading]);
 
   const toggleClinic = (clinicId: string) => {
     setSelectedClinicId((prev) => (prev === clinicId ? null : clinicId));
@@ -466,7 +567,7 @@ export function ClinicListView({
   useEffect(() => {
     if (!selectedClinicId) return;
     const c = clinics.find((x) => x.id === selectedClinicId);
-    if (!c || !c.needsServiceFetch || c.services.length > 0) return;
+    if (!c || c.servicesHydrated) return;
     if (fetchingServicesFor === selectedClinicId) return;
     fetchVendorServicesForClinic(selectedClinicId);
   }, [selectedClinicId, clinics, fetchingServicesFor, fetchVendorServicesForClinic]);
@@ -610,22 +711,6 @@ export function ClinicListView({
           />
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide mb-5">
-          {filters.map((filter) => (
-            <button
-              key={filter.id}
-              onClick={() => setSelectedFilter(filter.id as any)}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-200 ${
-                selectedFilter === filter.id
-                  ? 'bg-[#FF8C42] text-white shadow-[0_2px_8px_rgba(255,140,66,0.35)]'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16">
             <div className="animate-spin rounded-full h-12 w-12 border-2 border-[#FF8C42]/30 border-t-[#FF8C42]" />
@@ -767,7 +852,7 @@ export function ClinicListView({
                     <div className="bg-gray-50 p-4 space-y-3">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <h4 className="text-sm font-semibold text-gray-700">
-                          Available Services ({clinic.services.length})
+                          Available Services ({clinic.services.length}{clinic.servicesNextCursor ? '+' : ''})
                         </h4>
                         <button
                           type="button"
@@ -863,6 +948,12 @@ export function ClinicListView({
                               </div>
                             );
                           })}
+                          <DiscoveryVendorFeedSentinel
+                            hasMore={!!clinic.servicesNextCursor}
+                            loading={fetchingServicesFor === clinic.id}
+                            loadingMore={!!clinic.servicesLoadingMore}
+                            onLoadMore={() => loadMoreClinicServices(clinic.id)}
+                          />
                         </div>
                       )}
                     </div>
@@ -919,6 +1010,12 @@ export function ClinicListView({
                 </Card>
               );
             })}
+            <DiscoveryVendorFeedSentinel
+              hasMore={hasMore}
+              loading={loading}
+              loadingMore={loadingMore}
+              onLoadMore={loadMoreClinics}
+            />
           </div>
         )}
       </div>

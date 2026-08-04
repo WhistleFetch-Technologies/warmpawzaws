@@ -10,7 +10,14 @@ import { CapabilityGate } from '../../CapabilityGate';
 import { useVendorCapabilities } from '../../hooks/useVendorCapabilities';
 // AWS Serverless: apiClient with Cognito auth
 import { getRoleColorScheme } from '@/lib/vendor-icon-themes';
-import { getVendorRoleId, normalizeServiceStyle, hasVendorRole, getVendorAllowedServiceStyles } from '@/lib/vendor-utils';
+import {
+  getVendorRoleId,
+  normalizeServiceStyle,
+  hasVendorRole,
+  getVendorAllowedServiceStyles,
+  isVendorTeleConsultationBooking,
+  resolveVendorBookingId,
+} from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
 import PerformanceMonitor from '@/lib/performance-monitor';
@@ -87,9 +94,6 @@ import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayou
 // Lazy-load heavy/cyclic components to avoid TDZ when dashboard chunk loads
 const SoloProviderDashboard = lazy(() =>
   import('../Soloprovider/SoloProviderDashboard').then((m) => ({ default: m.SoloProviderDashboard }))
-);
-const CommunicationHub = lazy(() =>
-  import('../../../communication/CommunicationHub').then((m) => ({ default: m.CommunicationHub }))
 );
 const AppointmentDetailModal = lazy(() =>
   import('../../AppointmentDetailModal').then((m) => ({ default: m.AppointmentDetailModal }))
@@ -214,7 +218,6 @@ export function VendorDashboard({
     bookingStatus: string;
     packageUtilization?: { packageName?: string; totalSessions?: number; remainingSessions?: number; usedSessions?: number; isUnlimited?: boolean; expiresAt?: string } | null;
   } | null>(null);
-  const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
   // ✅ NEW: OTP modal state for completing appointments
@@ -619,6 +622,44 @@ export function VendorDashboard({
     } finally {
       setProcessingOtp(false);
     }
+  };
+
+  const handleScheduleCompleteClick = async (appointment: ScheduleItem) => {
+    setSelectedAppointment(appointment);
+
+    if (isVendorTeleConsultationBooking(appointment)) {
+      const bid = resolveVendorBookingId(appointment);
+      if (!bid) {
+        toast.error('Missing booking id');
+        return;
+      }
+
+      try {
+        setProcessingOtp(true);
+        const data = (await apiClient.post(`/vendor/bookings/${bid}/complete`, {
+          vendorId: vendorData?.id || vendorId,
+          otp: null,
+        })) as { success?: boolean; error?: string; message?: string };
+
+        if (data?.success !== false) {
+          toast.success(data?.message || 'Tele consultation marked as complete');
+          setSelectedAppointment(null);
+          fetchDashboardData(true);
+        } else {
+          toast.error(data?.error || 'Failed to complete booking');
+        }
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Failed to complete booking';
+        toast.error(msg);
+      } finally {
+        setProcessingOtp(false);
+      }
+      return;
+    }
+
+    setShowOtpModal(true);
+    setOtp('');
+    setOtpError(null);
   };
 
   // Format time ago
@@ -1740,22 +1781,24 @@ export function VendorDashboard({
                                     )
                                   ) && (
                                   <button
-                                    onClick={() => {
-                                      setSelectedAppointment(appointment);
-                                      setShowOtpModal(true);
-                                      setOtp('');
-                                      setOtpError(null);
-                                    }}
-                                    className="flex-1 min-w-[100px] py-1.5 px-3 bg-green-500 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1 hover:bg-green-600"
+                                    onClick={() => void handleScheduleCompleteClick(appointment)}
+                                    disabled={processingOtp}
+                                    className="flex-1 min-w-[100px] py-1.5 px-3 bg-green-500 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1 hover:bg-green-600 disabled:opacity-50"
                                   >
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> Complete
+                                    <CheckCircle2 className="w-3.5 h-3.5" />{' '}
+                                    {isVendorTeleConsultationBooking(appointment) ? 'Mark Complete' : 'Complete'}
                                   </button>
                                 )}
                                 {capabilities.chat && (
                                   <button
                                     onClick={() => {
-                                      setSelectedAppointment(appointment);
-                                      setCommunicationMode('chat');
+                                      setSelectedChatConversation({
+                                        bookingId: appointment.bookingId,
+                                        customerName: appointment.customerName,
+                                        customerPhone: appointment.customerPhone,
+                                        serviceName: appointment.serviceName,
+                                        bookingStatus: appointment.status,
+                                      });
                                     }}
                                     className="relative flex-1 min-w-[80px] py-1.5 px-3 bg-[#FF8C42] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                                   >
@@ -1984,25 +2027,6 @@ export function VendorDashboard({
             onClose={() => {
               setSelectedChatConversation(null);
               fetchDashboardData(true);
-            }}
-          />
-        </Suspense>
-      )}
-
-      {/* Communication Hub (Unified Chat/Video) */}
-      {communicationMode && selectedAppointment && (
-        <Suspense fallback={null}>
-          <CommunicationHub
-            mode={communicationMode}
-            bookingId={selectedAppointment.bookingId}
-            userId={vendorData?.phone || vendorData?.mobile || '+91'}
-            userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
-            otherUserName={selectedAppointment.customerName}
-            userType="vendor"
-            onClose={() => {
-              setCommunicationMode(null);
-              setSelectedAppointment(null);
-              fetchDashboardData(true); // Reload to clear unread badges
             }}
           />
         </Suspense>

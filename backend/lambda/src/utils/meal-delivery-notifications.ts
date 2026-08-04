@@ -291,12 +291,11 @@ async function loadMealOrderContext(orderId: string): Promise<MealOrderContext |
       `SELECT mo.id, mo.order_number, mo.customer_id, mo.vendor_id, mo.subscription_id,
               c.full_name AS customer_name, c.name AS customer_name_alt,
               v.business_name AS vendor_name,
-              COALESCE(mp.name, mp.plan_name, prod.name) AS meal_plan_name
+              COALESCE(mp.name, mp.plan_name) AS meal_plan_name
        FROM meal_orders mo
        LEFT JOIN customers c ON c.id = mo.customer_id
        LEFT JOIN vendors v ON v.id = mo.vendor_id
        LEFT JOIN meal_plans mp ON mp.id = mo.meal_plan_id
-       LEFT JOIN products prod ON prod.id = mo.meal_plan_id
        WHERE mo.id = $1
        LIMIT 1`,
       [orderId],

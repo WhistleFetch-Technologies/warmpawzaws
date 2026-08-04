@@ -323,4 +323,26 @@ describe('resolveExpectedBookingCharge', () => {
     expect(result!.grossTotal).toBe(399.82);
     expect(result!.expectedCash).toBe(29.62);
   });
+
+  test('100% coupon snapshot uses finalPaid not inflated subtotal (COLLABCODE prod regression)', async () => {
+    stubQueries({ orphanRow: null });
+
+    const result = await resolveExpectedBookingCharge({
+      bookingId: BOOKING_ID,
+      booking: {
+        total_amount: '40',
+        base_price: '1999',
+        discount_amount: '1999',
+        coupon_code: 'COLLABCODE',
+        notes:
+          'wp_financial_meta:{"servicePrice":1999,"vendorDiscount":0,"platformDiscount":0,"couponDiscount":1999,"subtotalAfterDiscounts":1999,"cgst":0,"sgst":0,"igst":0,"totalTax":0,"platformFee":40,"convenienceFee":0,"deliveryFee":0,"walletAmount":0,"finalPaid":40}',
+      },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe('financial_snapshot');
+    expect(result!.grossTotal).toBe(40);
+    expect(result!.expectedCash).toBe(40);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
+  });
 });

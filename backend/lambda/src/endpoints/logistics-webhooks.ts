@@ -874,14 +874,11 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
             `SELECT mo.*,
                     COALESCE(
                       NULLIF(TRIM(mp.name), ''),
-                      NULLIF(TRIM(mp.plan_name), ''),
-                      NULLIF(TRIM(prod.name), '')
+                      NULLIF(TRIM(mp.plan_name), '')
                     ) AS meal_plan_name,
                     mp.price_per_meal AS mp_price_per_meal
              FROM meal_orders mo
              LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
-             LEFT JOIN products prod ON prod.id = mo.meal_plan_id
-               AND prod.category IN ('meal_plan', 'nutrition', 'food')
              WHERE mo.id::text = $1 OR mo.order_number = $1
              LIMIT 1`,
             [orderId]

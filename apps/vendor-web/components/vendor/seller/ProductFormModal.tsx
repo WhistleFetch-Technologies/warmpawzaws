@@ -113,9 +113,6 @@ export function ProductFormModal({
   const [petTypeSelect, setPetTypeSelect] = useState(() =>
     petTypeSelectValueFromInput(initialProductFormState(product).petTypeInput),
   );
-  const [commissionModel, setCommissionModel] = useState<'category' | 'ownership' | null>(null);
-
-  const requiresListingOwnership = commissionModel === 'ownership';
 
   const listingPreview = useMemo(
     () => (productMode === 'multi' ? computeListingPreviewFromVariants(variants, variantAxes) : null),
@@ -206,25 +203,6 @@ export function ProductFormModal({
     saveCommittedRef.current = false;
     pendingFileKeysRef.current.clear();
   }, [product?.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await apiClient.get<{ commissionModel?: 'category' | 'ownership' | null }>(
-          `/vendor/${sellerId}/ecommerce/commission-model`
-        );
-        if (!cancelled) {
-          setCommissionModel(data.commissionModel ?? null);
-        }
-      } catch {
-        if (!cancelled) setCommissionModel(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sellerId]);
 
   const registerPendingFileKey = useCallback((urls: string[], fileKey: string) => {
     registerPendingProductImageKey(pendingFileKeysRef.current, urls, fileKey);
@@ -397,7 +375,6 @@ export function ProductFormModal({
       variantAxes,
       deliveryRegions,
       customSpecs,
-      requiresListingOwnership,
     });
     if (err) {
       toast.error(err);
@@ -543,31 +520,29 @@ export function ProductFormModal({
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                 />
               </div>
-              {requiresListingOwnership && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Listing Ownership *
-                  </label>
-                  <select
-                    required
-                    value={form.listingOwnership}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        listingOwnership: e.target.value as '' | 'own_brand' | 'third_party',
-                      })
-                    }
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
-                  >
-                    <option value="">Select ownership</option>
-                    <option value="own_brand">Own brand</option>
-                    <option value="third_party">Third party</option>
-                  </select>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Is this product your own brand or a third-party brand you sell?
-                  </p>
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Listing Ownership *
+                </label>
+                <select
+                  required
+                  value={form.listingOwnership}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      listingOwnership: e.target.value as '' | 'own_brand' | 'third_party',
+                    })
+                  }
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
+                >
+                  <option value="">Select ownership</option>
+                  <option value="own_brand">Own brand</option>
+                  <option value="third_party">Third party</option>
+                </select>
+                <p className="text-xs text-slate-500 mt-1">
+                  Is this product your own brand or a third-party brand you sell?
+                </p>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Pet Type</label>
                 <select

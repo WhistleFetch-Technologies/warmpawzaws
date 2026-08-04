@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Star, Clock, MapPin, Phone, Video, Home, Building2,
   Shield, Award, GraduationCap, Heart, Share2, Check, X, Calendar,
-  ChevronRight, Plus, User, MessageCircle, Image as ImageIcon, Sparkles
+  ChevronRight, Plus, User, MessageCircle, Image as ImageIcon, Sparkles, Loader2
 } from 'lucide-react';
 import { AmenitiesSection } from './AmenitiesSection';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,14 @@ import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
 import { resolveCustomerVendorAmenities, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { shareVendorProfile, universalCategoryToSharePersona } from '@/lib/vendor-profile-share';
+import { useProviderServicesLazyLoad } from '@/hooks/useProviderServicesLazyLoad';
+import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
+import {
+  mapFacilityRecentReviews,
+  mergeProviderAboutFromFacility,
+  type UniversalProviderProfileAbout,
+} from '@/lib/universal-provider-profile-enrichment';
+import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
 
 // ============================================================================
 // TYPES
@@ -245,6 +253,62 @@ export function UniversalProviderProfile({
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [profileAmenities, setProfileAmenities] = useState<string[]>(provider.amenities || []);
   const [profileCustomAmenities, setProfileCustomAmenities] = useState<string[]>([]);
+  const [profileAbout, setProfileAbout] = useState<UniversalProviderProfileAbout>(() =>
+    mergeProviderAboutFromFacility(provider, null)
+  );
+  const [loadingProfileEnrichment, setLoadingProfileEnrichment] = useState(false);
+  const [displayName, setDisplayName] = useState(provider.name);
+
+  const vendorAccountId = String(provider.vendorId || provider.providerId || '').trim();
+
+  const mapServiceRows = useCallback(
+    (rows: unknown[]): Service[] => {
+      if (category === 'vet') {
+        return mapVendorServicesForVetHub(rows).map((s) => ({
+          id: s.id,
+          serviceId: s.serviceId,
+          name: s.name,
+          description: s.description,
+          price: s.price,
+          duration: s.duration,
+          serviceStyle,
+          categoryName: s.category,
+        }));
+      }
+      return (rows || []).map((raw) => {
+        const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+        return {
+          id: String(s.id ?? s.serviceId ?? ''),
+          serviceId: String(s.serviceId ?? s.id ?? ''),
+          name: String(s.name ?? s.serviceName ?? 'Service'),
+          description:
+            String(s.shortDescription ?? s.description ?? '').trim() || undefined,
+          price: Number(s.price ?? 0),
+          duration: Number(s.duration ?? 30),
+          serviceStyle: String(s.serviceStyle ?? s.service_style ?? serviceStyle),
+          categoryName:
+            String(s.categoryLabel ?? s.category ?? s.categoryName ?? '').trim() ||
+            undefined,
+        };
+      });
+    },
+    [category, serviceStyle]
+  );
+
+  const {
+    services,
+    loading: servicesLoading,
+    loadingMore: servicesLoadingMore,
+    loadMore: loadMoreServices,
+    hasMore: hasMoreServices,
+  } = useProviderServicesLazyLoad<Service>({
+    vendorId: vendorAccountId,
+    serviceStyle,
+    category,
+    phone,
+    mapRows: mapServiceRows,
+    enabled: Boolean(vendorAccountId),
+  });
 
   const showFacilitiesAmenitiesOnAbout =
     shouldShowVendorAmenities(serviceStyle) &&
@@ -292,37 +356,80 @@ export function UniversalProviderProfile({
   }, [phone]);
 
   useEffect(() => {
-    const vid = String(provider.vendorId || provider.providerId || '').trim();
-    if (!vid || !shouldShowVendorAmenities(serviceStyle)) return;
-    if (provider.amenities && provider.amenities.length > 0) {
-      setProfileAmenities(provider.amenities);
-    }
+    setDisplayName(provider.name);
+  }, [provider.name, provider.providerId]);
+
+  useEffect(() => {
+    const vid = vendorAccountId;
+    if (!vid) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
-        const res = (await apiClient.get(`/customer/facility/${encodeURIComponent(vid)}`)) as {
-          success?: boolean;
-          facility?: Record<string, unknown>;
+        const res = (await apiClient.get(`/customer/vendor/${encodeURIComponent(vid)}`)) as {
           vendor?: Record<string, unknown>;
         };
-        if (cancelled || res?.success === false) return;
-        const resolved = resolveCustomerVendorAmenities({
-          ...(res.facility && typeof res.facility === 'object' ? res.facility : {}),
-          ...(res.vendor && typeof res.vendor === 'object' ? res.vendor : {}),
-          ...(provider.amenities ? { amenities: provider.amenities } : {}),
-        });
-        if (!cancelled) {
-          setProfileAmenities(resolved.amenities);
-          setProfileCustomAmenities(resolved.customAmenities);
-        }
+        const vendor = res?.vendor;
+        if (cancelled || !vendor) return;
+        const bn = String(
+          vendor.businessName ?? vendor.business_name ?? vendor.name ?? ''
+        ).trim();
+        if (bn) setDisplayName(bn);
       } catch {
-        /* optional enrichment */
+        /* optional */
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [provider.vendorId, provider.providerId, provider.amenities, serviceStyle]);
+  }, [vendorAccountId]);
+
+  useEffect(() => {
+    setProfileAbout(mergeProviderAboutFromFacility(provider, null));
+    setReviews([]);
+  }, [provider.providerId, provider.vendorId, provider.bio, provider.qualifications]);
+
+  useEffect(() => {
+    const vid = vendorAccountId;
+    if (!vid) return;
+    let cancelled = false;
+    void (async () => {
+      setLoadingProfileEnrichment(true);
+      try {
+        const res = (await apiClient.get(
+          `/customer/facility/${encodeURIComponent(vid)}`
+        )) as {
+          success?: boolean;
+          facility?: Record<string, unknown>;
+          vendor?: Record<string, unknown>;
+          recentReviews?: unknown[];
+        };
+        if (cancelled || res?.success === false) return;
+
+        setProfileAbout(mergeProviderAboutFromFacility(provider, res));
+        const facilityReviews = mapFacilityRecentReviews(res.recentReviews);
+        if (facilityReviews.length > 0) {
+          setReviews(facilityReviews);
+        }
+
+        if (shouldShowVendorAmenities(serviceStyle)) {
+          const resolved = resolveCustomerVendorAmenities({
+            ...(res.facility && typeof res.facility === 'object' ? res.facility : {}),
+            ...(res.vendor && typeof res.vendor === 'object' ? res.vendor : {}),
+            ...(provider.amenities ? { amenities: provider.amenities } : {}),
+          });
+          setProfileAmenities(resolved.amenities);
+          setProfileCustomAmenities(resolved.customAmenities);
+        }
+      } catch {
+        /* optional enrichment */
+      } finally {
+        if (!cancelled) setLoadingProfileEnrichment(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorAccountId, serviceStyle, provider.providerId, provider.amenities]);
 
   const refreshAddresses = async () => {
     if (serviceStyle !== 'at_home') return;
@@ -404,7 +511,7 @@ export function UniversalProviderProfile({
 
     try {
       setLoadingSlots(true);
-      const selectedList = servicesMatchingSelection(provider.services, selectedServices);
+      const selectedList = servicesMatchingSelection(services, selectedServices);
       const sumMinutes = selectedList.reduce((sum, s) => sum + serviceDurationMinutes(s), 0);
       const totalDuration = Math.max(15, sumMinutes > 0 ? sumMinutes : 30);
       const serviceIds = selectedList
@@ -443,20 +550,37 @@ export function UniversalProviderProfile({
     if (selectedDate && showBookingForm) {
       void loadTimeSlots(selectedDate);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid re-running on every `provider.services` array identity from parent
-  }, [selectedDate, showBookingForm, selectedServices, serviceStyle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- services identity from lazy-load hook
+  }, [selectedDate, showBookingForm, selectedServices, serviceStyle, services]);
 
   const loadReviews = async () => {
     const vendorId = provider.vendorId || provider.providerId;
-    if (!vendorId) return;
+    if (!vendorId || reviews.length > 0) return;
 
     try {
       setLoadingReviews(true);
-      const response = await apiClient.get(`/vendor/${vendorId}/reviews`) as any;
-      if (response?.reviews) {
+      try {
+        const facilityRes = (await apiClient.get(
+          `/customer/facility/${encodeURIComponent(vendorId)}`
+        )) as { success?: boolean; recentReviews?: unknown[] };
+        if (facilityRes?.success !== false) {
+          const mapped = mapFacilityRecentReviews(facilityRes.recentReviews);
+          if (mapped.length > 0) {
+            setReviews(mapped);
+            return;
+          }
+        }
+      } catch {
+        /* try vendor reviews fallback */
+      }
+
+      const response = (await apiClient.get(`/vendor/${vendorId}/reviews`)) as {
+        reviews?: Review[];
+      };
+      if (response?.reviews?.length) {
         setReviews(response.reviews);
       }
-    } catch (error) {
+    } catch {
       console.log('Could not load reviews');
     } finally {
       setLoadingReviews(false);
@@ -464,10 +588,10 @@ export function UniversalProviderProfile({
   };
 
   useEffect(() => {
-    if (activeTab === 'reviews' && reviews.length === 0) {
-      loadReviews();
+    if (activeTab === 'reviews' && reviews.length === 0 && !loadingProfileEnrichment) {
+      void loadReviews();
     }
-  }, [activeTab]);
+  }, [activeTab, loadingProfileEnrichment, reviews.length]);
 
   // Toggle service selection (single-select for tele; multi-select for other styles)
   const toggleService = (serviceId: string) => {
@@ -488,7 +612,7 @@ export function UniversalProviderProfile({
   };
 
   // Calculate total for selected services
-  const selectedServicesList = servicesMatchingSelection(provider.services, selectedServices);
+  const selectedServicesList = servicesMatchingSelection(services, selectedServices);
   const totalAmount = selectedServicesList.reduce((sum, s) => sum + s.price, 0);
   const totalDuration = selectedServicesList.reduce((sum, s) => sum + s.duration, 0);
 
@@ -554,7 +678,7 @@ export function UniversalProviderProfile({
       totalDuration,
       provider: {
         id: provider.providerId,
-        name: provider.name,
+        name: displayName || provider.name,
         photo: provider.photo,
         rating: provider.rating,
       },
@@ -572,7 +696,7 @@ export function UniversalProviderProfile({
           {provider.photo && (
             <img 
               src={provider.photo} 
-              alt={provider.name} 
+              alt={displayName || provider.name} 
               className="w-full h-full object-cover opacity-30"
             />
           )}
@@ -603,11 +727,11 @@ export function UniversalProviderProfile({
                   const shareVendorId = String(provider.vendorId || provider.providerId || '').trim();
                   if (!shareVendorId) return;
                   void shareVendorProfile({
-                    title: provider.name,
-                    text: `Check out ${provider.name} on Warmpawz`,
+                    title: displayName || provider.name,
+                    text: `Check out ${displayName || provider.name} on Warmpawz`,
                     vendorId: shareVendorId,
                     persona: universalCategoryToSharePersona(category),
-                    vendorName: provider.name,
+                    vendorName: displayName || provider.name,
                     serviceStyle,
                   });
                 }}
@@ -627,17 +751,17 @@ export function UniversalProviderProfile({
               {/* Avatar */}
               <div className="w-20 h-20 rounded-xl overflow-hidden bg-gradient-to-br from-orange-100 to-amber-100 flex-shrink-0 border-4 border-white shadow-lg -mt-8">
                 {provider.photo ? (
-                  <img src={provider.photo} alt={provider.name} className="w-full h-full object-cover" />
+                  <img src={provider.photo} alt={displayName || provider.name} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-orange-500">
-                    {provider.name.charAt(0)}
+                    {(displayName || provider.name).charAt(0)}
                   </div>
                 )}
               </div>
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <h1 className="font-bold text-lg text-gray-900 truncate">{provider.name}</h1>
+                  <h1 className="font-bold text-lg text-gray-900 truncate">{displayName || provider.name}</h1>
                   {provider.isVerified && (
                     <Shield className="w-4 h-4 text-blue-500 flex-shrink-0" />
                   )}
@@ -889,12 +1013,18 @@ export function UniversalProviderProfile({
             {activeTab === 'services' && (
               <div className="space-y-3">
                 <h3 className="font-medium text-gray-700">Available Services</h3>
-                {provider.services.length === 0 ? (
+                {servicesLoading ? (
+                  <Card className="p-6 text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-2" />
+                    <p className="text-gray-500">Loading services…</p>
+                  </Card>
+                ) : services.length === 0 ? (
                   <Card className="p-6 text-center">
                     <p className="text-gray-500">No services available</p>
                   </Card>
                 ) : (
-                  provider.services.map((service) => {
+                  <>
+                    {services.map((service) => {
                     const isSelected = selectedServices.has(service.id);
                     return (
                       <Card 
@@ -949,51 +1079,78 @@ export function UniversalProviderProfile({
                         <p className="mt-2 text-right text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
                       </Card>
                     );
-                  })
+                  })}
+                    <DiscoveryVendorFeedSentinel
+                      hasMore={hasMoreServices}
+                      loading={servicesLoading}
+                      loadingMore={servicesLoadingMore}
+                      onLoadMore={loadMoreServices}
+                    />
+                  </>
                 )}
               </div>
             )}
 
             {activeTab === 'about' && (
               <div className="space-y-4">
-                {provider.bio && (
+                {loadingProfileEnrichment ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto" />
+                  </div>
+                ) : null}
+
+                {profileAbout.bio ? (
                   <Card className="p-4">
                     <h3 className="font-medium mb-2">About</h3>
-                    <p className="text-sm text-gray-600">{provider.bio}</p>
+                    <p className="text-sm text-gray-600">{profileAbout.bio}</p>
                   </Card>
-                )}
+                ) : null}
 
-                {provider.qualifications && (
+                {profileAbout.qualifications ? (
                   <Card className="p-4">
                     <h3 className="font-medium mb-2 flex items-center gap-2">
                       <GraduationCap className="w-4 h-4 text-purple-500" />
                       Qualifications
                     </h3>
-                    <p className="text-sm text-gray-600">{provider.qualifications}</p>
+                    <p className="text-sm text-gray-600">{profileAbout.qualifications}</p>
                   </Card>
-                )}
+                ) : null}
 
-                {provider.languages && provider.languages.length > 0 && (
+                {profileAbout.languages.length > 0 ? (
                   <Card className="p-4">
                     <h3 className="font-medium mb-2">Languages</h3>
                     <div className="flex flex-wrap gap-2">
-                      {provider.languages.map((lang) => (
+                      {profileAbout.languages.map((lang) => (
                         <Badge key={lang} variant="secondary">{lang}</Badge>
                       ))}
                     </div>
                   </Card>
-                )}
+                ) : null}
 
-                {provider.address && (
+                {profileAbout.address ? (
                   <Card className="p-4">
                     <h3 className="font-medium mb-2 flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-gray-500" />
                       Location
                     </h3>
-                    <p className="text-sm text-gray-600">{provider.address}</p>
-                    {provider.city && <p className="text-sm text-gray-500">{provider.city}</p>}
+                    <p className="text-sm text-gray-600">{profileAbout.address}</p>
+                    {profileAbout.city ? (
+                      <p className="text-sm text-gray-500">{profileAbout.city}</p>
+                    ) : null}
                   </Card>
-                )}
+                ) : null}
+
+                {!loadingProfileEnrichment &&
+                !profileAbout.bio &&
+                !profileAbout.qualifications &&
+                profileAbout.languages.length === 0 &&
+                !profileAbout.address &&
+                (!showFacilitiesAmenitiesOnAbout ||
+                  (profileAmenities.length === 0 && profileCustomAmenities.length === 0)) ? (
+                  <Card className="p-6 text-center">
+                    <p className="text-gray-500">No additional information available</p>
+                  </Card>
+                ) : null}
 
                 {showFacilitiesAmenitiesOnAbout && (
                   <Card className="p-4">

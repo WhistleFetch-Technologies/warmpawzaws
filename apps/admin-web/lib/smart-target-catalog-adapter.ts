@@ -241,6 +241,12 @@ export function createAdminSmartTargetAdapter(
   };
 }
 
+function parseCatalogServicePrice(raw: unknown): number | undefined {
+  if (raw == null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 /** Prefer UUID `id` (vendor_services.service_id FK) plus text service_id as subtitle. */
 function mapCatalogServiceRow(s: Record<string, unknown>): TargetOption | null {
   const uuid = String(s.id ?? '').trim();
@@ -253,9 +259,11 @@ function mapCatalogServiceRow(s: Record<string, unknown>): TargetOption | null {
   ).trim();
   const categoryName = s.category_name ?? s.categoryName;
   const style = s.service_style ?? s.serviceStyle;
+  const price = parseCatalogServicePrice(s.base_price ?? s.basePrice ?? s.price);
   const subtitleParts = [
     categoryName ? String(categoryName) : '',
     style ? String(style).replace(/_/g, ' ') : '',
+    price != null ? `₹${price}` : '',
     textId && textId !== id ? textId : '',
   ].filter(Boolean);
   return {
@@ -263,6 +271,7 @@ function mapCatalogServiceRow(s: Record<string, unknown>): TargetOption | null {
     label: label || id,
     subtitle: subtitleParts.length ? subtitleParts.join(' · ') : undefined,
     group: categoryName ? String(categoryName) : undefined,
+    price,
   };
 }
 

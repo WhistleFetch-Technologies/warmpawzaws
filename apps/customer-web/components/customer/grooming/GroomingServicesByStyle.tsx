@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react';
 import { ArrowLeft, Star, MapPin, Clock, Building2, Home, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Scissors, Sparkles, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -31,6 +31,18 @@ import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { isDiscoveryAutoApplyPromotion } from '@/lib/promotion-banner-filter';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
+import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
+import { useDiscoveryProfileVendorResolve } from '@/hooks/useDiscoveryProfileVendorResolve';
+import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
+import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
+import { applyGroomingPromotionsToServices } from '@/lib/apply-grooming-promotions-to-services';
+import {
+  buildVendorServicesPageUrl,
+  vendorServicesNextCursor,
+  vendorServicesRowsFromResponse,
+} from '@/lib/vendor-services-page';
+import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -80,6 +92,10 @@ interface Provider {
     category?: string;
     isPackage?: boolean;
   }[];
+  servicesHydrated?: boolean;
+  servicesNextCursor?: string | null;
+  servicesLoadingMore?: boolean;
+  priceMin?: number;
 }
 
 export function GroomingServicesByStyle({ 
@@ -106,19 +122,233 @@ export function GroomingServicesByStyle({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
-  const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
-  
-  // ✅ NEW: Promotions state
+  const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
+  const providersRef = useRef(providers);
+  providersRef.current = providers;
   const [promotions, setPromotions] = useState<any[]>([]);
-  
-  // ✅ NEW: Filter and sort state for provider listing
-  const [providerSortBy, setProviderSortBy] = useState<'distance' | 'rating' | 'relevance' | 'reviews'>('relevance');
+  const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
+
+  const feedEnabled = launchGate.ready && !launchGate.blocked;
+  const {
+    rows: feedRows,
+    loading: feedLoading,
+    loadingMore,
+    hasMore,
+    loadMore,
+  } = useByStyleDiscoveryFeed({
+    phone,
+    serviceStyle,
+    category,
+    specialization,
+    enabled: feedEnabled,
+  });
+
+  const mapRowToGroomingProvider = useCallback((row: Record<string, unknown>): Provider => {
+    const base = mapDiscoveryRowBaseFields(row);
+    const label = base.nextAvailableSlot;
+    return {
+      providerId: base.providerId,
+      providerType: 'vendor',
+      vendorId: base.vendorId,
+      name: base.name,
+      phone: base.phone,
+      photo: base.photo,
+      address: base.address,
+      city: base.city,
+      role: base.role,
+      specialisation:
+        (row.specialisation as string) ||
+        (row.specialization as string) ||
+        base.specialization,
+      amenities: Array.isArray(row.amenities) ? (row.amenities as string[]) : [],
+      experienceYears: base.experienceYears,
+      qualifications: base.qualifications,
+      rating: String(base.rating),
+      reviewCount: base.reviewCount,
+      distance: base.distance != null ? Number(base.distance) : null,
+      isVerified: base.isVerified,
+      isIndividualProvider: base.isIndividualProvider,
+      nextAvailableSlot:
+        label && label !== 'Tap to view availability' ? label : undefined,
+      priceMin: base.priceMin,
+      services: [],
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!feedEnabled) {
+      if (launchGate.ready && launchGate.blocked) setLoading(false);
+      return;
+    }
+    let mapped = feedRows.map(mapRowToGroomingProvider);
+    if (vendorId) {
+      const want = String(vendorId);
+      mapped = mapped.filter(
+        (p) => p.providerId === want || p.vendorId === want
+      );
+    }
+    setProviders((prev) => mergeDiscoveryProvidersPreservingServices(prev, mapped));
+    setLoading(feedLoading);
+  }, [feedEnabled, feedRows, feedLoading, vendorId, mapRowToGroomingProvider, launchGate.ready, launchGate.blocked]);
+
+  const { showProfileLoading, profileResolveFailed } = useDiscoveryProfileVendorResolve({
+    vendorId,
+    feedEnabled,
+    feedLoading,
+    providers,
+    mapRow: mapRowToGroomingProvider,
+    setProviders,
+  });
+
+  useEffect(() => {
+    if (!feedEnabled || !vendorId) return;
+    loadVendorProfile();
+  }, [feedEnabled, vendorId, serviceStyle]);
+
+  const fetchProviderServices = useCallback(
+    async (providerId: string, append = false) => {
+      const p = providersRef.current.find((x) => x.providerId === providerId);
+      if (!p) return;
+      if (append) {
+        if (!p.servicesNextCursor || p.servicesLoadingMore) return;
+      } else if (p.servicesHydrated) {
+        return;
+      }
+      const vid = p.vendorId || p.providerId;
+      if (append) {
+        setProviders((prev) =>
+          prev.map((v) =>
+            v.providerId === providerId ? { ...v, servicesLoadingMore: true } : v
+          )
+        );
+      } else {
+        setFetchingServicesFor(providerId);
+      }
+      try {
+        const url = buildVendorServicesPageUrl({
+          vendorId: vid,
+          serviceStyle,
+          category,
+          customerPhone: phone || undefined,
+          cursor: append ? p.servicesNextCursor : undefined,
+        });
+        const res = await apiClient.get(url);
+        const rows = vendorServicesRowsFromResponse(
+          res as { services?: unknown[]; packages?: unknown[] }
+        );
+        const withPromos = applyGroomingPromotionsToServices(
+          rows as Record<string, unknown>[],
+          promotions,
+          category
+        );
+        const services = withPromos.map((s) => ({
+          id: String(s.id ?? s.serviceId ?? ''),
+          serviceId: String(s.serviceId ?? s.id ?? ''),
+          name: String(s.name ?? 'Service'),
+          price: Number(s.price ?? 0),
+          originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
+          discountPercentage:
+            s.discountPercentage != null ? Number(s.discountPercentage) : undefined,
+          discountAmount: s.discountAmount != null ? Number(s.discountAmount) : undefined,
+          promotionId: s.promotionId as string | undefined,
+          duration: Number(s.duration ?? 30),
+          description: s.description as string | undefined,
+          category: s.category as string | undefined,
+          isPackage: Boolean(s.isPackage),
+        }));
+        const nextCursor = vendorServicesNextCursor(res);
+        setProviders((prev) =>
+          prev.map((v) => {
+            if (v.providerId !== providerId) return v;
+            const seen = new Set(
+              append ? v.services.map((s) => s.id || s.serviceId) : []
+            );
+            const merged = append ? [...v.services] : [];
+            for (const s of services) {
+              const key = s.id || s.serviceId;
+              if (key && seen.has(key)) continue;
+              if (key) seen.add(key);
+              merged.push(s);
+            }
+            return {
+              ...v,
+              services: merged,
+              servicesHydrated: true,
+              servicesNextCursor: nextCursor,
+              servicesLoadingMore: false,
+            };
+          })
+        );
+      } catch (e) {
+        console.warn('[GroomingServicesByStyle] vendor services fetch failed', e);
+        setProviders((prev) =>
+          prev.map((v) =>
+            v.providerId === providerId
+              ? { ...v, servicesHydrated: true, servicesLoadingMore: false }
+              : v
+          )
+        );
+      } finally {
+        setFetchingServicesFor(null);
+      }
+    },
+    [phone, serviceStyle, category, promotions]
+  );
+
+  const loadMoreProviderServices = useCallback(
+    (providerId: string) => {
+      void fetchProviderServices(providerId, true);
+    },
+    [fetchProviderServices]
+  );
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const p = providers.find((x) => x.providerId === selectedProvider);
+    if (!p || p.servicesHydrated) return;
+    if (fetchingServicesFor === selectedProvider) return;
+    void fetchProviderServices(selectedProvider);
+  }, [selectedProvider, providers, fetchingServicesFor, fetchProviderServices]);
+
+  useEffect(() => {
+    if (!vendorId || providers.length !== 1) return;
+    const p = providers[0];
+    if (p.servicesHydrated) return;
+    if (fetchingServicesFor === p.providerId) return;
+    void fetchProviderServices(p.providerId);
+  }, [vendorId, providers, fetchingServicesFor, fetchProviderServices]);
+
+  // Check if we're in profile view mode (vendorId provided and single provider)
+  const isProfileView = vendorId && providers.length === 1;
+  const profileProvider = isProfileView ? providers[0] : null;
+
+  const [providerSortBy, setProviderSortBy] = useState<
+    'distance' | 'rating' | 'relevance' | 'reviews'
+  >('relevance');
   const [providerFilter, setProviderFilter] = useState<{
     minRating?: number;
     maxDistance?: number;
     specialisation?: string;
     amenities?: string[];
   }>({});
+
+  const loadPromotions = async () => {
+    try {
+      const response = (await apiClient.get('/promotions/active')) as any;
+      if (response.success && response.promotions) {
+        const discoveryPromos = (response.promotions || []).filter(
+          isDiscoveryAutoApplyPromotion
+        );
+        setPromotions(discoveryPromos);
+      }
+    } catch (error) {
+      console.error('Error loading promotions:', error);
+    }
+  };
+
+  useEffect(() => {
+    void loadPromotions();
+  }, []);
 
   const salonCenterDiscovery = useDiscoveryCount({
     phone,
@@ -166,177 +396,6 @@ export function GroomingServicesByStyle({
     if (serviceStyle === 'at_center') return 'Visit our premium grooming salons';
     if (serviceStyle === 'at_home') return 'Professional groomer comes to you';
     return 'Premium pet grooming services';
-  };
-
-  // Check if we're in profile view mode (vendorId provided and single provider)
-  const isProfileView = vendorId && providers.length === 1;
-  const profileProvider = isProfileView ? providers[0] : null;
-
-  useEffect(() => {
-    if (!launchGate.ready || launchGate.blocked) {
-      if (launchGate.ready && launchGate.blocked) setLoading(false);
-      return;
-    }
-    loadServicesByStyle();
-    if (vendorId) {
-      loadVendorProfile();
-    }
-  }, [launchGate.ready, launchGate.blocked, serviceStyle, vendorId, specialization]);
-
-  // ✅ NEW: Load active promotions for discount display
-  useEffect(() => {
-    loadPromotions();
-  }, []);
-
-  const loadPromotions = async () => {
-    try {
-      const response = await apiClient.get('/promotions/active') as any;
-      if (response.success && response.promotions) {
-        const discoveryPromos = (response.promotions || []).filter(isDiscoveryAutoApplyPromotion);
-        setPromotions(discoveryPromos);
-        console.log(`✅ [Grooming] Loaded ${discoveryPromos.length} active promotions`);
-      }
-    } catch (error) {
-      console.error('Error loading promotions:', error);
-      // Don't block UI if promotions fail to load
-    }
-  };
-
-  const loadServicesByStyle = async () => {
-    // Get customer location from localStorage for distance-based sorting
-    let locationParams = '';
-    try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
-      }
-    } catch (e) {
-      console.log('Could not get customer location');
-    }
-
-    try {
-      setLoading(true);
-      console.log(`🔵 [Grooming] Discovering providers: category=${category}, serviceStyle=${serviceStyle}`);
-
-      // Use by-style endpoint (primary)
-      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const specializationParam = specialization
-        ? `&specialization=${encodeURIComponent(specialization)}`
-        : '';
-      const byStyleUrl = `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`;
-      console.log(`🔵 [Grooming] specialization prop="${specialization}" url=${byStyleUrl}`);
-        const response = await apiClient.get(byStyleUrl) as any;
-        console.log(`🔵 [Grooming] by-style response: specializationApplied=${(response as any).specializationApplied ?? 'n/a'} total=${(response as any).total}`);
-
-      if (response.success) {
-        let byStyleProviders = response.providers || response.vendors || [];
-        // at_home / tele / at_center: backend + Admin role_config gate vendors; do not strip business here
-
-        // ✅ FIX: Enhance provider data with specialisation and amenities
-        byStyleProviders = byStyleProviders.map((p: any) => ({
-          ...p,
-          services: Array.isArray(p.services) ? p.services : [],
-          specialisation: p.specialisation || p.vendorSpecialisation || p.vendor?.specialisation || p.specialization,
-          amenities: Array.isArray(p.amenities) ? p.amenities : 
-                    (p.vendorAmenities ? (Array.isArray(p.vendorAmenities) ? p.vendorAmenities : [p.vendorAmenities]) : 
-                    (p.vendor?.amenities ? (Array.isArray(p.vendor.amenities) ? p.vendor.amenities : [p.vendor.amenities]) : 
-                    (p.facility?.amenities ? (Array.isArray(p.facility.amenities) ? p.facility.amenities : [p.facility.amenities]) : []))),
-          nextAvailableSlot: (() => {
-            const label = resolveNextAvailableLabel(p);
-            if (!label) return undefined;
-            // Only show real slot labels, not the generic fallback text
-            if (label === 'Tap to view availability') return undefined;
-            return label;
-          })(),
-        }));
-        
-        // Filter to specific vendor if vendorId is provided (vendor profile mode)
-        if (vendorId) {
-          byStyleProviders = byStyleProviders.filter((p: any) => 
-            (p.providerId || p.vendorId || p.id) === vendorId
-          );
-        }
-        
-        // ✅ NEW: Apply promotions to services in providerData
-        const enrichedProviders = await Promise.all(
-          byStyleProviders.map(async (p: any) => {
-            if (p.services && Array.isArray(p.services)) {
-              const enrichedServices = await Promise.all(
-                p.services.map(async (s: any) => {
-                  const basePrice = s.price || 0;
-                  let finalPrice = basePrice;
-                  let originalPrice = basePrice;
-                  let discountPercentage: number | undefined;
-                  let discountAmount: number | undefined;
-                  let promotionId: string | undefined;
-
-                  // Check for applicable promotions
-                  if (promotions.length > 0) {
-                    const applicablePromo = promotions.find((promo: any) => {
-                      const appliesToService = !promo.applicable_services || 
-                        promo.applicable_services.length === 0 ||
-                        promo.applicable_services.includes(s.id || s.serviceId);
-                      
-                      const appliesToCategory = !promo.applicable_roles || 
-                        promo.applicable_roles.length === 0 ||
-                        promo.applicable_roles.includes(category);
-                      
-                      const now = new Date();
-                      const startDate = new Date(promo.start_date);
-                      const endDate = promo.end_date ? new Date(promo.end_date) : null;
-                      const isActive = now >= startDate && (!endDate || now <= endDate);
-                      
-                      return appliesToService && appliesToCategory && isActive && promo.is_active;
-                    });
-
-                    if (applicablePromo) {
-                      originalPrice = basePrice;
-                      promotionId = applicablePromo.id;
-                      
-                      if (applicablePromo.discount_type === 'percentage') {
-                        discountPercentage = parseFloat(applicablePromo.discount_value || '0');
-                        discountAmount = (basePrice * discountPercentage) / 100;
-                        if (applicablePromo.max_discount_amount) {
-                          discountAmount = Math.min(discountAmount, parseFloat(applicablePromo.max_discount_amount));
-                        }
-                        finalPrice = Math.max(0, basePrice - discountAmount);
-                      } else if (applicablePromo.discount_type === 'fixed') {
-                        discountAmount = parseFloat(applicablePromo.discount_value || '0');
-                        finalPrice = Math.max(0, basePrice - discountAmount);
-                        discountPercentage = Math.round((discountAmount / basePrice) * 100);
-                      }
-                    }
-                  }
-
-                  return {
-                    ...s,
-                    price: finalPrice,
-                    originalPrice: originalPrice !== finalPrice ? originalPrice : undefined,
-                    discountPercentage,
-                    discountAmount,
-                    promotionId,
-                  };
-                })
-              );
-              return { ...p, services: enrichedServices };
-            }
-            return p;
-          })
-        );
-
-        setProviders(enrichedProviders);
-        console.log(`✅ [Grooming] Loaded ${enrichedProviders.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services (by-style)`);
-      } else {
-        console.warn('⚠️ [Grooming] by-style API returned success=false');
-        setProviders([]);
-      }
-    } catch (error) {
-      console.error('❌ [Grooming] Error loading services by style:', error);
-        setProviders([]);
-    } finally {
-      setLoading(false);
-    }
   };
 
   // Load vendor and facility details for profile view
@@ -653,7 +712,7 @@ export function GroomingServicesByStyle({
     );
   }
 
-  if (loading) {
+  if (loading || showProfileLoading) {
     return (
       <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-white">
         <div className="text-center">
@@ -1037,6 +1096,12 @@ export function GroomingServicesByStyle({
                       );
                     })}
                   </div>
+                ) : fetchingServicesFor === profileProvider.providerId ||
+                  !profileProvider.servicesHydrated ? (
+                  <div className="text-center py-16">
+                    <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
+                    <p className="text-gray-600">Loading services…</p>
+                  </div>
                 ) : (
                   <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
                     <Scissors className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -1199,7 +1264,15 @@ export function GroomingServicesByStyle({
 
       {/* Content */}
       <div className="px-4 cw-scroll-pad-tabbar">
-        {providers.length === 0 ? (
+        {vendorId && providers.length !== 1 ? (
+          profileResolveFailed ? (
+            <Card className="p-8 text-center bg-white">
+              <h3 className="font-semibold text-gray-900 mb-2">Provider not found</h3>
+              <p className="text-gray-500 text-sm mb-4">This provider may no longer be available.</p>
+              <Button onClick={onBack} variant="outline">Go back</Button>
+            </Card>
+          ) : null
+        ) : providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               {getStyleIcon()}
@@ -1217,7 +1290,7 @@ export function GroomingServicesByStyle({
           </Card>
         ) : (
           <div className="space-y-4">
-            {/* ✅ FIXED: Filter and Sort Bar with actual filter controls */}
+            {/* Sort only — provider filters hidden until distance/rating filters work reliably */}
             <Card className="bg-white p-4 space-y-3">
               {/* Sort Dropdown */}
               <div className="flex items-center gap-3">
@@ -1232,55 +1305,6 @@ export function GroomingServicesByStyle({
                   <option value="rating">Sort: Rating</option>
                   <option value="reviews">Sort: Most Reviews</option>
                 </select>
-              </div>
-              
-              {/* ✅ NEW: Filter Controls */}
-              <div className="pt-3 border-t border-gray-200 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-gray-600" />
-                  <span className="text-sm font-medium text-gray-700">Filters</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {/* Min Rating Filter */}
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Min Rating</label>
-                    <select
-                      value={providerFilter.minRating || ''}
-                      onChange={(e) => setProviderFilter({ ...providerFilter, minRating: e.target.value ? Number(e.target.value) : undefined })}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                    >
-                      <option value="">Any</option>
-                      <option value="3">3+ Stars</option>
-                      <option value="4">4+ Stars</option>
-                      <option value="4.5">4.5+ Stars</option>
-                    </select>
-                  </div>
-                  
-                  {/* Max Distance Filter */}
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Max Distance</label>
-                    <select
-                      value={providerFilter.maxDistance || ''}
-                      onChange={(e) => setProviderFilter({ ...providerFilter, maxDistance: e.target.value ? Number(e.target.value) : undefined })}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                    >
-                      <option value="">Any</option>
-                      <option value="5">Within 5 km</option>
-                      <option value="10">Within 10 km</option>
-                      <option value="20">Within 20 km</option>
-                    </select>
-                  </div>
-                </div>
-                
-                {/* Clear Filters Button */}
-                {(providerFilter.minRating || providerFilter.maxDistance || providerFilter.specialisation || (providerFilter.amenities && providerFilter.amenities.length > 0)) && (
-                  <button
-                    onClick={() => setProviderFilter({})}
-                    className="w-full text-xs text-[#FF8C42] hover:text-[#E67A35] font-medium py-1"
-                  >
-                    Clear Filters
-                  </button>
-                )}
               </div>
             </Card>
             
@@ -1317,18 +1341,7 @@ export function GroomingServicesByStyle({
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      {/* Provider Photo or Initial */}
-                      {provider.photo ? (
-                        <img 
-                          src={provider.photo} 
-                          alt={provider.name}
-                          className="w-12 h-12 rounded-full object-cover border-2 border-[#FF8C42]"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 bg-[#FF8C42] rounded-full flex items-center justify-center text-white font-bold text-lg">
-                          {provider.name.charAt(0)}
-                        </div>
-                      )}
+                      <DiscoveryProviderAvatar name={provider.name} photo={provider.photo} />
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-gray-900">{provider.name}</h3>
@@ -1420,7 +1433,12 @@ export function GroomingServicesByStyle({
                     <h4 className="text-sm font-medium text-gray-600 mb-2">
                       Available Services ({provider.services.length})
                     </h4>
-                    {provider.services.length > 0 ? (
+                    {fetchingServicesFor === provider.providerId && !provider.servicesHydrated ? (
+                      <div className="bg-white rounded-lg p-6 text-center">
+                        <Loader2 className="w-8 h-8 animate-spin text-[#FF8C42] mx-auto mb-2" />
+                        <p className="text-sm text-gray-500">Loading services…</p>
+                      </div>
+                    ) : provider.services.length > 0 ? (
                       provider.services.map((service) => {
                         const descTrim = service.description?.trim() ?? '';
                         return (
@@ -1490,22 +1508,44 @@ export function GroomingServicesByStyle({
                           </div>
                         );
                       })
-                    ) : (
+                    ) : provider.servicesHydrated ? (
                       <div className="bg-white rounded-lg p-4 text-center text-gray-500 text-sm">
                         No services available from this provider
                       </div>
-                    )}
+                    ) : null}
+                    <DiscoveryVendorFeedSentinel
+                      hasMore={!!provider.servicesNextCursor}
+                      loading={fetchingServicesFor === provider.providerId}
+                      loadingMore={!!provider.servicesLoadingMore}
+                      onLoadMore={() => loadMoreProviderServices(provider.providerId)}
+                    />
                   </div>
                 )}
 
-                {!expanded && provider.services.length > 0 && (
+                {!expanded && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
-                      {provider.services[0] && (
-                        <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(
-                          Math.min(...provider.services.map(s => s.price))
-                        )}</span>
+                      {provider.services.length > 0 ? (
+                        <>
+                          {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
+                          {provider.services.length !== 1 ? 's' : ''} available
+                          <span className="text-gray-900 font-medium">
+                            {' '}
+                            from{' '}
+                            {formatPriceWithSymbol(
+                              Math.min(...provider.services.map((s) => s.price))
+                            )}
+                          </span>
+                        </>
+                      ) : provider.priceMin != null && provider.priceMin > 0 ? (
+                        <span>
+                          Services available{' '}
+                          <span className="text-gray-900 font-medium">
+                            from {formatPriceWithSymbol(provider.priceMin)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span>Tap to view services</span>
                       )}
                     </div>
                     <Button
@@ -1515,6 +1555,7 @@ export function GroomingServicesByStyle({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedProvider(provider.providerId);
+                        void fetchProviderServices(provider.providerId);
                       }}
                     >
                       View Services
@@ -1524,6 +1565,12 @@ export function GroomingServicesByStyle({
               </Card>
             );
             })}
+            <DiscoveryVendorFeedSentinel
+              hasMore={hasMore && !vendorId}
+              loading={loading}
+              loadingMore={loadingMore}
+              onLoadMore={() => void loadMore()}
+            />
           </div>
         )}
       </div>

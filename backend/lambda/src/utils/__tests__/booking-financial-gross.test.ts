@@ -72,6 +72,26 @@ describe('resolveLockedBookingGrossFromNotes', () => {
     expect(locked!.grossTotal).toBe(10.62);
     expect(locked!.source).toBe('finalPaid_only');
   });
+
+  it('prefers finalPaid when persisted subtotalAfterDiscounts disagrees with coupon discount (COLLABCODE prod regression)', () => {
+    const notes =
+      'wp_financial_meta:{"servicePrice":1999,"vendorDiscount":0,"platformDiscount":0,"couponDiscount":1999,"subtotalAfterDiscounts":1999,"cgst":0,"sgst":0,"igst":0,"totalTax":0,"platformFee":40,"convenienceFee":0,"deliveryFee":0,"walletAmount":0,"finalPaid":40}';
+    const locked = resolveLockedBookingGrossFromNotes(notes);
+    expect(locked).not.toBeNull();
+    expect(locked!.subtotalAfterDiscounts).toBe(0);
+    expect(locked!.grossTotal).toBe(40);
+    expect(locked!.source).toBe('components');
+  });
+
+  it('falls back to finalPaid when component gross disagrees with finalPaid', () => {
+    const notes =
+      'wp_financial_meta:{"servicePrice":1999,"couponDiscount":500,"subtotalAfterDiscounts":1999,"totalTax":100,"platformFee":40,"finalPaid":639}';
+    const locked = resolveLockedBookingGrossFromNotes(notes);
+    expect(locked).not.toBeNull();
+    expect(locked!.subtotalAfterDiscounts).toBe(1499);
+    expect(locked!.grossTotal).toBe(639);
+    expect(locked!.source).toBe('finalPaid_only');
+  });
 });
 
 describe('computeWalletBookingSplit', () => {

@@ -114,6 +114,7 @@ import {
 
 // Import theme
 import { colors } from './src/theme/colors';
+import { prefetchCommerceSwitchConfigurationOnStartup } from './src/lib/commerce-switch-client';
 
 const Stack = createNativeStackNavigator();
 
@@ -124,6 +125,10 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [onboardingStage, setOnboardingStage] = useState<string | null>(null);
   const [showUserProfile, setShowUserProfile] = useState(false);
+
+  useEffect(() => {
+    prefetchCommerceSwitchConfigurationOnStartup();
+  }, []);
 
   useEffect(() => {
     // Restore the persisted customer session at cold start so users who
@@ -819,6 +824,7 @@ export default function App() {
                         orderId={props.route?.params?.orderId || ''}
                         order={props.route?.params?.order}
                         phone={session.phone}
+                        customerId={session.customerId}
                         onBack={() => handleNavigate('OrderHistory')}
                         onNavigate={handleNavigate}
                       />

@@ -1125,6 +1125,9 @@ export const ordersApi = {
     reason?: string;
   }) => apiClient.post(`/orders/${orderId}/cancel`, data),
 
+  cancelDraft: (orderId: string, data?: { reason?: string }) =>
+    apiClient.post(`/customer/orders/${orderId}/cancel-draft`, data ?? {}),
+
   returnOrder: (
     orderId: string,
     data?: { reason?: string; items?: Array<{ orderItemId: string; quantity?: number }> }

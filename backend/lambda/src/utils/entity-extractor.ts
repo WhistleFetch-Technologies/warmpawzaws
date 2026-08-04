@@ -442,6 +442,20 @@ export function buildBookingResponse(booking: any, extras?: {
       booking.total_duration_minutes != null
         ? Number(booking.total_duration_minutes)
         : booking.totalDurationMinutes,
+    commerceMode: booking.commerce_mode ?? booking.commerceMode ?? 'marketplace',
+    commerce_mode: booking.commerce_mode ?? booking.commerceMode ?? 'marketplace',
+    commerceVersion:
+      booking.commerce_version != null
+        ? Number(booking.commerce_version)
+        : booking.commerceVersion != null
+          ? Number(booking.commerceVersion)
+          : undefined,
+    commerce_version:
+      booking.commerce_version != null
+        ? Number(booking.commerce_version)
+        : booking.commerceVersion != null
+          ? Number(booking.commerceVersion)
+          : undefined,
   };
 }
 

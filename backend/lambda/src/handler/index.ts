@@ -154,6 +154,7 @@ import { registerMealCanonicalSubscriptionEndpoints } from '../endpoints/meal-ca
 import { registerMealDeliveryNotificationEndpoints } from '../endpoints/meal-delivery-notifications';
 import { registerMealRefundCaseEndpoints } from '../endpoints/meal-refund-cases';
 import { registerAdminRefundHubEndpoints } from '../endpoints/admin-refund-hub';
+import { registerAdminShopRefundsEndpoints } from '../endpoints/admin-shop-refunds';
 import { registerMealSubscriptionVendorOperationalEndpoints } from '../endpoints/meal-subscription-vendor-endpoints';
 import { registerNutritionOrderEndpoints } from '../endpoints/nutrition-orders';
 import { registerVendorBankAccountEndpoints } from '../endpoints/vendor/endpoints/vendor-bank-accounts';
@@ -181,6 +182,7 @@ import { registerPlatformTaxEndpoints } from '../endpoints/platform-tax-document
 import { registerReviewsEnhancedEndpoints } from '../endpoints/reviews-enhanced';
 import { registerReturnsEnhancedEndpoints } from '../endpoints/returns-enhanced';
 import { registerFeeConfigEndpoints } from '../endpoints/fee-config';
+import { registerCommerceSwitchEndpoints } from '../endpoints/commerce-switch.endpoints';
 import { registerKYCVerificationEndpoints } from '../endpoints/kyc-verification';
 import { registerSpecializationMasterEndpoints } from '../endpoints/specialization-master';
 import platformPoliciesApp from '../endpoints/platform-policies';
@@ -378,6 +380,7 @@ app.use('*', async (c, next) => {
 app.use('*', actionSourceMiddleware());
 
 // Authentication audit logging (for security monitoring)
+app.use('*', requireAuth());
 app.use('*', authAuditLog());
 
 // ✅ TEMPORARY: Migration endpoint (registered BEFORE admin auth middleware)
@@ -700,6 +703,7 @@ registerMealCanonicalSubscriptionEndpoints(app);
 registerMealDeliveryNotificationEndpoints(app);
 registerMealRefundCaseEndpoints(app);
 registerAdminRefundHubEndpoints(app);
+registerAdminShopRefundsEndpoints(app);
 registerMealSubscriptionVendorOperationalEndpoints(app);
 registerMealPlanEndpoints(app);
 registerNutritionOrderEndpoints(app); // ✅ FIX GAP-9.3 & 9.4: Nutrition order tracking
@@ -818,6 +822,7 @@ registerProblemGridEndpoints(app);
 registerVendorDashboardMissingEndpoints(app);
 registerUIDashboardConfigEndpoints(app); // UI Dashboard Configuration (Marketing > Dashboard UI) - LEGACY, kept for backward compatibility
 registerServiceLaunchConfigEndpoints(app); // Service Launch Config by Geography (Marketing > Dashboard UI) - NEW
+registerCommerceSwitchEndpoints(app); // Platform Commerce Switch (active commerce model)
 registerCarePlansEndpoints(app); // Care Plans Generation (Support/CRM > Complete Plan)
 registerVendorSupportEndpoints(app); // Vendor Support Tickets
 registerVendorLiveStatusEndpoints(app); // Vendor/Staff Live Status Eligibility for Customer App Listing

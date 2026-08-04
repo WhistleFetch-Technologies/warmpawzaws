@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
-import { filterProvidersServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
+import { filterServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
@@ -29,6 +29,18 @@ import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
+import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
+import { useDiscoveryProfileVendorResolve } from '@/hooks/useDiscoveryProfileVendorResolve';
+import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
+import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
+import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
+import {
+  buildVendorServicesPageUrl,
+  vendorServicesNextCursor,
+  vendorServicesRowsFromResponse,
+} from '@/lib/vendor-services-page';
+import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -78,6 +90,11 @@ interface Provider {
     category?: string;
     isPackage?: boolean;
   }[];
+  /** First page of vendor services loaded (card mode). */
+  servicesHydrated?: boolean;
+  servicesNextCursor?: string | null;
+  servicesLoadingMore?: boolean;
+  priceMin?: number;
 }
 
 export function VetServicesByStyle({ 
@@ -106,76 +123,176 @@ export function VetServicesByStyle({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
+  const providersRef = useRef(providers);
+  providersRef.current = providers;
   const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
 
-  // Check if we're in profile view mode (vendorId provided and single provider)
-  const isProfileView = vendorId && providers.length === 1;
-  const profileProvider = isProfileView ? providers[0] : null;
+  const feedEnabled = launchGate.ready && !launchGate.blocked;
+  const {
+    rows: feedRows,
+    loading: feedLoading,
+    loadingMore,
+    hasMore,
+    loadMore,
+  } = useByStyleDiscoveryFeed({
+    phone,
+    serviceStyle,
+    category,
+    specialization,
+    enabled: feedEnabled,
+  });
+
+  const mapRowToProvider = useCallback((row: Record<string, unknown>): Provider => {
+    const base = mapDiscoveryRowBaseFields(row);
+    return {
+      providerId: base.providerId,
+      providerType: 'vendor',
+      vendorId: base.vendorId,
+      name: base.name,
+      phone: base.phone,
+      photo: base.photo,
+      address: base.address,
+      city: base.city,
+      role: base.role,
+      experienceYears: base.experienceYears,
+      qualifications: base.qualifications,
+      rating: String(base.rating),
+      reviewCount: base.reviewCount,
+      distance: base.distance != null ? Number(base.distance) : null,
+      isVerified: base.isVerified,
+      isIndividualProvider: base.isIndividualProvider,
+      priceMin: base.priceMin,
+      services: [],
+    };
+  }, []);
 
   useEffect(() => {
-    if (!launchGate.ready || launchGate.blocked) {
+    if (!feedEnabled) {
       if (launchGate.ready && launchGate.blocked) setLoading(false);
       return;
     }
-    loadServicesByStyle();
+    let mapped = feedRows.map(mapRowToProvider);
     if (vendorId) {
-      loadVendorProfile();
+      const want = String(vendorId);
+      mapped = mapped.filter(
+        (p) => p.providerId === want || p.vendorId === want
+      );
     }
-  }, [launchGate.ready, launchGate.blocked, serviceStyle, vendorId, specialization]);
+    setProviders((prev) => mergeDiscoveryProvidersPreservingServices(prev, mapped));
+    setLoading(feedLoading);
+  }, [feedEnabled, feedRows, feedLoading, vendorId, mapRowToProvider, launchGate.ready, launchGate.blocked]);
 
-  const loadServicesByStyle = async () => {
-    // Get customer location from localStorage for distance-based sorting
-    let locationParams = '';
-    try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
+  const { showProfileLoading, profileResolveFailed } = useDiscoveryProfileVendorResolve({
+    vendorId,
+    feedEnabled,
+    feedLoading,
+    providers,
+    mapRow: mapRowToProvider,
+    setProviders,
+  });
+
+  useEffect(() => {
+    if (!feedEnabled || !vendorId) return;
+    loadVendorProfile();
+  }, [feedEnabled, vendorId, serviceStyle]);
+
+  const fetchProviderServices = useCallback(
+    async (providerId: string, append = false) => {
+      const p = providersRef.current.find((x) => x.providerId === providerId);
+      if (!p) return;
+      if (append) {
+        if (!p.servicesNextCursor || p.servicesLoadingMore) return;
+      } else if (p.servicesHydrated) {
+        return;
       }
-    } catch (e) {
-      console.log('Could not get customer location');
-    }
-    
-    try {
-      setLoading(true);
-      
-      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const specializationParam = specialization
-        ? `&specialization=${encodeURIComponent(specialization)}`
-        : '';
-      const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`
-      ) as any;
-
-      if (response.success) {
-        // New API returns 'providers' array, fallback to 'vendors' for backward compatibility
-        let providerData = response.providers || response.vendors || [];
-        
-        // Filter to specific vendor if vendorId is provided (vendor profile mode)
-        if (vendorId) {
-          providerData = providerData.filter((p: any) => 
-            (p.providerId || p.vendorId || p.id) === vendorId
-          );
-        }
-        
-        // Set providers from primary endpoint
-          setProviders(
-            filterProvidersServicesForVetHub(
-              providerData.map((p: any) => ({
-                ...p,
-                services: Array.isArray(p.services) ? p.services : [],
-              }))
-            )
-          );
-          console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
+      const vid = p.vendorId || p.providerId;
+      if (append) {
+        setProviders((prev) =>
+          prev.map((v) =>
+            v.providerId === providerId ? { ...v, servicesLoadingMore: true } : v
+          )
+        );
       } else {
-        console.warn(`⚠️ [Vet] Primary endpoint returned success=false or no providers`);
-        setProviders([]);
+        setFetchingServicesFor(providerId);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
+      try {
+        const url = buildVendorServicesPageUrl({
+          vendorId: vid,
+          serviceStyle,
+          category,
+          customerPhone: phone || undefined,
+          cursor: append ? p.servicesNextCursor : undefined,
+        });
+        const res = await apiClient.get(url);
+        const rows = vendorServicesRowsFromResponse(
+          res as { services?: unknown[]; packages?: unknown[] }
+        );
+        const services = mapVendorServicesForVetHub(rows);
+        const nextCursor = vendorServicesNextCursor(res);
+        setProviders((prev) =>
+          prev.map((v) => {
+            if (v.providerId !== providerId) return v;
+            const seen = new Set(
+              append ? v.services.map((s) => s.id || s.serviceId) : []
+            );
+            const merged = append ? [...v.services] : [];
+            for (const s of services) {
+              const key = s.id || s.serviceId;
+              if (key && seen.has(key)) continue;
+              if (key) seen.add(key);
+              merged.push(s);
+            }
+            return {
+              ...v,
+              services: merged,
+              servicesHydrated: true,
+              servicesNextCursor: nextCursor,
+              servicesLoadingMore: false,
+            };
+          })
+        );
+      } catch (e) {
+        console.warn('[VetServicesByStyle] vendor services fetch failed', e);
+        setProviders((prev) =>
+          prev.map((v) =>
+            v.providerId === providerId
+              ? { ...v, servicesHydrated: true, servicesLoadingMore: false }
+              : v
+          )
+        );
+      } finally {
+        setFetchingServicesFor(null);
+      }
+    },
+    [phone, serviceStyle, category]
+  );
+
+  const loadMoreProviderServices = useCallback(
+    (providerId: string) => {
+      void fetchProviderServices(providerId, true);
+    },
+    [fetchProviderServices]
+  );
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const p = providers.find((x) => x.providerId === selectedProvider);
+    if (!p || p.servicesHydrated) return;
+    if (fetchingServicesFor === selectedProvider) return;
+    void fetchProviderServices(selectedProvider);
+  }, [selectedProvider, providers, fetchingServicesFor, fetchProviderServices]);
+
+  useEffect(() => {
+    if (!vendorId || providers.length !== 1) return;
+    const p = providers[0];
+    if (p.servicesHydrated) return;
+    if (fetchingServicesFor === p.providerId) return;
+    void fetchProviderServices(p.providerId);
+  }, [vendorId, providers, fetchingServicesFor, fetchProviderServices]);
+
+  const isProfileView = vendorId && providers.length === 1;
+  const profileProvider = isProfileView ? providers[0] : null;
 
   // Load vendor and facility details for profile view
   const loadVendorProfile = async () => {
@@ -454,7 +571,7 @@ export function VetServicesByStyle({
     );
   }
 
-  if (loading) {
+  if (loading || showProfileLoading) {
     return (
       <div
         className={`flex min-h-[100dvh] min-h-screen w-full items-center justify-center bg-white ${vendorId ? 'max-w-customer mx-auto' : 'max-w-md mx-auto'}`}
@@ -676,7 +793,9 @@ export function VetServicesByStyle({
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {tab === 'services' ? `Services (${profileProvider.services.length})` : tab}
+                {tab === 'services'
+                  ? `Services (${profileProvider.services.length}${profileProvider.servicesNextCursor ? '+' : ''})`
+                  : tab}
                 {activeTab === tab && (
                   <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF8C42]" />
                 )}
@@ -871,6 +990,18 @@ export function VetServicesByStyle({
                         </div>
                       );
                     })}
+                    <DiscoveryVendorFeedSentinel
+                      hasMore={!!profileProvider.servicesNextCursor}
+                      loading={fetchingServicesFor === profileProvider.providerId}
+                      loadingMore={!!profileProvider.servicesLoadingMore}
+                      onLoadMore={() => loadMoreProviderServices(profileProvider.providerId)}
+                    />
+                  </div>
+                ) : fetchingServicesFor === profileProvider.providerId ||
+                  !profileProvider.servicesHydrated ? (
+                  <div className="text-center py-16">
+                    <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
+                    <p className="text-gray-600">Loading services…</p>
                   </div>
                 ) : (
                   <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
@@ -1056,7 +1187,15 @@ export function VetServicesByStyle({
 
       {/* Content */}
       <div className="w-full px-4 sm:px-6 pb-24">
-        {providers.length === 0 ? (
+        {vendorId && providers.length !== 1 ? (
+          profileResolveFailed ? (
+            <Card className="p-8 text-center bg-white">
+              <h3 className="font-semibold text-gray-900 mb-2">Provider not found</h3>
+              <p className="text-gray-500 text-sm mb-4">This provider may no longer be available.</p>
+              <Button onClick={onBack} variant="outline">Go back</Button>
+            </Card>
+          ) : null
+        ) : providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               {getStyleIcon()}
@@ -1109,17 +1248,12 @@ export function VetServicesByStyle({
                   <div className="flex min-w-0 w-full items-start justify-between gap-2">
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       {/* Provider Photo or Initial */}
-                      {provider.photo ? (
-                        <img 
-                          src={provider.photo} 
-                          alt={provider.name}
-                          className="h-12 w-12 shrink-0 rounded-full border-2 border-[#FF8C42] object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FF8C42] text-lg font-bold text-white">
-                          {provider.name.charAt(0)}
-                        </div>
-                      )}
+                      <DiscoveryProviderAvatar
+                        name={provider.name}
+                        photo={provider.photo}
+                        className="h-12 w-12 shrink-0 rounded-full border-2 border-[#FF8C42] object-cover"
+                        fallbackClassName="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FF8C42] text-lg font-bold text-white"
+                      />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-gray-900">{provider.name}</h3>
@@ -1188,8 +1322,13 @@ export function VetServicesByStyle({
                     )}
                     
                     <h4 className="text-sm font-medium text-gray-600 mb-2">
-                      Available Services ({provider.services.length})
+                      Available Services ({provider.services.length}{provider.servicesNextCursor ? '+' : ''})
                     </h4>
+                    {fetchingServicesFor === provider.providerId && provider.services.length === 0 ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="h-8 w-8 animate-spin text-[#FF8C42]" />
+                      </div>
+                    ) : null}
                     {provider.services.map((service) => (
                       <div
                         key={service.id}
@@ -1261,28 +1400,49 @@ export function VetServicesByStyle({
                         </div>
                       </div>
                     ))}
+                    <DiscoveryVendorFeedSentinel
+                      hasMore={!!provider.servicesNextCursor}
+                      loading={fetchingServicesFor === provider.providerId}
+                      loadingMore={!!provider.servicesLoadingMore}
+                      onLoadMore={() => loadMoreProviderServices(provider.providerId)}
+                    />
                   </div>
                 )}
 
-                {/* Quick Book - when not expanded */}
-                {!expanded && provider.services.length > 0 && (
+                {!expanded && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
-                      {provider.services[0] && (
-                        <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(
-                          Math.min(...provider.services.map(s => {
-                            // ✅ FIX GAP-7.1: Use discounted price if available
-                            const basePrice = s.originalPrice || s.price;
-                            const finalPrice = s.vendorDiscount 
-                              ? basePrice * (1 - s.vendorDiscount / 100)
-                              : basePrice;
-                            return finalPrice;
-                          }))
-                        )}</span>
-                      )}
-                      {provider.services[0] && (
-                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                      {provider.services.length > 0 ? (
+                        <>
+                          {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
+                          {provider.services.length !== 1 ? 's' : ''} available
+                          <span className="text-gray-900 font-medium">
+                            {' '}
+                            from{' '}
+                            {formatPriceWithSymbol(
+                              Math.min(
+                                ...provider.services.map((s) => {
+                                  const basePrice = s.originalPrice || s.price;
+                                  const finalPrice = s.vendorDiscount
+                                    ? basePrice * (1 - s.vendorDiscount / 100)
+                                    : basePrice;
+                                  return finalPrice;
+                                })
+                              )
+                            )}
+                          </span>
+                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                        </>
+                      ) : provider.priceMin != null && provider.priceMin > 0 ? (
+                        <span>
+                          Services available{' '}
+                          <span className="text-gray-900 font-medium">
+                            from {formatPriceWithSymbol(provider.priceMin)}
+                          </span>
+                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                        </span>
+                      ) : (
+                        <span>Tap to view services</span>
                       )}
                     </div>
                     <Button
@@ -1292,6 +1452,7 @@ export function VetServicesByStyle({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedProvider(provider.providerId);
+                        void fetchProviderServices(provider.providerId);
                       }}
                     >
                       View Services
@@ -1301,6 +1462,12 @@ export function VetServicesByStyle({
               </Card>
             );
             })}
+            <DiscoveryVendorFeedSentinel
+              hasMore={hasMore && !vendorId}
+              loading={loading}
+              loadingMore={loadingMore}
+              onLoadMore={() => void loadMore()}
+            />
           </div>
         )}
       </div>

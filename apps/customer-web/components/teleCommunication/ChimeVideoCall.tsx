@@ -38,6 +38,7 @@ import {
 } from '@/lib/runtime-permissions';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { ChatAttachmentActions } from '@/components/shared/ChatAttachmentActions';
 import {
   CallTimerPayload,
   DEFAULT_CALL_SLOT_SECONDS,
@@ -2278,14 +2279,11 @@ export function ChimeVideoCall({
                             <div className="flex flex-col">
                               <span className="text-sm">{msg.fileName || msg.message}</span>
                               {msg.fileUrl && (
-                                <a
-                                  href={msg.fileUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-xs underline opacity-90"
-                                >
-                                  Download
-                                </a>
+                                <ChatAttachmentActions
+                                  fileUrl={msg.fileUrl}
+                                  fileName={msg.fileName || 'document'}
+                                  compact
+                                />
                               )}
                             </div>
                           </div>

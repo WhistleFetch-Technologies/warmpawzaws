@@ -7,6 +7,8 @@ import { buildRazorpayEcommerceCreateOrderPayload } from '@/lib/ecommerce/ecomme
 
 export const SHOP_PENDING_ORDER_STORAGE_KEY = 'shop_pending_order_id';
 
+const MAX_VERIFY_RETRIES = 3;
+
 function loadRazorpayScript(): Promise<void> {
   return new Promise((resolve, reject) => {
     if (typeof document === 'undefined') {
@@ -25,6 +27,76 @@ function loadRazorpayScript(): Promise<void> {
     script.onerror = () => reject(new Error('Failed to load Razorpay'));
     document.body.appendChild(script);
   });
+}
+
+async function verifyShopPaymentWithRetries(payload: {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}): Promise<void> {
+  for (let attempt = 1; attempt <= MAX_VERIFY_RETRIES; attempt++) {
+    try {
+      const verifyRes = await apiClient.post<{
+        success?: boolean;
+        error?: string;
+        message?: string;
+      }>('/razorpay/verify-payment', payload, undefined, 30000);
+      if (verifyRes?.success === false) {
+        throw new Error(verifyRes?.error || verifyRes?.message || 'Payment verification failed');
+      }
+      return;
+    } catch (verifyErr) {
+      if (attempt === MAX_VERIFY_RETRIES) {
+        throw verifyErr;
+      }
+      await new Promise((r) => setTimeout(r, attempt * 1000));
+    }
+  }
+}
+
+async function reconcilePendingShopOrderPayment(orderId: string): Promise<boolean> {
+  try {
+    const res = await apiClient.post<{
+      success?: boolean;
+      paid?: boolean;
+    }>(`/customer/orders/${orderId}/reconcile-payment`, {});
+    return Boolean(res?.paid);
+  } catch {
+    try {
+      const resume = await apiClient.get<{
+        paid?: boolean;
+        canResume?: boolean;
+      }>(`/customer/orders/${orderId}/payment-resume`);
+      return Boolean(resume?.paid);
+    } catch {
+      return false;
+    }
+  }
+}
+
+let shopPaymentReturnPollInstalled = false;
+
+function installShopPaymentReturnPoll(onPaid: (orderId: string) => void): void {
+  if (typeof window === 'undefined' || shopPaymentReturnPollInstalled) return;
+  shopPaymentReturnPollInstalled = true;
+
+  const poll = async () => {
+    const orderId = readShopPendingOrderId();
+    if (!orderId) return;
+    const paid = await reconcilePendingShopOrderPayment(orderId);
+    if (paid) {
+      clearShopPendingOrderId();
+      onPaid(orderId);
+    }
+  };
+
+  const handleReturn = () => {
+    if (document.visibilityState === 'hidden') return;
+    void poll();
+  };
+
+  document.addEventListener('visibilitychange', handleReturn);
+  window.addEventListener('pageshow', handleReturn);
 }
 
 export function persistShopPendingOrderId(orderId: string): void {
@@ -70,6 +142,10 @@ export type ResumeShopOrderPaymentOptions = {
  */
 export async function resumeShopOrderPayment(options: ResumeShopOrderPaymentOptions): Promise<void> {
   const { orderId, payableAmount, customerId, phone, prefillName, onSuccess, onDismiss } = options;
+
+  installShopPaymentReturnPoll((paidOrderId) => {
+    onSuccess?.(paidOrderId);
+  });
 
   const razorpayPayload = buildRazorpayEcommerceCreateOrderPayload(
     orderId,
@@ -119,7 +195,7 @@ export async function resumeShopOrderPayment(options: ResumeShopOrderPaymentOpti
         razorpay_signature: string;
       }) => {
         try {
-          await apiClient.post('/razorpay/verify-payment', {
+          await verifyShopPaymentWithRetries({
             razorpay_order_id: response.razorpay_order_id,
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_signature: response.razorpay_signature,

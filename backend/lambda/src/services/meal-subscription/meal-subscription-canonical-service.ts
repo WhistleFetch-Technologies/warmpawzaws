@@ -5,7 +5,7 @@
 import type { PoolClient } from 'pg';
 import { randomBytes } from 'crypto';
 import { select, query, withTransaction } from '../../database/rds-connection';
-import { resolveMealPlanOrProductById, ensureMealPlanMirrorForProductCheckout } from '../../utils/meal-plan-resolve';
+import { resolveMealPlanById } from '../../utils/meal-plan-resolve';
 import {
   parseMealCatalogDiet,
   normalizePurchaseType,
@@ -133,11 +133,10 @@ export async function createCanonicalSubscription(
     throw Object.assign(new Error('customerId or valid customerPhone required'), { statusCode: 400 });
   }
 
-  let plan = await resolveMealPlanOrProductById(input.mealPlanId);
+  const plan = await resolveMealPlanById(input.mealPlanId);
   if (!plan) {
     throw Object.assign(new Error('Meal plan not found'), { statusCode: 404 });
   }
-  await ensureMealPlanMirrorForProductCheckout(plan);
 
   const vendorId = String(plan.vendor_id ?? '').trim();
   if (!vendorId) {

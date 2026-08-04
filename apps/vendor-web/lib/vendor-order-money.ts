@@ -20,6 +20,21 @@ export type VendorOrderMoneyInput = {
   commission_amount?: number | string | null;
   commission_rate?: number | string | null;
   vendor_payout_amount?: number | string | null;
+  commission_snapshot?: unknown;
+  items?: Array<{
+    product_id?: string | null;
+    name?: string | null;
+    product_name?: string | null;
+  }>;
+};
+
+export type VendorCommissionLineView = {
+  productId: string | null;
+  label: string;
+  rate: number;
+  commission: number;
+  listingOwnership: string | null;
+  source: string;
 };
 
 export type VendorOrderMoneyView = {
@@ -37,6 +52,8 @@ export type VendorOrderMoneyView = {
   vendorPayoutAmount: number | null;
   isPlatformFunded: boolean;
   isVendorFunded: boolean;
+  commissionLines: VendorCommissionLineView[];
+  hasMixedCommissionRates: boolean;
 };
 
 export function toMoney(value: number | string | null | undefined): number {
@@ -53,6 +70,77 @@ export function normalizePromotionSource(
   if (s === 'admin' || s === 'platform') return 'admin';
   if (s === 'vendor') return 'vendor';
   return null;
+}
+
+type SnapshotLine = {
+  productId?: string | null;
+  rate?: number;
+  commission?: number;
+  source?: string;
+  listingOwnership?: string | null;
+};
+
+function parseCommissionSnapshot(raw: unknown): SnapshotLine[] {
+  if (!raw) return [];
+  let parsed: Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return [];
+    }
+  } else if (typeof raw === 'object') {
+    parsed = raw as Record<string, unknown>;
+  } else {
+    return [];
+  }
+  const lines = parsed.lineBreakdown;
+  if (!Array.isArray(lines)) return [];
+  return lines as SnapshotLine[];
+}
+
+function formatOwnershipLabel(ownership: string | null | undefined): string {
+  if (ownership === 'own_brand') return 'own brand';
+  if (ownership === 'third_party') return 'third party';
+  return 'product';
+}
+
+function resolveCommissionLines(
+  order: VendorOrderMoneyInput,
+  snapshotLines: SnapshotLine[]
+): { commissionLines: VendorCommissionLineView[]; hasMixedCommissionRates: boolean } {
+  if (!snapshotLines.length) {
+    return { commissionLines: [], hasMixedCommissionRates: false };
+  }
+
+  const nameByProductId = new Map<string, string>();
+  for (const item of order.items ?? []) {
+    const pid = item.product_id != null ? String(item.product_id) : '';
+    const name = String(item.product_name ?? item.name ?? '').trim();
+    if (pid && name) nameByProductId.set(pid, name);
+  }
+
+  const commissionLines: VendorCommissionLineView[] = snapshotLines.map((line) => {
+    const productId = line.productId != null ? String(line.productId) : null;
+    const productName = productId ? nameByProductId.get(productId) : null;
+    const ownershipLabel = formatOwnershipLabel(line.listingOwnership);
+    const label = productName ? `${productName} (${ownershipLabel})` : `Line (${ownershipLabel})`;
+
+    return {
+      productId,
+      label,
+      rate: toMoney(line.rate),
+      commission: toMoney(line.commission),
+      listingOwnership: line.listingOwnership ?? null,
+      source: String(line.source ?? ''),
+    };
+  });
+
+  const distinctRates = new Set(commissionLines.map((l) => l.rate));
+  const distinctSources = new Set(commissionLines.map((l) => l.source));
+  const hasMixedCommissionRates = distinctRates.size > 1 || distinctSources.size > 1;
+
+  return { commissionLines, hasMixedCommissionRates };
 }
 
 export function resolveVendorOrderMoney(order: VendorOrderMoneyInput): VendorOrderMoneyView {
@@ -103,6 +191,9 @@ export function resolveVendorOrderMoney(order: VendorOrderMoneyInput): VendorOrd
     vendorPayoutAmount = Math.max(0, vendorGoodsAmount - commissionAmount);
   }
 
+  const snapshotLines = parseCommissionSnapshot(order.commission_snapshot);
+  const { commissionLines, hasMixedCommissionRates } = resolveCommissionLines(order, snapshotLines);
+
   return {
     catalogSubtotal,
     shipping,
@@ -116,6 +207,8 @@ export function resolveVendorOrderMoney(order: VendorOrderMoneyInput): VendorOrd
     vendorPayoutAmount,
     isPlatformFunded,
     isVendorFunded,
+    commissionLines,
+    hasMixedCommissionRates,
   };
 }
 

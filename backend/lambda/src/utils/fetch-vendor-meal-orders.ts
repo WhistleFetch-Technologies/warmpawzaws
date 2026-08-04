@@ -9,7 +9,7 @@ export type VendorMealOrderRow = Record<string, unknown>;
 
 /**
  * Returns the newest meal orders for vendor dashboard (created_at desc).
- * Matches rows on meal_orders.vendor_id, meal_plans.vendor_id, or products.vendor_id.
+ * Matches rows on meal_orders.vendor_id or meal_plans.vendor_id.
  */
 export async function fetchVendorMealOrdersForVendorIds(
   allVendorIds: string[],
@@ -26,29 +26,6 @@ export async function fetchVendorMealOrdersForVendorIds(
     WHERE (
       mo.vendor_id::text = ANY($1::text[])
       OR mp.vendor_id::text = ANY($1::text[])
-  `;
-
-  // products join is optional — some envs lack category column
-  try {
-    const probe = await query(
-      `SELECT 1 FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'category'
-       LIMIT 1`,
-    );
-    if ((probe.rows?.length ?? 0) > 0) {
-      sql += `
-      OR EXISTS (
-        SELECT 1 FROM products pr
-        WHERE pr.id = mo.meal_plan_id
-          AND pr.vendor_id::text = ANY($1::text[])
-          AND pr.category IN ('meal_plan', 'nutrition', 'food')
-      )`;
-    }
-  } catch {
-    /* ignore */
-  }
-
-  sql += `
     )
     AND ${SQL_MEAL_ORDER_VENDOR_VISIBLE}
   `;

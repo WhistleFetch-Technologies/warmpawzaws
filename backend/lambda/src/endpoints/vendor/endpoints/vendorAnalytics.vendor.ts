@@ -18,11 +18,19 @@ import { query } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
+import { SQL_SHOP_ORDER_VENDOR_VISIBLE } from '../../../utils/shop-vendor-visibility';
+import {
+  SQL_VENDOR_COMMISSION_AMOUNT,
+  SQL_VENDOR_GOODS_AMOUNT,
+  SQL_VENDOR_NET_AMOUNT,
+} from '../../../utils/vendor-ecommerce-money-sql';
 
 const EMPTY_SALES_STATS = {
   total_orders: 0,
   completed_orders: 0,
   total_revenue: 0,
+  net_earnings: 0,
+  total_commission: 0,
   avg_order_value: 0,
   unique_customers: 0,
   cancelled_orders: 0,
@@ -58,12 +66,17 @@ async function querySalesStats(vendorId: string, dateFilter: string) {
           SELECT 
             COUNT(*) as total_orders,
             COUNT(*) FILTER (WHERE o.order_status != 'cancelled') as completed_orders,
-            COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_revenue,
-            COALESCE(AVG(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as avg_order_value,
+            COALESCE(SUM((${SQL_VENDOR_GOODS_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_revenue,
+            COALESCE(SUM((${SQL_VENDOR_NET_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as net_earnings,
+            COALESCE(SUM((${SQL_VENDOR_COMMISSION_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_commission,
+            COALESCE(AVG((${SQL_VENDOR_GOODS_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as avg_order_value,
             COUNT(DISTINCT o.customer_id) FILTER (WHERE o.order_status != 'cancelled') as unique_customers,
             COUNT(*) FILTER (WHERE o.order_status = 'cancelled') as cancelled_orders
           FROM orders o
-          WHERE o.vendor_id = $1 ${dateFilter}
+          WHERE o.vendor_id = $1
+            AND o.order_status != 'pending_payment'
+            AND ${SQL_SHOP_ORDER_VENDOR_VISIBLE}
+            ${dateFilter}
         `,
     [vendorId]
   );
@@ -714,10 +727,12 @@ class GetSalesAnalyticsHandler extends BaseHandler {
           SELECT 
             DATE(o.created_at) as date,
             COUNT(*) as orders_count,
-            COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
+            COALESCE(SUM((${SQL_VENDOR_GOODS_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
           FROM orders o
           WHERE o.vendor_id = $1 
             AND o.order_status != 'cancelled'
+            AND o.order_status != 'pending_payment'
+            AND ${SQL_SHOP_ORDER_VENDOR_VISIBLE}
             ${dateFilter}
           GROUP BY DATE(o.created_at)
           ORDER BY date ASC

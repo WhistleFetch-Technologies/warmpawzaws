@@ -1,5 +1,10 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 import { sqlPackagePurchaseActiveForListing } from '../../../../utils/package-session-eligibility';
+import { seedFinitePackagesMissingSessionsForScope } from '../../../../utils/package-session-sync';
+
+export async function dbSeedFinitePackagesForCustomerVendor(customerId: string, vendorId: string) {
+  await seedFinitePackagesMissingSessionsForScope({ query }, { customerId, vendorId });
+}
 
 export async function dbVendorServices0(customerId, resolvedVendorId) {
   return await query(
@@ -36,8 +41,3 @@ export async function dbVendorServices3() {
               [['boarding', 'pet_boarding', 'pet boarding']]
             )
 }
-
-export async function dbVendorServices4(servicesQuery, queryParams) {
-  return await query(servicesQuery, queryParams);
-}
-

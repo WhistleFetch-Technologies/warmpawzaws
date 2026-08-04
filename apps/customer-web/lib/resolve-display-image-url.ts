@@ -1,6 +1,8 @@
 /**
  * Returns a URL safe to use in <img src>. Filters out plain text / keys stored by mistake in DB.
  */
+import { resolveVendorProfilePhotoUrl } from './vendor-display-media';
+
 export function sanitizeDisplayImageUrl(raw: unknown): string | undefined {
   if (raw == null) return undefined;
   const s = String(raw).trim();
@@ -33,4 +35,12 @@ export function pickVendorPhotoFromRow(row: Record<string, unknown>): string | u
     }
   }
   return undefined;
+}
+
+/** Normalize discovery/list provider rows to a single display photo URL. */
+export function normalizeProviderListPhoto(
+  row: Record<string, unknown> | null | undefined
+): string | undefined {
+  if (!row) return undefined;
+  return pickVendorPhotoFromRow(row) || resolveVendorProfilePhotoUrl(row);
 }

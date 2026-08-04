@@ -3,6 +3,7 @@ import {
   resolveProductCommission,
   resolveOrderCommission,
   applyOrderCommissionAudit,
+  forceApplyOrderCommissionAudit,
   type CommissionSnapshot,
 } from '../resolve-ecommerce-commission-rate';
 import { CommissionConfigurationError } from '../commission-configuration-error';
@@ -170,6 +171,91 @@ describe('resolveOrderCommission', () => {
     expect(result.effectiveRate).toBe(13.33);
     expect(result.lineBreakdown).toHaveLength(2);
   });
+
+  it('computes mixed ownership commission per line with weighted effective rate', async () => {
+    mockQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (String(sql).includes('vendor_commission_config')) {
+        return {
+          rows: [
+            {
+              commission_model: 'ownership',
+              default_commission_rate: null,
+              own_brand_commission_rate: '7',
+              third_party_commission_rate: '12',
+            },
+          ],
+        } as any;
+      }
+      if (String(sql).includes('listing_ownership')) {
+        const productId = String((params as string[])?.[0] ?? '');
+        if (productId === 'p-own') {
+          return { rows: [{ listing_ownership: 'own_brand' }] } as any;
+        }
+        if (productId === 'p-3p') {
+          return { rows: [{ listing_ownership: 'third_party' }] } as any;
+        }
+      }
+      return { rows: [] } as any;
+    });
+
+    const result = await resolveOrderCommission('vendor-1', [
+      { lineSubtotal: 211, productId: 'p-own', categoryId: 'cat-a' },
+      { lineSubtotal: 99, productId: 'p-3p', categoryId: 'cat-b' },
+    ]);
+
+    expect(result.commissionAmount).toBe(26.65);
+    expect(result.effectiveRate).toBe(8.6);
+    expect(result.lineBreakdown).toEqual([
+      expect.objectContaining({
+        productId: 'p-own',
+        rate: 7,
+        commission: 14.77,
+        source: 'vendor_own_brand',
+        listingOwnership: 'own_brand',
+      }),
+      expect.objectContaining({
+        productId: 'p-3p',
+        rate: 12,
+        commission: 11.88,
+        source: 'vendor_third_party',
+        listingOwnership: 'third_party',
+      }),
+    ]);
+  });
+
+  it('falls through to platform default when listing_ownership is missing under ownership model', async () => {
+    mockQuery.mockImplementation(async (sql: string) => {
+      if (String(sql).includes('vendor_commission_config')) {
+        return {
+          rows: [
+            {
+              commission_model: 'ownership',
+              default_commission_rate: null,
+              own_brand_commission_rate: '7',
+              third_party_commission_rate: '12',
+            },
+          ],
+        } as any;
+      }
+      if (String(sql).includes('listing_ownership')) {
+        return { rows: [{ listing_ownership: null }] } as any;
+      }
+      if (String(sql).includes('ecommerce_categories')) return { rows: [] } as any;
+      if (String(sql).includes('ecommerce_commission_settings')) {
+        return { rows: [{ default_rate: '25' }] } as any;
+      }
+      return { rows: [] } as any;
+    });
+
+    const result = await resolveProductCommission({
+      vendorId: 'vendor-1',
+      productId: 'prod-missing',
+      categoryId: 'cat-1',
+    });
+
+    expect(result.rate).toBe(25);
+    expect(result.source).toBe('platform_default');
+  });
 });
 
 describe('applyOrderCommissionAudit', () => {
@@ -199,5 +285,63 @@ describe('applyOrderCommissionAudit', () => {
       50,
       JSON.stringify(snap),
     ]);
+  });
+});
+
+describe('forceApplyOrderCommissionAudit', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('overwrites commission snapshot without COALESCE', async () => {
+    const previous: CommissionSnapshot = {
+      effectiveRate: 25,
+      commissionAmount: 77.5,
+      orderSubtotal: 310,
+      lineBreakdown: [],
+      resolvedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    mockQuery.mockImplementation(async (sql: string) => {
+      if (String(sql).includes('SELECT commission_snapshot')) {
+        return { rows: [{ commission_snapshot: previous }] } as any;
+      }
+      if (String(sql).includes('order_items') && String(sql).includes('taxable_value')) {
+        return {
+          rows: [
+            { line_subtotal: '211', product_id: 'p1', category_id: 'c1' },
+            { line_subtotal: '99', product_id: 'p2', category_id: 'c2' },
+          ],
+        } as any;
+      }
+      if (String(sql).includes('vendor_commission_config')) {
+        return {
+          rows: [
+            {
+              commission_model: 'ownership',
+              own_brand_commission_rate: '7',
+              third_party_commission_rate: '12',
+            },
+          ],
+        } as any;
+      }
+      if (String(sql).includes('listing_ownership')) {
+        return { rows: [{ listing_ownership: 'own_brand' }] } as any;
+      }
+      if (String(sql).includes('SELECT id::text AS id FROM order_items')) {
+        return { rows: [{ id: 'oi-1' }, { id: 'oi-2' }] } as any;
+      }
+      return { rows: [] } as any;
+    });
+
+    const result = await forceApplyOrderCommissionAudit('order-1', 'vendor-1');
+    expect(result?.previous).toEqual(previous);
+    expect(result?.current.effectiveRate).toBeGreaterThan(0);
+
+    const updateCall = mockQuery.mock.calls.find(
+      ([sql]) =>
+        String(sql).includes('UPDATE orders SET') &&
+        String(sql).includes('commission_snapshot = $4::jsonb')
+    );
+    expect(updateCall).toBeDefined();
+    expect(String(updateCall?.[0])).not.toContain('COALESCE(commission_snapshot');
   });
 });

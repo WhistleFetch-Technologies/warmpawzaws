@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { filterHubDiscoveryRowsByRadius } from '@/lib/hub-discovery-radius-filter';
@@ -10,74 +10,80 @@ import {
   mapServicesApiResponseToPlanRows,
   type BoardingListVendor,
 } from '@/lib/boarding-vendor-discovery-map';
+import { useDiscoveryVendorFeed } from '@/hooks/useDiscoveryVendorFeed';
 
 export function useBoardingVendorDiscovery(
   phone: string,
   serviceSlug: BoardingServiceSlug
 ) {
-  const [loading, setLoading] = useState(true);
   const [vendors, setVendors] = useState<BoardingListVendor[]>([]);
   const [relaxedFilter, setRelaxedFilter] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [fetchingPlansFor, setFetchingPlansFor] = useState<string | null>(null);
+  const coordsRef = useRef<{ latitude?: string; longitude?: string }>({});
 
-  const loadVendors = useCallback(async () => {
-    try {
-      setLoading(true);
-      let latitude: string | undefined;
-      let longitude: string | undefined;
-      const coords = await resolveCustomerDiscoveryCoords(phone);
-      latitude = coords.latitude;
-      longitude = coords.longitude;
+  const buildUrl = useCallback(
+    ({ limit, cursor }: { limit: number; cursor?: string }) => {
+      const { latitude, longitude } = coordsRef.current;
       const locationParams =
         latitude && longitude
           ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
           : '';
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+      const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+      return `/customer/discover-services?category=boarding&roleId=pet_boarding&serviceStyle=at_center&limit=${limit}${cursorParam}${locationParams}${phoneParam}`;
+    },
+    [phone]
+  );
 
-      let rows: any[] = [];
-      try {
-        const endpoint = `/customer/discover-services?category=boarding&roleId=pet_boarding&serviceStyle=at_center${locationParams}${phoneParam}`;
-        const data = await apiClient.get<any>(endpoint);
-        if (Array.isArray(data)) rows = data;
-        else if (data?.vendors && Array.isArray(data.vendors)) rows = data.vendors;
-        else if (data?.providers && Array.isArray(data.providers)) rows = data.providers;
-        else if (data?.services && Array.isArray(data.services)) rows = data.services;
-      } catch (e) {
-        console.warn('[useBoardingVendorDiscovery] discover-services failed:', e);
-      }
+  const {
+    vendors: feedVendors,
+    loading: feedLoading,
+    loadingMore: feedLoadingMore,
+    hasMore: feedHasMore,
+    reload: feedReload,
+    loadMore: feedLoadMore,
+  } = useDiscoveryVendorFeed({ buildUrl, pageSize: 3 });
 
-      if (rows.length === 0) {
-        try {
-          const altRes = await apiClient.get<any>(
-            `/customer/services/by-style?style=at_center&category=boarding&roleId=pet_boarding${locationParams}${phoneParam}`
-          );
-          const alt = altRes?.vendors ?? altRes?.providers ?? altRes;
-          if (Array.isArray(alt)) rows = alt;
-        } catch (e) {
-          console.warn('[useBoardingVendorDiscovery] by-style fallback failed:', e);
-        }
-      }
-
-      rows = filterHubDiscoveryRowsByRadius(rows, {
+  const processRows = useCallback(
+    (rows: Record<string, unknown>[]) => {
+      const { latitude, longitude } = coordsRef.current;
+      const filtered = filterHubDiscoveryRowsByRadius(rows, {
         serviceStyle: 'at_center',
         latitude,
         longitude,
       });
-
-      const { list, relaxedFilter: relaxed } = buildBoardingVendorListFromRows(rows, serviceSlug);
+      const { list, relaxedFilter: relaxed } = buildBoardingVendorListFromRows(
+        filtered,
+        serviceSlug
+      );
       setRelaxedFilter(relaxed);
       setVendors(list);
+    },
+    [serviceSlug]
+  );
+
+  const loadVendors = useCallback(async () => {
+    try {
+      setLoading(true);
+      const coords = await resolveCustomerDiscoveryCoords(phone);
+      coordsRef.current = coords;
+      await feedReload();
     } catch (e) {
       console.error('[useBoardingVendorDiscovery]', e);
       setVendors([]);
     } finally {
       setLoading(false);
     }
-  }, [phone, serviceSlug]);
+  }, [phone, feedReload]);
 
   useEffect(() => {
-    loadVendors();
+    processRows(feedVendors);
+  }, [feedVendors, processRows]);
+
+  useEffect(() => {
+    void loadVendors();
   }, [loadVendors]);
 
   const fetchVendorPlans = useCallback(async (vendorId: string) => {
@@ -112,7 +118,10 @@ export function useBoardingVendorDiscovery(
   }, []);
 
   return {
-    loading,
+    loading: loading || feedLoading,
+    loadingMore: feedLoadingMore,
+    hasMore: feedHasMore,
+    loadMore: feedLoadMore,
     vendors,
     relaxedFilter,
     selectedVendorId,

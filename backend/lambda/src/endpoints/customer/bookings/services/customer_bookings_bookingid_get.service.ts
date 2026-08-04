@@ -194,6 +194,12 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
           // Multi-service: list of services and total duration
           selectedServices: parseSelectedServices(booking.selected_services).length > 0 ? parseSelectedServices(booking.selected_services) : undefined,
           totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : undefined,
+          commerceMode: booking.commerce_mode ?? 'marketplace',
+          commerce_mode: booking.commerce_mode ?? 'marketplace',
+          commerceVersion:
+            booking.commerce_version != null ? Number(booking.commerce_version) : undefined,
+          commerce_version:
+            booking.commerce_version != null ? Number(booking.commerce_version) : undefined,
           // Price/amount for booking details (fix ₹0 on customer and mobile)
           amount: booking.total_amount != null ? parseFloat(booking.total_amount) : undefined,
           total_amount: booking.total_amount != null ? parseFloat(booking.total_amount) : undefined,

@@ -41,6 +41,7 @@ const nextConfig = {
     '@warmpawz/shared-libs',
     '@warmpawz/service-launch-mappings',
     '@warmpawz/shared-types',
+    '@warmpawz/commerce-switch-contracts',
   ],
   swcMinify: true,
   compress: true,

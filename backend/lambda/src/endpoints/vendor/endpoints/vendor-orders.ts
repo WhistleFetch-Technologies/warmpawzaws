@@ -25,6 +25,28 @@ import {
   type ShopOrderLifecycleStatus,
 } from '../../../utils/shop-order-notifications';
 import { SQL_SHOP_ORDER_VENDOR_VISIBLE } from '../../../utils/shop-vendor-visibility';
+import {
+  SQL_VENDOR_COMMISSION_AMOUNT,
+  SQL_VENDOR_GOODS_AMOUNT,
+  SQL_VENDOR_NET_AMOUNT,
+} from '../../../utils/vendor-ecommerce-money-sql';
+import {
+  cancelPaidShopOrder,
+  VENDOR_ALLOWED_STATUSES,
+} from '../../../utils/payments/shop-order-refund';
+
+const EMPTY_VENDOR_ORDER_STATS = {
+  total: 0,
+  pending: 0,
+  confirmed: 0,
+  processing: 0,
+  shipped: 0,
+  delivered: 0,
+  cancelled: 0,
+  total_revenue: 0,
+  net_earnings: 0,
+  total_commission: 0,
+};
 
 function triggerOrderInvoiceOnDelivered(orderId: string, status: string, previousStatus: string) {
   if (status === 'delivered' && previousStatus !== 'delivered') {
@@ -119,6 +141,20 @@ async function insertVendorOrderStatusHistory(
     changed_by_type: 'vendor',
     created_at: new Date().toISOString(),
   });
+}
+
+async function syncShipmentDeliveredForOrder(orderId: string): Promise<void> {
+  try {
+    await query(
+      `UPDATE shipments SET status = 'delivered', delivered_at = NOW(), updated_at = NOW() WHERE order_id = $1`,
+      [orderId]
+    );
+  } catch (e) {
+    console.warn(
+      '[VENDOR-ORDERS] Shipment delivered sync failed (non-fatal):',
+      e instanceof Error ? e.message : e
+    );
+  }
 }
 
 // ============================================================================
@@ -353,27 +389,18 @@ class GetVendorOrderStatsHandler extends BaseHandler {
       // Handle test IDs - return empty stats
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return this.success({
-          stats: {
-            total: 0,
-            pending: 0,
-            confirmed: 0,
-            processing: 0,
-            shipped: 0,
-            delivered: 0,
-            cancelled: 0,
-            total_revenue: 0,
-          },
+          stats: { ...EMPTY_VENDOR_ORDER_STATS },
         });
       }
 
       // Build date filter
       let dateFilterClause = '';
       if (dateFilter === 'today') {
-        dateFilterClause = `AND DATE(created_at) = CURRENT_DATE`;
+        dateFilterClause = `AND DATE(o.created_at) = CURRENT_DATE`;
       } else if (dateFilter === 'week') {
-        dateFilterClause = `AND created_at >= CURRENT_DATE - INTERVAL '7 days'`;
+        dateFilterClause = `AND o.created_at >= CURRENT_DATE - INTERVAL '7 days'`;
       } else if (dateFilter === 'month') {
-        dateFilterClause = `AND created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
+        dateFilterClause = `AND o.created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
       }
 
       // Get statistics
@@ -382,20 +409,19 @@ class GetVendorOrderStatsHandler extends BaseHandler {
         const statsQuery = `
           SELECT 
             COUNT(*) as total,
-            COUNT(*) FILTER (WHERE order_status = 'pending') as pending,
-            COUNT(*) FILTER (WHERE order_status = 'confirmed') as confirmed,
-            COUNT(*) FILTER (WHERE order_status = 'processing') as processing,
-            COUNT(*) FILTER (WHERE order_status = 'shipped') as shipped,
-            COUNT(*) FILTER (WHERE order_status = 'delivered') as delivered,
-            COUNT(*) FILTER (WHERE order_status = 'cancelled') as cancelled,
-            COALESCE(SUM(total_amount) FILTER (WHERE order_status != 'cancelled'), 0) as total_revenue
-          FROM orders
-          WHERE vendor_id = $1
-            AND order_status != 'pending_payment'
-            AND (
-              LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed')
-              OR LOWER(COALESCE(payment_method, 'online')) IN ('cod', 'cash_on_delivery')
-            )
+            COUNT(*) FILTER (WHERE o.order_status = 'pending') as pending,
+            COUNT(*) FILTER (WHERE o.order_status = 'confirmed') as confirmed,
+            COUNT(*) FILTER (WHERE o.order_status = 'processing') as processing,
+            COUNT(*) FILTER (WHERE o.order_status = 'shipped') as shipped,
+            COUNT(*) FILTER (WHERE o.order_status = 'delivered') as delivered,
+            COUNT(*) FILTER (WHERE o.order_status = 'cancelled') as cancelled,
+            COALESCE(SUM((${SQL_VENDOR_GOODS_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_revenue,
+            COALESCE(SUM((${SQL_VENDOR_NET_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as net_earnings,
+            COALESCE(SUM((${SQL_VENDOR_COMMISSION_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_commission
+          FROM orders o
+          WHERE o.vendor_id = $1
+            AND o.order_status != 'pending_payment'
+            AND ${SQL_SHOP_ORDER_VENDOR_VISIBLE}
             ${dateFilterClause}
         `;
 
@@ -404,48 +430,21 @@ class GetVendorOrderStatsHandler extends BaseHandler {
         // If UUID validation fails, return empty stats
         if (error.message?.includes('invalid input syntax for type uuid')) {
           return this.success({
-            stats: {
-              total: 0,
-              pending: 0,
-              confirmed: 0,
-              processing: 0,
-              shipped: 0,
-              delivered: 0,
-              cancelled: 0,
-              total_revenue: 0,
-            },
+            stats: { ...EMPTY_VENDOR_ORDER_STATS },
           });
         }
         throw error;
       }
 
       return this.success({
-        stats: stats?.rows[0] || {
-          total: 0,
-          pending: 0,
-          confirmed: 0,
-          processing: 0,
-          shipped: 0,
-          delivered: 0,
-          cancelled: 0,
-          total_revenue: 0,
-        },
+        stats: stats?.rows[0] || { ...EMPTY_VENDOR_ORDER_STATS },
       });
     } catch (error: any) {
       console.error('Error fetching order statistics:', error);
       // If UUID validation fails, return empty stats
       if (error.message?.includes('invalid input syntax for type uuid')) {
         return this.success({
-          stats: {
-            total: 0,
-            pending: 0,
-            confirmed: 0,
-            processing: 0,
-            shipped: 0,
-            delivered: 0,
-            cancelled: 0,
-            total_revenue: 0,
-          },
+          stats: { ...EMPTY_VENDOR_ORDER_STATS },
         });
       }
       return this.error(error.message || 'Failed to fetch statistics', 500);
@@ -521,16 +520,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       console.error('Error in vendor orders stats endpoint:', error);
       // Return empty stats for any error
       return c.json({
-        stats: {
-          total: 0,
-          pending: 0,
-          confirmed: 0,
-          processing: 0,
-          shipped: 0,
-          delivered: 0,
-          cancelled: 0,
-          total_revenue: 0,
-        },
+        stats: { ...EMPTY_VENDOR_ORDER_STATS },
       }, 200);
     }
   });
@@ -615,32 +605,51 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         );
       }
 
+      if (status === 'cancelled') {
+        const cancelResult = await cancelPaidShopOrder({
+          orderId,
+          reason: cancellationReason,
+          cancelledBy: 'provider',
+          vendorId,
+          allowedStatuses: VENDOR_ALLOWED_STATUSES,
+        });
+        if (!cancelResult.success) {
+          const code = cancelResult.error === 'Order not found' ? 404 : 400;
+          return c.json({ error: cancelResult.error || 'Cancellation failed' }, code);
+        }
+        const statusNotes = resolveStatusUpdateNotes(body);
+        await insertVendorOrderStatusHistory(orderId, status, statusNotes);
+        return c.json({
+          success: true,
+          message: `Order status updated to ${status}`,
+          order_id: orderId,
+          status,
+          cancellation_reason: cancellationReason,
+          refundStatus: cancelResult.refundStatus,
+          stockRestored: cancelResult.stockRestored,
+          cancelledBy: cancelResult.cancelledBy,
+        });
+      }
+
       const statusNotes = resolveStatusUpdateNotes(body);
 
       // Build update query
       const updates: string[] = ['order_status = $1', 'updated_at = NOW()'];
       const params: any[] = [status, orderId, vendorId];
-      let paramIndex = 4;
 
       // Add tracking number for shipped status — blocked above; legacy branch removed
 
       // Add delivered timestamp
       if (status === 'delivered') {
         updates.push('delivered_at = NOW()');
-        updates.push('delivery_status = $4');
-        params.splice(3, 0, 'completed');
-      }
-
-      // Add cancelled timestamp
-      if (status === 'cancelled') {
-        updates.push('cancelled_at = NOW()');
-        updates.push(`cancellation_reason = $${paramIndex}`);
-        params.splice(paramIndex - 1, 0, cancellationReason);
-        paramIndex++;
       }
 
       const updateQuery = `UPDATE orders SET ${updates.join(', ')} WHERE id = $2 AND vendor_id = $3`;
       await query(updateQuery, params);
+
+      if (status === 'delivered') {
+        await syncShipmentDeliveredForOrder(orderId);
+      }
 
       await insertVendorOrderStatusHistory(orderId, status, statusNotes);
       emitShopOrderStatusNotification(orderId, currentStatus, status, {
@@ -661,7 +670,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         message: `Order status updated to ${status}`,
         order_id: orderId,
         status: status,
-        cancellation_reason: status === 'cancelled' ? cancellationReason : undefined,
       });
     } catch (error: any) {
       console.error('Error updating order status:', error);
@@ -749,6 +757,32 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         );
       }
 
+      if (status === 'cancelled') {
+        const cancelResult = await cancelPaidShopOrder({
+          orderId,
+          reason: cancellationReason,
+          cancelledBy: 'provider',
+          vendorId,
+          allowedStatuses: VENDOR_ALLOWED_STATUSES,
+        });
+        if (!cancelResult.success) {
+          const code = cancelResult.error === 'Order not found' ? 404 : 400;
+          return c.json({ error: cancelResult.error || 'Cancellation failed' }, code);
+        }
+        const statusNotes = resolveStatusUpdateNotes(body);
+        await insertVendorOrderStatusHistory(orderId, status, statusNotes);
+        return c.json({
+          success: true,
+          message: `Order status updated to ${status}`,
+          order_id: orderId,
+          status,
+          cancellation_reason: cancellationReason,
+          refundStatus: cancelResult.refundStatus,
+          stockRestored: cancelResult.stockRestored,
+          cancelledBy: cancelResult.cancelledBy,
+        });
+      }
+
       const statusNotes = resolveStatusUpdateNotes(body);
 
       // Build update
@@ -762,13 +796,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       // Add delivered timestamp
       if (status === 'delivered') {
         updateFields.delivered_at = new Date().toISOString();
-        updateFields.delivery_status = 'completed';
-      }
-
-      // Add cancelled timestamp
-      if (status === 'cancelled') {
-        updateFields.cancelled_at = new Date().toISOString();
-        updateFields.cancellation_reason = cancellationReason;
       }
 
       // Build SET clause
@@ -780,6 +807,10 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         `UPDATE orders SET ${setClauses.join(', ')} WHERE id = $${values.length - 1} AND vendor_id = $${values.length}`,
         values
       );
+
+      if (status === 'delivered') {
+        await syncShipmentDeliveredForOrder(orderId);
+      }
 
       await insertVendorOrderStatusHistory(orderId, status, statusNotes);
       emitShopOrderStatusNotification(orderId, currentStatus, status, {
@@ -800,7 +831,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         message: `Order status updated to ${status}`,
         order_id: orderId,
         status: status,
-        cancellation_reason: status === 'cancelled' ? cancellationReason : undefined,
       });
     } catch (error: any) {
       console.error('Error updating order:', error);

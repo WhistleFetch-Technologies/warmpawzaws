@@ -1,28 +1,20 @@
 'use client';
 
 /**
- * /dashboard – Redirect to home so vendors always get the full UI (VendorDashboard from VendorLandingPage).
- * The simplified "Welcome back!" dashboard (VendorDashboardScreen) is not used; full UI has all options,
- * appointment models, navigation, and capabilities.
+ * /dashboard – Redirect to home so vendors always get the full UI.
  */
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
+import { requireVendorSessionOrRedirect } from '@/lib/session-utils';
 
 export default function DashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
-    const storedPhone = localStorage.getItem('vendorPhone');
-
-    if (!storedToken || !storedPhone || isTokenExpired(storedToken)) {
-      clearVendorSession();
-      window.location.replace('/auth');
-      return;
-    }
-
-    router.replace('/');
+    void (async () => {
+      const ok = await requireVendorSessionOrRedirect();
+      if (ok) router.replace('/');
+    })();
   }, [router]);
 
   return (

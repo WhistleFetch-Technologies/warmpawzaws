@@ -1,0 +1,63 @@
+---
+description: Optimization exit criteria — measurable refactors, progressive loading, sign-off gates (reusable beyond Discovery)
+alwaysApply: false
+---
+
+# Optimization Exit Criteria
+
+Use this rule when performing **performance, payload, pagination, or structural refactors** on any Warmpawz module (Discovery first; also Shop, Bookings, Orders, etc.).
+
+**Authoritative docs:**
+
+| Document | Purpose |
+|----------|---------|
+| `docs/optimization-exit-criteria.md` | Reusable 14-section rulebook + sign-off template |
+| `docs/discovery-optimization-phased-plan.md` | Discovery gap closure phases 0–7 |
+| `docs/discovery-perf-rca.md` | Discovery baseline + target HTTP contracts |
+
+**Related:** `endpoint-4-layer-parity.mdc` (customer API layers), `team-development-bible.mdc`.
+
+---
+
+## Agent obligations
+
+1. **Do not claim “optimization complete”** until applicable sections of `docs/optimization-exit-criteria.md` pass with evidence (benchmarks, tests, checklist).
+2. **Behaviour lock:** same user flows and business rules unless the user explicitly approves a contract change (pagination is an approved Discovery change).
+3. **Measure:** Phase 0 baseline required before sign-off; payload bytes and SQL count are mandatory for list endpoints.
+4. **Progressive loading:** metadata → card feed → detail → booking depth. No list endpoint returns full catalog by default.
+5. **Layers:** Route → Handler → Service → Repository. SQL in repos only (`validate:customer-layers` for customer API).
+6. **Pagination:** vendor feeds default 3, service card feeds default 5, cursor-based; UI must wire `loadMore` for every long list.
+7. **DTOs:** screen-specific (`VendorCardDTO`, `ServiceCardDTO`); no `providers`+`vendors` twin; booking keeps full `vendor/:id/services` without limit/cursor.
+
+---
+
+## Discovery execution order
+
+Follow `docs/discovery-optimization-phased-plan.md`:
+
+```text
+Phase 0 Measure → Phase 1 Contracts → Phase 2 UI pagination
+→ Phase 3 DTO migration → Phase 4 SQL→repos → Phase 5 legacy split
+→ Phase 6 enrichment isolation → Phase 7 sign-off
+```
+
+Do not skip Phase 0 for final acceptance.
+
+---
+
+## Protected (never break without explicit approval)
+
+- Booking / Razorpay / checkout timing
+- customer-web navigation stack (`customer-navigation.mdc`)
+- Filter semantics (radius, specialization, role/category, vet hub rules)
+- Full vendor-services response when no `limit`/`cursor` (booking path)
+
+---
+
+## Commands (Discovery)
+
+```bash
+cd backend/lambda && npm run validate:customer-layers
+npx jest src/utils/__tests__/discovery-response-contract.test.ts
+# scripts/benchmark-discovery-payloads.sh (when added)
+```

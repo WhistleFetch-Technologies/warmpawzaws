@@ -27,6 +27,7 @@ export interface SearchVendorCardData {
   reviewCount: number;
   distanceKm: number | null;
   photo?: string;
+  photoUrl?: string;
   roleDisplayName?: string;
   isVerified?: boolean;
   nextAvailableSlot?: string;
@@ -85,9 +86,9 @@ export function SearchVendorExpandableCard({
         }`}
       >
         <div className="flex gap-3">
-          {vendor.photo ? (
+          {(vendor.photo || vendor.photoUrl) ? (
             <img
-              src={vendor.photo}
+              src={vendor.photo || vendor.photoUrl}
               alt={vendor.name}
               className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
             />

@@ -1,5 +1,6 @@
 import type { Hono } from 'hono';
 import { registerDiscoveryMetaRoute } from './routes/discovery-meta.route';
+import { registerCategoryBootstrapRoute } from './routes/category-bootstrap.route';
 import { registerDiscoveryCountRoute } from './routes/discovery-count.route';
 import { registerDebugTrainingVendorsRoute } from './routes/debug-training-vendors.route';
 import { registerDebugAtCenterVendorsRoute } from './routes/debug-at-center-vendors.route';
@@ -29,6 +30,7 @@ export { getCoordinates } from './repos/legacy-helpers.repo';
 
 export function registerServiceDiscoveryEndpoints(app: Hono) {
   registerDiscoveryMetaRoute(app);
+  registerCategoryBootstrapRoute(app);
   registerDiscoveryCountRoute(app);
   registerDebugTrainingVendorsRoute(app);
   registerDebugAtCenterVendorsRoute(app);

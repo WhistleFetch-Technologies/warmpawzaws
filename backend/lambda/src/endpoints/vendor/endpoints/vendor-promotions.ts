@@ -878,6 +878,15 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         orderType === 'service' ? DiscountDomain.SERVICE : DiscountDomain.ECOMMERCE,
         {
           serviceCategory: String(serviceCategory || service_category || '').trim() || undefined,
+          vendorId: vendorId ? String(vendorId) : undefined,
+          customerId: customerId ? String(customerId) : undefined,
+          serviceIds: Array.isArray(items)
+            ? items
+                .map((item: Record<string, unknown>) =>
+                  String(item.serviceId || item.service_id || item.id || '').trim()
+                )
+                .filter(Boolean)
+            : undefined,
         }
       );
       // #region agent log

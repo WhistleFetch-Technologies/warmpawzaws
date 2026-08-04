@@ -152,6 +152,13 @@ class PropagateChangesHandler extends BaseHandler {
   private async propagatePlatformSettingsChange() {
     // Invalidate all platform settings caches
     await this.invalidateCache('platform:settings');
+
+    try {
+      const { invalidateCommerceSwitchCache } = await import('../../../commerce-switch');
+      invalidateCommerceSwitchCache();
+    } catch (err) {
+      console.warn('[Governance] commerce-switch cache invalidation skipped:', err);
+    }
     
     // Notify all active sessions (via SNS -> WebSocket)
     await publishToSNS('platform-notifications', {

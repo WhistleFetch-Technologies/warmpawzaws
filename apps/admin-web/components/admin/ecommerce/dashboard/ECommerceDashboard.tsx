@@ -26,6 +26,25 @@ export interface ECommercePlatformAnalytics {
   pendingSettlementAmount?: number;
   totalGST?: number;
   totalPayouts?: number;
+  growth?: {
+    gmv?: number;
+    commission?: number;
+    orders?: number;
+  };
+}
+
+function formatGrowthBadge(growth?: number, currentValue?: number): {
+  change: string;
+  trend: 'up' | 'down' | 'neutral';
+} {
+  if (growth == null || (growth === 0 && (currentValue ?? 0) === 0)) {
+    return { change: '—', trend: 'neutral' };
+  }
+  const prefix = growth > 0 ? '+' : '';
+  return {
+    change: `${prefix}${growth}%`,
+    trend: growth >= 0 ? 'up' : 'down',
+  };
 }
 
 interface ECommerceDashboardProps {
@@ -68,7 +87,7 @@ export function ECommerceDashboard({
       setAnalytics(analyticsResponse?.data ?? {});
       
       // Load recent orders
-      const ordersData = await apiClient.get<any>('/admin/orders?limit=5').catch(() => ({ orders: [] }));
+      const ordersData = await apiClient.get<any>('/admin/ecommerce/orders?limit=5&period=all').catch(() => ({ orders: [] }));
       setRecentOrders((ordersData as any)?.orders || []);
       
       // Pending catalog items (matches vendor submit_for_approval / pending statuses)
@@ -111,21 +130,25 @@ export function ECommerceDashboard({
     void updateProductLifecycle(productId, 'rejected');
   };
 
+  const gmvGrowth = formatGrowthBadge(analytics.growth?.gmv, analytics.totalGMV);
+  const commissionGrowth = formatGrowthBadge(analytics.growth?.commission, analytics.totalCommission);
+  const ordersGrowth = formatGrowthBadge(analytics.growth?.orders, analytics.totalOrders);
+
   // Stats cards
   const stats = [
     {
       title: 'Total GMV',
       value: `₹${(analytics?.totalGMV || analytics?.totalRevenue || 0).toLocaleString()}`,
-      change: '+18.5%',
-      trend: 'up',
+      change: gmvGrowth.change,
+      trend: gmvGrowth.trend,
       icon: IndianRupee,
       gradient: 'from-emerald-500 to-teal-500',
     },
     {
       title: 'Platform Revenue',
       value: `₹${(analytics?.totalCommission || 0).toLocaleString()}`,
-      change: '+12.3%',
-      trend: 'up',
+      change: commissionGrowth.change,
+      trend: commissionGrowth.trend,
       icon: TrendingUp,
       gradient: 'from-blue-500 to-indigo-500',
     },
@@ -133,15 +156,15 @@ export function ECommerceDashboard({
       title: 'Active Sellers',
       value: analytics?.activeSellers || 0,
       change: `${analytics?.totalSellers || 0} total`,
-      trend: 'neutral',
+      trend: 'neutral' as const,
       icon: Store,
       gradient: 'from-purple-500 to-violet-500',
     },
     {
       title: 'Total Orders',
       value: analytics?.totalOrders || 0,
-      change: '+24.7%',
-      trend: 'up',
+      change: ordersGrowth.change,
+      trend: ordersGrowth.trend,
       icon: ShoppingCart,
       gradient: 'from-orange-500 to-amber-500',
     },
@@ -476,7 +499,7 @@ export function ECommerceDashboard({
                     </td>
                     <td className="p-4 text-center">
                       <span className="inline-flex items-center gap-1 text-amber-600">
-                        ⭐ {seller.avg_rating || seller.rating || '4.5'}
+                        ⭐ {seller.avg_rating ?? seller.rating ?? '—'}
                       </span>
                     </td>
                   </tr>

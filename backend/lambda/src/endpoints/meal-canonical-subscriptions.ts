@@ -14,7 +14,7 @@ import {
   type SubscriptionDeliveryScheduleInput,
 } from '../services/meal-subscription/meal-subscription-canonical-service';
 import { assertVendorAcceptingMealOrders } from '../utils/meal-kitchen-availability';
-import { resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
+import { resolveMealPlanById } from '../utils/meal-plan-resolve';
 import { fireVendorMealSubscriptionScheduledSms } from '../lib/vendor-appointment-sms';
 import {
   notifyMealSubscriptionLifecycle,
@@ -134,7 +134,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
         return c.json({ success: false, error: 'mealPlanId is required' }, 400);
       }
 
-      const planRow = await resolveMealPlanOrProductById(input.mealPlanId);
+      const planRow = await resolveMealPlanById(input.mealPlanId);
       const planVendorId = planRow?.vendor_id != null ? String(planRow.vendor_id) : '';
       if (planVendorId) {
         const kitchenGate = await assertVendorAcceptingMealOrders(planVendorId);

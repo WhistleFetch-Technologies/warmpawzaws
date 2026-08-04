@@ -266,10 +266,18 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
 
   const promoTotal =
     effectiveVendorDiscount + effectivePlatformDiscount + effectiveCouponDiscount;
-  const subtotalAfterDiscounts =
-    finMeta && finMeta.subtotalAfterDiscounts != null
-      ? num(finMeta.subtotalAfterDiscounts)
-      : Math.max(0, roundMoney(servicePrice - promoTotal));
+  const computedSubtotal = Math.max(0, roundMoney(servicePrice - promoTotal));
+  let subtotalAfterDiscounts = computedSubtotal;
+  if (finMeta) {
+    const fromMeta = rebuildSubtotalFromFinancialMeta(finMeta);
+    if (fromMeta > 0.009 || promoTotal <= 0.009) {
+      subtotalAfterDiscounts = fromMeta;
+    } else if (Math.abs(fromMeta - computedSubtotal) > 0.02) {
+      subtotalAfterDiscounts = computedSubtotal;
+    } else {
+      subtotalAfterDiscounts = fromMeta;
+    }
+  }
 
   const feeFields = finMeta
     ? {
@@ -381,6 +389,71 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
   };
 }
 
+export type BookingCardPriceView = {
+  servicePrice: number;
+  serviceAfterDiscount: number;
+  serviceDiscountPercent?: number;
+  platformFee: number;
+  convenienceFee: number;
+  deliveryFee: number;
+  totalTax: number;
+  totalPayable: number;
+  serviceSavings: number;
+  hasServiceDiscount: boolean;
+};
+
+/** Service-only discount % and fee/GST lines for My Bookings cards (excludes fees from %). */
+export function buildBookingCardPriceView(
+  fin: BookingFinancialSnapshot,
+  allIn?: number
+): BookingCardPriceView {
+  const servicePrice = fin.servicePrice;
+  const computedAfter = Math.max(0, roundMoney(servicePrice - fin.totalSavings));
+  const serviceAfterDiscount =
+    fin.subtotalAfterDiscounts >= 0 &&
+    fin.totalSavings > 0.009 &&
+    Math.abs(fin.subtotalAfterDiscounts - computedAfter) <= 0.02
+      ? fin.subtotalAfterDiscounts
+      : computedAfter;
+  const hasServiceDiscount = fin.totalSavings > 0.009 && servicePrice > 0.009;
+  const serviceDiscountPercent =
+    hasServiceDiscount && serviceAfterDiscount < servicePrice - 0.009
+      ? Math.round(((servicePrice - serviceAfterDiscount) / servicePrice) * 100)
+      : undefined;
+
+  const totalPayable =
+    allIn != null && allIn > 0.009
+      ? allIn
+      : fin.finalPaid > 0.009
+        ? fin.finalPaid
+        : Math.max(
+            0,
+            roundMoney(
+              serviceAfterDiscount +
+                fin.totalTax +
+                fin.platformFee +
+                fin.convenienceFee +
+                fin.deliveryFee
+            )
+          );
+
+  return {
+    servicePrice,
+    serviceAfterDiscount,
+    serviceDiscountPercent:
+      serviceDiscountPercent != null && serviceDiscountPercent > 0
+        ? serviceDiscountPercent
+        : undefined,
+    platformFee: fin.platformFee,
+    convenienceFee: fin.convenienceFee,
+    deliveryFee: fin.deliveryFee,
+    totalTax: fin.totalTax,
+    totalPayable,
+    serviceSavings: fin.totalSavings,
+    hasServiceDiscount,
+  };
+}
+
 export type BookingListAmountInput = {
   notes?: unknown;
   specialInstructions?: unknown;
@@ -391,32 +464,71 @@ export type BookingListAmountInput = {
   paymentSources?: Array<{ method?: string; amount?: number }>;
 };
 
+function rebuildSubtotalFromFinancialMeta(finMeta: Record<string, unknown>): number {
+  const servicePrice = num(finMeta.servicePrice ?? finMeta.service_price);
+  let vendorDiscount = num(finMeta.vendorDiscount ?? finMeta.vendor_discount);
+  let platformDiscount = num(finMeta.platformDiscount ?? finMeta.platform_discount);
+  const couponDiscount = num(finMeta.couponDiscount ?? finMeta.coupon_discount);
+  if (
+    couponDiscount > 0 &&
+    platformDiscount > 0 &&
+    Math.abs(couponDiscount - platformDiscount) < 0.011
+  ) {
+    platformDiscount = 0;
+  }
+  if (
+    couponDiscount > 0 &&
+    vendorDiscount > 0 &&
+    platformDiscount <= 0 &&
+    Math.abs(couponDiscount - vendorDiscount) < 0.011
+  ) {
+    vendorDiscount = 0;
+  }
+  if (servicePrice > 0) {
+    return roundMoney(
+      Math.max(0, servicePrice - vendorDiscount - platformDiscount - couponDiscount)
+    );
+  }
+  return num(finMeta.subtotalAfterDiscounts ?? finMeta.subtotal_after_discounts);
+}
+
 /**
  * All-in amount for bookings list cards: service after discounts + GST + fees
- * (wallet + Razorpay combined). Prefer write-once wp_financial_meta; never show
- * post-discount service-only as if it were the payable.
+ * (wallet + Razorpay combined). Prefer write-once wp_financial_meta.finalPaid;
+ * never show post-discount service-only as if it were the payable.
  */
 export function resolveBookingListAllInAmount(raw: BookingListAmountInput): number {
   const notes = raw.notes ?? raw.specialInstructions;
   const finMeta = parseFinancialMetaFromNotes(notes);
   if (finMeta) {
-    const subtotal = num(finMeta.subtotalAfterDiscounts ?? finMeta.subtotal_after_discounts);
+    const subtotal = rebuildSubtotalFromFinancialMeta(finMeta);
     const totalTax = num(finMeta.totalTax ?? finMeta.total_tax);
     const platformFee = num(finMeta.platformFee ?? finMeta.platform_fee);
     const convenienceFee = num(finMeta.convenienceFee ?? finMeta.convenience_fee);
     const deliveryFee = num(finMeta.deliveryFee ?? finMeta.delivery_fee);
+    const finalPaid = num(finMeta.finalPaid ?? finMeta.final_paid);
+    const walletAmount = num(finMeta.walletAmount ?? finMeta.wallet_amount);
     const fromComponents = roundMoney(
       subtotal + totalTax + platformFee + convenienceFee + deliveryFee
     );
-    if (fromComponents > 0.009) return fromComponents;
 
-    const finalPaid = num(finMeta.finalPaid ?? finMeta.final_paid);
-    const walletAmount = num(finMeta.walletAmount ?? finMeta.wallet_amount);
+    const componentsAgreeWithFinalPaid =
+      finalPaid <= 0 || Math.abs(fromComponents - finalPaid) < 0.02;
+    if (fromComponents > 0.009 && componentsAgreeWithFinalPaid) {
+      return fromComponents;
+    }
+
     // Legacy cash-as-finalPaid snapshots store gross as finalPaid + wallet.
     if (walletAmount > 0.009 && finalPaid >= 0) {
+      const looksAllIn =
+        finalPaid + 0.01 >= walletAmount + totalTax ||
+        (subtotal > 0 && finalPaid + 0.01 >= fromComponents) ||
+        (totalTax > 0 && Math.abs(finalPaid - totalTax) > 0.05 && finalPaid > walletAmount);
+      if (looksAllIn) return finalPaid;
       return roundMoney(finalPaid + walletAmount);
     }
     if (finalPaid > 0.009) return finalPaid;
+    if (fromComponents > 0.009) return fromComponents;
   }
 
   const sources = Array.isArray(raw.paymentSources) ? raw.paymentSources : [];

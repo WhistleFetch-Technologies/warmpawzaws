@@ -79,16 +79,46 @@ import {
 import {
   getVendorCommissionConfigResponse,
   upsertVendorCommissionConfig,
+  countProductsWithoutListingOwnership,
 } from '../../../utils/ecommerce-commission-admin';
+import {
+  buildAdminEcommerceOrderCountSql,
+  buildAdminEcommerceOrderListSql,
+  buildAdminEcommerceOrderStatusCountsSql,
+  buildAdminEcommerceOrderStatusCountsSqlForDays,
+  enrichAdminEcommerceOrderDetail,
+  normalizeAdminOrderStatusCounts,
+  SQL_ADMIN_SHOP_ORDER_TYPE,
+} from '../../../utils/admin-ecommerce-orders-sql';
+import {
+  buildDailyRevenueSql,
+  buildEcommerceSellerStatsSql,
+  buildPeriodStartDates,
+  buildPeriodTotalsSql,
+  buildPlatformPeriodGrowthSql,
+  buildProductStatsSql,
+  buildSellersWithOrdersSql,
+  buildTopProductsSql,
+  buildTopSellersSql,
+  calcPeriodGrowthPercent,
+  clampAnalyticsDays,
+  stripAllStatusKey,
+} from '../../../utils/admin-ecommerce-analytics-sql';
 import {
   resolveOrderCommission,
   buildCommissionSnapshot,
   persistOrderItemCommission,
   loadOrderItemIds,
+  forceApplyOrderCommissionAudit,
 } from '../../../utils/resolve-ecommerce-commission-rate';
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
+import { reconcilePendingShopPayments } from '../../../utils/payments/shop-payment-reconciliation';
+import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
-import { writeEcommerceOrderSettlementLedgerRow } from '../../../utils/write-ecommerce-order-settlement';
+import {
+  writeEcommerceOrderSettlementLedgerRow,
+  syncEcommerceOrderSettlementLedgerRow,
+} from '../../../utils/write-ecommerce-order-settlement';
 import {
   productIdIsExcludedFromEcommerceStorefront,
   storefrontExcludeMealProductsSql,
@@ -644,6 +674,14 @@ export function registerEcommerceEndpoints(app: Hono) {
       const paymentMethod = orderData.payment_method || orderData.paymentMethod || 'online';
       const couponCode = orderData.coupon_code || orderData.couponCode;
       const walletAmountApplied = Math.max(0, parseFloat(String(orderData.walletAmountApplied || orderData.wallet_amount_applied || '0')) || 0);
+
+      const shopPaymentGuard = assertShopCheckoutPaymentAllowed({
+        paymentMethod,
+        walletAmountApplied,
+      });
+      if (!shopPaymentGuard.ok) {
+        return c.json({ error: shopPaymentGuard.error }, shopPaymentGuard.status as ContentfulStatusCode);
+      }
 
       if (!customerPhone || !items || items.length === 0) {
         return c.json({ error: 'customer_phone and items are required' }, 400);
@@ -1243,6 +1281,14 @@ export function registerEcommerceEndpoints(app: Hono) {
           }));
           const commResult = await resolveOrderCommission(firstVendorId, lineItemsForCommission);
           const snap = buildCommissionSnapshot(commResult);
+          const platformDefaultLines = snap.lineBreakdown.filter(
+            (line) => line.source === 'platform_default'
+          );
+          if (platformDefaultLines.length > 0) {
+            console.warn(
+              `[COMMISSION] Order ${orderId}: ${platformDefaultLines.length} line(s) used platform default — check vendor commission config and product listing_ownership`
+            );
+          }
           await query(
             `UPDATE orders SET
                commission_rate = $2,
@@ -1899,6 +1945,14 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
     try {
       const { customerId } = c.req.param();
 
+      await reconcilePendingShopPayments({
+        customerId,
+        limit: 30,
+        source: 'orders-customer-list',
+      }).catch((e) =>
+        console.warn('[orders/customer] reconcilePendingShopPayments failed:', e)
+      );
+
       await expireShopPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
         console.warn('[orders/customer] expireShopPaymentHolds failed:', e)
       );
@@ -1954,6 +2008,8 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
       const settlementSuppressionParams =
         suppression && suppression.vendorIds?.length ? [suppression.vendorIds, suppression.cutoffDateIst] : [];
 
+      const platformGrowth = buildPlatformPeriodGrowthSql();
+
       const [
         revenueStats,
         sellerStats,
@@ -1961,42 +2017,18 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
         pendingApprovalsRow,
         processingOrdersRow,
         settlementAggRow,
+        platformGrowthRow,
       ] = await Promise.all([
         query(
           `SELECT 
            COUNT(*) as total_orders,
-           COALESCE(SUM(total_amount) FILTER (WHERE order_status = 'delivered'), 0) as total_revenue,
-           COALESCE(SUM(total_amount) FILTER (WHERE order_status = 'delivered' AND created_at >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
-         FROM orders`
+           COALESCE(SUM(o.total_amount), 0) as total_gmv,
+           COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered'), 0) as total_revenue,
+           COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
+         FROM orders o
+         WHERE ${SQL_ADMIN_SHOP_ORDER_TYPE}`
         ).catch(() => ({ rows: [{}] })),
-        query(
-          `SELECT 
-           COUNT(DISTINCT v.id) FILTER (WHERE 
-             v.is_active = true 
-             AND (v.is_deleted IS NULL OR v.is_deleted = false)
-             AND (
-               r.name = 'pet_product' OR 
-               r.name = 'pet_products_store' OR 
-               r.name = 'product_seller' OR 
-               r.name = 'pet_product_seller' OR
-               r.name = 'seller' OR
-               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-             )
-           ) as active_sellers,
-           COUNT(DISTINCT v.id) FILTER (WHERE 
-             (v.is_deleted IS NULL OR v.is_deleted = false)
-             AND (
-               r.name = 'pet_product' OR 
-               r.name = 'pet_products_store' OR 
-               r.name = 'product_seller' OR 
-               r.name = 'pet_product_seller' OR
-               r.name = 'seller' OR
-               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-             )
-           ) as total_sellers
-         FROM vendors v
-         LEFT JOIN roles r ON v.role_id = r.id`
-        ).catch(() => ({ rows: [{}] })),
+        query(buildEcommerceSellerStatsSql().sql).catch(() => ({ rows: [{}] })),
         query(
           `SELECT COUNT(*)::int AS c FROM products p
            WHERE p.is_active = true
@@ -2011,7 +2043,8 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
         ).catch(() => ({ rows: [{ c: 0 }] })),
         query(
           `SELECT COUNT(*)::int AS c FROM orders o
-           WHERE o.order_status IN ('confirmed', 'processing', 'shipped')`
+           WHERE o.order_status IN ('confirmed', 'processing', 'shipped')
+             AND ${SQL_ADMIN_SHOP_ORDER_TYPE}`
         ).catch(() => ({ rows: [{ c: 0 }] })),
         (async () => {
           try {
@@ -2038,6 +2071,7 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
             }
           }
         })(),
+        query(platformGrowth.sql, platformGrowth.params).catch(() => ({ rows: [{}] })),
       ]);
 
       // Aggregate commission from paid orders (fallback to platform default when column absent)
@@ -2058,18 +2092,26 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
         totalCommission = totalRevenue * (fallbackRate / 100);
       }
       const totalRevenue = parseFloat(revenueStats.rows[0]?.total_revenue || '0');
+      const totalGMV = parseFloat(revenueStats.rows[0]?.total_gmv || '0') || totalRevenue;
       const activeProducts = parseInt(String(activeProductsRow.rows[0]?.c ?? '0'), 10) || 0;
       const pendingApprovals = parseInt(String(pendingApprovalsRow.rows[0]?.c ?? '0'), 10) || 0;
       const processingOrders = parseInt(String(processingOrdersRow.rows[0]?.c ?? '0'), 10) || 0;
       const settlementRow = settlementAggRow.rows[0] || {};
       const pendingSettlements = parseInt(String(settlementRow.pending_count ?? '0'), 10) || 0;
       const pendingSettlementAmount = parseFloat(String(settlementRow.pending_amount ?? '0')) || 0;
+      const growthRow = platformGrowthRow.rows[0] || {};
+      const currentGmv = parseFloat(String(growthRow.current_gmv ?? 0)) || 0;
+      const previousGmv = parseFloat(String(growthRow.previous_gmv ?? 0)) || 0;
+      const currentOrders = parseInt(String(growthRow.current_orders ?? 0), 10) || 0;
+      const previousOrders = parseInt(String(growthRow.previous_orders ?? 0), 10) || 0;
+      const currentCommission = parseFloat(String(growthRow.current_commission ?? 0)) || 0;
+      const previousCommission = parseFloat(String(growthRow.previous_commission ?? 0)) || 0;
 
       return c.json({
         success: true,
         data: {
           totalRevenue,
-          totalGMV: totalRevenue,
+          totalGMV,
           totalCommission,
           totalOrders: parseInt(revenueStats.rows[0]?.total_orders || '0', 10),
           activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || '0', 10),
@@ -2080,6 +2122,11 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
           processingOrders,
           pendingSettlements,
           pendingSettlementAmount,
+          growth: {
+            gmv: calcPeriodGrowthPercent(currentGmv, previousGmv),
+            commission: calcPeriodGrowthPercent(currentCommission, previousCommission),
+            orders: calcPeriodGrowthPercent(currentOrders, previousOrders),
+          },
         },
       });
     } catch (error: any) {
@@ -2094,108 +2141,96 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
    */
   app.get("/admin/ecommerce/analytics", async (c) => {
     try {
-      const days = parseInt(c.req.query('days') || '30', 10);
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
+      const days = clampAnalyticsDays(c.req.query('days'));
+      const { currentStart, previousStart } = buildPeriodStartDates(days);
+      const currentStartIso = currentStart.toISOString();
+      const previousStartIso = previousStart.toISOString();
+      const nowIso = new Date().toISOString();
 
-      // Get revenue analytics
-      const revenueStats = await query(
-        `SELECT 
-           DATE(created_at) as date,
-           COUNT(*) as order_count,
-           COALESCE(SUM(total_amount) FILTER (WHERE order_status = 'delivered'), 0) as revenue
-         FROM orders
-         WHERE created_at >= $1
-         GROUP BY DATE(created_at)
-         ORDER BY date DESC`,
-        [startDate.toISOString()]
-      );
+      const dailyRevenue = buildDailyRevenueSql();
+      const periodTotals = buildPeriodTotalsSql();
+      const sellersWithOrders = buildSellersWithOrdersSql();
+      const productStats = buildProductStatsSql();
+      const sellerStats = buildEcommerceSellerStatsSql();
+      const topProducts = buildTopProductsSql();
+      const topSellers = buildTopSellersSql();
+      const orderStatusCounts = buildAdminEcommerceOrderStatusCountsSqlForDays(days);
 
-      // Get top products
-      const topProducts = await query(
-        `SELECT 
-           p.name,
-           COUNT(oi.id) as sales,
-           COALESCE(SUM(oi.total_price), 0) as revenue
-         FROM order_items oi
-         INNER JOIN products p ON oi.product_id = p.id
-         INNER JOIN orders o ON oi.order_id = o.id
-         WHERE o.created_at >= $1 AND o.order_status = 'delivered'
-         GROUP BY p.id, p.name
-         ORDER BY sales DESC
-         LIMIT 10`,
-        [startDate.toISOString()]
-      );
+      const [
+        revenueStats,
+        totalsResult,
+        currentSellersResult,
+        previousSellersResult,
+        productStatsResult,
+        sellerStatsResult,
+        topProductsResult,
+        topSellersResult,
+        orderStatusResult,
+      ] = await Promise.all([
+        query(dailyRevenue.sql, [currentStartIso]),
+        query(periodTotals.sql, [currentStartIso, previousStartIso]),
+        query(sellersWithOrders.sql, [currentStartIso, nowIso]),
+        query(sellersWithOrders.sql, [previousStartIso, currentStartIso]),
+        query(productStats.sql, productStats.params),
+        query(sellerStats.sql, sellerStats.params),
+        query(topProducts.sql, [currentStartIso]),
+        query(topSellers.sql, [currentStartIso]),
+        query(orderStatusCounts.sql, orderStatusCounts.params),
+      ]);
 
-      // Get e-commerce seller stats
-      const sellerStats = await query(
-        `SELECT 
-           COUNT(DISTINCT v.id) FILTER (WHERE 
-             v.is_active = true 
-             AND (v.is_deleted IS NULL OR v.is_deleted = false)
-             AND (
-               r.name = 'pet_product' OR 
-               r.name = 'pet_products_store' OR 
-               r.name = 'product_seller' OR 
-               r.name = 'pet_product_seller' OR
-               r.name = 'seller' OR
-               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-             )
-           ) as active_sellers,
-           COUNT(DISTINCT v.id) FILTER (WHERE 
-             (v.is_deleted IS NULL OR v.is_deleted = false)
-             AND (
-               r.name = 'pet_product' OR 
-               r.name = 'pet_products_store' OR 
-               r.name = 'product_seller' OR 
-               r.name = 'pet_product_seller' OR
-               r.name = 'seller' OR
-               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-             )
-           ) as total_sellers
-         FROM vendors v
-         LEFT JOIN roles r ON v.role_id = r.id`
-      );
+      const totals = totalsResult.rows[0] || {};
+      const currentGmv = parseFloat(String(totals.current_gmv ?? 0)) || 0;
+      const previousGmv = parseFloat(String(totals.previous_gmv ?? 0)) || 0;
+      const currentDeliveredRevenue =
+        parseFloat(String(totals.current_delivered_revenue ?? 0)) || 0;
+      const previousDeliveredRevenue =
+        parseFloat(String(totals.previous_delivered_revenue ?? 0)) || 0;
+      const totalOrders = parseInt(String(totals.current_orders ?? 0), 10) || 0;
+      const previousOrders = parseInt(String(totals.previous_orders ?? 0), 10) || 0;
+      const currentSellersWithOrders =
+        parseInt(String(currentSellersResult.rows[0]?.seller_count ?? 0), 10) || 0;
+      const previousSellersWithOrders =
+        parseInt(String(previousSellersResult.rows[0]?.seller_count ?? 0), 10) || 0;
 
-      // Get top sellers by revenue (only vendors with actual sales)
-      const topSellers = await query(
-        `SELECT 
-           v.id,
-           v.business_name as name,
-           COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= $1), 0) as revenue,
-           COUNT(o.id) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= $1) as orders
-         FROM vendors v
-         INNER JOIN roles r ON v.role_id = r.id
-         INNER JOIN orders o ON v.id = o.vendor_id AND o.order_status = 'delivered' AND o.created_at >= $1
-         WHERE (v.is_deleted IS NULL OR v.is_deleted = false)
-           AND (
-             r.name = 'pet_product' OR 
-             r.name = 'pet_products_store' OR 
-             r.name = 'product_seller' OR 
-             r.name = 'pet_product_seller' OR
-             r.name = 'seller' OR
-             (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-           )
-         GROUP BY v.id, v.business_name
-         HAVING SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= $1) > 0
-         ORDER BY revenue DESC
-         LIMIT 10`,
-        [startDate.toISOString()]
-      );
+      const productRow = productStatsResult.rows[0] || {};
+      const ordersByStatus = stripAllStatusKey(normalizeAdminOrderStatusCounts(orderStatusResult.rows));
 
-      const totalRevenue = revenueStats.rows.reduce((sum: number, row: any) => sum + parseFloat(row.revenue || '0'), 0);
-      const totalOrders = revenueStats.rows.reduce((sum: number, row: any) => sum + parseInt(row.order_count || '0', 10), 0);
+      const revenue = (revenueStats.rows || []).map((row: any) => ({
+        date: row.date,
+        order_count: parseInt(String(row.order_count ?? 0), 10) || 0,
+        gmv: parseFloat(String(row.gmv ?? 0)) || 0,
+        delivered_revenue: parseFloat(String(row.delivered_revenue ?? 0)) || 0,
+        // Backward compatibility for older clients
+        revenue: parseFloat(String(row.delivered_revenue ?? 0)) || 0,
+      }));
 
       return c.json({
         success: true,
         data: {
-          revenue: revenueStats.rows,
-          topProducts: topProducts.rows,
-          topSellers: topSellers.rows,
-          totalRevenue,
+          revenue,
+          topProducts: topProductsResult.rows,
+          topSellers: topSellersResult.rows,
+          totalRevenue: currentDeliveredRevenue,
+          totalGMV: currentGmv,
           totalOrders,
-          activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || '0', 10),
-          totalSellers: parseInt(sellerStats.rows[0]?.total_sellers || '0', 10),
+          activeSellers: parseInt(String(sellerStatsResult.rows[0]?.active_sellers ?? 0), 10) || 0,
+          totalSellers: parseInt(String(sellerStatsResult.rows[0]?.total_sellers ?? 0), 10) || 0,
+          growth: {
+            gmv: calcPeriodGrowthPercent(currentGmv, previousGmv),
+            deliveredRevenue: calcPeriodGrowthPercent(currentDeliveredRevenue, previousDeliveredRevenue),
+            orders: calcPeriodGrowthPercent(totalOrders, previousOrders),
+            sellersWithOrders: calcPeriodGrowthPercent(
+              currentSellersWithOrders,
+              previousSellersWithOrders,
+            ),
+          },
+          ordersByStatus,
+          products: {
+            total: parseInt(String(productRow.total ?? 0), 10) || 0,
+            active: parseInt(String(productRow.active ?? 0), 10) || 0,
+            lowStock: parseInt(String(productRow.low_stock ?? 0), 10) || 0,
+          },
+          periodDays: days,
         },
       });
     } catch (error: any) {
@@ -2205,49 +2240,119 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
   });
 
   /**
-   * GET /admin/ecommerce/orders
-   * Get all marketplace orders (admin)
+   * GET /admin/ecommerce/orders/counts
+   * Status badge counts for admin marketplace orders
    */
-  app.get("/admin/ecommerce/orders", async (c) => {
+  app.get('/admin/ecommerce/orders/counts', async (c) => {
     try {
-      const status = c.req.query('status');
-      const limit = parseInt(c.req.query('limit') || '50', 10);
-      const offset = parseInt(c.req.query('offset') || '0', 10);
-
-      let ordersQuery = `
-        SELECT 
-          o.*,
-          c.full_name as customer_name,
-          c.phone as customer_phone,
-          v.business_name as vendor_name
-        FROM orders o
-        LEFT JOIN customers c ON o.customer_id = c.id
-        LEFT JOIN vendors v ON o.vendor_id = v.id
-        WHERE 1=1
-      `;
-
-      const params: any[] = [];
-      let paramIndex = 1;
-
-      if (status) {
-        ordersQuery += ` AND o.order_status = $${paramIndex}`;
-        params.push(status);
-        paramIndex++;
-      }
-
-      ordersQuery += ` ORDER BY o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit, offset);
-
-      const orders = await query(ordersQuery, params);
+      const period = c.req.query('period');
+      const { sql, params } = buildAdminEcommerceOrderStatusCountsSql(period);
+      const result = await query(sql, params);
+      const counts = normalizeAdminOrderStatusCounts(result.rows);
 
       return c.json({
         success: true,
-        orders: orders.rows,
-        total: orders.rows.length,
+        counts,
+      });
+    } catch (error: any) {
+      console.error('Error fetching admin order counts:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/ecommerce/orders/:orderId
+   * Full marketplace order detail for admin
+   */
+  app.get('/admin/ecommerce/orders/:orderId', async (c) => {
+    try {
+      const { orderId } = c.req.param();
+
+      const orders = await query(
+        `SELECT
+           o.*,
+           o.order_status AS status,
+           c.full_name AS customer_name,
+           c.phone AS customer_phone,
+           c.email AS customer_email,
+           v.business_name AS vendor_name,
+           v.phone AS vendor_phone,
+           s.awb_code AS shipment_tracking_number,
+           s.tracking_url AS shipment_tracking_url,
+           s.courier_name AS shipment_carrier_name,
+           s.logistics_partner AS shipment_carrier_id
+         FROM orders o
+         LEFT JOIN customers c ON o.customer_id = c.id
+         LEFT JOIN vendors v ON o.vendor_id = v.id
+         LEFT JOIN LATERAL (
+           SELECT awb_code, tracking_url, courier_name, logistics_partner
+           FROM shipments
+           WHERE order_id = o.id
+           ORDER BY created_at DESC
+           LIMIT 1
+         ) s ON true
+         WHERE o.id = $1`,
+        [orderId],
+      );
+
+      if (orders.rows.length === 0) {
+        return c.json({ success: false, error: 'Order not found' }, 404);
+      }
+
+      const items = await query(
+        `SELECT oi.*, p.name AS product_name, p.images
+         FROM order_items oi
+         LEFT JOIN products p ON oi.product_id = p.id
+         WHERE oi.order_id = $1`,
+        [orderId],
+      );
+
+      const order = enrichAdminEcommerceOrderDetail({
+        ...orders.rows[0],
+        items: items.rows,
+      });
+
+      return c.json({
+        success: true,
+        order,
+      });
+    } catch (error: any) {
+      console.error('Error fetching admin order detail:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/ecommerce/orders
+   * Lean marketplace order list for admin (filters + pagination)
+   */
+  app.get('/admin/ecommerce/orders', async (c) => {
+    try {
+      const status = c.req.query('status');
+      const period = c.req.query('period');
+      const search = c.req.query('search');
+      const limit = parseInt(c.req.query('limit') || '25', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      const filters = { status, period, search };
+      const listQuery = buildAdminEcommerceOrderListSql(filters, limit, offset);
+      const countQuery = buildAdminEcommerceOrderCountSql(filters);
+
+      const [ordersResult, countResult] = await Promise.all([
+        query(listQuery.sql, listQuery.params),
+        query(countQuery.sql, countQuery.params),
+      ]);
+
+      return c.json({
+        success: true,
+        orders: ordersResult.rows,
+        total: countResult.rows[0]?.total ?? 0,
+        limit,
+        offset,
       });
     } catch (error: any) {
       console.error('Error fetching orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 
@@ -2817,6 +2922,67 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
       console.error('Error updating vendor commission:', error);
       const status = error.message?.includes('commissionModel') ? 400 : 500;
       return c.json({ error: error.message }, status);
+    }
+  });
+
+  /**
+   * GET /admin/ecommerce/commission/vendors/:vendorId/products-without-ownership
+   * Guardrail: products missing listing_ownership for ownership commission model.
+   */
+  app.get('/admin/ecommerce/commission/vendors/:vendorId/products-without-ownership', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+      const count = await countProductsWithoutListingOwnership(vendorId);
+      return c.json({ success: true, vendorId, count });
+    } catch (error: any) {
+      console.error('Error counting products without ownership:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/ecommerce/commission/orders/:orderId/re-resolve
+   * Force re-resolve commission using current vendor/product config.
+   */
+  app.post('/admin/ecommerce/commission/orders/:orderId/re-resolve', async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      if (!isValidUUID(orderId)) {
+        return c.json({ error: 'Invalid order ID' }, 400);
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const force = Boolean(body?.force);
+
+      const orderRes = await query(
+        `SELECT vendor_id::text FROM orders WHERE id = $1::uuid LIMIT 1`,
+        [orderId]
+      );
+      const vendorId = orderRes.rows?.[0]?.vendor_id;
+      if (!vendorId) {
+        return c.json({ error: 'Order not found or missing vendor' }, 404);
+      }
+
+      const result = await forceApplyOrderCommissionAudit(orderId, String(vendorId));
+      if (!result) {
+        return c.json({ error: 'Commission re-resolve failed' }, 500);
+      }
+
+      const ledger = await syncEcommerceOrderSettlementLedgerRow(orderId, { force });
+
+      return c.json({
+        success: true,
+        orderId,
+        previous: result.previous,
+        current: result.current,
+        ledger,
+      });
+    } catch (error: any) {
+      console.error('Error re-resolving order commission:', error);
+      return c.json({ error: error.message }, 500);
     }
   });
 

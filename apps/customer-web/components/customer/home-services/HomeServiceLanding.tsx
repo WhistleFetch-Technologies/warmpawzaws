@@ -36,6 +36,7 @@ import { apiClient } from '@/lib/api-client';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 
 // Map config roleId to roleId used in specialization_master applicable_roles
 const ROLE_ID_FOR_PROBLEM_GRID: Record<string, string> = {
@@ -161,7 +162,7 @@ export function HomeServiceLanding({
             vendorMap.set(vendorId, {
               id: vendorId,
               name: service.vendorName || 'Provider',
-              photo: service.vendorPhoto || service.vendorLogo,
+              photo: normalizeProviderListPhoto(service) || service.vendorPhoto || service.vendorLogo,
               rating: vr,
               reviewCount: rc,
               distance: service.distance ?? null,
@@ -197,7 +198,7 @@ export function HomeServiceLanding({
               prevVendorMap.set(booking.vendorId, {
                 id: booking.vendorId,
                 name: booking.vendorName || 'Provider',
-                photo: booking.vendorPhoto,
+                photo: normalizeProviderListPhoto(booking) || booking.vendorPhoto,
                 rating: br,
                 lastVisit: new Date(booking.scheduledDate).toLocaleDateString()
               });

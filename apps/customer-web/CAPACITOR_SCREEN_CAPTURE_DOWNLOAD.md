@@ -11,7 +11,9 @@ This patch adds a **web-only** native save path deployed with `customer-web` and
 | Layer | Files |
 |-------|--------|
 | Shared helper | [`lib/capacitor-pdf-save.ts`](lib/capacitor-pdf-save.ts) (customer + vendor copies) |
+| Chat attachments | [`lib/chat-attachment-save.ts`](lib/chat-attachment-save.ts), [`components/shared/ChatAttachmentActions.tsx`](components/shared/ChatAttachmentActions.tsx) (customer + vendor copies) |
 | Screen capture UI | [`components/customer/PrescriptionDocument.tsx`](components/customer/PrescriptionDocument.tsx), vendor [`PrescriptionDocument.tsx`](../vendor-web/components/vendor/PrescriptionDocument.tsx) |
+| Chat UI entry points | Customer [`ChimeVideoCall.tsx`](components/teleCommunication/ChimeVideoCall.tsx), [`CommunicationHub.tsx`](components/communication/CommunicationHub.tsx); vendor [`ChimeVideoCall.tsx`](../vendor-web/components/vendor/teleCommunication/ChimeVideoCall.tsx), [`VendorChatModal.tsx`](../vendor-web/components/vendor/VendorChatModal.tsx) |
 
 ### Save flow (native Capacitor only)
 
@@ -52,6 +54,13 @@ On device: force-close the app or wait for cache refresh so `_next/static` picks
 3. **Pass:** Android/iOS **share sheet** appears with a PDF (Save to Files, Drive, WhatsApp, etc.).
 4. **Pass:** Desktop browser still downloads a `.pdf` file directly.
 
+### Chat document attachments (PDF, Word, etc.)
+
+1. In booking chat or video-call chat, share a `.pdf` or `.docx` file.
+2. Tap **Save or share** on the attachment (mobile) or **Download** (desktop).
+3. **Pass:** Android/iOS share sheet appears with the file (Save to Files, Drive, WhatsApp, etc.).
+4. **Pass:** Older messages with only `file_id` still save via `/chat/file/` redirect.
+
 Safari Web Inspector (iOS): Develop → [device] → app → console may show `[Native Save] Started` / `Success`.
 
 ---
@@ -80,12 +89,12 @@ npx cap sync ios
 
 ---
 
-## Out of scope (this rollout)
+## Out of scope (other call sites)
 
-- CSV / JSON / invoice anchor downloads (other call sites).
-- Chat “Download” links that only open HTTPS URLs in WebView.
+- CSV / JSON / invoice anchor downloads not yet migrated to `downloadFromUrl`.
+- Chat **image** attachments (inline preview only; save/share for images can reuse `ChatAttachmentActions` later).
 
-Extend [`lib/capacitor-pdf-save.ts`](lib/capacitor-pdf-save.ts) for those flows in a follow-up if needed.
+Extend [`lib/download-file.ts`](lib/download-file.ts) and [`lib/chat-attachment-save.ts`](lib/chat-attachment-save.ts) for additional flows as needed.
 
 ---
 

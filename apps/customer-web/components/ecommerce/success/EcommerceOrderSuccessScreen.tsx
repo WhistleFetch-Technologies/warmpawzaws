@@ -1,15 +1,9 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Check,
-  Copy,
-  Mail,
-  MessageCircle,
-  Phone,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Check, Copy, MessageCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
   readCheckoutOrderResponse,
@@ -26,6 +20,10 @@ import { toast } from 'sonner';
 import { MarketplaceTimeline } from '@/components/customer/marketplace/MarketplaceTimeline';
 import { MarketplaceConfirmation } from '@/components/customer/marketplace/MarketplaceConfirmation';
 
+const AIChatbotWidget = dynamic(
+  () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
+  { ssr: false }
+);
 function statusIndex(status: string | undefined): number {
   const s = (status || 'confirmed').toLowerCase();
   if (['delivered', 'completed'].some((x) => s.includes(x))) return 3;
@@ -41,7 +39,8 @@ export function EcommerceOrderSuccessScreen() {
   const [order, setOrder] = useState<StoredCheckoutOrderResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [timelineStatus, setTimelineStatus] = useState<string>('confirmed');
-
+  const [showAIChat, setShowAIChat] = useState(false);
+  const [customerPhone, setCustomerPhone] = useState<string | undefined>(undefined);
   const leaveSuccessToShop = useCallback(() => {
     clearCheckoutOrderResponse();
     nav.goToShop({ replace: true });
@@ -51,6 +50,10 @@ export function EcommerceOrderSuccessScreen() {
     return registerCheckoutSuccessBackHandler(leaveSuccessToShop);
   }, [leaveSuccessToShop]);
 
+  useEffect(() => {
+    const storedPhone = localStorage.getItem('customerPhone');
+    setCustomerPhone(storedPhone ?? undefined);
+  }, []);
   useEffect(() => {
     const stored = readCheckoutOrderResponse();
     if (!stored?.orderId) {
@@ -206,28 +209,30 @@ export function EcommerceOrderSuccessScreen() {
 
         <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-4">
           <p className="font-semibold text-slate-900 mb-3">Need help?</p>
-          <div className="flex flex-wrap gap-2">
-            <a
-              href="mailto:support@warmpawz.com"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-[#FF8C42] px-3 py-2 rounded-lg bg-orange-50"
-            >
-              <Mail className="w-4 h-4" />
-              Email
-            </a>
-            <a
-              href="tel:+919876543210"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-[#FF8C42] px-3 py-2 rounded-lg bg-orange-50"
-            >
-              <Phone className="w-4 h-4" />
-              Call
-            </a>
-            <span className="inline-flex items-center gap-1.5 text-sm text-slate-400 px-3 py-2 rounded-lg bg-slate-50">
-              <MessageCircle className="w-4 h-4" />
-              Chat — coming soon
-            </span>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowAIChat(true)}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-[#FF8C42] px-3 py-2 rounded-lg bg-orange-50 hover:bg-orange-100 transition-colors"
+          >
+            <MessageCircle className="w-4 h-4" />
+            Chat with AI assistant
+          </button>
         </div>
       </MarketplaceConfirmation>
+
+      {showAIChat && (
+        <AIChatbotWidget
+          presentation="modal"
+          customerPhone={customerPhone}
+          onClose={() => setShowAIChat(false)}
+          onNavigate={(dest) => {
+            if (typeof dest === 'string' && dest.startsWith('/')) {
+              setShowAIChat(false);
+              router.push(dest);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

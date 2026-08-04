@@ -133,10 +133,7 @@ export async function enrichFinancialMetaWithSettlement(
     legacyRate
   );
 
-  const derivedSubtotal =
-    params.subtotalAfterDiscounts != null && params.subtotalAfterDiscounts > 0
-      ? params.subtotalAfterDiscounts
-      : Math.max(0, legacyCommissionBase);
+  const derivedSubtotal = Math.max(0, legacyCommissionBase);
 
   return attachSettlementSnapshotToFinancialMeta(
     {

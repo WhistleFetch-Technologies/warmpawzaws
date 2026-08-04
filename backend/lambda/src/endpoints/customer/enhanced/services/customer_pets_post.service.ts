@@ -33,6 +33,7 @@ import {
 import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../../services/meal-subscription/meal-subscription-operations-service';
 import { expireMealPaymentHolds } from '../../../../utils/meal-payment-hold';
 import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refund-cases';
+import { validatePetCreatePayload } from '../../../../utils/pet-create-validation';
 
 export async function executecustomerPetsPost(c: Context) {
     try {
@@ -56,16 +57,28 @@ export async function executecustomerPetsPost(c: Context) {
 
       for (const pet of pets) {
         try {
-          // ✅ PLATFORM RESTRICTION: Only allow Dog and Cat
-          const petSpecies = (pet.type || pet.species || 'dog').toLowerCase();
+          const petSpecies = (pet.type || pet.species || '').toLowerCase();
           const allowedSpecies = ['dog', 'cat'];
           if (!allowedSpecies.includes(petSpecies)) {
-            console.warn(`Rejected pet type: ${petSpecies}. Only Dog and Cat allowed.`);
-            continue; // Skip this pet, don't save it
+            return c.json(
+              {
+                error: `Invalid pet type for "${pet.name || 'pet'}". Platform currently supports Dogs and Cats only.`,
+              },
+              400,
+            );
           }
-          
+
           // Check if pet already exists
-          const existingPets = await customer_pets_postRepo.dbCustomerPetsPost0(customer, pet)
+          const existingPets = await customer_pets_postRepo.dbCustomerPetsPost0(customer, pet);
+
+          if (existingPets.length === 0) {
+            const createValidation = validatePetCreatePayload(pet, {
+              requireCustomerId: false,
+            });
+            if (!createValidation.ok) {
+              return c.json({ error: createValidation.error }, 400);
+            }
+          }
           
           // Normalize gender to lowercase for DB constraint
           const normalizedGender = pet.gender ? pet.gender.toLowerCase() : null;
