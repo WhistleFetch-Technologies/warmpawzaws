@@ -322,7 +322,7 @@ flowchart LR
 | **S05** | **Bindu** | Abhi | `1094_warmpawz_pay_appointment_credits.sql` + **apply on dev RDS** | `done` | | 2026-08-04 | 1094 applied dev via Data API — Abhi: ready for S07 |
 | **S06** | **Abhi** | Bindu | `GET /customer/warmpawz-pay/appointment-context?vendorId=` — open WAPPT booking + OTP fields | `done` | | 2026-08-04 | openAppointment + creditEligibleBooking — Bindu: S08 |
 | **S07** | **Abhi** | Bindu | Initiate/verify: optional `bookingId`, credit only if booking `completed`, idempotent insert into `warmpawz_pay_appointment_credits` | `done` | | 2026-08-04 | credit consumed post-payment; metadata on initiate — deploy lambda |
-| **S08** | **Bindu** | Abhi | `GET /vendor/warmpawz-pay/payments` + vendor-web earnings dashboard Pay Bill rows; deploy vendor-web dev | `pending` | | | Abhi: vendor UI shows walk-in Pay from S03 |
+| **S08** | **Bindu** | Abhi | `GET /vendor/warmpawz-pay/payments` + vendor-web earnings dashboard Pay Bill rows; deploy vendor-web dev | `done` | | 2026-08-04 | Pay Bill tab + earnings API rows — deploy lambda + vendor-web pending |
 | **S09** | **Abhi** | Bindu | Customer Pay UI: appointment card, OTP display, poll until completed, quote line items; deploy customer-web dev | `pending` | | | Bindu: full WAPPT→Pay counter flow |
 | **S10** | **Abhi** | Bindu | Audit WAPPT cancel: ≥1h wallet refund, <1h no refund; fix tiers/UI warning only if drift | `pending` | | | Bindu: cancel smoke on dev |
 | **S11** | **Both** | — | Joint E2E — all checks in **Verification checklist** below must pass | `pending` | | | Either marks blockers in notes column |

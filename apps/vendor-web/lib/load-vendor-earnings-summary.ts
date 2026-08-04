@@ -12,6 +12,9 @@ export type VendorEarningsTransaction = {
   amount: number;
   status: string;
   customer: string;
+  flowType?: string;
+  quotedAmount?: number;
+  paidAmount?: number;
 };
 
 export type VendorEarningsSummary = {
@@ -95,10 +98,17 @@ function mapTransactionsFromEarningsApi(txSource: unknown[]): VendorEarningsTran
     return {
       id: String(row.id || row.transactionId || Math.random()),
       date: String(credited),
-      service: String(row.serviceName || row.service_name || row.service || 'Service'),
+      service:
+        row.flowType === 'pay_bill'
+          ? 'Pay Bill'
+          : String(row.serviceName || row.service_name || row.service || 'Service'),
       amount: Number(row.amount || row.price || 0) || 0,
       status: String(row.status || 'pending').toLowerCase(),
       customer: String(row.customerName || row.customer_name || row.customer || 'Customer'),
+      flowType: row.flowType ? String(row.flowType) : undefined,
+      quotedAmount:
+        row.quotedAmount != null ? Number(row.quotedAmount) : undefined,
+      paidAmount: row.paidAmount != null ? Number(row.paidAmount) : undefined,
     };
   });
 }
