@@ -1,7 +1,9 @@
 /**
  * Safe geolocation utilities - avoid repeated prompts and noisy logs when permission denied.
- * Uses Permissions API when available to skip requests when user has already denied.
+ * On Capacitor native (Android/iOS app), delegates to address-from-geolocation (Capacitor plugin).
  */
+
+import { Capacitor } from '@capacitor/core';
 
 const STORAGE_KEY_DENIED = 'warmpawz_geolocation_denied';
 
@@ -12,9 +14,11 @@ export type GeolocationResult = { lat: number; lng: number };
 
 /**
  * Check if we should skip geolocation (user previously denied or permission is denied).
+ * Browser only — native uses Capacitor permission flow.
  */
 export async function shouldSkipGeolocation(): Promise<boolean> {
   if (typeof window === 'undefined') return true;
+  if (Capacitor.isNativePlatform()) return false;
   if (sessionStorage.getItem(STORAGE_KEY_DENIED) === '1') return true;
   try {
     if ('permissions' in navigator) {
@@ -42,19 +46,32 @@ export function getCurrentPositionSafe(
     onFallback?.(fallbackCoords);
     return;
   }
-  if (!navigator.geolocation) {
-    onFallback?.(fallbackCoords);
-    return;
-  }
 
   const applyFallback = () => {
     sessionStorage.setItem(STORAGE_KEY_DENIED, '1');
     onFallback?.(fallbackCoords);
-    onSuccess(fallbackCoords); // Still call onSuccess so consumers get coords
+    onSuccess(fallbackCoords);
   };
 
-  // Check permission first (async)
-  shouldSkipGeolocation().then((skip) => {
+  void (async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { resolveCurrentGeolocationCoords } = await import('@/lib/address-from-geolocation');
+        const coords = await resolveCurrentGeolocationCoords();
+        sessionStorage.removeItem(STORAGE_KEY_DENIED);
+        onSuccess({ lat: coords.latitude, lng: coords.longitude });
+      } catch {
+        applyFallback();
+      }
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      applyFallback();
+      return;
+    }
+
+    const skip = await shouldSkipGeolocation();
     if (skip) {
       applyFallback();
       return;
@@ -69,12 +86,10 @@ export function getCurrentPositionSafe(
         });
       },
       (error) => {
-        // PERMISSION_DENIED (1) - user choice, no need to log
         if (error.code === 1) {
           applyFallback();
           return;
         }
-        // Other errors - log at debug level only
         if (process.env.NODE_ENV === 'development') {
           console.debug('Geolocation unavailable:', error.message);
         }
@@ -82,5 +97,5 @@ export function getCurrentPositionSafe(
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     );
-  });
+  })();
 }
