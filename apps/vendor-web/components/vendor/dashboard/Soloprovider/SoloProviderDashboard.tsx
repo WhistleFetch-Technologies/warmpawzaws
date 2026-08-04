@@ -68,7 +68,6 @@ import { VendorReviewsModal } from '../../modals/VendorReviewsModal';
 import { VendorChatConversationsModal } from '../../VendorChatConversationsModal';
 import { VendorChatModal } from '../../VendorChatModal';
 import { AppointmentDetailModal } from '../../AppointmentDetailModal';
-import { CommunicationHub } from '@/components/communication/CommunicationHub';
 import { VendorAnalytics } from '../../VendorAnalytics';
 import { ChatWidget } from '@/components/customer/ChatWidget';
 import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
@@ -143,7 +142,6 @@ export function SoloProviderDashboard({
     bookingStatus: string;
     packageUtilization?: { packageName?: string; totalSessions?: number; remainingSessions?: number; usedSessions?: number; isUnlimited?: boolean; expiresAt?: string } | null;
   } | null>(null);
-  const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
@@ -1134,8 +1132,13 @@ export function SoloProviderDashboard({
                           onChat={(bookingId) => {
                             const apt = todaySchedule.find(a => a.bookingId === bookingId);
                             if (apt) {
-                              setSelectedAppointment(apt);
-                              setCommunicationMode('chat');
+                              setSelectedChatConversation({
+                                bookingId: apt.bookingId,
+                                customerName: apt.customerName,
+                                customerPhone: apt.customerPhone,
+                                serviceName: apt.serviceName,
+                                bookingStatus: apt.status,
+                              });
                             }
                           }}
                           onStart={(bookingId) => {
@@ -1248,23 +1251,6 @@ export function SoloProviderDashboard({
           packageUtilization={selectedChatConversation.packageUtilization}
           onClose={() => {
             setSelectedChatConversation(null);
-            fetchDashboardData(true);
-          }}
-        />
-      )}
-
-      {/* Communication Hub */}
-      {communicationMode && selectedAppointment && (
-        <CommunicationHub
-          mode={communicationMode}
-          bookingId={selectedAppointment.bookingId}
-          userId={vendorData?.phone || vendorData?.mobile || '+91'}
-          userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Provider'}
-          otherUserName={selectedAppointment.customerName}
-          userType="vendor"
-          onClose={() => {
-            setCommunicationMode(null);
-            setSelectedAppointment(null);
             fetchDashboardData(true);
           }}
         />

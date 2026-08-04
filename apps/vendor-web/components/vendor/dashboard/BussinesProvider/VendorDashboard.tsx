@@ -95,9 +95,6 @@ import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayou
 const SoloProviderDashboard = lazy(() =>
   import('../Soloprovider/SoloProviderDashboard').then((m) => ({ default: m.SoloProviderDashboard }))
 );
-const CommunicationHub = lazy(() =>
-  import('../../../communication/CommunicationHub').then((m) => ({ default: m.CommunicationHub }))
-);
 const AppointmentDetailModal = lazy(() =>
   import('../../AppointmentDetailModal').then((m) => ({ default: m.AppointmentDetailModal }))
 );
@@ -221,7 +218,6 @@ export function VendorDashboard({
     bookingStatus: string;
     packageUtilization?: { packageName?: string; totalSessions?: number; remainingSessions?: number; usedSessions?: number; isUnlimited?: boolean; expiresAt?: string } | null;
   } | null>(null);
-  const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
   // ✅ NEW: OTP modal state for completing appointments
@@ -1796,8 +1792,13 @@ export function VendorDashboard({
                                 {capabilities.chat && (
                                   <button
                                     onClick={() => {
-                                      setSelectedAppointment(appointment);
-                                      setCommunicationMode('chat');
+                                      setSelectedChatConversation({
+                                        bookingId: appointment.bookingId,
+                                        customerName: appointment.customerName,
+                                        customerPhone: appointment.customerPhone,
+                                        serviceName: appointment.serviceName,
+                                        bookingStatus: appointment.status,
+                                      });
                                     }}
                                     className="relative flex-1 min-w-[80px] py-1.5 px-3 bg-[#FF8C42] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                                   >
@@ -2026,25 +2027,6 @@ export function VendorDashboard({
             onClose={() => {
               setSelectedChatConversation(null);
               fetchDashboardData(true);
-            }}
-          />
-        </Suspense>
-      )}
-
-      {/* Communication Hub (Unified Chat/Video) */}
-      {communicationMode && selectedAppointment && (
-        <Suspense fallback={null}>
-          <CommunicationHub
-            mode={communicationMode}
-            bookingId={selectedAppointment.bookingId}
-            userId={vendorData?.phone || vendorData?.mobile || '+91'}
-            userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
-            otherUserName={selectedAppointment.customerName}
-            userType="vendor"
-            onClose={() => {
-              setCommunicationMode(null);
-              setSelectedAppointment(null);
-              fetchDashboardData(true); // Reload to clear unread badges
             }}
           />
         </Suspense>
