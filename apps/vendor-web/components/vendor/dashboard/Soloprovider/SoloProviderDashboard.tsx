@@ -68,7 +68,6 @@ import { VendorReviewsModal } from '../../modals/VendorReviewsModal';
 import { VendorChatConversationsModal } from '../../VendorChatConversationsModal';
 import { VendorChatModal } from '../../VendorChatModal';
 import { AppointmentDetailModal } from '../../AppointmentDetailModal';
-import { CommunicationHub } from '@/components/communication/CommunicationHub';
 import { VendorAnalytics } from '../../VendorAnalytics';
 import { ChatWidget } from '@/components/customer/ChatWidget';
 import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
@@ -79,7 +78,7 @@ import {
   SHOW_VENDOR_FOOTER_REPORTING_TAB,
   getVendorDashboardRatingPresentation,
   mergeVendorDashboardStats,
-  mapDashboardBookingToScheduleItem,
+  mapVendorBookingsApiToScheduleItem,
   matchesScheduleTypeFilter,
 } from '../helpers';
 import {
@@ -88,6 +87,8 @@ import {
   mergeAllTypesSchedule,
   type VendorScheduleTypeFilter,
 } from '@/lib/vendor-meal-order-schedule';
+import { buildVendorScheduleBookingsQuery } from '@/lib/vendor-schedule-bookings';
+import { formatVendorScheduleAnchorDate } from '@/lib/vendor-local-date';
 import { VendorMealOrderScheduleCard } from '../VendorMealOrderScheduleCard';
 import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
 import { Dashboardstats, ScheduleItem, SoloProviderDashboardProps } from '../types';
@@ -143,7 +144,6 @@ export function SoloProviderDashboard({
     bookingStatus: string;
     packageUtilization?: { packageName?: string; totalSessions?: number; remainingSessions?: number; usedSessions?: number; isUnlimited?: boolean; expiresAt?: string } | null;
   } | null>(null);
-  const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
@@ -232,8 +232,22 @@ export function SoloProviderDashboard({
 
       console.log('📊 [Solo] Fetching dashboard data for:', vendorId);
 
-      // Fetch dashboard stats
-      const dashboardRes = await apiClient.get<any>(`/vendor/dashboard/${vendorId}?timeframe=${activeTab}`).catch(() => ({ success: false }));
+      const anchorDate = formatVendorScheduleAnchorDate();
+      const scheduleQuery = new URLSearchParams(
+        buildVendorScheduleBookingsQuery({
+          schedulePeriod: activeTab,
+          anchorDate,
+          pageIndex: 0,
+          pageSize: 100,
+        })
+      ).toString();
+
+      // Fetch dashboard stats (schedule loaded separately from bookings API for parity with Bookings tab)
+      const dashboardRes = await apiClient
+        .get<any>(
+          `/vendor/dashboard/${vendorId}?timeframe=${activeTab}&anchorDate=${encodeURIComponent(anchorDate)}`
+        )
+        .catch(() => ({ success: false }));
 
       if (dashboardRes && dashboardRes.success) {
         const rawStats = dashboardRes.stats || dashboardRes.data?.stats;
@@ -244,15 +258,36 @@ export function SoloProviderDashboard({
           )
         );
         setVendor(dashboardRes.vendor || dashboardRes.data?.vendor || vendorData);
+      }
 
-        // Transform bookings for the selected timeframe
-        const bookings = dashboardRes.bookings || dashboardRes.data?.bookings || [];
-        const transformedBookings: ScheduleItem[] = (Array.isArray(bookings) ? bookings : [])
-          .filter((b: Record<string, unknown>) => b.status !== 'completed')
-          .map((b: Record<string, unknown>) =>
-            mapDashboardBookingToScheduleItem(b, 'at_home') as ScheduleItem
-          );
-        setTodaySchedule(transformedBookings);
+      const vendorAddress =
+        vendorData?.address ||
+        vendorData?.location ||
+        vendor?.address ||
+        vendor?.location ||
+        '';
+      try {
+        const bookingsRes = await apiClient.get<any>(
+          `/vendor/bookings/${vendorId}?${scheduleQuery}`
+        );
+        if (bookingsRes?.success) {
+          const rows = Array.isArray(bookingsRes.bookings) ? bookingsRes.bookings : [];
+          const transformedBookings: ScheduleItem[] = rows
+            .filter((b: Record<string, unknown>) => b.status !== 'completed')
+            .map((b: Record<string, unknown>) =>
+              mapVendorBookingsApiToScheduleItem(b, {
+                defaultServiceType: 'at_home',
+                vendorAddress: String(vendorAddress),
+              }) as ScheduleItem
+            );
+          setTodaySchedule(transformedBookings);
+        } else {
+          console.warn('[Solo] Home schedule bookings fetch returned unsuccessful response');
+          setTodaySchedule([]);
+        }
+      } catch (scheduleErr) {
+        console.warn('[Solo] Home schedule bookings fetch error:', scheduleErr);
+        setTodaySchedule([]);
       }
 
       if (isNutritionist) {
@@ -358,7 +393,7 @@ export function SoloProviderDashboard({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [vendorId, activeTab, capabilities, hasCustomServices, services.length]);
+  }, [vendorId, activeTab, capabilities, hasCustomServices, services.length, vendorData, vendor]);
 
   // ✅ FIX: Load dashboard data immediately, don't wait for capabilities
   useEffect(() => {
@@ -367,6 +402,22 @@ export function SoloProviderDashboard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId, activeTab]);
+
+  // Refetch when tab/window regains focus (Home ↔ Bookings navigation)
+  useEffect(() => {
+    if (!vendorId) return;
+    const onResume = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDashboardData(true);
+      }
+    };
+    window.addEventListener('focus', onResume);
+    document.addEventListener('visibilitychange', onResume);
+    return () => {
+      window.removeEventListener('focus', onResume);
+      document.removeEventListener('visibilitychange', onResume);
+    };
+  }, [vendorId, fetchDashboardData]);
 
   // ✅ FIX: Refresh when capabilities are loaded for capability-specific data
   useEffect(() => {
@@ -1134,8 +1185,13 @@ export function SoloProviderDashboard({
                           onChat={(bookingId) => {
                             const apt = todaySchedule.find(a => a.bookingId === bookingId);
                             if (apt) {
-                              setSelectedAppointment(apt);
-                              setCommunicationMode('chat');
+                              setSelectedChatConversation({
+                                bookingId: apt.bookingId,
+                                customerName: apt.customerName,
+                                customerPhone: apt.customerPhone,
+                                serviceName: apt.serviceName,
+                                bookingStatus: apt.status,
+                              });
                             }
                           }}
                           onStart={(bookingId) => {
@@ -1248,23 +1304,6 @@ export function SoloProviderDashboard({
           packageUtilization={selectedChatConversation.packageUtilization}
           onClose={() => {
             setSelectedChatConversation(null);
-            fetchDashboardData(true);
-          }}
-        />
-      )}
-
-      {/* Communication Hub */}
-      {communicationMode && selectedAppointment && (
-        <CommunicationHub
-          mode={communicationMode}
-          bookingId={selectedAppointment.bookingId}
-          userId={vendorData?.phone || vendorData?.mobile || '+91'}
-          userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Provider'}
-          otherUserName={selectedAppointment.customerName}
-          userType="vendor"
-          onClose={() => {
-            setCommunicationMode(null);
-            setSelectedAppointment(null);
             fetchDashboardData(true);
           }}
         />

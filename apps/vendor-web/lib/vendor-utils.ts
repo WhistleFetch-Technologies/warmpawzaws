@@ -190,6 +190,22 @@ export function shouldShowVendorBookingPrice(bookingLike: {
   return !isWarmpawzAppointmentsBooking(bookingLike);
 }
 
+/** Home schedule cards only. Tele wins (same as price rules). Bookings tab unaffected. */
+export function shouldShowVendorBookingServiceOnHomeDashboard(bookingLike: {
+  commerce_mode?: string | null;
+  commerceMode?: string | null;
+  serviceType?: string | null;
+  service_type?: string | null;
+  service_style?: string | null;
+  serviceStyle?: string | null;
+  communicationType?: string | null;
+}): boolean {
+  if (isVendorTeleConsultationBooking(bookingLike)) {
+    return true;
+  }
+  return !isWarmpawzAppointmentsBooking(bookingLike);
+}
+
 export function resolveVendorBookingServiceLabel(bookingLike: {
   commerce_mode?: string | null;
   commerceMode?: string | null;

@@ -12,6 +12,10 @@ import { query } from '../../database/rds-connection';
 import { sqlRefundTierVendorTypesMatch } from '../refund-tier-vendor-types-match';
 import { computeHoursUntilBookingStart } from '../utils/booking-start-wall-time';
 import { getRefundableCustomerPaidBreakdown, clampRefundToCustomerPaidBase } from './refundable-base';
+import {
+  isWapptPolicyEligibleBooking,
+  WAPPT_COMMERCE_MODE,
+} from '../../endpoints/warmpawz-appointments/shared/wappt-policy.constants';
 
 export type CancelledBy = 'pet_parent' | 'provider';
 
@@ -37,6 +41,10 @@ export interface BookingForPolicy {
   total_amount: number | string;
   /** When set (or loaded from DB), used with total_amount if no completed payments sum exists. */
   discount_amount?: number | string | null;
+  commerce_mode?: string | null;
+  /** WAPPT hub slug: vet, grooming, training, … */
+  booking_category?: string | null;
+  service_category?: string | null;
 }
 
 /**
@@ -51,6 +59,142 @@ function serviceTypeToLocation(serviceType: string | null | undefined): string {
   return 'all'; // default match "all" tiers
 }
 
+function resolveBookingCategory(booking: BookingForPolicy): string | null {
+  const raw = booking.booking_category ?? booking.service_category ?? null;
+  return raw != null && String(raw).trim() ? String(raw).trim().toLowerCase() : null;
+}
+
+function usesWapptPolicyTiers(booking: BookingForPolicy): boolean {
+  return isWapptPolicyEligibleBooking({
+    commerce_mode: booking.commerce_mode,
+    service_type: booking.service_type,
+  });
+}
+
+function mapTierRow(tier: Record<string, unknown>): RefundTierResult {
+  return {
+    refundPercentage: Number(tier.refund_percentage ?? 100),
+    cancellationFee: Number(tier.cancellation_fee ?? 0),
+    maxPartialRefundPercentage:
+      tier.max_partial_refund_percentage != null
+        ? Number(tier.max_partial_refund_percentage)
+        : null,
+    tierId: tier.id != null ? String(tier.id) : undefined,
+    tierName: tier.name != null ? String(tier.name) : undefined,
+  };
+}
+
+async function queryProviderRefundTier(
+  serviceLocation: string,
+  vendorRoleName: string | null,
+  vendorRoleId: string | null,
+  vendorReason: string | null,
+  commerceModeFilter: 'marketplace' | 'wappt',
+  policyScope?: 'platform' | 'category',
+  serviceCategory?: string | null,
+): Promise<RefundTierResult | null> {
+  const vendorMatchProv = sqlRefundTierVendorTypesMatch(3, 4);
+  const commerceClause =
+    commerceModeFilter === 'wappt'
+      ? `commerce_mode = '${WAPPT_COMMERCE_MODE}'`
+      : `(commerce_mode IS NULL OR commerce_mode = 'marketplace')`;
+  let scopeClause = '';
+  const params: unknown[] = [vendorReason, serviceLocation, vendorRoleName || null, vendorRoleId || null];
+  if (commerceModeFilter === 'wappt' && policyScope === 'category' && serviceCategory) {
+    scopeClause = ` AND policy_scope = 'category' AND LOWER(TRIM(service_category)) = LOWER(TRIM($5))`;
+    params.push(serviceCategory);
+  } else if (commerceModeFilter === 'wappt') {
+    scopeClause = ` AND policy_scope = 'platform' AND (service_category IS NULL OR TRIM(service_category) = '')`;
+  }
+  const tiersResult = await query(
+    `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
+     FROM vendor_refund_tiers
+     WHERE is_active = true
+       AND cancelled_by = 'provider'
+       AND ${commerceClause}
+       ${scopeClause}
+       AND (vendor_cancellation_reason IS NULL OR vendor_cancellation_reason = $1 OR $1 IS NULL)
+       AND (
+         service_location = 'all'
+         OR service_location = $2
+         OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
+       )
+       AND ${vendorMatchProv}
+     ORDER BY vendor_cancellation_reason DESC NULLS LAST
+     LIMIT 1`,
+    params,
+  ).catch(() => ({ rows: [] }));
+  const rows = Array.isArray(tiersResult) ? tiersResult : (tiersResult as any).rows || [];
+  const tier = rows[0];
+  return tier ? mapTierRow(tier) : null;
+}
+
+async function queryCustomerRefundTier(
+  hoursUntil: number,
+  serviceLocation: string,
+  vendorRoleName: string | null,
+  vendorRoleId: string | null,
+  commerceModeFilter: 'marketplace' | 'wappt',
+  policyScope?: 'platform' | 'category',
+  serviceCategory?: string | null,
+): Promise<RefundTierResult | null> {
+  const h = Math.max(0, hoursUntil);
+  const vendorMatchPet = sqlRefundTierVendorTypesMatch(3, 4);
+  const commerceClause =
+    commerceModeFilter === 'wappt'
+      ? `commerce_mode = '${WAPPT_COMMERCE_MODE}'`
+      : `(commerce_mode IS NULL OR commerce_mode = 'marketplace')`;
+  let scopeClause = '';
+  const params: unknown[] = [h, serviceLocation, vendorRoleName || null, vendorRoleId || null];
+  if (commerceModeFilter === 'wappt' && policyScope === 'category' && serviceCategory) {
+    scopeClause = ` AND policy_scope = 'category' AND LOWER(TRIM(service_category)) = LOWER(TRIM($5))`;
+    params.push(serviceCategory);
+  } else if (commerceModeFilter === 'wappt') {
+    scopeClause = ` AND policy_scope = 'platform' AND (service_category IS NULL OR TRIM(service_category) = '')`;
+  }
+  const tiersResult = await query(
+    `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
+     FROM vendor_refund_tiers
+     WHERE is_active = true
+       AND cancelled_by = 'pet_parent'
+       AND ${commerceClause}
+       ${scopeClause}
+       AND (
+         (hours_operator IS NOT NULL AND hours_threshold IS NOT NULL AND (
+           (hours_operator = 'gte' AND $1 >= hours_threshold) OR
+           (hours_operator = 'lte' AND $1 <= hours_threshold) OR
+           (hours_operator = 'gt' AND $1 > hours_threshold) OR
+           (hours_operator = 'lt' AND $1 < hours_threshold)
+         ))
+         OR
+         ((hours_operator IS NULL OR hours_threshold IS NULL) AND hours_before_service <= $1)
+       )
+       AND (
+         service_location = 'all'
+         OR service_location = $2
+         OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
+       )
+       AND ${vendorMatchPet}
+     ORDER BY COALESCE(hours_threshold, hours_before_service) DESC NULLS LAST
+     LIMIT 1`,
+    params,
+  ).catch(() => ({ rows: [] }));
+  const rows = Array.isArray(tiersResult) ? tiersResult : (tiersResult as any).rows || [];
+  const tier = rows[0];
+  return tier ? mapTierRow(tier) : null;
+}
+
+async function resolveWapptRefundTier(
+  fetcher: (scope: 'category' | 'platform') => Promise<RefundTierResult | null>,
+  serviceCategory: string | null,
+): Promise<RefundTierResult | null> {
+  if (serviceCategory) {
+    const categoryTier = await fetcher('category');
+    if (categoryTier) return categoryTier;
+  }
+  return fetcher('platform');
+}
+
 /**
  * Get the best-matching vendor_refund_tier for this cancellation.
  * Customer: matches by hours_before_service <= hoursUntilBooking (and optional cancellation_window).
@@ -62,6 +206,9 @@ export async function getRefundTierForCancellation(
   options?: { vendorCancellationReason?: string | null; hoursUntilBooking?: number }
 ): Promise<RefundTierResult | null> {
   const serviceLocation = serviceTypeToLocation(booking.service_type);
+  const wapptBooking = usesWapptPolicyTiers(booking);
+  const commerceFilter: 'marketplace' | 'wappt' = wapptBooking ? 'wappt' : 'marketplace';
+  const bookingCategory = resolveBookingCategory(booking);
 
   // Resolve vendor role (canonical name + id) for vendor_types[] matching (admin stores name and/or UUID slug).
   let vendorRoleName: string | null = null;
@@ -83,35 +230,32 @@ export async function getRefundTierForCancellation(
   const cancelledByParam = cancelledBy === 'pet_parent' ? 'pet_parent' : 'provider';
 
   if (cancelledBy === 'provider') {
-    // Vendor cancels: full refund or reschedule; match by vendor_cancellation_reason if provided
-    const vendorReason = options?.vendorCancellationReason ? String(options.vendorCancellationReason).toLowerCase() : null;
-    const vendorMatchProv = sqlRefundTierVendorTypesMatch(3, 4);
-    const tiersResult = await query(
-      `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
-       FROM vendor_refund_tiers
-       WHERE is_active = true
-         AND cancelled_by = 'provider'
-         AND (vendor_cancellation_reason IS NULL OR vendor_cancellation_reason = $1 OR $1 IS NULL)
-         AND (
-           service_location = 'all'
-           OR service_location = $2
-           OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
-         )
-         AND ${vendorMatchProv}
-       ORDER BY vendor_cancellation_reason DESC NULLS LAST
-       LIMIT 1`,
-      [vendorReason, serviceLocation, vendorRoleName || null, vendorRoleId || null]
-    ).catch(() => ({ rows: [] }));
-    const rows = Array.isArray(tiersResult) ? tiersResult : (tiersResult as any).rows || [];
-    const tier = rows[0];
-    if (!tier) return null;
-    return {
-      refundPercentage: Number(tier.refund_percentage ?? 100),
-      cancellationFee: Number(tier.cancellation_fee ?? 0),
-      maxPartialRefundPercentage: tier.max_partial_refund_percentage != null ? Number(tier.max_partial_refund_percentage) : null,
-      tierId: tier.id,
-      tierName: tier.name,
-    };
+    const vendorReason = options?.vendorCancellationReason
+      ? String(options.vendorCancellationReason).toLowerCase()
+      : null;
+    if (wapptBooking) {
+      return resolveWapptRefundTier(
+        (scope) =>
+          queryProviderRefundTier(
+            serviceLocation,
+            vendorRoleName,
+            vendorRoleId,
+            vendorReason,
+            commerceFilter,
+            scope,
+            bookingCategory,
+          ),
+        bookingCategory,
+      );
+    }
+    const tier = await queryProviderRefundTier(
+      serviceLocation,
+      vendorRoleName,
+      vendorRoleId,
+      vendorReason,
+      commerceFilter,
+    );
+    return tier;
   }
 
   // Customer cancels: match by preset (hours_before_service <= hours) OR flexible rule (hours_operator + hours_threshold)
@@ -129,48 +273,29 @@ export async function getRefundTierForCancellation(
   }
 
   const h = Math.max(0, computedHours);
-  const vendorMatchPet = sqlRefundTierVendorTypesMatch(3, 4);
-  const tiersResult = await query(
-    `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
-     FROM vendor_refund_tiers
-     WHERE is_active = true
-       AND cancelled_by = 'pet_parent'
-       AND (
-         (hours_operator IS NOT NULL AND hours_threshold IS NOT NULL AND (
-           (hours_operator = 'gte' AND $1 >= hours_threshold) OR
-           (hours_operator = 'lte' AND $1 <= hours_threshold) OR
-           (hours_operator = 'gt' AND $1 > hours_threshold) OR
-           (hours_operator = 'lt' AND $1 < hours_threshold)
-         ))
-         OR
-         ((hours_operator IS NULL OR hours_threshold IS NULL) AND hours_before_service <= $1)
-       )
-       AND (
-         service_location = 'all'
-         OR service_location = $2
-         OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
-       )
-       AND ${vendorMatchPet}
-     ORDER BY COALESCE(hours_threshold, hours_before_service) DESC NULLS LAST
-     LIMIT 1`,
-    [h, serviceLocation, vendorRoleName || null, vendorRoleId || null]
-  ).catch(() => ({ rows: [] }));
-
-  const rows = Array.isArray(tiersResult) ? tiersResult : (tiersResult as any).rows || [];
-  const tier = rows[0];
-  if (!tier) return null;
-
-  const refundPercentage = Number(tier.refund_percentage ?? 75);
-  const cancellationFee = Number(tier.cancellation_fee ?? 0);
-  const maxPartial = tier.max_partial_refund_percentage != null ? Number(tier.max_partial_refund_percentage) : null;
-
-  return {
-    refundPercentage,
-    cancellationFee,
-    maxPartialRefundPercentage: Number.isFinite(maxPartial) ? maxPartial : null,
-    tierId: tier.id,
-    tierName: tier.name,
-  };
+  if (wapptBooking) {
+    return resolveWapptRefundTier(
+      (scope) =>
+        queryCustomerRefundTier(
+          h,
+          serviceLocation,
+          vendorRoleName,
+          vendorRoleId,
+          commerceFilter,
+          scope,
+          bookingCategory,
+        ),
+      bookingCategory,
+    );
+  }
+  const tier = await queryCustomerRefundTier(
+    h,
+    serviceLocation,
+    vendorRoleName,
+    vendorRoleId,
+    commerceFilter,
+  );
+  return tier;
 }
 
 /**
@@ -253,6 +378,21 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
       source: 'vendor_refund_tiers',
       policyApplied: true,
       meta: { tierId: tier.tierId, tierName: tier.tierName },
+      refundableCustomerPaidBase: refundableBase,
+      platformFeeNonRefundable,
+      convenienceFeeNonRefundable,
+      nonRefundableFees,
+      hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
+    };
+  }
+
+  if (usesWapptPolicyTiers(booking)) {
+    return {
+      refundAmount: 0,
+      refundPercentage: 0,
+      cancellationFee: 0,
+      source: 'vendor_refund_tiers',
+      policyApplied: false,
       refundableCustomerPaidBase: refundableBase,
       platformFeeNonRefundable,
       convenienceFeeNonRefundable,
@@ -358,7 +498,7 @@ export async function previewCustomerCancellationRefundByMethod(
   booking: BookingForPolicy,
   refundMethod: CustomerCancellationRefundMethod
 ) {
-  if (refundMethod === 'wallet') {
+  if (refundMethod === 'wallet' && !usesWapptPolicyTiers(booking)) {
     return previewWalletFullCancellationRefund(booking);
   }
   return previewCustomerCancellationRefund(booking);

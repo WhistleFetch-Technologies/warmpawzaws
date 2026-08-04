@@ -107,6 +107,15 @@ function formatYmdInTimeZone(d: Date, timeZone: string): string {
   }).format(d);
 }
 
+/** Dashboard timeframe anchor: optional client anchorDate (YYYY-MM-DD) or IST calendar today. */
+function resolveDashboardAnchorDate(anchorDateQuery?: string): string {
+  const trimmed = anchorDateQuery?.trim();
+  if (trimmed && /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  return formatYmdInTimeZone(new Date(), EARNINGS_PERIOD_TZ);
+}
+
 /** SQL predicate: realized/delivery timestamp within earnings period (IST calendar boundaries). */
 function sqlTimestampInEarningsPeriod(period: string, columnExpr: string): string {
   const col = columnExpr;
@@ -168,6 +177,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       const timeframe = c.req.query('timeframe') || 'today'; // today, week, month
+      const anchorDate = resolveDashboardAnchorDate(c.req.query('anchorDate'));
 
       // Handle test IDs - return empty dashboard
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -206,11 +216,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendors = await select('vendors', { id: resolvedVendorId });
       const vendor = vendors.length > 0 ? vendors[0] : null;
 
-      const now = new Date();
-      const today = now.toISOString().split('T')[0];
       const { startDate: startDateStr, endDate: endDateStr } = resolveVendorDashboardTimeframeRange(
         timeframe,
-        today
+        anchorDate
       );
 
       const tb = getTemporaryVendorSuppressionParams();
@@ -349,6 +357,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
     try {
       const { vendorId: paramVendorId } = c.req.param();
       const timeframe = c.req.query('timeframe') || 'today';
+      const anchorDate = resolveDashboardAnchorDate(c.req.query('anchorDate'));
 
       // Handle test IDs - return empty dashboard
       if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
@@ -377,11 +386,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendors = await select('vendors', { id: resolvedVendorId });
       const vendor = vendors.length > 0 ? vendors[0] : null;
 
-      // Get today's date
-      const today = new Date().toISOString().split('T')[0];
       const { startDate: startDateStr, endDate: endDateStr } = resolveVendorDashboardTimeframeRange(
         timeframe,
-        today
+        anchorDate
       );
       const temporarySuppressionMain = getTemporaryVendorSuppressionParams();
       const supMainTail = temporarySuppressionMain

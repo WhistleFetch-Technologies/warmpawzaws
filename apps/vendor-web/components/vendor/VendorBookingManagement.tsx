@@ -3,7 +3,10 @@
 import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
+import {
+  shouldUseWapptVendorCancel,
+  vendorWapptCancelPath,
+} from '@/lib/wappt-booking-cancel-api';
 import {
   fetchVendorEarningsSummary,
   resolveSessionVendorIdForEarnings,
@@ -993,7 +996,15 @@ export function VendorBookingManagement({
     if (!cancelTargetId) return;
     setCancelSubmitting(true);
     try {
-      const data = (await apiClient.post(`/vendor/bookings/${cancelTargetId}/cancel`, {
+      const target = bookings.find((b) => b.id === cancelTargetId || b.bookingId === cancelTargetId);
+      const useWappt = shouldUseWapptVendorCancel(
+        target?.commerce_mode ?? target?.commerceMode,
+        target?.serviceType ?? target?.service_type,
+      );
+      const cancelPath = useWappt
+        ? vendorWapptCancelPath(cancelTargetId)
+        : `/vendor/bookings/${cancelTargetId}/cancel`;
+      const data = (await apiClient.post(cancelPath, {
         vendorCancellationReason: cancelPolicyReason,
       })) as any;
 

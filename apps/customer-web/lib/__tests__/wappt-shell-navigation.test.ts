@@ -82,6 +82,23 @@ describe('handleWapptShellScreenNavigate', () => {
     );
   });
 
+  it('buildWapptShellBookingPayload sets appointmentsMode for boarding', () => {
+    const payload = buildWapptShellBookingPayload('boarding', { vendorId: 'b-1' });
+    expect(payload.appointmentsMode).toBe(true);
+    expect(payload.category).toBe('boarding');
+    expect(payload.serviceStyle).toBe('at_center');
+  });
+
+  it('buildWapptShellBookingPayload sets appointmentsMode for sitting', () => {
+    const payload = buildWapptShellBookingPayload('sitting', {
+      vendorId: 's-1',
+      serviceType: 'sitting',
+    });
+    expect(payload.appointmentsMode).toBe(true);
+    expect(payload.category).toBe('sitting');
+    expect(payload.serviceStyle).toBe('at_home');
+  });
+
   it('buildWapptShellBookingPayload sets appointmentsMode', () => {
     const payload = buildWapptShellBookingPayload('nutrition', { vendorId: 'n-1' });
     expect(payload.appointmentsMode).toBe(true);

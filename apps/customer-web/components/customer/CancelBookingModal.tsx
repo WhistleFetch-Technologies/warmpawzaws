@@ -8,12 +8,18 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '@/components/ui/states';
 import { AlertTriangle, IndianRupee, Info, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  isWapptAppointmentsBooking,
+  wapptCancelPath,
+  wapptRefundPreviewPath,
+} from '@/lib/wappt-booking-cancel-api';
 import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { toast } from 'sonner';
 
 interface CancelBookingModalProps {
   bookingId: string;
   customerId: string;
+  commerceMode?: string | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -21,37 +27,41 @@ interface CancelBookingModalProps {
 export function CancelBookingModal({
   bookingId,
   customerId,
+  commerceMode,
   onClose,
   onSuccess
 }: CancelBookingModalProps) {
+  const useWappt = isWapptAppointmentsBooking(commerceMode);
   const [refundInfo, setRefundInfo] = useState<any>(null);
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingRefundInfo, setLoadingRefundInfo] = useState(true);
 
   useEffect(() => {
-    loadRefundEligibility();
-  }, []);
+    void loadRefundEligibility();
+  }, [bookingId, useWappt]);
 
   const loadRefundEligibility = async () => {
     try {
       setLoadingRefundInfo(true);
       // Get booking details to show refund info if payment was made
-      const bookingResponse = await apiClient.post('/customer/bookings/refund-preview', {
-        bookingId,
-        refundMethod: 'wallet',
-      }) as any;
-      const booking = bookingResponse.booking || bookingResponse;
-      // Use refund preview response
-      if (bookingResponse.refund) {
-        const refund = bookingResponse.refund;
+      const bookingResponse = useWappt
+        ? await apiClient.post(wapptRefundPreviewPath(bookingId), { refundMethod: 'wallet' })
+        : await apiClient.post('/customer/bookings/refund-preview', {
+            bookingId,
+            refundMethod: 'wallet',
+          });
+      const booking = (bookingResponse as any).booking || bookingResponse;
+      const refundPayload = (bookingResponse as any).refund ?? (bookingResponse as any);
+      if (refundPayload?.refundAmount != null || refundPayload?.refund) {
+        const refund = refundPayload.refund ?? refundPayload;
         setRefundInfo({
-          eligible: refund.eligible || false,
+          eligible: (refund.refundAmount ?? 0) > 0,
           refundAmount: refund.refundAmount || 0,
           refundPercentage: refund.refundPercentage || 0,
-          hoursUntil: refund.hoursUntil || 0,
+          hoursUntil: refund.hoursUntilBooking || refund.hoursUntil || 0,
           cancellationFee: refund.cancellationFee || 0,
-          message: refund.message || 'No refund available for this booking',
+          message: refund.message || 'Refund per Book Appointment policy',
           policy: refund.policy || {},
           platformFeeApplies:
             refund.platformFeeApplies === true ||
@@ -64,7 +74,7 @@ export function CancelBookingModal({
           refundPercentage: 0,
           hoursUntil: 0,
           cancellationFee: 0,
-          message: 'No refund available for this booking'
+          message: 'No refund available for this booking',
         });
       }
     } catch (error) {
@@ -91,12 +101,17 @@ export function CancelBookingModal({
     try {
       setLoading(true);
 
-      const result = await apiClient.post(`/bookings/${bookingId}/cancel`, {
-        reason,
-        customerId,
-        actorId: customerId,
-        actorType: 'customer'
-      }) as any;
+      const result = useWappt
+        ? await apiClient.post(wapptCancelPath(bookingId), {
+            reason,
+            refundMethod: 'wallet',
+          })
+        : await apiClient.post(`/bookings/${bookingId}/cancel`, {
+            reason,
+            customerId,
+            actorId: customerId,
+            actorType: 'customer',
+          });
 
       toast.success(pickBookingApiMessage(result, 'Booking cancelled successfully'));
       const refund = getBookingResponsePayload(result).refund as Record<string, unknown> | undefined;

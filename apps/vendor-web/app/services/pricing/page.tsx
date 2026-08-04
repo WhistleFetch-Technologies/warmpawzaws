@@ -12,6 +12,8 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
+import { isWarmpawzPay } from '@/lib/commerce-switch-client';
+import { canVendorEditServicePrice } from '@/lib/wappt-service-pricing-lock';
 
 interface Service {
   id: string;
@@ -150,6 +152,9 @@ export default function PricingPage() {
   const styles = Array.from(new Set(services.map((s) => s.service_style))).filter(Boolean);
 
   const filteredPricing = pricing.filter((item) => {
+    if (!canVendorEditServicePrice(item.serviceStyle)) {
+      return false;
+    }
     if (filterStyle !== 'all' && item.serviceStyle !== filterStyle) {
       return false;
     }
@@ -268,9 +273,11 @@ export default function PricingPage() {
             <IndianRupee className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
             <p className="text-gray-500">
-              {searchQuery || filterStyle !== 'all' || filterCategory !== 'all'
-                ? 'Try adjusting your filters'
-                : 'Add services first to manage pricing'}
+              {isWarmpawzPay() && filterStyle === 'all'
+                ? 'Home and centre service prices are managed by Warmpawz Appointments. Use Tele filter to edit tele consult pricing.'
+                : searchQuery || filterStyle !== 'all' || filterCategory !== 'all'
+                  ? 'Try adjusting your filters'
+                  : 'Add services first to manage pricing'}
             </p>
           </div>
         ) : (

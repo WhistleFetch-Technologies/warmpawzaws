@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation';
 import { Clock, User, Phone, Home, Video, MapPin, MessageSquare, Navigation, CheckCircle2, Play, Radio, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { isVendorTeleConsultationBooking, resolveVendorBookingServiceLabel, shouldShowVendorBookingPrice } from '@/lib/vendor-utils';
+import { isVendorTeleConsultationBooking, resolveVendorBookingServiceLabel, shouldShowVendorBookingPrice, shouldShowVendorBookingServiceOnHomeDashboard } from '@/lib/vendor-utils';
 
 interface AppointmentCardProps {
   appointment: {
@@ -76,6 +76,7 @@ export function AppointmentCard({
   const isTele = isVendorTeleConsultationBooking(appointment);
   const serviceLabel = resolveVendorBookingServiceLabel(appointment);
   const showPrice = shouldShowVendorBookingPrice(appointment);
+  const showServiceLabel = shouldShowVendorBookingServiceOnHomeDashboard(appointment);
   
   // Determine service style icon and colors
   let typeIcon = Home;
@@ -146,10 +147,12 @@ export function AppointmentCard({
             {appointment.petName} {appointment.petBreed ? `(${appointment.petBreed})` : ''}
           </div>
 
-          <div className="flex items-center gap-1 mb-2">
-            <span className="text-xs text-gray-500">Service:</span>
-            <span className="text-xs font-medium text-[#FF8C42]">{serviceLabel}</span>
-          </div>
+          {showServiceLabel && (
+            <div className="flex items-center gap-1 mb-2">
+              <span className="text-xs text-gray-500">Service:</span>
+              <span className="text-xs font-medium text-[#FF8C42]">{serviceLabel}</span>
+            </div>
+          )}
 
           {appointment.address && (
             <div className="flex items-center gap-1 mb-2">

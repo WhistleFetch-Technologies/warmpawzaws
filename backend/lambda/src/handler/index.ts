@@ -39,6 +39,7 @@ import { registerWarmpawzPayDashboardAdminRoutes } from '../endpoints/warmpawz-p
 import { registerWarmpawzPayPricingAdminRoutes } from '../endpoints/warmpawz-pay/admin/pricing';
 import { registerWarmpawzPayPaymentsAdminRoutes } from '../endpoints/warmpawz-pay/admin/payments';
 import { registerWarmpawzAppointmentsCatalogueAdminRoutes } from '../endpoints/warmpawz-appointments/admin/catalogue';
+import { registerWarmpawzAppointmentsPoliciesAdminRoutes } from '../endpoints/warmpawz-appointments/admin/policies';
 import { registerWarmpawzAppointmentsDashboardAdmin } from '../endpoints/warmpawz-appointments/admin/dashboard';
 import { registerAdminAiCopilotEndpoints } from '../endpoints/admin/endpoints/admin-ai-copilot';
 import { registerCommercialAiCopilotEndpoints } from '../endpoints/admin/endpoints/commercial-ai-copilot.endpoints';
@@ -104,6 +105,7 @@ import { registerSystemHealthEndpoints } from '../endpoints/system-health';
 import { registerVendorSettingsEndpoints } from '../endpoints/vendor/endpoints/vendor-settings';
 import { registerVendorPoliciesEndpoints } from '../endpoints/vendor/endpoints/vendor-policies';
 import { registerVendorBookingsEndpoints } from '../endpoints/vendor/endpoints/vendor-bookings';
+import { registerVendorWapptAppointmentsEndpoints } from '../endpoints/vendor/endpoints/vendor-wappt-appointments';
 import { registerVendorDashboardEnhancedEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard-enhanced';
 import { registerAppointmentReminderEndpoints } from '../endpoints/appointment-reminders';
 import { registerPetVaccinationReminderEndpoints } from '../endpoints/pet-vaccination-reminders';
@@ -693,6 +695,7 @@ registerWarmpawzPayPricingAdminRoutes(app);
 registerWarmpawzPayCatalogueAdminRoutes(app);
 registerWarmpawzAppointmentsDashboardAdmin(app);
 registerWarmpawzAppointmentsCatalogueAdminRoutes(app);
+registerWarmpawzAppointmentsPoliciesAdminRoutes(app);
 registerAdminAiCopilotEndpoints(app);
 registerCommercialAiCopilotEndpoints(app);
 registerAdminCustomerEndpoints(app);
@@ -788,6 +791,7 @@ registerConfigPoliciesEndpoints(app); // /config/policies, /config/logistics-rul
 registerVendorSettingsEndpoints(app);
 registerVendorPoliciesEndpoints(app);
 registerVendorBookingsEndpoints(app);
+registerVendorWapptAppointmentsEndpoints(app);
 // registerVendorDashboardEnhancedEndpoints already registered above (before legacy dashboard)
 registerAppointmentReminderEndpoints(app);
 registerPetVaccinationReminderEndpoints(app);

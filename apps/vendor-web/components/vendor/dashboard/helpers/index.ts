@@ -42,6 +42,143 @@ import {
   shouldShowVendorBookingPrice,
 } from '@/lib/vendor-utils';
 
+function formatDbTimeTo12h(raw: string): string {
+  if (!raw || typeof raw !== 'string') return 'N/A';
+  if (raw.includes('AM') || raw.includes('PM')) return raw.trim();
+  return formatBookingTime(raw.replace(/\.\d+$/, ''));
+}
+
+/** Map GET /vendor/bookings response row to Home schedule card shape (parity with Bookings tab). */
+export function mapVendorBookingsApiToScheduleItem(
+  booking: Record<string, unknown>,
+  opts: { defaultServiceType?: string; vendorAddress?: string } = {}
+) {
+  const defaultServiceType = opts.defaultServiceType ?? 'at_center';
+  const rawTime =
+    booking.booking_time ||
+    booking.scheduledTime ||
+    booking.time ||
+    booking.scheduled_time;
+  const timeStr =
+    typeof rawTime === 'string'
+      ? rawTime.includes('AM') || rawTime.includes('PM')
+        ? rawTime
+        : formatDbTimeTo12h(rawTime)
+      : 'N/A';
+
+  const serviceTypeRaw = resolveScheduleServiceType(
+    booking as Parameters<typeof resolveScheduleServiceType>[0]
+  );
+  const serviceType = serviceTypeRaw || defaultServiceType;
+
+  const isAtHome =
+    String(booking.service_type || booking.serviceType || '')
+      .toLowerCase()
+      .includes('home') ||
+    String(booking.service_style || booking.serviceStyle || '')
+      .toLowerCase()
+      .includes('home');
+
+  const address =
+    (isAtHome
+      ? booking.address ||
+        booking.destination_address ||
+        booking.location ||
+        booking.delivery_address
+      : null) ||
+    booking.address ||
+    booking.destination_address ||
+    booking.location ||
+    booking.delivery_address ||
+    opts.vendorAddress ||
+    '';
+
+  const bookingLike = {
+    commerce_mode: booking.commerce_mode as string | undefined,
+    commerceMode: booking.commerceMode as string | undefined,
+    service_name: (booking.service_name || booking.serviceName || booking.service) as
+      | string
+      | undefined,
+    serviceName: (booking.serviceName ||
+      booking.service_name ||
+      (booking.service as { name?: string } | undefined)?.name) as string | undefined,
+    service_type: booking.service_type as string | undefined,
+    service_style: booking.service_style as string | undefined,
+    serviceType,
+    serviceStyle: serviceType,
+    communicationType:
+      serviceType === 'tele' || String(booking.service_type || booking.serviceType) === 'tele'
+        ? 'video'
+        : 'in-person',
+  };
+
+  const rawAmount = booking.price ?? booking.total_amount ?? booking.totalAmount;
+  const parsedPrice =
+    rawAmount == null || rawAmount === '' ? 0 : parseFloat(String(rawAmount));
+
+  const customerObj = booking.customer as { name?: string; phone?: string; id?: string } | undefined;
+
+  return {
+    id: String(booking.id || booking.booking_id || ''),
+    bookingId: String(booking.id || booking.booking_id || ''),
+    time: timeStr,
+    duration: Number(booking.duration ?? booking.duration_minutes) || 30,
+    petName: String(booking.pet_name || booking.petName || 'Pet'),
+    petBreed: (booking.pet_breed || booking.petBreed || booking.pet_type || booking.petType) as
+      | string
+      | undefined,
+    customerName: String(
+      customerObj?.name ||
+        booking.customer_name ||
+        booking.customerName ||
+        'Customer'
+    ),
+    customerPhone: String(
+      customerObj?.phone ||
+        booking.customer_phone ||
+        booking.customerPhone ||
+        ''
+    ),
+    customerId: (booking.customer_id || booking.customerId || customerObj?.id) as
+      | string
+      | undefined,
+    serviceName: resolveVendorBookingServiceLabel(bookingLike),
+    serviceType,
+    status: String(booking.status || 'pending'),
+    price: shouldShowVendorBookingPrice(bookingLike) ? parsedPrice : 0,
+    commerce_mode: (booking.commerce_mode ?? booking.commerceMode) as string | undefined,
+    commerceMode: (booking.commerceMode ?? booking.commerce_mode) as string | undefined,
+    communicationType: bookingLike.communicationType,
+    address: String(address || ''),
+    specialInstructions: booking.notes as string | undefined,
+    hasPrescription: Boolean(booking.hasPrescription),
+    hasUnreadMessages: Boolean(booking.hasUnreadMessages),
+    unreadMessageCount: Number(booking.unreadMessageCount) || 0,
+    chatEnabled: booking.chatEnabled !== false,
+    isFollowUp: Boolean(booking.isFollowUp),
+    isRescheduled: Boolean(
+      booking.isRescheduled || booking.rescheduledAt || booking.rescheduled_at
+    ),
+    rescheduledAt: (booking.rescheduledAt || booking.rescheduled_at) as string | null | undefined,
+    packagePurchaseId: booking.packagePurchaseId ?? booking.package_purchase_id,
+    packageSessionNumber:
+      booking.packageSessionNumber != null
+        ? Number(booking.packageSessionNumber)
+        : booking.package_session_number != null
+          ? Number(booking.package_session_number)
+          : undefined,
+    packageTotalSessions:
+      booking.packageTotalSessions != null
+        ? Number(booking.packageTotalSessions)
+        : booking.package_total_sessions != null
+          ? Number(booking.package_total_sessions)
+          : booking.total_sessions != null
+            ? Number(booking.total_sessions)
+            : undefined,
+    isPackageSession: Boolean(booking.isPackageSession ?? booking.is_package_session),
+  };
+}
+
 export function mapDashboardBookingToScheduleItem(b: Record<string, unknown>, defaultServiceType = 'at_center') {
   const serviceType = resolveScheduleServiceType(b as Parameters<typeof resolveScheduleServiceType>[0]) || defaultServiceType;
   const bookingLike = {
