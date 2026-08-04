@@ -27,23 +27,23 @@ import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
+import {
+  ServiceHubVendorCard,
+  resolveServiceHubVendorProfileKey,
+} from './shared/ServiceHubVendorCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { HUB_DISCOVERY_GROOMING } from '@/lib/service-hub-discovery-config';
-import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
   type BoardingListVendor,
-  type BoardingPlanRow,
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { mergeWapptServiceTypes } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
-import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import {
@@ -121,8 +121,6 @@ interface GroomingServiceRouterProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
-const HUB_SLUG: BoardingServiceSlug = 'all';
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function firstGroomingServiceUuid(services: any[]): string | undefined {
@@ -179,19 +177,10 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_GROOMING);
   const wapptDiscovery = useWapptHubFeaturedVendors('grooming', wapptHubEnabled);
-  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
 
   const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
   const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
   const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
-  const selectedVendorId = wapptHubEnabled ? wapptSelectedVendorId : marketplaceDiscovery.selectedVendorId;
-  const setSelectedVendorId = wapptHubEnabled
-    ? setWapptSelectedVendorId
-    : marketplaceDiscovery.setSelectedVendorId;
-  const toggleVendor = wapptHubEnabled
-    ? (vendorId: string) => setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId))
-    : marketplaceDiscovery.toggleVendor;
-  const fetchingPlansFor = wapptHubEnabled ? null : marketplaceDiscovery.fetchingPlansFor;
 
   const {
     data: groomingCenterCount = 0,
@@ -269,36 +258,6 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       });
     },
     [onNavigate],
-  );
-
-  const handleBookPlan = useCallback(
-    (v: BoardingListVendor, plan: BoardingPlanRow) => {
-      const rawObj = (v.raw ?? {}) as Record<string, unknown>;
-      const vid =
-        pickCustomerVendorAccountId(rawObj) || v.id;
-      if (shouldHideDiscoveryPricing(rawObj)) {
-        onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
-          ...buildWarmpawzAppointmentsProfileNav({
-            vendorId: vid,
-            category: 'grooming',
-            serviceStyle: String(plan.serviceStyle || 'at_center'),
-            vendorName: v.name,
-          }),
-          profileBackScreen: 'wappt-discovery',
-        });
-        return;
-      }
-      onNavigate?.('create-booking', {
-        vendorId: vid,
-        serviceType: 'grooming',
-        serviceId: plan.rowId,
-        serviceName: plan.name,
-        price: plan.price,
-        duration: plan.duration,
-        serviceStyle: plan.serviceStyle || 'at_center',
-      });
-    },
-    [onNavigate]
   );
 
   const openVendorDetails = useCallback(
@@ -704,32 +663,27 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   <p className="text-gray-500 text-sm">Check back soon for grooming options!</p>
                 </Card>
               ) : (
-                vendors.map((v) => {
-                  const expanded = selectedVendorId === v.id;
-                  const minP = minPriceForVendor(v);
-                  return (
-                    <BoardingVendorExpandableCard
-                      key={v.id}
-                      v={v}
-                      serviceSlug={HUB_SLUG}
-                      planBadgeLabel="Grooming"
-                      expanded={expanded}
-                      fetchingPlansFor={fetchingPlansFor}
-                      minPrice={minP}
-                      onToggleHeader={() => toggleVendor(v.id)}
-                      onViewServices={(e) => {
-                        e.stopPropagation();
-                        setSelectedVendorId(v.id);
-                      }}
-                      onDetails={openVendorDetails}
-                      onBookPlan={handleBookPlan}
-                      onOpenCenterDetails={openVendorDetails}
-                      customerId={phone}
-                      serviceCategory="grooming"
-                      onBookAppointment={handleWarmpawzBookAppointment}
-                    />
-                  );
-                })
+                vendors.map((v) => (
+                  <ServiceHubVendorCard
+                    key={v.id}
+                    vendor={v}
+                    category="grooming"
+                    categoryLabelFallback="Grooming"
+                    onSelectSlot={(vendor, e) => {
+                      if (
+                        wapptHubEnabled ||
+                        shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                      ) {
+                        handleWarmpawzBookAppointment(vendor);
+                        return;
+                      }
+                      openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor));
+                    }}
+                    onOpenProfile={(e, vendor) =>
+                      openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor))
+                    }
+                  />
+                ))
               )}
             </div>
           </div>

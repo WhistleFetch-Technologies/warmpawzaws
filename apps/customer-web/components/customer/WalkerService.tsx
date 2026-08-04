@@ -37,6 +37,7 @@ import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { WalkerHubVendorCard } from './shared/WalkerHubVendorCard';
 import {
   fetchWalkerVendorCatalogMerged,
   firstServiceIdFromServicePackageRow,
@@ -55,7 +56,6 @@ import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, 
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
-import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 
 const WALKING_IMG = '/images/home/Walking';
 
@@ -239,41 +239,6 @@ function walkerRowMatchesQuery(w: Record<string, unknown>, rawQuery: string): bo
   const tokens = needle.split(/\s+/).filter(Boolean);
   if (tokens.length > 1) return tokens.every((t) => hay.includes(t));
   return false;
-}
-
-function walkerProfilePhotoUrl(w: Record<string, unknown>): string | undefined {
-  return normalizeProviderListPhoto(w);
-}
-
-/** Discover-services list card: show profile photo when API provides a URL; Dog placeholder on miss or load error. */
-function WalkerListCardHero({ walker }: { walker: Record<string, unknown> }) {
-  const url = walkerProfilePhotoUrl(walker);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    setFailed(false);
-  }, [url]);
-  const showPlaceholder = !url || failed;
-  const alt =
-    String(walker.name || walker.businessName || walker.business_name || 'Pet walker').trim() ||
-    'Walker profile';
-
-  return (
-    <div className="h-48 bg-gradient-to-br from-orange-100 to-amber-100 relative overflow-hidden z-0">
-      {url && !failed ? (
-        <img
-          src={url}
-          alt={alt}
-          className="absolute inset-0 z-0 h-full w-full object-cover pointer-events-none"
-          onError={() => setFailed(true)}
-        />
-      ) : null}
-      {showPlaceholder ? (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <Dog className="w-16 h-16 text-orange-400 opacity-30" aria-hidden />
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }: WalkerServiceProps) {
@@ -1101,63 +1066,12 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           ) : (
             <div className="space-y-4">
               {(searchQuery.trim() ? walkersForList : walkersForList.slice(0, 3)).map((walker, index) => (
-                <Card 
-                  key={walker.id || walker.vendorId || index} 
-                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() => handleWalkerSelect(walker)}
-                >
-                  <div className="relative">
-                    <WalkerListCardHero walker={walker as Record<string, unknown>} />
-                    {(() => {
-                      const wc = Number((walker as any).totalReviews ?? (walker as any).reviewCount ?? 0) || 0;
-                      const wr = (walker as any).rating != null ? Number((walker as any).rating) : NaN;
-                      const show = wc > 0 && Number.isFinite(wr) && wr > 0;
-                      return show ? (
-                    <div className="absolute top-3 left-3 z-10 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
-                      <Star className="w-3 h-3 fill-white" />
-                      {wr.toFixed(1)}
-                    </div>
-                      ) : null;
-                    })()}
-                    <button
-                      type="button"
-                      aria-label={`View ${walker.name || walker.businessName || 'walker'} profile`}
-                      className="absolute top-3 right-3 z-20 h-9 w-9 rounded-full bg-white/95 text-orange-600 shadow-md flex items-center justify-center hover:bg-white transition-colors"
-                      onClick={(e) => handleOpenWalkerProfile(walker, e)}
-                    >
-                      <ChevronRight className="w-5 h-5" aria-hidden />
-                    </button>
-                  </div>
-
-                  {/* Walker Details */}
-                  <div className="p-4 space-y-3">
-                    <div>
-                      <h3 className="font-bold text-lg text-gray-900">{walker.name || walker.businessName || 'Pet Walker'}</h3>
-                      <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
-                        <MapPin className="w-4 h-4" />
-                        <span>{walker.location?.address || walker.address || walker.city || 'Location'}</span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-2 text-sm">
-                        <span className="text-gray-600">{walker.reviewsCount || walker.reviewCount || 0} reviews</span>
-                        {walker.priceRange && (
-                          <span className="text-orange-500 font-semibold">{walker.priceRange}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex justify-center">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={(e) => void handleViewWalkerPackages(walker, e)}
-                        className="w-full max-w-[220px] h-12 text-base font-semibold border-orange-200 text-orange-700 hover:bg-orange-50"
-                      >
-                        <Package className="w-4 h-4 mr-2 shrink-0" />
-                        View packages
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
+                <WalkerHubVendorCard
+                  key={walker.id || walker.vendorId || index}
+                  walker={walker as Record<string, unknown>}
+                  onSelectSlot={(row) => handleWalkerSelect(row)}
+                  onOpenProfile={(e, row) => handleOpenWalkerProfile(row, e)}
+                />
               ))}
             </div>
           )}
