@@ -14,6 +14,8 @@ import {
 } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import { isWapptHubCategoryEnabled } from '@/lib/warmpawz-appointments-customer';
+import { WarmpawzAppointmentsVendorList } from '../warmpawz-appointments/WarmpawzAppointmentsVendorList';
 
 export type { BoardingPlanRow, BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 
@@ -114,6 +116,22 @@ export function BoardingVendorListView({
     else router.push('/');
   };
 
+  const wapptEnabled = isWapptHubCategoryEnabled('boarding');
+  if (wapptEnabled && onNavigate) {
+    return (
+      <WarmpawzAppointmentsVendorList
+        category="boarding"
+        initialServiceStyle="at_center"
+        lockStyleFilter
+        listSubtitleOverride={BOARDING_SERVICE_LABELS[serviceSlug]}
+        profileBackScreen="pet-boarding-vendors"
+        onBack={handleBack}
+        onGoHome={() => router.push('/')}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <ServiceDashboardHeader
@@ -128,10 +146,10 @@ export function BoardingVendorListView({
       />
 
       <div className="max-w-customer mx-auto px-4 pt-4 pb-28">
-        {relaxedFilter && (
+        {relaxedFilter && sortedVendors.length > 0 && (
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
-            No centers matched this service name in listings yet. Showing all pet boarding centers — expand a center or
-            open details for exact services and prices.
+            No centers listed <strong>{BOARDING_SERVICE_LABELS[serviceSlug]}</strong> by service name yet. Showing all
+            boarding centers below — expand or open details to see what they offer.
           </p>
         )}
 

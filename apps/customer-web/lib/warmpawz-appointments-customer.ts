@@ -31,6 +31,11 @@ export function isWarmpawzAppointmentsHubEnabled(category: string): boolean {
   return !route.useMarketplaceFlow && !route.excludedDomain;
 }
 
+/** Boarding / sitting vendor lists use WAPPT when Commerce Switch routes to Pay. */
+export function isWapptHubCategoryEnabled(category: 'boarding' | 'sitting'): boolean {
+  return isWarmpawzAppointmentsHubEnabled(category);
+}
+
 /** Vet tele catalogue discovery when Warmpawz Pay is active (tele is commerce-excluded but uses WAPPT vendor list). */
 export function isWarmpawzTeleCatalogueEnabled(): boolean {
   if (!isWarmpawzPayModuleCapable()) return false;

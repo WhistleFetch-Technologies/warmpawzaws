@@ -8,6 +8,7 @@ import { apiClient } from '@/lib/api-client';
 import { VendorServiceManagementComplete } from '@/components/vendor/VendorServiceManagementComplete';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
+import { shouldHideVendorServicePrice } from '@/lib/wappt-service-pricing-lock';
 
 interface Service {
   id: string;
@@ -288,10 +289,12 @@ function ServiceManagementContent() {
                 <p className="text-gray-600 text-sm mb-4 line-clamp-2">{service.description}</p>
 
                 <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-                  <div>
-                    <span className="text-gray-500">Price</span>
-                    <p className="font-semibold text-orange-600">₹{service.price}</p>
-                  </div>
+                  {!shouldHideVendorServicePrice(service.service_style) && (
+                    <div>
+                      <span className="text-gray-500">Price</span>
+                      <p className="font-semibold text-orange-600">₹{service.price}</p>
+                    </div>
+                  )}
                   <div>
                     <span className="text-gray-500">Duration</span>
                     <p className="font-medium">{service.duration_minutes} mins</p>

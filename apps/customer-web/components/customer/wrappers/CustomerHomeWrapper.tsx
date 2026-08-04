@@ -3402,7 +3402,31 @@ export function CustomerHomeWrapper({
             handleNavigateToService(screen, data);
             return;
           }
+          if (screen === 'wappt-vendor-profile') {
+            handleWapptShellNavigate(screen, data, 'boarding');
+            return;
+          }
+          if (screen === 'wappt-discovery') {
+            openWapptDiscovery('boarding', data);
+            return;
+          }
+          if (screen === 'my-bookings' || screen === 'bookings') {
+            navigateToScreen('my-bookings');
+            return;
+          }
+          if (screen === 'shop') {
+            navigateToScreen('shop');
+            return;
+          }
+          if (screen === 'profile') {
+            navigateToScreen('profile');
+            return;
+          }
           if (screen === 'boarding-booking') {
+            if (data?.appointmentsMode === true) {
+              handleWapptShellNavigate(screen, data, 'boarding');
+              return;
+            }
             setVetServiceData({
               vendorId: data?.vendorId as string | undefined,
               serviceType: (data?.flowVariant === 'swimming' || data?.serviceType === 'swimming'
@@ -4219,9 +4243,33 @@ export function CustomerHomeWrapper({
             navigateToScreen('pet-sitter');
           }}
           onNavigate={(screen, data) => {
+            if (screen === 'wappt-vendor-profile') {
+              handleWapptShellNavigate(screen, data, 'sitting');
+              return;
+            }
+            if (screen === 'wappt-discovery') {
+              openWapptDiscovery('sitting', data);
+              return;
+            }
+            if (screen === 'my-bookings' || screen === 'bookings') {
+              navigateToScreen('my-bookings');
+              return;
+            }
+            if (screen === 'shop') {
+              navigateToScreen('shop');
+              return;
+            }
+            if (screen === 'profile') {
+              navigateToScreen('profile');
+              return;
+            }
             if (screen === 'pet-sitter-provider-profile' && data?.vendorId) {
               openPetSitterProviderProfile(String(data.vendorId));
             } else if (screen === 'pet-sitter-booking') {
+              if (data?.appointmentsMode === true) {
+                handleWapptShellNavigate(screen, data, 'sitting');
+                return;
+              }
               setVetServiceData({
                 vendorId: data?.vendorId,
                 serviceType: 'sitting',

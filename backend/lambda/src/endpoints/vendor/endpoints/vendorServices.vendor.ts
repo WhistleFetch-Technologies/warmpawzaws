@@ -24,6 +24,14 @@ import { isValidUUID, normalizeVendorService } from '../../../types/entities';
 import { resolveVendorById } from './vendorProfile.vendor';
 import { normalizeSessionPackageDetails } from '../../../lib/session-package-normalize';
 import { areSpecializationRowsValidForCatalogSlug } from '../../../utils/vendor-spec-category-slugs';
+import {
+  isWarmpawzPayActive,
+  isWarmpawzPayPricingLocked,
+  isPricingLockedServiceStyle,
+  pricingLockMetaForStyle,
+  rejectVendorServicePriceChangeIfLocked,
+  stripVendorServicePriceFields,
+} from '../shared/vendor-service-pricing-lock';
 
 // ----------------------------------------------------------------------------
 // Category normalization helpers
@@ -497,6 +505,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
 
       // Group services by their service_style
+      const wapptPayActive = await isWarmpawzPayActive();
       for (const service of allServices.rows) {
         const serviceStyle = service.service_style || firstAllowedStyle; // Use first allowed style as fallback for NULL
 
@@ -506,6 +515,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
             servicesByStyle[serviceStyle] = { services: [], count: 0 };
           }
 
+          const hidePrice = wapptPayActive && isPricingLockedServiceStyle(serviceStyle);
           servicesByStyle[serviceStyle].services.push({
             id: service.id,
             serviceId: service.service_id,
@@ -514,7 +524,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
             description: service.description || service.base_description,
             category: service.category,
             subCategory: service.sub_category,
-            price: parseFloat(service.price || service.custom_price || '0'),
+            price: hidePrice ? null : parseFloat(service.price || service.custom_price || '0'),
+            customPrice: hidePrice ? null : service.custom_price,
             duration: service.duration_minutes || service.custom_duration || 30,
             serviceStyle: service.service_style || serviceStyle, // Use actual style or fallback
             publishStatus: service.publish_status,
@@ -585,6 +596,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
       console.log(`[VendorServices] Fetching enabled services for vendor ${vendorId}...`);
 
+      const wapptPayActive = await isWarmpawzPayActive();
+
       // Get all enabled services for this vendor
       const result = await query(
         `SELECT 
@@ -611,21 +624,26 @@ export function registerVendorServicesEndpoints(app: Hono) {
         [vendorId]
       );
 
-      const services = result.rows.map((row: any) => ({
-        id: row.id,
-        serviceId: row.service_id,
-        serviceName: row.service_name,
-        category: row.category,
-        subCategory: row.sub_category,
-        serviceStyle: row.service_style,
-        price: row.price,
-        customPrice: row.custom_price,
-        duration: row.duration_minutes,
-        customDuration: row.custom_duration,
-        isEnabled: row.is_enabled,
-        publishStatus: row.publish_status,
-        isCustomService: row.is_custom_service,
-      }));
+      const services = result.rows.map((row: any) => {
+        const style = row.service_style;
+        const hidePrice =
+          wapptPayActive && isPricingLockedServiceStyle(style);
+        return {
+          id: row.id,
+          serviceId: row.service_id,
+          serviceName: row.service_name,
+          category: row.category,
+          subCategory: row.sub_category,
+          serviceStyle: style,
+          price: hidePrice ? null : row.price,
+          customPrice: hidePrice ? null : row.custom_price,
+          duration: row.duration_minutes,
+          customDuration: row.custom_duration,
+          isEnabled: row.is_enabled,
+          publishStatus: row.publish_status,
+          isCustomService: row.is_custom_service,
+        };
+      });
 
       console.log(`[VendorServices] Found ${services.length} enabled services for vendor ${vendorId}`);
 
@@ -633,6 +651,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         success: true,
         services,
         total: services.length,
+        ...(wapptPayActive ? { warmpawzPayActive: true } : {}),
       });
     } catch (error: any) {
       console.error('Error fetching enabled services:', error);
@@ -914,13 +933,23 @@ export function registerVendorServicesEndpoints(app: Hono) {
         // Don't fail the request if catalog query fails
       }
 
+      const pricingLocked = await isWarmpawzPayPricingLocked(serviceStyle);
+      const pricingMeta = await pricingLockMetaForStyle(serviceStyle);
+      const mappedServices = pricingLocked
+        ? services.rows.map((row: any) => stripVendorServicePriceFields(row))
+        : services.rows;
+      const mappedCatalog = pricingLocked
+        ? availableCatalogServices.map((row: any) => stripVendorServicePriceFields(row))
+        : availableCatalogServices;
+
       return c.json({
         success: true,
-        services: services.rows,
-        total: services.rows.length,
+        services: mappedServices,
+        total: mappedServices.length,
+        ...pricingMeta,
         allowedServiceStyles, // ✅ Include in response so frontend knows what's allowed
-        availableCatalogServices, // ✅ NEW: Include available services from catalog
-        availableCatalogCount: availableCatalogServices.length, // ✅ NEW: Count of available services
+        availableCatalogServices: mappedCatalog, // ✅ NEW: Include available services from catalog
+        availableCatalogCount: mappedCatalog.length, // ✅ NEW: Count of available services
       });
     } catch (error: any) {
       console.error('Error fetching vendor services:', error);
@@ -980,6 +1009,14 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
       if (!inputServiceId || !serviceStyle) {
         return c.json({ error: 'serviceId and serviceStyle are required' }, 400);
+      }
+
+      const createPriceReject = await rejectVendorServicePriceChangeIfLocked(
+        serviceStyle,
+        serviceData as Record<string, unknown>,
+      );
+      if (createPriceReject) {
+        return c.json({ success: false, ...createPriceReject }, 409);
       }
 
       // ✅ PHASE 0.4: Validate serviceStyle against role configuration
@@ -1182,6 +1219,14 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
       const serviceData = await c.req.json();
 
+      const priceReject = await rejectVendorServicePriceChangeIfLocked(
+        serviceData.serviceStyle ?? serviceData.service_style,
+        serviceData as Record<string, unknown>,
+      );
+      if (priceReject) {
+        return c.json({ success: false, ...priceReject }, 409);
+      }
+
       // ✅ FIX: Build update data object, only including defined values
       // Support multiple field name variations from frontend
       const updateData: any = {};
@@ -1254,6 +1299,14 @@ export function registerVendorServicesEndpoints(app: Hono) {
               requestedVendorId: vendorId,
               hint: `This service belongs to vendor ${service.vendor_id}, not ${vendorId}. You can only update services that belong to your vendor.`
             }, 403);
+          }
+
+          const stylePriceReject = await rejectVendorServicePriceChangeIfLocked(
+            service.service_style,
+            serviceData as Record<string, unknown>,
+          );
+          if (stylePriceReject) {
+            return c.json({ success: false, ...stylePriceReject }, 409);
           }
 
           // Service exists and vendor matches - proceed with update (updates ONLY this one service)
@@ -2088,6 +2141,18 @@ export function registerVendorServicesEndpoints(app: Hono) {
           try {
             const catalogServiceId = serviceData.catalogServiceId || serviceData.catalog_service_id;
             const serviceStyle = serviceData.serviceStyle || serviceData.service_style;
+
+            const priceReject = await rejectVendorServicePriceChangeIfLocked(
+              serviceStyle,
+              serviceData as Record<string, unknown>,
+            );
+            if (priceReject) {
+              return {
+                catalogServiceId,
+                success: false,
+                ...priceReject,
+              };
+            }
 
             // ✅ For solo providers, skip at_center services
             if (isSoloProvider && serviceStyle === 'at_center') {
