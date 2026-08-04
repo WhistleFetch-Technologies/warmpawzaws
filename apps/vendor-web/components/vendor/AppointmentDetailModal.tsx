@@ -14,7 +14,7 @@ import { MedicalHistoryModal } from './MedicalHistoryModal';
 import { PackagePurchaseSessionsVendorView } from '@/components/vendor/PackagePurchaseSessionsVendorView';
 import { AddVetSummaryModal } from './modals/AddVetSummaryModal';
 import { DiagnosticsReportUpload } from './diagnostics/DiagnosticsReportUpload';
-import { CommunicationHub } from '../communication/CommunicationHub';
+import { VendorChatModal } from './VendorChatModal';
 import dynamic from 'next/dynamic';
 import { transformPrescriptionData } from './PrescriptionDocument';
 import {
@@ -158,7 +158,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [fetchedVendorRoleInfo, setFetchedVendorRoleInfo] = useState<{ roleId?: string; roleName?: string; capabilities?: any } | null>(null);
   
   // Modal states
-  const [communicationMode, setCommunicationMode] = useState<'video' | 'chat' | null>(null);
+  const [showChatModal, setShowChatModal] = useState(false);
   const [showMedicalHistory, setShowMedicalHistory] = useState(false);
   const [showVetSummaryModal, setShowVetSummaryModal] = useState(false);
   const [showReportUploadModal, setShowReportUploadModal] = useState(false);
@@ -2275,7 +2275,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             <div className="flex gap-2">
               {/* CHAT - Always available */}
               <button
-                onClick={() => setCommunicationMode('chat')}
+                onClick={() => setShowChatModal(true)}
                 className="flex-1 py-3 bg-white border border-[#FF8C42] text-[#FF8C42] rounded-xl font-medium flex items-center justify-center gap-2"
               >
                 <MessageSquare className="w-4 h-4" />
@@ -2415,64 +2415,22 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         />
       )}
 
-      {/* Communication Hub (Unified Chat/Video) - Rule 2: Video starts from chat (camera icon) */}
-      {communicationMode && (
-        <CommunicationHub
-          mode={communicationMode}
-          bookingId={booking.id}
-          userId={vendorData?.phone || vendorData?.mobile || '+91'}
-          userName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
-          otherUserName={booking.customerName}
-          userType="vendor"
-          serviceStyle={isTeleStyle ? 'tele' : undefined}
-          onStartVideoCall={async (bid) => {
-            if (isNavigatingRef.current) return;
-            isNavigatingRef.current = true;
-            try {
-              setProcessing(true);
-              toast.info('Starting video call...');
-              const createRes = await apiClient.post('/video-call/create-meeting', {
-                bookingId: bid,
-                customerId: booking.customerId || (booking as any).customer_id || '',
-                vendorId: vendorData?.id,
-              }) as any;
-              if (!createRes?.success && !createRes?.meetingId) {
-                toast.error('Failed to create video call');
-                setProcessing(false);
-                isNavigatingRef.current = false;
-                return;
-              }
-              
-              // Notify customer that vendor is ready (fire and forget)
-              apiClient.post('/video-call/notify-ready', {
-                bookingId: bid,
-                participantType: 'vendor',
-                participantId: vendorData?.id,
-              }).catch(() => {});
-              
-              // CRITICAL: Pass vendorId in URL so VideoPageClient works on mobile/webview (localStorage may not be populated after full-page reload)
-              const vid = vendorData?.id || (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || localStorage.getItem('vendor_id') || '' : '');
-              const params = new URLSearchParams();
-              params.set('bookingId', bid);
-              if (vid) params.set('vendorId', vid);
-              const videoUrl = `/video?${params.toString()}`;
-              console.log('[Video Call] Navigating directly to:', videoUrl);
-              
-              if (typeof window !== 'undefined') {
-                // Use direct navigation - this will load the page fresh with the new URL
-                // The VideoPageClient will read vendorId from localStorage on mount
-                window.location.href = videoUrl;
-              }
-            } catch (err: any) {
-              console.error('Error starting video call:', err);
-              toast.error(err?.message || 'Failed to start video call');
-              setProcessing(false);
-              isNavigatingRef.current = false;
-            }
-          }}
+      {showChatModal && booking && (
+        <VendorChatModal
+          bookingId={bookingId}
+          vendorId={vendorData?.id}
+          vendorPhone={vendorData?.phone || vendorData?.mobile}
+          vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+          customerPhone={booking.customerPhone || (booking as any).customer_phone}
+          customerName={booking.customerName || 'Customer'}
+          bookingStatus={booking.status}
+          serviceName={booking.serviceName}
+          serviceType={booking.serviceType || booking.service_style}
+          meetingId={booking.meetingId || (booking as any).meeting_id}
           onClose={() => {
-            setCommunicationMode(null);
-            loadAppointmentDetails(); // Refresh to show new activity
+            setShowChatModal(false);
+            loadAppointmentDetails();
+            onRefresh?.();
           }}
         />
       )}
