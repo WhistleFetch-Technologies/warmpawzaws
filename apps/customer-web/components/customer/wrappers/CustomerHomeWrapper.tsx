@@ -2110,6 +2110,11 @@ export function CustomerHomeWrapper({
       openWapptDiscovery(String(data?.category || 'walker'), data);
       return;
     }
+    // Available Walkers / WAPPT hub: open shared appointments profile (same as Book Appointment list).
+    if (screen === 'wappt-vendor-profile') {
+      handleWapptShellNavigate(screen, data as Record<string, unknown> | undefined, 'walker');
+      return;
+    }
     const walkerPayload =
       data?.appointmentsMode === true ? buildWapptShellBookingPayload('walker', data) : data;
     setWalkerServiceData(walkerPayload);

@@ -39,9 +39,36 @@ describe('buildWapptDiscoveryVendorCardProps', () => {
       router: mockRouter as never,
     });
 
-    expect(props.primaryAction?.label).toBe('Book Appointment');
+    expect(props.primaryAction?.label).toBe('Select Slot for Appointment');
     expect(props.secondaryAction?.label).toBe('Pay with Warmpawz');
     expect(props.name).toBe('Happy Paws Training');
+  });
+
+  it('builds walker Available Walkers card props with Pay CTA', () => {
+    const onPrimary = jest.fn();
+    const onProfileClick = jest.fn();
+    const props = buildWapptDiscoveryVendorCardProps({
+      provider: {
+        name: 'private walker',
+        providerId: 'vendor-w-1',
+        vendorId: 'vendor-w-1',
+        isVerified: true,
+        nextAvailableSlot: 'Today 1:30 PM',
+      },
+      subtitle: 'Pet Walker',
+      address: 'Location on booking',
+      category: 'walker',
+      serviceKey: 'walker',
+      onPrimary,
+      onProfileClick,
+      router: mockRouter as never,
+    });
+
+    expect(props.primaryAction?.label).toBe('Select Slot for Appointment');
+    expect(props.secondaryAction?.label).toBe('Pay with Warmpawz');
+    expect(props.subtitle).toBe('Pet Walker');
+    props.primaryAction?.onClick?.({ stopPropagation: jest.fn() } as never);
+    expect(onPrimary).toHaveBeenCalled();
   });
 
   it('launches WPay booking on secondary CTA', () => {

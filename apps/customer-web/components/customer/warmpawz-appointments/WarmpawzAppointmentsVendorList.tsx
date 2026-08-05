@@ -7,10 +7,9 @@ import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDash
 import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/DiscoveryVendorFeedSentinel';
 import { StandardizedFooter } from '@/components/customer/shared/StandardizedFooter';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
-import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
+import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import {
   buildWarmpawzAppointmentsProfileNav,
   WAPPT_VENDOR_PROFILE_SCREEN,
@@ -121,21 +120,6 @@ export function WarmpawzAppointmentsVendorList({
     [category, onNavigate, styleFilter],
   );
 
-  const openWarmpawzPay = useCallback(
-    (e: MouseEvent, row: ReturnType<typeof mapDiscoveryRowBaseFields>) => {
-      e.stopPropagation();
-      const vendorId = String(row.vendorId || row.providerId || '').trim();
-      if (!vendorId) return;
-      launchWarmpawzPayServiceBooking({
-        router,
-        serviceKey: category,
-        category,
-        vendorId,
-      });
-    },
-    [category, router],
-  );
-
   return (
     <div className="mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-customer flex-col bg-gray-50">
       <ServiceDashboardHeader
@@ -203,39 +187,35 @@ export function WarmpawzAppointmentsVendorList({
 
             {filteredRows.map((row) => {
               const address = resolveRowAddress(row);
-              const cardProps = mapDiscoveryProviderToVendorCardProps({
-                provider: {
-                  name: row.name,
-                  photo: row.photo,
-                  isVerified: row.isVerified,
-                  rating: row.rating,
-                  reviewCount: row.reviewCount,
-                  distance: row.distance != null ? Number(row.distance) : null,
-                  distanceText: row.distanceText,
-                  nextAvailableSlot: row.nextAvailableSlot,
-                  providerType: 'vendor',
-                  city: row.city,
-                },
-                subtitle: resolveCardSubtitle(row, listConfig.cardCategoryLabel),
-                address,
-                footerHint: row.nextAvailableSlot
-                  ? `Next: ${row.nextAvailableSlot}`
-                  : 'Tap to view profile & book',
-                profileAriaLabel: `View profile: ${row.name}`,
-                verifiedAriaLabel: 'Verified provider',
-                primaryActionClassName:
-                  'text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10',
-                primaryLabel: isTeleDiscovery ? 'View Services' : 'Select Slot for Appointment',
-                onPrimary: (e) => openVendorProfile(e, row),
-                onProfileClick: (e) => openVendorProfile(e, row),
-                secondaryLabel: isTeleDiscovery ? undefined : 'Pay with Warmpawz',
-                onSecondary: isTeleDiscovery ? undefined : (e) => openWarmpawzPay(e, row),
-              });
-
               return (
                 <WarmpawzPayVendorCard
                   key={row.providerId}
-                  {...cardProps}
+                  {...buildWapptDiscoveryVendorCardProps({
+                    provider: {
+                      name: row.name,
+                      photo: row.photo,
+                      isVerified: row.isVerified,
+                      rating: row.rating,
+                      reviewCount: row.reviewCount,
+                      distance: row.distance != null ? Number(row.distance) : null,
+                      distanceText: row.distanceText,
+                      nextAvailableSlot: row.nextAvailableSlot,
+                      providerType: 'vendor',
+                      city: row.city,
+                      vendorId: row.vendorId,
+                      providerId: row.providerId,
+                    },
+                    subtitle: resolveCardSubtitle(row, listConfig.cardCategoryLabel),
+                    address,
+                    category: listConfig.category,
+                    serviceKey: category,
+                    onPrimary: (e) => openVendorProfile(e, row),
+                    onProfileClick: (e) => openVendorProfile(e, row),
+                    router,
+                    primaryLabel: isTeleDiscovery ? 'View Services' : 'Select Slot for Appointment',
+                    secondaryLabel: isTeleDiscovery ? undefined : 'Pay with Warmpawz',
+                    showPayCta: !isTeleDiscovery,
+                  })}
                 />
               );
             })}
