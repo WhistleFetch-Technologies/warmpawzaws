@@ -19,6 +19,7 @@ import {
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { TRAINING_HEADER_BANNER as BEHAVIORIST_HEADER_BANNER } from './training/constants/training-hub-assets';
 import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 
 interface BehavioristServiceRouterProps {

@@ -261,7 +261,7 @@ async function loadWapptSearchResults(opts: {
   query: string;
   searchFetchKind: 'keyword' | 'hub' | 'browse';
   keyword?: string;
-}): Promise<SearchResult[]> {
+}): Promise<SearchWapptVendorRow[]> {
   const hubs = resolveWapptHubsForSearch({
     category: opts.category,
     query: opts.query,
@@ -276,12 +276,12 @@ async function loadWapptSearchResults(opts: {
     hubs.map((hub) => fetchWapptSearchVendorResults(hub, { keyword, limit: 50 }))
   );
   const seen = new Set<string>();
-  const out: SearchResult[] = [];
+  const out: SearchWapptVendorRow[] = [];
   for (const batch of batches) {
     for (const row of batch) {
       if (seen.has(row.id)) continue;
       seen.add(row.id);
-      out.push(wapptRowToSearchResult(row));
+      out.push(row);
     }
   }
   return out;

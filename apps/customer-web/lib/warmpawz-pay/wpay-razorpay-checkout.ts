@@ -1,9 +1,11 @@
 import { apiClient } from '@/lib/api-client';
+import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
 import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
-import { loadRazorpayScript } from '@/lib/razorpay/razorpay-utils';
+  digitsToRazorpayContactE164,
+  loadRazorpayScript,
+  razorpaySafeDescription,
+  sanitizeRazorpayInstanceOptions,
+} from '@/lib/razorpay/razorpay-utils';
 
 export type WpayInitiateResponse = {
   success?: boolean;
@@ -11,6 +13,7 @@ export type WpayInitiateResponse = {
   razorpayOrderId?: string;
   razorpayKeyId?: string;
   amount?: number;
+  amountPaise?: number;
   currency?: string;
   originalAmount?: number;
   appointmentFeeCredit?: number;
@@ -56,6 +59,11 @@ export async function runWpayRazorpayCheckout(params: {
     throw new Error('Invalid payable amount');
   }
 
+  const amountPaise =
+    typeof initiate.amountPaise === 'number' && Number.isFinite(initiate.amountPaise)
+      ? Math.max(1, Math.round(initiate.amountPaise))
+      : Math.max(1, Math.round(Number(initiate.amount ?? payableAmount) * 100));
+
   await loadRazorpayScript();
   const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
   const paymentId = String(initiate.paymentId);
@@ -65,17 +73,26 @@ export async function runWpayRazorpayCheckout(params: {
     phone: customerPhone,
   };
 
+  const phoneDigits = String(customerPhone).replace(/\D/g, '');
+  const e164 = digitsToRazorpayContactE164(phoneDigits);
+  const prefill: Record<string, string> = {};
+  if (e164) prefill.contact = e164;
+  const emailTrim =
+    typeof checkoutEmail === 'string' && checkoutEmail.includes('@') ? checkoutEmail.trim() : '';
+  if (emailTrim && emailTrim !== 'undefined' && emailTrim !== 'null') {
+    prefill.email = emailTrim;
+  }
+
+  const paymentDescription = razorpaySafeDescription(`Warmpawz Pay - ${vendorName}`);
+
   return new Promise<WpayVerifyResponse>((resolve, reject) => {
-    const options = buildSanitizedStandardRazorpayCheckoutOptions({
+    const rawOptions: Record<string, unknown> = {
       key: initiate.razorpayKeyId!,
-      amountPaise: Math.max(1, Math.round(payableAmount * 100)),
+      amount: amountPaise,
       currency: initiate.currency || 'INR',
       name: 'Warmpawz',
-      description: `Warmpawz Pay — ${vendorName}`,
+      description: paymentDescription,
       order_id: initiate.razorpayOrderId,
-      customerPhone,
-      customerEmail: checkoutEmail,
-      includeInstrumentBlocks: true,
       handler: async (response: {
         razorpay_order_id: string;
         razorpay_payment_id: string;
@@ -96,19 +113,31 @@ export async function runWpayRazorpayCheckout(params: {
           reject(e instanceof Error ? e : new Error('Payment verification failed'));
         }
       },
-      theme: { color: '#FF8C42' },
+      ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
+      theme: { color: '#FF8C42', hide_topbar: true },
       modal: {
         ondismiss: () => reject(new Error('Payment cancelled')),
       },
-    });
+    };
 
-    const RazorpayCtor = (window as unknown as { Razorpay?: new (o: Record<string, unknown>) => { open: () => void } })
-      .Razorpay;
+    const options = sanitizeRazorpayInstanceOptions(rawOptions);
+
+    const RazorpayCtor = (window as unknown as {
+      Razorpay?: new (o: Record<string, unknown>) => {
+        open: () => void;
+        on: (event: string, cb: (resp: unknown) => void) => void;
+      };
+    }).Razorpay;
     if (!RazorpayCtor) {
       reject(new Error('Payment gateway not available'));
       return;
     }
+
     const rz = new RazorpayCtor(options);
+    rz.on('payment.failed', (resp: { error?: { description?: string; reason?: string } }) => {
+      const msg = resp?.error?.description || resp?.error?.reason || 'Payment failed';
+      reject(new Error(msg));
+    });
     rz.open();
   });
 }

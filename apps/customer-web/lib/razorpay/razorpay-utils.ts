@@ -92,6 +92,16 @@ export function digitsToRazorpayContactE164(digitsOnly: string): string | undefi
   return undefined;
 }
 
+/** Razorpay validate/account can 500 on emojis and non-ASCII in description/name fields. */
+export function razorpaySafeDescription(text: string): string {
+  const t = String(text || '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[^\x20-\x7E]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return t || 'Payment';
+}
+
 /**
  * Standard Checkout may request bad static chunks (e.g. …/build/undefined) and fail
  * validate/account when options include undefined values, string "undefined", or
@@ -158,6 +168,8 @@ export function sanitizeRazorpayInstanceOptions<T extends Record<string, any>>(o
     out.description = 'Payment';
   } else if (typeof desc === 'string' && desc.includes('undefined')) {
     out.description = 'Payment';
+  } else if (typeof desc === 'string') {
+    out.description = razorpaySafeDescription(desc);
   }
 
   if (typeof out.amount === 'number' && Number.isFinite(out.amount)) {

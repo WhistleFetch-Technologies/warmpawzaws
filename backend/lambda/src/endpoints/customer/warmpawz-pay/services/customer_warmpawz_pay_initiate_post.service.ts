@@ -93,6 +93,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       razorpayOrderId: order.orderId,
       razorpayKeyId: order.keyId,
       amount: order.amount,
+      amountPaise: order.amountPaise,
       currency: order.currency,
       originalAmount: quote.originalAmount,
       appointmentFeeCredit: quote.appointmentFeeCredit,
