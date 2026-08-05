@@ -59,6 +59,8 @@ import {
   type SessionPackageType,
 } from '@/lib/session-package-normalize';
 import { resolveVendorCustomServiceSpecCategoryId } from '@/lib/vendor-custom-service-spec-category';
+import { canVendorEditServicePrice, shouldHideVendorServicePrice } from '@/lib/wappt-service-pricing-lock';
+import { getActiveCommerceModelAsync } from '@/lib/commerce-switch-client';
 
 const SpecializationSelector = lazy(() =>
   import('@/components/vendor/SpecializationSelector').then((m) => ({ default: m.SpecializationSelector }))
@@ -109,6 +111,8 @@ interface CustomService {
   petTypes?: string[];
   publishStatus?: 'draft' | 'pending_approval' | 'published' | 'rejected';
   rejectionReason?: string;
+  serviceStyle?: string;
+  service_style?: string;
 }
 
 type PackageType = 'session' | 'combo' | 'subscription' | 'membership' | 'unlimited';
@@ -272,6 +276,7 @@ export function VendorCustomServiceCreationEnhanced({
   const [customServices, setCustomServices] = useState<CustomService[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [commerceSwitchReady, setCommerceSwitchReady] = useState(false);
   
   // Form state
   const [serviceName, setServiceName] = useState('');
@@ -382,12 +387,22 @@ export function VendorCustomServiceCreationEnhanced({
       ['at_center', 'at_home', 'tele'].includes(style)
     ) as ('at_center' | 'at_home' | 'tele')[];
     
-    return isSoloProvider ? styles.filter(s => s !== 'at_center') : styles;
+    const filtered = isSoloProvider ? styles.filter(s => s !== 'at_center') : styles;
+    return [...new Set(filtered)];
   }, [allowedServiceStyles, isSoloProvider]);
+
+  const canEditCreatePrice = useMemo(
+    () => canVendorEditServicePrice(selectedServiceStyle),
+    [selectedServiceStyle, commerceSwitchReady],
+  );
 
   // ============================================================================
   // EFFECTS
   // ============================================================================
+
+  useEffect(() => {
+    void getActiveCommerceModelAsync().finally(() => setCommerceSwitchReady(true));
+  }, []);
 
   // ✅ Check if this is a trainer/walker/sitter/groomer who can create session packages even as solo (solo trainer, solo groomer)
   const isTrainerWalkerSitter = useMemo(() => {
@@ -649,7 +664,7 @@ export function VendorCustomServiceCreationEnhanced({
           return false;
         }
       }
-    } else {
+    } else if (canEditCreatePrice) {
       if (price <= 0) {
         toast.error('Price must be greater than 0');
         return false;
@@ -674,7 +689,7 @@ export function VendorCustomServiceCreationEnhanced({
         serviceName: serviceName.trim(),
         description: description.trim(),
         duration: isPackage && packageType === 'session' ? sessionDuration : duration,
-        price: isPackage ? 0 : price,
+        price: isPackage ? 0 : canEditCreatePrice ? price : 0,
         category: categoryForApi,
         categoryName: categoryForApi,
         subCategoryName: categoryName === 'other' ? undefined : (subCategoryName.trim() || undefined),
@@ -979,14 +994,16 @@ export function VendorCustomServiceCreationEnhanced({
                   <Clock className="w-4 h-4 text-[#FF8C42]" />
                   <span>{service.duration} mins</span>
                 </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <IndianRupee className="w-4 h-4 text-[#FF8C42]" />
-                  <span>
-                    {service.isPackage
-                      ? `Package · ₹${service.price ?? service.packageDetails?.price ?? service.packageDetails?.packagePrice ?? 0}`
-                      : `₹${service.price}`}
-                  </span>
-                </div>
+                {!shouldHideVendorServicePrice(service.serviceStyle ?? service.service_style ?? serviceStyle) && (
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <IndianRupee className="w-4 h-4 text-[#FF8C42]" />
+                    <span>
+                      {service.isPackage
+                        ? `Package · ₹${service.price ?? service.packageDetails?.price ?? service.packageDetails?.packagePrice ?? 0}`
+                        : `₹${service.price}`}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Package Details */}
@@ -1068,7 +1085,8 @@ export function VendorCustomServiceCreationEnhanced({
                     Unpublish
                   </Button>
                 )}
-                {!service.isPackage && (
+                {!service.isPackage &&
+                  canVendorEditServicePrice(service.serviceStyle ?? service.service_style ?? serviceStyle) && (
                   <Button
                     onClick={() => handleUpdatePrice(service)}
                     size="sm"
@@ -1351,26 +1369,35 @@ export function VendorCustomServiceCreationEnhanced({
 
             {/* Single Service Pricing */}
             {!isPackage && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="duration">Duration (mins) *</Label>
-                  <Input
-                    id="duration"
-                    type="number"
-                    value={duration}
-                    onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
-                    min="1"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="price">Price (₹) *</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    value={price}
-                    onChange={(e) => setPrice(parseInt(e.target.value) || 0)}
-                    min="0"
-                  />
+              <div className="space-y-3">
+                {!canEditCreatePrice && (
+                  <p className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+                    Appointment pricing is managed by Warmpawz for home and in-center services. You can set duration only.
+                  </p>
+                )}
+                <div className={`grid gap-3 ${canEditCreatePrice ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  <div className="space-y-2">
+                    <Label htmlFor="duration">Duration (mins) *</Label>
+                    <Input
+                      id="duration"
+                      type="number"
+                      value={duration}
+                      onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
+                      min="1"
+                    />
+                  </div>
+                  {canEditCreatePrice && (
+                    <div className="space-y-2">
+                      <Label htmlFor="price">Price (₹) *</Label>
+                      <Input
+                        id="price"
+                        type="number"
+                        value={price}
+                        onChange={(e) => setPrice(parseInt(e.target.value) || 0)}
+                        min="0"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             )}

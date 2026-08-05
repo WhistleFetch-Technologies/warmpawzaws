@@ -30,6 +30,28 @@ export type WpayTransactionCard = {
   paidAt: string;
 };
 
+export type WpayAppointmentContextBooking = {
+  bookingId: string;
+  status: string;
+  serviceName: string;
+  vendorName: string;
+  bookingDate: string | null;
+  bookingTime: string | null;
+  bookingDatetime: string | null;
+  appointmentFee: number;
+  otpCode: string | null;
+  completionOtp: string | null;
+  otpVerified: boolean;
+  creditEligible: boolean;
+};
+
+export type WpayAppointmentContext = {
+  success: boolean;
+  hasOpenAppointment: boolean;
+  openAppointment: WpayAppointmentContextBooking | null;
+  creditEligibleBooking: WpayAppointmentContextBooking | null;
+};
+
 type ListEnvelope<T> = {
   success?: boolean;
   vendors?: T[];
@@ -84,4 +106,30 @@ export async function fetchWpayVendorDetail(vendorId: string): Promise<WpayVendo
     `/customer/warmpawz-pay/vendors/${encodeURIComponent(vendorId)}`
   );
   return res?.vendor ?? null;
+}
+
+export function buildWpayAppointmentContextUrl(vendorId: string, phone: string): string {
+  const params = new URLSearchParams();
+  params.set('vendorId', vendorId);
+  params.set('phone', phone);
+  return `/customer/warmpawz-pay/appointment-context?${params.toString()}`;
+}
+
+export async function fetchWpayAppointmentContext(
+  vendorId: string,
+  phone: string,
+): Promise<WpayAppointmentContext | null> {
+  const res = await apiClient.get<WpayAppointmentContext>(
+    buildWpayAppointmentContextUrl(vendorId, phone),
+  );
+  return res?.success ? res : null;
+}
+
+export function readCustomerPhoneFromStorage(): string {
+  if (typeof window === 'undefined') return '';
+  return (
+    localStorage.getItem('customerPhone') ||
+    localStorage.getItem('customer_phone') ||
+    ''
+  ).trim();
 }

@@ -21,6 +21,9 @@ export async function createWpayRazorpayOrder(params: {
     originalAmount: number;
     discountAmount: number;
     discountPercent: number;
+    billBase?: number;
+    appointmentFeeCredit?: number;
+    appointmentFeeBookingId?: string | null;
   };
 }): Promise<{
   orderId: string;
@@ -75,6 +78,11 @@ export async function createWpayRazorpayOrder(params: {
       quotedOriginalAmount: quote.originalAmount,
       quotedDiscountAmount: quote.discountAmount,
       quotedDiscountPercent: quote.discountPercent,
+      billBase: quote.billBase ?? quote.originalAmount,
+      appointmentFeeCredit: quote.appointmentFeeCredit ?? 0,
+      ...(quote.appointmentFeeBookingId
+        ? { appointmentFeeBookingId: quote.appointmentFeeBookingId }
+        : {}),
     },
   });
 
@@ -87,6 +95,7 @@ export async function createWpayRazorpayOrder(params: {
   return {
     orderId: razorpayOrder.id,
     amount: (razorpayOrder.amount ?? Math.round(amt * 100)) / 100,
+    amountPaise: razorpayOrder.amount ?? Math.round(amt * 100),
     currency: razorpayOrder.currency || 'INR',
     keyId: config.keyId,
     paymentId,

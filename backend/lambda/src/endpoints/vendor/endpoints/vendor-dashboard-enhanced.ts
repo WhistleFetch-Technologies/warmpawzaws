@@ -39,6 +39,46 @@ import {
   sqlExcludeSuppressedVendorEarningsRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { resolveVendorDashboardTimeframeRange } from '../../../utils/vendor-dashboard-timeframe';
+import { applyVendorBookingDisplayFields } from '../../warmpawz-appointments/shared/vendor-booking-display';
+import { mapWpaySettlementLedgerStatus } from '../../customer/warmpawz-pay/shared/accrue-wpay-settlement';
+
+const DASHBOARD_SERVICE_NAME_SQL = `CASE
+  WHEN LOWER(COALESCE(b.commerce_mode, '')) = 'warmpawz_appointments'
+  THEN COALESCE(NULLIF(TRIM(b.service_name), ''), 'Appointment')
+  ELSE COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name)
+END AS service_name`;
+
+function mapDashboardBookingRow(b: Record<string, unknown>) {
+  const catalogName = String(b.service_name || 'Service');
+  const display = applyVendorBookingDisplayFields(b, {
+    catalogServiceName: catalogName,
+    vendorVisibleAmount: parseFloat(String(b.total_amount ?? '0')),
+  });
+  return {
+    id: b.id,
+    booking_id: b.id,
+    customer_id: b.customer_id,
+    customer_name: b.customer_name || 'Customer',
+    customer_phone: b.customer_phone,
+    service_id: b.service_id,
+    service_name: display.service_name,
+    service_category: b.service_category,
+    booking_date: b.booking_date,
+    booking_time: b.booking_time,
+    status: b.status,
+    payment_status: b.payment_status,
+    total_amount: display.total_amount,
+    otp_code: b.otp_code,
+    otp_verified: b.otp_verified,
+    service_type: b.service_type,
+    service_style: b.service_style,
+    commerce_mode: display.commerce_mode,
+    pet_name: b.pet_name,
+    pet_breed: b.pet_breed,
+    duration_minutes: b.duration_minutes,
+    notes: b.notes,
+  };
+}
 
 /** Last 7 local calendar days with summed vendor_earnings amounts (for vendor earnings chart). */
 /** Map delivery_settlements.status to vendor_earnings-like status for dashboard summaries. */
@@ -66,6 +106,15 @@ function formatYmdInTimeZone(d: Date, timeZone: string): string {
     month: '2-digit',
     day: '2-digit',
   }).format(d);
+}
+
+/** Dashboard timeframe anchor: optional client anchorDate (YYYY-MM-DD) or IST calendar today. */
+function resolveDashboardAnchorDate(anchorDateQuery?: string): string {
+  const trimmed = anchorDateQuery?.trim();
+  if (trimmed && /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  return formatYmdInTimeZone(new Date(), EARNINGS_PERIOD_TZ);
 }
 
 /** SQL predicate: realized/delivery timestamp within earnings period (IST calendar boundaries). */
@@ -129,6 +178,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       const timeframe = c.req.query('timeframe') || 'today'; // today, week, month
+      const anchorDate = resolveDashboardAnchorDate(c.req.query('anchorDate'));
 
       // Handle test IDs - return empty dashboard
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -167,11 +217,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendors = await select('vendors', { id: resolvedVendorId });
       const vendor = vendors.length > 0 ? vendors[0] : null;
 
-      const now = new Date();
-      const today = now.toISOString().split('T')[0];
       const { startDate: startDateStr, endDate: endDateStr } = resolveVendorDashboardTimeframeRange(
         timeframe,
-        today
+        anchorDate
       );
 
       const tb = getTemporaryVendorSuppressionParams();
@@ -181,7 +229,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const bookings = vendorIds.length === 1
         ? await query(
             `SELECT b.*,
-                    COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                    ${DASHBOARD_SERVICE_NAME_SQL},
                     COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                     c.full_name as customer_name,
                     c.phone as customer_phone
@@ -201,7 +249,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           ).catch(() => ({ rows: [] }))
         : await query(
             `SELECT b.*,
-                    COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                    ${DASHBOARD_SERVICE_NAME_SQL},
                     COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                     c.full_name as customer_name,
                     c.phone as customer_phone
@@ -266,27 +314,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       stats.rating = statsRating;
       stats.totalReviews = totalReviewsDash;
 
-      // ✅ FIX: Include enriched bookings in response
-      const enrichedBookings = bookings.rows.map((b: any) => ({
-        id: b.id,
-        booking_id: b.id,
-        customer_id: b.customer_id,
-        customer_name: b.customer_name || 'Customer',
-        customer_phone: b.customer_phone,
-        service_id: b.service_id,
-        service_name: b.service_name || 'Service',
-        service_category: b.service_category,
-        booking_date: b.booking_date,
-        booking_time: b.booking_time,
-        status: b.status,
-        payment_status: b.payment_status,
-        total_amount: b.total_amount,
-        otp_code: b.otp_code,
-        otp_verified: b.otp_verified,
-        service_type: b.service_type,
-        service_style: b.service_style,
-        notes: b.notes,
-      }));
+      const enrichedBookings = bookings.rows.map((b: Record<string, unknown>) =>
+        mapDashboardBookingRow(b),
+      );
 
       return c.json({
         success: true,
@@ -328,6 +358,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
     try {
       const { vendorId: paramVendorId } = c.req.param();
       const timeframe = c.req.query('timeframe') || 'today';
+      const anchorDate = resolveDashboardAnchorDate(c.req.query('anchorDate'));
 
       // Handle test IDs - return empty dashboard
       if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
@@ -356,11 +387,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendors = await select('vendors', { id: resolvedVendorId });
       const vendor = vendors.length > 0 ? vendors[0] : null;
 
-      // Get today's date
-      const today = new Date().toISOString().split('T')[0];
       const { startDate: startDateStr, endDate: endDateStr } = resolveVendorDashboardTimeframeRange(
         timeframe,
-        today
+        anchorDate
       );
       const temporarySuppressionMain = getTemporaryVendorSuppressionParams();
       const supMainTail = temporarySuppressionMain
@@ -479,7 +508,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const bookingsQuery = vendorIds.length === 1
         ? `SELECT b.*,
-                COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                ${DASHBOARD_SERVICE_NAME_SQL},
                 COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
@@ -496,7 +525,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
            ${listSup1}
          ORDER BY b.booking_date ASC, b.booking_time ASC`
         : `SELECT b.*,
-                COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                ${DASHBOARD_SERVICE_NAME_SQL},
                 COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
@@ -518,27 +547,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           : [vendorIds[0], vendorIds[1], startDateStr, endDateStr, ...supMainTail];
       const bookingsResult = await query(bookingsQuery, bookingsParams).catch(() => ({ rows: [] }));
 
-      // Transform bookings for frontend
-      const enrichedBookings = bookingsResult.rows.map((b: any) => ({
-        id: b.id,
-        booking_id: b.id,
-        customer_id: b.customer_id,
-        customer_name: b.customer_name || 'Customer',
-        customer_phone: b.customer_phone,
-        service_id: b.service_id,
-        service_name: b.service_name || 'Service',
-        service_category: b.service_category,
-        booking_date: b.booking_date,
-        booking_time: b.booking_time,
-        status: b.status,
-        payment_status: b.payment_status,
-        total_amount: b.total_amount,
-        otp_code: b.otp_code,
-        otp_verified: b.otp_verified,
-        service_type: b.service_type,
-        service_style: b.service_style,
-        notes: b.notes,
-      }));
+      const enrichedBookings = bookingsResult.rows.map((b: Record<string, unknown>) =>
+        mapDashboardBookingRow(b),
+      );
 
       console.log(`📊 [DASHBOARD] Returning ${enrichedBookings.length} bookings for vendor ${paramVendorId}`);
 
@@ -828,6 +839,36 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const settlementRows = settlementsResult.rows || [];
 
+      const wpayRealizedCol = 'COALESCE(p.completed_at, s.settlement_date::timestamptz, s.created_at)';
+      const wpayPeriodSql = periodScoped
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, wpayRealizedCol)}`
+        : '';
+      const wpaySettlementsSql = `SELECT s.id,
+                    s.vendor_id,
+                    s.payment_id,
+                    s.total_amount,
+                    s.commission_amount,
+                    s.net_amount,
+                    s.settlement_status,
+                    s.settlement_date,
+                    s.settlement_breakup,
+                    s.created_at,
+                    s.completed_at AS settlement_completed_at,
+                    p.original_amount,
+                    p.amount AS paid_amount,
+                    p.completed_at AS payment_completed_at,
+                    c.full_name AS customer_name
+             FROM settlements s
+             INNER JOIN payments p ON p.id = s.payment_id
+             LEFT JOIN customers c ON c.id = p.customer_id
+             WHERE s.vendor_id = ANY($1::uuid[])
+               AND s.order_type = 'warmpawz_pay'
+               AND s.payment_id IS NOT NULL${wpayPeriodSql}
+             ORDER BY ${wpayRealizedCol} DESC NULLS LAST`;
+
+      const wpaySettlementsResult = await query(wpaySettlementsSql, [vendorIdsForEarnings]).catch(() => ({ rows: [] }));
+      const wpaySettlementRows = wpaySettlementsResult.rows || [];
+
       // Calculate summary
       const summary = {
         totalEarnings: 0,
@@ -891,6 +932,34 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         }
       });
 
+      wpaySettlementRows.forEach((ws: any) => {
+        const ledgerStatus = mapWpaySettlementLedgerStatus(ws.settlement_status);
+        if (ledgerStatus === 'cancelled') return;
+
+        const amount = safeMoneyAmount(ws.net_amount);
+        const commission = safeMoneyAmount(ws.commission_amount);
+        const total = safeMoneyAmount(ws.total_amount);
+
+        summary.totalEarnings += amount;
+        summary.totalCommission += commission;
+        summary.totalRevenue += total;
+
+        if (ledgerStatus === 'pending') {
+          summary.pendingSettlement += amount;
+        } else if (ledgerStatus === 'settled') {
+          summary.settled += amount;
+        } else if (ledgerStatus === 'paid_out') {
+          summary.paidOut += amount;
+        }
+
+        if (period === 'lifetime') {
+          const realizedAt = ws.payment_completed_at || ws.settlement_date || ws.created_at;
+          if (realizedAt) summary.thisPeriod += amount;
+        } else {
+          summary.thisPeriod += amount;
+        }
+      });
+
       // Get vendor info for bank verification status
       const vendors = await select('vendors', { id: vendorId });
       const vendor = vendors[0] || {};
@@ -927,7 +996,39 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         settlementId: ds.id,
       }));
 
-      const transactions = [...bookingTransactions, ...settlementTransactions].sort(
+      const wpaySettlementTransactions = wpaySettlementRows.map((ws: any) => {
+        const breakup =
+          ws.settlement_breakup && typeof ws.settlement_breakup === 'object'
+            ? ws.settlement_breakup
+            : {};
+        const quotedAmount = safeMoneyAmount(
+          breakup.quotedAmount ?? ws.original_amount ?? ws.total_amount,
+        );
+        const realizedAt =
+          ws.payment_completed_at || ws.settlement_date || ws.created_at;
+        const withholdPercent = safeMoneyAmount(breakup.platformWithholdPercent);
+        return {
+          id: ws.id,
+          paymentId: ws.payment_id,
+          bookingId: null,
+          bookingDate: realizedAt,
+          serviceName: 'Pay Bill',
+          customerName: ws.customer_name || 'Customer',
+          flowType: 'pay_bill' as const,
+          quotedAmount,
+          paidAmount: safeMoneyAmount(ws.paid_amount ?? ws.total_amount),
+          amount: safeMoneyAmount(ws.net_amount),
+          commission: safeMoneyAmount(ws.commission_amount),
+          totalAmount: safeMoneyAmount(ws.total_amount),
+          commissionRate: withholdPercent,
+          status: mapWpaySettlementLedgerStatus(ws.settlement_status),
+          realizedAt,
+          paidOutAt: ws.settlement_completed_at || null,
+          settlementId: ws.id,
+        };
+      });
+
+      const transactions = [...bookingTransactions, ...settlementTransactions, ...wpaySettlementTransactions].sort(
         (a: any, b: any) =>
           new Date(b.realizedAt || 0).getTime() - new Date(a.realizedAt || 0).getTime(),
       );
@@ -961,6 +1062,10 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
               ...settlementRows.map((ds: any) => ({
                 realized_at: ds.order_delivered_at || ds.created_at,
                 amount: ds.net_payout,
+              })),
+              ...wpaySettlementRows.map((ws: any) => ({
+                realized_at: ws.payment_completed_at || ws.settlement_date || ws.created_at,
+                amount: ws.net_amount,
               })),
             ])
           : undefined;

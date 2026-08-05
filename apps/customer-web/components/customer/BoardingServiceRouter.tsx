@@ -35,14 +35,16 @@ import {
 } from './shared/ServiceHubVendorCard';
 import { useBoardingVendorDiscovery } from '@/hooks/useBoardingVendorDiscovery';
 import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
+import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
+import { BOARDING_SERVICE_LABELS } from '@/lib/boarding-service-types';
 import { HUB_SERVICE_ICON_WRAP } from '@/lib/hub-service-option-styles';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import {
   isWarmpawzAppointmentsHubEnabled,
   buildWarmpawzAppointmentsProfileNav,
   WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
-import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
@@ -579,10 +581,10 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <div>
               <h2 className="text-lg font-bold text-slate-900 mb-4">Featured Stays</h2>
 
-              {relaxedFilter && (
+              {relaxedFilter && vendors.length > 0 && (
                 <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
-                  No centers matched a specific service name in listings yet. Showing all pet boarding centers — expand
-                  for services or open details.
+                  No centers listed <strong>{BOARDING_SERVICE_LABELS[HUB_SERVICE_SLUG]}</strong> by service name yet.
+                  Showing all boarding centers below — expand or open details to see what they offer.
                 </p>
               )}
 
@@ -631,6 +633,9 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     </div>
   );
 }
+
+
+
 
 
 

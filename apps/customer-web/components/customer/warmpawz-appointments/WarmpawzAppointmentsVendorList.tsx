@@ -27,6 +27,9 @@ type WarmpawzAppointmentsVendorListProps = {
   category: string;
   initialServiceStyle?: WapptDiscoveryListStyle;
   lockStyleFilter?: boolean;
+  profileBackScreen?: string;
+  specialization?: string;
+  listSubtitleOverride?: string;
   onBack: () => void;
   onGoHome: () => void;
   onNavigate: (screen: string, data?: Record<string, unknown>) => void;
@@ -51,6 +54,9 @@ export function WarmpawzAppointmentsVendorList({
   category,
   initialServiceStyle,
   lockStyleFilter = false,
+  profileBackScreen = 'wappt-discovery',
+  specialization,
+  listSubtitleOverride,
   onBack,
   onGoHome,
   onNavigate,
@@ -81,6 +87,7 @@ export function WarmpawzAppointmentsVendorList({
   const feed = useWarmpawzAppointmentsByCategoryFeed({
     category: discoveryCategory,
     serviceStyle: feedServiceStyle,
+    specialization,
     enabled: true,
   });
 
@@ -113,11 +120,11 @@ export function WarmpawzAppointmentsVendorList({
           vendorName: row.name,
           serviceStyle: style,
           category: listConfig.category,
-          profileBackScreen: 'wappt-discovery',
+          profileBackScreen,
         }),
       });
     },
-    [category, onNavigate, styleFilter],
+    [listConfig.category, onNavigate, profileBackScreen, styleFilter],
   );
 
   return (
@@ -125,7 +132,7 @@ export function WarmpawzAppointmentsVendorList({
       <ServiceDashboardHeader
         fullWidth
         serviceName={listConfig.serviceName}
-        serviceSubtitle={listConfig.serviceSubtitle}
+        serviceSubtitle={listSubtitleOverride ?? listConfig.serviceSubtitle}
         serviceIcon={listConfig.headerIcon}
         iconColor="text-white"
         stats={EMPTY_SERVICE_HEADER_STATS}

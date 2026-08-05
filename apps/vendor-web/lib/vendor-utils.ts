@@ -161,6 +161,77 @@ export function isVendorTeleConsultationBooking(bookingLike: {
   );
 }
 
+export const WAPPT_VENDOR_COMMERCE_MODE = 'warmpawz_appointments' as const;
+export const WAPPT_VENDOR_SERVICE_LABEL = 'Appointment' as const;
+
+export function isWarmpawzAppointmentsBooking(bookingLike: {
+  commerce_mode?: string | null;
+  commerceMode?: string | null;
+}): boolean {
+  const mode = String(
+    bookingLike.commerce_mode ?? bookingLike.commerceMode ?? '',
+  ).toLowerCase();
+  return mode === WAPPT_VENDOR_COMMERCE_MODE;
+}
+
+/** Tele wins: marketplace name + price. WAPPT non-tele hides price from vendor UI. */
+export function shouldShowVendorBookingPrice(bookingLike: {
+  commerce_mode?: string | null;
+  commerceMode?: string | null;
+  serviceType?: string | null;
+  service_type?: string | null;
+  service_style?: string | null;
+  serviceStyle?: string | null;
+  communicationType?: string | null;
+}): boolean {
+  if (isVendorTeleConsultationBooking(bookingLike)) {
+    return true;
+  }
+  return !isWarmpawzAppointmentsBooking(bookingLike);
+}
+
+/** Home schedule cards only. Tele wins (same as price rules). Bookings tab unaffected. */
+export function shouldShowVendorBookingServiceOnHomeDashboard(bookingLike: {
+  commerce_mode?: string | null;
+  commerceMode?: string | null;
+  serviceType?: string | null;
+  service_type?: string | null;
+  service_style?: string | null;
+  serviceStyle?: string | null;
+  communicationType?: string | null;
+}): boolean {
+  if (isVendorTeleConsultationBooking(bookingLike)) {
+    return true;
+  }
+  return !isWarmpawzAppointmentsBooking(bookingLike);
+}
+
+export function resolveVendorBookingServiceLabel(bookingLike: {
+  commerce_mode?: string | null;
+  commerceMode?: string | null;
+  serviceName?: string | null;
+  service_name?: string | null;
+  serviceType?: string | null;
+  service_type?: string | null;
+  service_style?: string | null;
+  serviceStyle?: string | null;
+  communicationType?: string | null;
+}): string {
+  const raw = String(
+    bookingLike.serviceName ?? bookingLike.service_name ?? '',
+  ).trim();
+
+  if (isVendorTeleConsultationBooking(bookingLike)) {
+    return raw || 'Service';
+  }
+
+  if (isWarmpawzAppointmentsBooking(bookingLike)) {
+    return WAPPT_VENDOR_SERVICE_LABEL;
+  }
+
+  return raw || 'Service';
+}
+
 export function resolveVendorBookingId(bookingLike: {
   id?: string | null;
   bookingId?: string | null;

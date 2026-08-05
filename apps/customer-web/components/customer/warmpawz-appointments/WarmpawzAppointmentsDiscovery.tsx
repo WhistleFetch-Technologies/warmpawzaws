@@ -7,6 +7,9 @@ type WarmpawzAppointmentsDiscoveryProps = {
   category: string;
   initialServiceStyle?: WapptDiscoveryListStyle;
   lockStyleFilter?: boolean;
+  profileBackScreen?: string;
+  specialization?: string;
+  listSubtitleOverride?: string;
   phone: string;
   onBack: () => void;
   onGoHome: () => void;
@@ -17,6 +20,9 @@ export function WarmpawzAppointmentsDiscovery({
   category,
   initialServiceStyle,
   lockStyleFilter,
+  profileBackScreen = 'wappt-discovery',
+  specialization,
+  listSubtitleOverride,
   phone: _phone,
   onBack,
   onGoHome,
@@ -27,6 +33,9 @@ export function WarmpawzAppointmentsDiscovery({
       category={category}
       initialServiceStyle={initialServiceStyle}
       lockStyleFilter={lockStyleFilter}
+      profileBackScreen={profileBackScreen}
+      specialization={specialization}
+      listSubtitleOverride={listSubtitleOverride}
       onBack={onBack}
       onGoHome={onGoHome}
       onNavigate={onNavigate}

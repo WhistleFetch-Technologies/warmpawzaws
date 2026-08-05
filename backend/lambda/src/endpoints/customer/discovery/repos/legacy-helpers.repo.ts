@@ -190,6 +190,20 @@ const SPECIALIZATION_SYNONYM_CLUSTERS: string[][] = [
   ['ophthalmology', 'eye_care', 'eye care'],
   ['dentistry', 'dental', 'dental_care', 'dental care'],
   ['surgery', 'surgical'],
+  ['vaccination', 'vaccinations', 'immunization'],
+  ['lab_diagnostics', 'lab diagnostics', 'lab_and_diagnostics', 'lab & diagnostics', 'diagnostics'],
+  ['general', 'general_health', 'general health'],
+  ['palliative', 'palliative_care', 'palliative care', 'end_of_life', 'end of life'],
+  ['reproductive', 'reproductive_breeding', 'reproductive & breeding', 'breeding'],
+  ['neurology', 'neuro'],
+  ['orthopedics', 'bone_joint', 'bone & joint', 'bone and joint'],
+  // ── Grooming ─────────────────────────────────────────────────────────────
+  ['bath_only', 'bath_brush', 'bath & brush', 'bath service', 'bath_and_brush'],
+  ['full_grooming', 'complete grooming', 'full grooming'],
+  ['hair_trim', 'hair_trimming', 'hair trimming', 'haircut_styling', 'haircut & styling', 'hair styling'],
+  ['nail_care', 'nail_trimming', 'nail trimming'],
+  ['deshedding', 'de_shedding', 'de-shedding', 'shedding_control', 'shedding control'],
+  ['spa_treatment', 'spa_wellness', 'spa & wellness', 'spa treatment'],
 ];
 
 /** Normalise a slug by replacing any non-alphanumeric run with a single underscore. */

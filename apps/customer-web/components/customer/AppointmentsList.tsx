@@ -10,6 +10,7 @@ import {
   persistCustomerDatabaseId,
 } from '@/lib/customer-id-storage';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { resolveCustomerBookingDisplayName } from '@/lib/warmpawz-appointments-customer';
 
 export interface AppointmentsListProps {
   /** Customer login phone (used to resolve DB customer UUID). */
@@ -27,6 +28,7 @@ type Row = {
   date: string;
   startTime: string;
   locationName: string;
+  vendorName: string;
   petName?: string;
   amount: number;
 };
@@ -51,14 +53,17 @@ function mapRow(raw: Record<string, unknown>): Row {
   if (timeRaw.length > 5 && timeRaw.includes('.')) timeRaw = timeRaw.split('.')[0] ?? timeRaw;
   const st = String(raw.service_style ?? raw.serviceStyle ?? '').toLowerCase();
 
+  const catalogFallback = String(raw.joined_service_name ?? raw.service_name ?? raw.serviceName ?? 'Service');
+
   return {
     id: String(raw.id),
-    serviceName: String(raw.service_name ?? raw.serviceName ?? 'Service'),
+    serviceName: resolveCustomerBookingDisplayName(raw, catalogFallback),
     serviceStyle: st || 'at_center',
     status: String(raw.status ?? 'scheduled').toLowerCase(),
     date,
     startTime: timeRaw,
     locationName: String(raw.vendor_name ?? raw.locationName ?? ''),
+    vendorName: String(raw.vendor_name ?? raw.vendorName ?? raw.locationName ?? ''),
     petName: raw.pet_name != null ? String(raw.pet_name) : undefined,
     amount: Number(raw.total_amount ?? raw.amount ?? 0),
   };
@@ -316,6 +321,11 @@ export function AppointmentsList({ phone, onBack, onCloseToHome, onSelectAppoint
                       <h3 className="font-semibold text-gray-900 text-[15px] leading-snug truncate">
                         {appointment.serviceName}
                       </h3>
+                      {appointment.vendorName ? (
+                        <p className="text-sm text-gray-600 font-medium mt-0.5 truncate">
+                          {appointment.vendorName}
+                        </p>
+                      ) : null}
                       <p className="text-sm text-gray-500 mt-0.5">
                         {styleLabel(appointment.serviceStyle)}
                         {appointment.petName ? (

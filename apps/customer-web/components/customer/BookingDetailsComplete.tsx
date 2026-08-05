@@ -341,6 +341,7 @@ export function BookingDetailsComplete({
         <CancelBookingModal
           bookingId={bookingId}
           customerId={customerId}
+          commerceMode={booking?.commerce_mode ?? booking?.commerceMode}
           onClose={() => setShowCancel(false)}
           onSuccess={handleCancelSuccess}
         />

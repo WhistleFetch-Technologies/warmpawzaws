@@ -446,22 +446,17 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
         typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
 
       try {
-        const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
-        storeCognitoTokens({
+        const { persistVendorCognitoTokens } = require('@/lib/vendor-session-from-api');
+        persistVendorCognitoTokens({
           accessToken,
           idToken,
           refreshToken,
           expiresIn,
+          userId: vendorId,
+          phone: dialablePhone,
         });
-        if (user.id) {
-          storeUserInfo({
-            userId: String(user.id),
-            phone: dialablePhone,
-            username: String(user.phone || dialablePhone),
-          });
-        }
       } catch (storeErr) {
-        console.warn('[VendorAuth] storeCognitoTokens skipped:', storeErr);
+        console.warn('[VendorAuth] persistVendorCognitoTokens skipped:', storeErr);
       }
 
       storeSession({
@@ -503,6 +498,9 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       onAuthSuccess({
         phone: dialablePhone,
         accessToken: idToken || accessToken,
+        idToken,
+        refreshToken,
+        expiresIn,
         user,
         profile,
         vendorId,
@@ -713,6 +711,11 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
                          tokens.accessToken || 
                          responseData.token?.access_token ||
                          responseData.access_token;
+      const idToken = tokens.id_token || tokens.idToken || accessToken;
+      const refreshToken = tokens.refresh_token || tokens.refreshToken || '';
+      const expiresInRaw = tokens.expires_in ?? tokens.expiresIn;
+      const expiresIn =
+        typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
       
       // ✅ FIX: Get onboarding_status directly from verify-otp response (it's already there!)
       const onboardingStatus = profile.onboarding_status || responseData.onboarding_status || 'INIT';
@@ -740,11 +743,25 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       // This ensures localStorage is set before redirect
       storeSession({
         phone: phoneNumber,
-        accessToken: accessToken,
+        accessToken: idToken || accessToken,
         user: user,
         profile: profile,
         vendorId: user.id || profile.id
       });
+
+      try {
+        const { persistVendorCognitoTokens } = require('@/lib/vendor-session-from-api');
+        persistVendorCognitoTokens({
+          accessToken,
+          idToken: idToken || accessToken,
+          refreshToken,
+          expiresIn,
+          userId: String(user.id || profile.id || ''),
+          phone: phoneNumber,
+        });
+      } catch (storeErr) {
+        console.warn('[VendorAuth] persistVendorCognitoTokens skipped:', storeErr);
+      }
       
       // Store profile data if available
       if (profile && Object.keys(profile).length > 0) {
@@ -807,7 +824,10 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       // Call onAuthSuccess immediately with the status from verify-otp response
       onAuthSuccess({
         phone: phoneNumber,
-        accessToken: accessToken,
+        accessToken: idToken || accessToken,
+        idToken,
+        refreshToken,
+        expiresIn,
         user: user,
         profile: profile,
         vendorId: user.id || profile.id,

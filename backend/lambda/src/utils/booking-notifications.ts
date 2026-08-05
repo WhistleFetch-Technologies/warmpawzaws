@@ -4,10 +4,9 @@ import { triggerBookingNotification } from '../endpoints/sms-notifications';
 import { sendVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
 import { sendEventNotification } from '../aws/aws-sns-notification-service';
 import { dispatchNotification } from './notification-dispatch';
-import {
-  WAPPT_BOOKING_MODE,
-  WAPPT_DISPLAY_SERVICE_NAME,
-} from '../endpoints/warmpawz-appointments/shared/wappt-booking-preflight';
+import { WAPPT_BOOKING_MODE } from '../endpoints/warmpawz-appointments/shared/wappt-booking-preflight';
+import { resolveBookingNotificationServiceName } from '../endpoints/warmpawz-appointments/shared/vendor-booking-display';
+export { resolveBookingNotificationServiceName } from '../endpoints/warmpawz-appointments/shared/vendor-booking-display';
 import {
   formatIstBookingWhen,
   enrichTemplateDataWithIstDisplay,
@@ -22,19 +21,6 @@ function buildServiceTypeLabel(serviceType?: string): string {
   if (serviceType === 'at_home') return 'Home visit';
   if (serviceType === 'tele') return 'Tele consultation';
   return 'At center';
-}
-
-/** Display label for booking notifications (WAPPT uses "Appointment", not catalog service name). */
-export function resolveBookingNotificationServiceName(
-  booking: Record<string, unknown>,
-  joinedServiceName?: string | null,
-): string {
-  const isWapptBooking =
-    String(booking.commerce_mode || '').toLowerCase() === WAPPT_BOOKING_MODE;
-  if (isWapptBooking) {
-    return String(booking.service_name || '').trim() || WAPPT_DISPLAY_SERVICE_NAME;
-  }
-  return joinedServiceName || String(booking.service_name || '').trim() || 'Service';
 }
 
 async function loadBookingContext(bookingId: string) {

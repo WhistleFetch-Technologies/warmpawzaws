@@ -3,6 +3,15 @@ import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinat
 import { getRazorpayConfig } from '../../../../utils/payments/razorpay-client';
 import { verifyWpayRazorpaySignature } from '../../../../utils/wpay-razorpay-order';
 import { dbWpayCompletePayment, dbWpayPaymentByIdForCustomer } from '../repos/wpay-payment.repo';
+import {
+  dbConsumeAppointmentCredit,
+  dbIsAppointmentCreditConsumed,
+  dbLoadWapptBookingForPayCredit,
+} from '../repos/wpay-appointment-context.repo';
+import { accrueWpaySettlement } from '../shared/accrue-wpay-settlement';
+import { resolveWapptAppointmentFeeCredit } from '../shared/wpay-appointment-credit';
+import { computeWpayDiscountQuote, resolveWpayDiscountPercent } from '../shared/wpay-discount';
+import { dbWpayVendorById } from '../repos/wpay-vendor-detail.repo';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -12,6 +21,65 @@ function readMetadataNumber(meta: Record<string, unknown> | null, key: string): 
   const raw = meta[key];
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
+}
+
+function readMetadataString(meta: Record<string, unknown> | null, key: string): string | null {
+  if (!meta) return null;
+  const raw = meta[key];
+  const s = String(raw ?? '').trim();
+  return s || null;
+}
+
+async function tryAccrueWpaySettlement(
+  payment: NonNullable<Awaited<ReturnType<typeof dbWpayPaymentByIdForCustomer>>>,
+): Promise<void> {
+  try {
+    await accrueWpaySettlement(payment);
+  } catch (error) {
+    console.error('[customer/warmpawz-pay/verify] settlement accrual failed', error);
+  }
+}
+
+async function validateAppointmentCreditForVerify(params: {
+  customerId: string;
+  vendorId: string;
+  meta: Record<string, unknown>;
+  discountPercent: number;
+}): Promise<
+  | { ok: true; bookingId: string | null; creditAmount: number }
+  | { ok: false; error: string; status: number }
+> {
+  const bookingId = readMetadataString(params.meta, 'appointmentFeeBookingId');
+  const storedCredit = readMetadataNumber(params.meta, 'appointmentFeeCredit') ?? 0;
+  if (!bookingId || storedCredit <= 0) {
+    return { ok: true, bookingId: null, creditAmount: 0 };
+  }
+
+  const booking = await dbLoadWapptBookingForPayCredit(bookingId, params.customerId, params.vendorId);
+  if (!booking) {
+    return { ok: false, error: 'Linked appointment booking not found', status: 409 };
+  }
+
+  const consumed = await dbIsAppointmentCreditConsumed(bookingId);
+  const creditResult = await resolveWapptAppointmentFeeCredit({ booking, creditAlreadyConsumed: consumed });
+  if (creditResult.error) {
+    return { ok: false, error: creditResult.error, status: creditResult.status ?? 409 };
+  }
+
+  const originalAmount = readMetadataNumber(params.meta, 'quotedOriginalAmount');
+  if (originalAmount == null || originalAmount <= 0) {
+    return { ok: false, error: 'Payment quote missing', status: 400 };
+  }
+
+  const quote = computeWpayDiscountQuote(originalAmount, params.discountPercent, {
+    appointmentFeeCredit: creditResult.credit,
+  });
+
+  if (quote.appointmentFeeCredit !== storedCredit || quote.discountAmount !== readMetadataNumber(params.meta, 'quotedDiscountAmount')) {
+    return { ok: false, error: 'Payment quote no longer valid for this appointment', status: 409 };
+  }
+
+  return { ok: true, bookingId, creditAmount: creditResult.credit };
 }
 
 export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
@@ -51,6 +119,7 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
     }
 
     if (existing.payment_status === 'completed') {
+      await tryAccrueWpaySettlement(existing);
       return c.json({
         success: true,
         paymentId,
@@ -87,6 +156,22 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
       return c.json({ success: false, error: 'Payment quote missing' }, 400);
     }
 
+    const vendorId = String(existing.vendor_id ?? '');
+    const vendorRow = vendorId ? await dbWpayVendorById(vendorId) : null;
+    const discountPercent =
+      readMetadataNumber(meta, 'quotedDiscountPercent') ??
+      (vendorRow ? resolveWpayDiscountPercent(vendorRow) : 0);
+
+    const creditCheck = await validateAppointmentCreditForVerify({
+      customerId,
+      vendorId,
+      meta,
+      discountPercent,
+    });
+    if (!creditCheck.ok) {
+      return c.json({ success: false, error: creditCheck.error }, creditCheck.status);
+    }
+
     const completed = await dbWpayCompletePayment({
       paymentId,
       customerId,
@@ -98,6 +183,22 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
     if (!completed) {
       return c.json({ success: false, error: 'Failed to complete payment' }, 500);
     }
+
+    if (creditCheck.bookingId && creditCheck.creditAmount > 0) {
+      const inserted = await dbConsumeAppointmentCredit({
+        bookingId: creditCheck.bookingId,
+        paymentId,
+        amount: creditCheck.creditAmount,
+      });
+      if (!inserted) {
+        console.error('[customer/warmpawz-pay/verify] credit consume race after payment', {
+          paymentId,
+          bookingId: creditCheck.bookingId,
+        });
+      }
+    }
+
+    await tryAccrueWpaySettlement(completed);
 
     return c.json({
       success: true,

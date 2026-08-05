@@ -107,6 +107,9 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   });
   const trainingGoalsLegacy = useProblemGridByRole('trainer');
   const trainingGoals = useMemo(() => {
+    if (trainingGoalsLegacy.length > 0) {
+      return trainingGoalsLegacy.filter((p) => p.id !== 'view_all');
+    }
     if (bootstrapProblems.length > 0) {
       return bootstrapProblems.map((p) => ({
         id: p.id,

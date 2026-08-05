@@ -13,6 +13,7 @@ export interface PricingDetail {
   readonly category: string;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
+  readonly platformWithholdPercent: number;
   readonly status: PricingStatus;
   readonly effectiveFrom: string;
   readonly effectiveUntil: string | null;
@@ -26,6 +27,7 @@ export interface CreatePricingPayload {
   readonly vendorId: string;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
+  readonly platformWithholdPercent?: number;
   readonly status: PricingStatus;
   readonly effectiveFrom: string;
   readonly effectiveUntil?: string | null;
@@ -34,9 +36,15 @@ export interface CreatePricingPayload {
 export interface UpdatePricingPayload {
   readonly discountType?: PricingDiscountType;
   readonly discountValue?: number;
+  readonly platformWithholdPercent?: number;
   readonly status?: PricingStatus;
   readonly effectiveFrom?: string;
   readonly effectiveUntil?: string | null;
+}
+
+export interface WarmpawzPayPricingFormValues {
+  readonly discountValue: number;
+  readonly platformWithholdPercent: number;
 }
 
 interface SuccessEnvelope<T> {
@@ -131,11 +139,16 @@ export function shortVendorId(vendorId: string): string {
 
 export function validatePricingForm(input: {
   discountValue: number;
+  platformWithholdPercent?: number;
   effectiveFrom: string;
   effectiveUntil?: string | null;
 }): string | null {
   if (Number.isNaN(input.discountValue) || input.discountValue < 0 || input.discountValue > 100) {
     return 'Discount value must be between 0 and 100 for percentage pricing.';
+  }
+  const withhold = input.platformWithholdPercent ?? 0;
+  if (Number.isNaN(withhold) || withhold < 0 || withhold > 100) {
+    return 'Platform withhold must be between 0 and 100.';
   }
   if (!input.effectiveFrom) {
     return 'Effective from date is required.';

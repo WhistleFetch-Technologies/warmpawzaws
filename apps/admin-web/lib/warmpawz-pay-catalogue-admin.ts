@@ -33,6 +33,7 @@ export interface CataloguePricingSummary {
   readonly pricingId?: string;
   readonly discountType?: PricingDiscountType;
   readonly discountValue?: number;
+  readonly platformWithholdPercent?: number;
   readonly status?: PricingStatus;
   readonly effectiveFrom?: string;
   readonly effectiveUntil?: string | null;

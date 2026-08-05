@@ -27,6 +27,7 @@ import {
   toUploadJsonResponse,
   ImageProcessingError,
 } from '../services/image';
+import { abandonPetUploadKeys } from '../services/image/abandon-pet-upload.service';
 import { presignedImageUploadRejected } from '../utils/reject-presigned-image-upload';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
@@ -503,6 +504,37 @@ export function registerStorageEndpoints(app: Hono) {
       }
       console.error('❌ Error uploading media:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /storage/abandon-pet-upload
+   * Delete uncommitted pet wizard uploads (temp pet_* folder only).
+   */
+  app.post('/storage/abandon-pet-upload', async (c) => {
+    try {
+      const body = await c.req.json();
+      const tempPetId = body?.tempPetId as string | undefined;
+      const imageKeys = body?.imageKeys as string[] | undefined;
+
+      if (!tempPetId || !Array.isArray(imageKeys)) {
+        return c.json({ error: 'tempPetId and imageKeys are required' }, 400);
+      }
+
+      const result = await abandonPetUploadKeys({ tempPetId, imageKeys });
+
+      if (!result.success && result.error) {
+        return c.json({ success: false, error: result.error, deleted: 0, failed: 0 }, 400);
+      }
+
+      return c.json({
+        success: result.success,
+        deleted: result.deleted,
+        failed: result.failed,
+      });
+    } catch (error: any) {
+      console.error('Error abandoning pet upload:', error);
+      return c.json({ error: error.message || 'Failed to abandon pet upload' }, 500);
     }
   });
 

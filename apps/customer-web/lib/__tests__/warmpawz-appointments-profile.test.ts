@@ -86,6 +86,18 @@ describe('resolveWapptVendorListConfig', () => {
     expect(resolveWapptVendorListConfig('grooming').serviceName).toBe('Grooming Salon');
     expect(resolveWapptVendorListConfig('training').serviceName).toBe('Training Centre');
   });
+
+  it('uses at_home profile copy for home visit vendor lists', () => {
+    const vetHome = resolveWapptVendorListConfig('vet', 'at_home');
+    expect(vetHome.serviceName).toBe('Home Visit');
+    expect(vetHome.serviceSubtitle).toBe('Vet comes to you');
+    expect(vetHome.searchPlaceholder).toBe('Search by name, specialization, city...');
+    expect(vetHome.cardCategoryLabel).toBe('Home Visit');
+
+    const groomingHome = resolveWapptVendorListConfig('grooming', 'at_home');
+    expect(groomingHome.serviceName).toBe('At Home Grooming');
+    expect(groomingHome.serviceSubtitle).toBe('Professional groomer comes to you');
+  });
 });
 
 describe('WAPPT discovery list style filters', () => {

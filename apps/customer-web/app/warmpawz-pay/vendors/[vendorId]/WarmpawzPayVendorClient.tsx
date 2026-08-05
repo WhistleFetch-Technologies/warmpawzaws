@@ -2,9 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { QrCode } from 'lucide-react';
+import { Calendar, Copy, QrCode } from 'lucide-react';
 import { useWpayVendorId } from '@/lib/warmpawz-pay/use-wpay-vendor-id';
-import { fetchWpayVendorDetail, type WpayVendorDetail } from '@/lib/warmpawz-pay/wpay-api';
+import {
+  fetchWpayAppointmentContext,
+  fetchWpayVendorDetail,
+  readCustomerPhoneFromStorage,
+  type WpayAppointmentContext,
+  type WpayAppointmentContextBooking,
+  type WpayVendorDetail,
+} from '@/lib/warmpawz-pay/wpay-api';
+import { previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
 import { VendorProfileDashboardHeader } from '@/components/customer/shared/VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from '@/components/customer/shared/VendorHeroPhotoCarousel';
@@ -12,10 +20,80 @@ import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryP
 import { StarRating } from '@/components/customer/shared/StarRating';
 
 const QUICK_AMOUNTS = [500, 1000, 1500, 2000];
+const APPOINTMENT_POLL_MS = 4000;
 
 function formatInr(n: number): string {
   const fractionDigits = Number.isInteger(n) ? 0 : 2;
   return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })}`;
+}
+
+function formatAppointmentWhen(booking: WpayAppointmentContextBooking): string {
+  if (booking.bookingDatetime) {
+    try {
+      return new Date(booking.bookingDatetime).toLocaleString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    } catch {
+      /* fall through */
+    }
+  }
+  const parts = [booking.bookingDate, booking.bookingTime].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'Scheduled appointment';
+}
+
+function WpayAppointmentOtpCard({ booking }: { booking: WpayAppointmentContextBooking }) {
+  const displayOtp = booking.completionOtp || booking.otpCode;
+  const [copied, setCopied] = useState(false);
+
+  const onCopy = useCallback(async () => {
+    if (!displayOtp) return;
+    try {
+      await navigator.clipboard.writeText(displayOtp);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  }, [displayOtp]);
+
+  return (
+    <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+      <div className="flex items-start gap-3">
+        <div className="rounded-lg bg-white p-2 text-[#FF6B00]">
+          <Calendar className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-gray-900">{booking.serviceName}</p>
+          <p className="mt-0.5 text-xs text-gray-600">{formatAppointmentWhen(booking)}</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Show this OTP to the vendor to complete your appointment before paying the bill.
+          </p>
+        </div>
+      </div>
+      {displayOtp ? (
+        <div className="mt-3 rounded-lg bg-white p-3 text-center">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Your OTP</p>
+          <p className="mt-1 text-2xl font-bold tracking-[0.2em] text-gray-900">{displayOtp}</p>
+          <button
+            type="button"
+            onClick={() => void onCopy()}
+            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#FF6B00]"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {copied ? 'Copied' : 'Copy OTP'}
+          </button>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-amber-800">OTP will appear when your appointment is ready.</p>
+      )}
+      <p className="mt-2 text-xs text-amber-800">
+        Waiting for vendor to complete your appointment… This screen updates automatically.
+      </p>
+    </div>
+  );
 }
 
 export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
@@ -29,6 +107,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const [quoteReady, setQuoteReady] = useState(false);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const [appointmentContext, setAppointmentContext] = useState<WpayAppointmentContext | null>(null);
 
   useEffect(() => {
     if (!resolvedVendorId) return;
@@ -45,31 +124,64 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
       .finally(() => setLoading(false));
   }, [resolvedVendorId]);
 
+  const refreshAppointmentContext = useCallback(async () => {
+    if (!resolvedVendorId) return;
+    const phone = readCustomerPhoneFromStorage();
+    if (!phone) return;
+    try {
+      const ctx = await fetchWpayAppointmentContext(resolvedVendorId, phone);
+      if (ctx) setAppointmentContext(ctx);
+    } catch {
+      /* non-fatal */
+    }
+  }, [resolvedVendorId]);
+
+  useEffect(() => {
+    void refreshAppointmentContext();
+  }, [refreshAppointmentContext]);
+
+  const openAppointment = appointmentContext?.openAppointment ?? null;
+  const creditEligibleBooking = appointmentContext?.creditEligibleBooking ?? null;
+
+  useEffect(() => {
+    if (!openAppointment || creditEligibleBooking) return;
+    const id = window.setInterval(() => {
+      void refreshAppointmentContext();
+    }, APPOINTMENT_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [openAppointment, creditEligibleBooking, refreshAppointmentContext]);
+
   const billAmount = useMemo(() => {
     const n = parseFloat(amountInput.replace(/,/g, ''));
     return Number.isFinite(n) && n > 0 ? n : 0;
   }, [amountInput]);
 
-  const discountAmount = useMemo(() => {
-    if (!vendor || billAmount <= 0) return 0;
-    const raw = (billAmount * vendor.discountPercent) / 100;
-    if (vendor.maxDiscountAmount != null && raw > vendor.maxDiscountAmount) {
-      return vendor.maxDiscountAmount;
-    }
-    return Math.round(raw * 100) / 100;
-  }, [billAmount, vendor]);
+  const linkedBookingId = creditEligibleBooking?.bookingId ?? null;
+  const appointmentFeeCredit = creditEligibleBooking?.appointmentFee ?? 0;
 
-  const payableAmount = useMemo(() => Math.max(0, billAmount - discountAmount), [billAmount, discountAmount]);
+  const quote = useMemo(() => {
+    if (!vendor || billAmount <= 0) return null;
+    return previewWpayQuote({
+      originalAmount: billAmount,
+      discountPercent: vendor.discountPercent,
+      maxDiscountAmount: vendor.maxDiscountAmount,
+      appointmentFeeCredit: linkedBookingId ? appointmentFeeCredit : 0,
+    });
+  }, [billAmount, vendor, linkedBookingId, appointmentFeeCredit]);
 
   const onGetDiscount = useCallback(() => {
     if (billAmount <= 0) return;
+    if (openAppointment && !creditEligibleBooking) {
+      setPayError('Please complete your appointment with the vendor first (OTP).');
+      return;
+    }
+    setPayError(null);
     setQuoteReady(true);
-  }, [billAmount]);
+  }, [billAmount, openAppointment, creditEligibleBooking]);
 
   const onProceedToPay = useCallback(async () => {
-    if (!vendor || !resolvedVendorId || billAmount <= 0) return;
-    const phone =
-      localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || '';
+    if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
+    const phone = readCustomerPhoneFromStorage();
     if (!phone) {
       setPayError('Please log in to continue');
       return;
@@ -83,8 +195,9 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         vendorName: vendor.name,
         originalAmount: billAmount,
         customerPhone: phone,
+        bookingId: linkedBookingId,
       });
-      const saved = Number(result.savedAmount ?? result.discountAmount ?? discountAmount);
+      const saved = Number(result.savedAmount ?? result.discountAmount ?? quote.discountAmount);
       const qs = new URLSearchParams({
         saved: String(saved),
         vendor: vendor.name,
@@ -98,7 +211,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     } finally {
       setPaying(false);
     }
-  }, [billAmount, discountAmount, resolvedVendorId, router, vendor]);
+  }, [billAmount, linkedBookingId, quote, resolvedVendorId, router, vendor]);
 
   if (loading) {
     return <p className="p-8 text-center text-sm text-gray-500">Loading…</p>;
@@ -177,6 +290,17 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
           </div>
 
           <div className="space-y-4">
+            {openAppointment ? <WpayAppointmentOtpCard booking={openAppointment} /> : null}
+
+            {creditEligibleBooking && !openAppointment ? (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+                <p className="font-semibold">Appointment completed</p>
+                <p className="mt-1 text-xs text-green-800">
+                  {formatInr(creditEligibleBooking.appointmentFee)} appointment fee will be credited to your bill.
+                </p>
+              </div>
+            ) : null}
+
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">Enter Bill Amount</label>
               <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3 py-3">
@@ -210,22 +334,34 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
               </div>
             </div>
 
-            {quoteReady ? (
+            {quoteReady && quote ? (
               <div className="rounded-xl bg-gray-50 p-3 text-sm">
                 <div className="flex justify-between">
-                  <span>Bill Amount</span>
-                  <span>{formatInr(billAmount)}</span>
+                  <span>Quoted bill</span>
+                  <span>{formatInr(quote.originalAmount)}</span>
                 </div>
+                {quote.appointmentFeeCredit > 0 ? (
+                  <div className="flex justify-between text-[#FF6B00]">
+                    <span>Appointment fee credit</span>
+                    <span>- {formatInr(quote.appointmentFeeCredit)}</span>
+                  </div>
+                ) : null}
+                {quote.appointmentFeeCredit > 0 ? (
+                  <div className="flex justify-between text-gray-600">
+                    <span>After credit</span>
+                    <span>{formatInr(quote.billBase)}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between text-green-700">
-                  <span>Offer Discount ({vendor.discountPercent}% OFF)</span>
-                  <span>- {formatInr(discountAmount)}</span>
+                  <span>Offer discount ({vendor.discountPercent}% OFF)</span>
+                  <span>- {formatInr(quote.discountAmount)}</span>
                 </div>
                 <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 font-semibold">
-                  <span>You Pay</span>
-                  <span>{formatInr(payableAmount)}</span>
+                  <span>You pay</span>
+                  <span>{formatInr(quote.payableAmount)}</span>
                 </div>
                 <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
-                  You save {formatInr(discountAmount)} with this offer!
+                  You save {formatInr(quote.originalAmount - quote.payableAmount)} with this offer!
                 </p>
               </div>
             ) : null}

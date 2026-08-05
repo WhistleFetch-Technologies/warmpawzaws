@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { signOutVendor } from '@/lib/session-utils';
@@ -17,6 +17,9 @@ import {
   getVendorAllowedServiceStyles,
   isVendorTeleConsultationBooking,
   resolveVendorBookingId,
+  resolveVendorBookingServiceLabel,
+  shouldShowVendorBookingPrice,
+  shouldShowVendorBookingServiceOnHomeDashboard,
 } from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
@@ -77,7 +80,7 @@ import {
   SHOW_VENDOR_FOOTER_REPORTING_TAB,
   getVendorDashboardRatingPresentation,
   mergeVendorDashboardStats,
-  mapDashboardBookingToScheduleItem,
+  mapVendorBookingsApiToScheduleItem,
   matchesScheduleTypeFilter,
 } from '../helpers';
 import {
@@ -86,6 +89,8 @@ import {
   mergeAllTypesSchedule,
   type VendorScheduleTypeFilter,
 } from '@/lib/vendor-meal-order-schedule';
+import { buildVendorScheduleBookingsQuery } from '@/lib/vendor-schedule-bookings';
+import { formatVendorScheduleAnchorDate } from '@/lib/vendor-local-date';
 import { VendorMealOrderScheduleCard } from '../VendorMealOrderScheduleCard';
 import { toast } from 'sonner';
 import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
@@ -94,9 +99,6 @@ import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayou
 // Lazy-load heavy/cyclic components to avoid TDZ when dashboard chunk loads
 const SoloProviderDashboard = lazy(() =>
   import('../Soloprovider/SoloProviderDashboard').then((m) => ({ default: m.SoloProviderDashboard }))
-);
-const CommunicationHub = lazy(() =>
-  import('../../../communication/CommunicationHub').then((m) => ({ default: m.CommunicationHub }))
 );
 const AppointmentDetailModal = lazy(() =>
   import('../../AppointmentDetailModal').then((m) => ({ default: m.AppointmentDetailModal }))
@@ -221,7 +223,6 @@ export function VendorDashboard({
     bookingStatus: string;
     packageUtilization?: { packageName?: string; totalSessions?: number; remainingSessions?: number; usedSessions?: number; isUnlimited?: boolean; expiresAt?: string } | null;
   } | null>(null);
-  const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
   // ✅ NEW: OTP modal state for completing appointments
@@ -373,7 +374,7 @@ export function VendorDashboard({
   }
 
   // Fetch dashboard data
-  const fetchDashboardData = async (showRefresh = false) => {
+  const fetchDashboardData = useCallback(async (showRefresh = false) => {
     try {
       if (showRefresh) setRefreshing(true);
       else setLoading(true);
@@ -384,12 +385,24 @@ export function VendorDashboard({
       // ✅ PERFORMANCE: Start tracking dashboard load time
       PerformanceMonitor.markStart('dashboard-load');
 
-      // Prepare all fetch promises based on capabilities
-      const today = new Date().toISOString().split('T')[0];
+      const anchorDate = formatVendorScheduleAnchorDate();
+      const scheduleQuery = new URLSearchParams(
+        buildVendorScheduleBookingsQuery({
+          schedulePeriod: activeTab,
+          anchorDate,
+          pageIndex: 0,
+          pageSize: 100,
+        })
+      ).toString();
 
-      // Critical data: dashboard stats + schedule (single API; timeframe applied server-side)
+      // Critical data: dashboard stats (schedule from bookings API for Bookings-tab parity)
       const criticalPromises: Promise<any>[] = [
-        apiClient.get(`/vendor/${vendorId}/dashboard?timeframe=${activeTab}`).catch(() => ({ success: false })),
+        apiClient
+          .get(
+            `/vendor/${vendorId}/dashboard?timeframe=${activeTab}&anchorDate=${encodeURIComponent(anchorDate)}`
+          )
+          .catch(() => ({ success: false })),
+        apiClient.get(`/vendor/bookings/${vendorId}?${scheduleQuery}`).catch(() => ({ success: false })),
       ];
 
       // Non-critical data: notifications, watchlist, services (can load after)
@@ -414,7 +427,7 @@ export function VendorDashboard({
       ];
 
       // ✅ OPTIMIZATION: Execute critical fetches first, hide loading screen ASAP
-      const [dashboardRes] = await Promise.all(criticalPromises);
+      const [dashboardRes, bookingsRes] = await Promise.all(criticalPromises);
 
       // ✅ OPTIMIZATION: Parse JSON responses in parallel
       const criticalParsing = [];
@@ -431,19 +444,33 @@ export function VendorDashboard({
               )
             );
             setVendor(dashboardRes.vendor || vendorData);
-            const rawBookings = Array.isArray(dashboardRes.bookings) ? dashboardRes.bookings : [];
-            const transformedBookings = rawBookings
-              .filter((b: Record<string, unknown>) => b.status !== 'completed')
-              .map((b: Record<string, unknown>) => mapDashboardBookingToScheduleItem(b, 'at_center'));
-            setTodaySchedule(transformedBookings);
-            if (rawBookings.length > 0) {
-              console.log(`✅ [DASHBOARD] Loaded ${transformedBookings.length} bookings from dashboard`);
-            }
           })
         );
-      } else {
-        setTodaySchedule([]);
       }
+
+      criticalParsing.push(
+        Promise.resolve().then(() => {
+          const vendorAddress = vendorData?.address || vendorData?.location || '';
+          if (bookingsRes?.success) {
+            const rows = Array.isArray(bookingsRes.bookings) ? bookingsRes.bookings : [];
+            const transformedBookings = rows
+              .filter((b: Record<string, unknown>) => b.status !== 'completed')
+              .map((b: Record<string, unknown>) =>
+                mapVendorBookingsApiToScheduleItem(b, {
+                  defaultServiceType: 'at_center',
+                  vendorAddress: String(vendorAddress),
+                })
+              );
+            setTodaySchedule(transformedBookings);
+            if (rows.length > 0) {
+              console.log(`✅ [DASHBOARD] Loaded ${transformedBookings.length} bookings from schedule API`);
+            }
+          } else {
+            console.warn('[DASHBOARD] Home schedule bookings fetch failed');
+            setTodaySchedule([]);
+          }
+        })
+      );
 
       // Wait for critical parsing to complete
       await Promise.all(criticalParsing);
@@ -565,26 +592,39 @@ export function VendorDashboard({
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [vendorId, activeTab, vendorData, capabilities, isNutritionistVendor]);
 
   // Fetch data on mount and when activeTab changes
   // ✅ FIX: Load dashboard data immediately, don't wait for capabilities
   // Capabilities are used for conditional fetching but shouldn't block initial load
   useEffect(() => {
     if (vendorId) {
-      // Don't wait for capsLoading - fetch dashboard data immediately
-      // The fetchDashboardData already handles capability-based conditional fetching
       fetchDashboardData();
     }
-  }, [vendorId, activeTab]);
+  }, [vendorId, activeTab, fetchDashboardData]);
+
+  // Refetch when tab/window regains focus (Home ↔ Bookings navigation)
+  useEffect(() => {
+    if (!vendorId) return;
+    const onResume = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDashboardData(true);
+      }
+    };
+    window.addEventListener('focus', onResume);
+    document.addEventListener('visibilitychange', onResume);
+    return () => {
+      window.removeEventListener('focus', onResume);
+      document.removeEventListener('visibilitychange', onResume);
+    };
+  }, [vendorId, fetchDashboardData]);
 
   // ✅ FIX: Refresh when capabilities are loaded to fetch capability-specific data
   useEffect(() => {
     if (vendorId && initialLoadComplete && !capsLoading) {
-      // Capabilities are now loaded, refresh to fetch any capability-specific data
       fetchDashboardData(true);
     }
-  }, [initialLoadComplete]);
+  }, [initialLoadComplete, vendorId, capsLoading, fetchDashboardData]);
 
   // ✅ NEW: OTP handler for completing appointments
   const handleCompleteWithOtp = async () => {
@@ -1754,10 +1794,12 @@ export function VendorDashboard({
                                 )}
                               </div>
                               <div className="text-sm font-medium text-gray-900 mb-1">{appointment.petName} {appointment.petBreed ? `(${appointment.petBreed})` : ''}</div>
-                              <div className="flex items-center gap-1 mb-2">
-                                <span className="text-xs text-gray-500">Service:</span>
-                                <span className="text-xs font-medium text-[#FF8C42]">{appointment.serviceName}</span>
-                              </div>
+                              {shouldShowVendorBookingServiceOnHomeDashboard(appointment) && (
+                                <div className="flex items-center gap-1 mb-2">
+                                  <span className="text-xs text-gray-500">Service:</span>
+                                  <span className="text-xs font-medium text-[#FF8C42]">{resolveVendorBookingServiceLabel(appointment)}</span>
+                                </div>
+                              )}
 
                               <div className="flex gap-2 flex-wrap">
                                 <button
@@ -1796,8 +1838,13 @@ export function VendorDashboard({
                                 {capabilities.chat && (
                                   <button
                                     onClick={() => {
-                                      setSelectedAppointment(appointment);
-                                      setCommunicationMode('chat');
+                                      setSelectedChatConversation({
+                                        bookingId: appointment.bookingId,
+                                        customerName: appointment.customerName,
+                                        customerPhone: appointment.customerPhone,
+                                        serviceName: appointment.serviceName,
+                                        bookingStatus: appointment.status,
+                                      });
                                     }}
                                     className="relative flex-1 min-w-[80px] py-1.5 px-3 bg-[#FF8C42] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                                   >
@@ -2026,25 +2073,6 @@ export function VendorDashboard({
             onClose={() => {
               setSelectedChatConversation(null);
               fetchDashboardData(true);
-            }}
-          />
-        </Suspense>
-      )}
-
-      {/* Communication Hub (Unified Chat/Video) */}
-      {communicationMode && selectedAppointment && (
-        <Suspense fallback={null}>
-          <CommunicationHub
-            mode={communicationMode}
-            bookingId={selectedAppointment.bookingId}
-            userId={vendorData?.phone || vendorData?.mobile || '+91'}
-            userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
-            otherUserName={selectedAppointment.customerName}
-            userType="vendor"
-            onClose={() => {
-              setCommunicationMode(null);
-              setSelectedAppointment(null);
-              fetchDashboardData(true); // Reload to clear unread badges
             }}
           />
         </Suspense>

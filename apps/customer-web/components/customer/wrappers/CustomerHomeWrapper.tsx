@@ -18,7 +18,7 @@ import {
   markSkipPackageAutoRedirect,
   stripPackagePurchaseOverlayFields,
 } from '@/lib/vendor-package-purchase-nav';
-import { pickWalkerVendorId } from '@warmpawz/shared-types';
+import { pickWalkerVendorId, pickCustomerVendorAccountId, firstNonEmptyString } from '@warmpawz/shared-types';
 import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { apiClient } from '@/lib/api-client';
@@ -53,6 +53,7 @@ import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { isWarmpawzPayCommerceActive } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptShellBookingPayload, handleWapptShellScreenNavigate } from '@/lib/wappt-shell-navigation';
 import { consumeWalkInShellNav } from '@/lib/walk-in-vendor-actions';
+import { resolveHomeVisitVendorListNavigation } from '@/lib/home-visit-wappt-navigation';
 import { resolveWapptDiscoveryShellNav } from '@/lib/warmpawz-appointments/wappt-list-style-config';
 import { getWapptDefaultDiscoveryStyle } from '@/lib/wappt-hub-registry';
 import {
@@ -120,7 +121,6 @@ import {
   getWebCustomerVendorStyleListingNavTarget,
   normalizeLegacyVetVendorProfilePayload,
 } from '@/lib/customer-vendor-profile-navigation';
-import { pickCustomerVendorAccountId, firstNonEmptyString } from '@warmpawz/shared-types';
 import { useNotificationService } from '../useNotificationService';
 import { EcommerceRouteRedirect } from '@/components/ecommerce/EcommerceRouteRedirect';
 import { ProfileOrdersRedirect } from '@/components/ecommerce/ProfileOrdersRedirect';
@@ -555,6 +555,11 @@ export function CustomerHomeWrapper({
   const [wapptDiscoveryCategory, setWapptDiscoveryCategory] = useState<string>('vet');
   const [wapptDiscoveryServiceStyle, setWapptDiscoveryServiceStyle] = useState<string>('at_center');
   const [wapptDiscoveryLockStyle, setWapptDiscoveryLockStyle] = useState(false);
+  const [wapptDiscoveryProfileBackScreen, setWapptDiscoveryProfileBackScreen] =
+    useState<string>('wappt-discovery');
+  const [wapptDiscoverySpecialization, setWapptDiscoverySpecialization] = useState<
+    string | undefined
+  >(undefined);
   const [wapptProfileData, setWapptProfileData] = useState<{
     vendorId: string;
     vendorName?: string;
@@ -1381,6 +1386,13 @@ export function CustomerHomeWrapper({
       serviceType: typeof data?.serviceType === 'string' ? data.serviceType : undefined,
     });
     captureBannerNavigationOrigin(data);
+
+    const homeVisitWapptNav = resolveHomeVisitVendorListNavigation(service, data);
+    if (homeVisitWapptNav) {
+      openWapptDiscovery(homeVisitWapptNav.category, homeVisitWapptNav);
+      return;
+    }
+
     const vendorRow: Record<string, unknown> =
       data && typeof data === 'object' ? { ...(data as Record<string, unknown>) } : {};
     const featuredVendorId = pickCustomerVendorAccountId(vendorRow);
@@ -1930,6 +1942,15 @@ export function CustomerHomeWrapper({
       setWapptDiscoveryCategory(nav.category);
       setWapptDiscoveryServiceStyle(nav.serviceStyle);
       setWapptDiscoveryLockStyle(nav.lockStyleFilter);
+      setWapptDiscoveryProfileBackScreen(
+        String(data?.profileBackScreen || 'wappt-discovery'),
+      );
+      const specRaw = data?.specialization ?? data?.specializationId;
+      const spec =
+        specRaw != null && String(specRaw).trim() !== ''
+          ? String(specRaw).trim()
+          : undefined;
+      setWapptDiscoverySpecialization(spec);
       navigateToScreen('wappt-discovery');
     },
     [navigateToScreen],
@@ -3265,6 +3286,8 @@ export function CustomerHomeWrapper({
             | 'tele'
         }
         lockStyleFilter={wapptDiscoveryLockStyle}
+        profileBackScreen={wapptDiscoveryProfileBackScreen}
+        specialization={wapptDiscoverySpecialization}
         phone={phone}
         onBack={handleBack}
         onGoHome={goToHome}
@@ -3383,7 +3406,31 @@ export function CustomerHomeWrapper({
             handleNavigateToService(screen, data);
             return;
           }
+          if (screen === 'wappt-vendor-profile') {
+            handleWapptShellNavigate(screen, data, 'boarding');
+            return;
+          }
+          if (screen === 'wappt-discovery') {
+            openWapptDiscovery('boarding', data);
+            return;
+          }
+          if (screen === 'my-bookings' || screen === 'bookings') {
+            navigateToScreen('my-bookings');
+            return;
+          }
+          if (screen === 'shop') {
+            navigateToScreen('shop');
+            return;
+          }
+          if (screen === 'profile') {
+            navigateToScreen('profile');
+            return;
+          }
           if (screen === 'boarding-booking') {
+            if (data?.appointmentsMode === true) {
+              handleWapptShellNavigate(screen, data, 'boarding');
+              return;
+            }
             setVetServiceData({
               vendorId: data?.vendorId as string | undefined,
               serviceType: (data?.flowVariant === 'swimming' || data?.serviceType === 'swimming'
@@ -3589,6 +3636,7 @@ export function CustomerHomeWrapper({
     return renderScreenWithLayout('vet-home-visit',
       <HomeVisitRouter 
         phone={phone} 
+        fromHomeVisitLanding={vetServiceData?.fromHomeVisitLanding === true}
         restoredSnapshot={homeVisitWizardRestore}
         onRestoredSnapshotConsumed={() => setHomeVisitWizardRestore(null)}
         onBack={handleBack}
@@ -4231,9 +4279,33 @@ export function CustomerHomeWrapper({
             navigateToScreen('pet-sitter');
           }}
           onNavigate={(screen, data) => {
+            if (screen === 'wappt-vendor-profile') {
+              handleWapptShellNavigate(screen, data, 'sitting');
+              return;
+            }
+            if (screen === 'wappt-discovery') {
+              openWapptDiscovery('sitting', data);
+              return;
+            }
+            if (screen === 'my-bookings' || screen === 'bookings') {
+              navigateToScreen('my-bookings');
+              return;
+            }
+            if (screen === 'shop') {
+              navigateToScreen('shop');
+              return;
+            }
+            if (screen === 'profile') {
+              navigateToScreen('profile');
+              return;
+            }
             if (screen === 'pet-sitter-provider-profile' && data?.vendorId) {
               openPetSitterProviderProfile(String(data.vendorId));
             } else if (screen === 'pet-sitter-booking') {
+              if (data?.appointmentsMode === true) {
+                handleWapptShellNavigate(screen, data, 'sitting');
+                return;
+              }
               setVetServiceData({
                 vendorId: data?.vendorId,
                 serviceType: 'sitting',
@@ -5870,6 +5942,14 @@ export function CustomerHomeWrapper({
       const st = String(data?.serviceStyle || '').toLowerCase();
       if (st === 'at_center') trainingCenterNavigate(screen, data);
       else trainingHomeNavigate(screen, data);
+      return;
+    }
+
+    if (screen === 'wappt-vendor-profile' || screen === 'wappt-discovery') {
+      handleVetNavigate(screen, {
+        ...(data || {}),
+        profileBackScreen: data?.profileBackScreen ?? gridBack,
+      });
       return;
     }
 

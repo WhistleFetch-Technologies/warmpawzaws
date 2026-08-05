@@ -81,8 +81,12 @@ function rowToBookingForPolicy(bookingRow: Record<string, any>): BookingForPolic
     scheduled_at: bookingRow.scheduled_at ?? null,
     booking_date: String(bookingRow.booking_date ?? '').split('T')[0],
     booking_time: String(bookingRow.booking_time ?? ''),
+    vendor_timezone: bookingRow.vendor_timezone ?? null,
     total_amount: bookingRow.total_amount,
     discount_amount: bookingRow.discount_amount ?? null,
+    commerce_mode: bookingRow.commerce_mode ?? null,
+    booking_category: bookingRow.service_category ?? null,
+    service_category: bookingRow.service_category ?? null,
   };
 }
 

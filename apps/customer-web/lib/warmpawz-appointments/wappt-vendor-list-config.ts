@@ -137,7 +137,9 @@ export function resolveWapptVendorListConfig(
 ): WapptVendorListConfig {
   const hub = normalizeWapptHubCategory(category);
   const profile = resolveWapptVendorProfileConfig(category);
-  if (hub === 'vet' && String(serviceStyle ?? '').toLowerCase() === 'tele') {
+  const styleNorm = String(serviceStyle ?? '').toLowerCase();
+
+  if (hub === 'vet' && styleNorm === 'tele') {
     return {
       category: hub,
       ...VET_TELE_LIST_CONFIG,
@@ -145,6 +147,38 @@ export function resolveWapptVendorListConfig(
       cardCategoryLabel: profile.styleBadgeLabel('tele'),
     };
   }
+
+  if (styleNorm === 'at_home') {
+    const badge = profile.styleBadgeLabel('at_home');
+    const subtitle = profile.styleSubtitle('at_home');
+    const list = hub ? CATEGORY_LIST_CONFIG[hub] : undefined;
+    const providerWord =
+      hub === 'vet'
+        ? 'providers'
+        : hub === 'grooming'
+          ? 'salons'
+          : hub === 'training'
+            ? 'trainers'
+            : hub === 'walker'
+              ? 'walkers'
+              : hub === 'sitting'
+                ? 'sitters'
+                : 'providers';
+    return {
+      category: hub ?? category,
+      serviceName: badge,
+      serviceSubtitle: subtitle,
+      headerIcon: profile.headerIcon,
+      searchPlaceholder: 'Search by name, specialization, city...',
+      loadingMessage: list?.loadingMessage ?? `Finding ${providerWord}...`,
+      emptyTitle: list?.emptyTitle ?? `No ${providerWord} found`,
+      emptySubtitle: list?.emptySubtitle ?? 'Try adjusting your search or filters',
+      cardCategoryLabel: badge,
+      resultsCountLabel: (count) =>
+        `${count} ${count === 1 ? providerWord.replace(/s$/, '') : providerWord} found`,
+    };
+  }
+
   const list = hub ? CATEGORY_LIST_CONFIG[hub] : undefined;
   if (!list) {
     if (process.env.NODE_ENV === 'development') {

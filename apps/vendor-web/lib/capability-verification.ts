@@ -28,8 +28,8 @@ export const CAPABILITY_VERIFICATION = {
     name: 'Rule 2: Video/teleconsulting from chat only (both sides), WhatsApp-like accept/reject',
     steps: [
       'Vendor: No "Start Video Call" button in appointment detail modal for tele (removed).',
-      'Vendor: Open appointment detail → Chat → CommunicationHub opens with camera icon (serviceStyle tele).',
-      'Vendor: Click camera → onStartVideoCall: create-meeting, join, notify-ready (participantType vendor), open /video/:bookingId.',
+      'Vendor: Open appointment detail → Chat → VendorChatModal opens with camera icon for tele consultations.',
+      'Vendor: Click camera → VendorChatModal handleStartVideoCall: create-meeting, join, notify-ready (participantType vendor), open /video.',
       'Customer: Gets tele_call_incoming notification → TeleCallNotification (accept/reject).',
       'Customer: Open booking detail → Chat → CommunicationHub has Video button.',
       'Customer: Click Video → onStartVideoCall: create-meeting, notify-ready (participantType customer), then onNavigate video-call.',
@@ -37,8 +37,8 @@ export const CAPABILITY_VERIFICATION = {
       'Accept → open video page; Reject → dismiss. Chat remains available.',
     ],
     keyFiles: [
-      'apps/vendor-web/components/vendor/AppointmentDetailModal.tsx (CommunicationHub serviceStyle, onStartVideoCall)',
-      'apps/vendor-web/components/communication/CommunicationHub.tsx (video button, onStartVideoCall)',
+      'apps/vendor-web/components/vendor/AppointmentDetailModal.tsx (Chat opens VendorChatModal)',
+      'apps/vendor-web/components/vendor/VendorChatModal.tsx (video button, handleStartVideoCall)',
       'apps/customer-web/components/communication/CommunicationHub.tsx (Video button, onStartVideoCall)',
       'apps/customer-web/components/customer/BookingDetailModal.tsx (onStartVideoCall create + notify-ready)',
       'apps/vendor-web/components/vendor/TeleCallNotification.tsx',

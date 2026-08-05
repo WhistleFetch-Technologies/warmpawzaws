@@ -106,7 +106,6 @@ function VetHeaderBackground() {
 }
 
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
-  const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('vet');
   const wapptFeaturedEnabled = canLoadWapptSearchHub('vet');
   const { problems: bootstrapProblems } = useCategoryBootstrap({ category: 'vet', roleId: 'vet' });
   const legacyProblems = useProblemGridByRole('vet');
@@ -326,6 +325,9 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   }, [serviceTypes]);
 
   const problemGridItems = useMemo(() => {
+    if (legacyProblems.length > 0) {
+      return legacyProblems;
+    }
     if (bootstrapProblems.length > 0) {
       const mapped: ProblemGridItem[] = bootstrapProblems.map((p) => ({
         id: p.id,
@@ -335,7 +337,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       const viewAll = legacyProblems.find((x) => x.id === 'view_all');
       return viewAll ? [...mapped, viewAll] : mapped;
     }
-    return legacyProblems.length > 0 ? legacyProblems : VET_PROBLEMS;
+    return VET_PROBLEMS;
   }, [bootstrapProblems, legacyProblems]);
 
   // ✅ FIX: Validate pet context before allowing navigation

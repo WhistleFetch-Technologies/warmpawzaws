@@ -28,9 +28,8 @@ import {
 } from '../../../utils/entity-extractor';
 import { loadBookingServiceSnapshot, snapshotToNestedService } from '../../../utils/booking-service-snapshot';
 import {
-  WAPPT_BOOKING_MODE,
-  WAPPT_DISPLAY_SERVICE_NAME,
-} from '../../warmpawz-appointments/shared/wappt-booking-preflight';
+  applyVendorBookingDisplayFields,
+} from '../../warmpawz-appointments/shared/vendor-booking-display';
 import { isValidUUID } from '../../../types/entities';
 import { checkVendorCapability } from '../../../middleware/capability-enforcement';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
@@ -392,15 +391,29 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
           const serviceSnap = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
           const vendorVisibleAmount = resolveVendorVisibleBookingAmount(booking, { serviceSnap });
+          const catalogServiceName =
+            serviceSnap?.displayName ||
+            serviceSnap?.serviceName ||
+            (service.length > 0 ? service[0].name : null) ||
+            booking.service_name ||
+            'Service';
+          const display = applyVendorBookingDisplayFields(booking, {
+            catalogServiceName,
+            vendorVisibleAmount,
+          });
           const ppId = booking.package_purchase_id ? String(booking.package_purchase_id) : '';
           const packagePurchase = ppId ? packageByPurchaseId.get(ppId) : null;
           return {
             ...booking,
-            total_amount: vendorVisibleAmount,
-            totalAmount: vendorVisibleAmount,
-            price: vendorVisibleAmount,
-            base_price: vendorVisibleAmount,
-            basePrice: vendorVisibleAmount,
+            service_name: display.service_name,
+            serviceName: display.serviceName,
+            total_amount: display.total_amount,
+            totalAmount: display.totalAmount,
+            price: display.price,
+            base_price: display.base_price,
+            basePrice: display.basePrice,
+            commerce_mode: display.commerce_mode,
+            commerceMode: display.commerceMode,
             packagePurchaseId: booking.package_purchase_id || null,
             packageSessionNumber:
               booking.package_session_number != null ? Number(booking.package_session_number) : null,
@@ -418,10 +431,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             } : null,
             service: service.length > 0 ? {
               id: service[0].id,
-              name: service[0].name,
+              name: display.serviceName,
               category: service[0].category,
-              price: vendorVisibleAmount,
-              basePrice: vendorVisibleAmount,
+              price: display.price,
+              basePrice: display.basePrice,
             } : null,
             // Rule engine: Chat available for chat_available_days_post_appointment days after completion
             chatEnabled: (() => {
@@ -1336,11 +1349,19 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
             : null,
       });
 
-      const isWapptBooking =
-        String((booking as { commerce_mode?: string }).commerce_mode || '').toLowerCase() ===
-        WAPPT_BOOKING_MODE;
-      const wapptServiceDisplayName =
-        String(booking.service_name || '').trim() || WAPPT_DISPLAY_SERVICE_NAME;
+      const catalogServiceLabel =
+        (serviceSnap?.displayName || serviceSnap?.serviceName) ||
+        (catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : null) ||
+        vendorSvc?.service_name ||
+        (service.length > 0 ? service[0].name : null) ||
+        booking.service_name ||
+        'Unknown Service';
+      const display = applyVendorBookingDisplayFields(booking, {
+        catalogServiceName: catalogServiceLabel,
+        vendorVisibleAmount,
+      });
+      const resolvedServiceLabel = display.serviceName;
+      const vendorPrice = display.price;
 
       // Build enriched booking response
       const enrichedBooking = {
@@ -1357,11 +1378,13 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
         schedule: booking.booking_time, // Alias for frontend compatibility
         startDate: booking.booking_date, // Alias for frontend compatibility
         duration: serviceDurationMinutes,
-        totalAmount: vendorVisibleAmount,
-        total_amount: vendorVisibleAmount,
-        price: vendorVisibleAmount,
-        basePrice: vendorVisibleAmount,
-        base_price: vendorVisibleAmount,
+        totalAmount: vendorPrice,
+        total_amount: vendorPrice,
+        price: vendorPrice,
+        basePrice: display.basePrice,
+        base_price: display.base_price,
+        commerceMode: display.commerceMode,
+        commerce_mode: display.commerce_mode,
         serviceStyle: booking.service_style || booking.service_type || 'at_clinic',
         notes: booking.notes,
         specialInstructions: booking.special_instructions,
@@ -1430,14 +1453,7 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
         } : null),
         
         // Service details: align with customer booking details (vendor_services.id → catalog via snapshot)
-        serviceName: isWapptBooking
-          ? wapptServiceDisplayName
-          : (serviceSnap?.displayName || serviceSnap?.serviceName) ||
-            (catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : null) ||
-            vendorSvc?.service_name ||
-            (service.length > 0 ? service[0].name : null) ||
-            booking.service_name ||
-            'Unknown Service',
+        serviceName: resolvedServiceLabel,
         serviceCategory:
           serviceSnap?.category ||
           (catalogService.length > 0
@@ -1462,8 +1478,11 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
             const base = snapshotToNestedService(serviceSnap);
             return {
               ...base,
-              price: vendorVisibleAmount,
-              basePrice: vendorVisibleAmount,
+              name: resolvedServiceLabel,
+              serviceName: resolvedServiceLabel,
+              displayName: resolvedServiceLabel,
+              price: vendorPrice,
+              basePrice: display.basePrice,
               duration: serviceDurationMinutes,
               duration_minutes: serviceDurationMinutes,
               durationMinutes: serviceDurationMinutes,
@@ -1472,11 +1491,6 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
             };
           }
           if (catalogService.length > 0 || service.length > 0 || vendorSvc) {
-            const resolvedServiceLabel = isWapptBooking
-              ? wapptServiceDisplayName
-              : catalogService.length > 0
-                ? (catalogService[0].display_name || catalogService[0].service_name)
-                : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service');
             return {
               id: (catalogService[0] || service[0])?.id || vendorSvc?.service_id || booking.service_id,
               serviceId: booking.service_id,
@@ -1487,8 +1501,8 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
                 ? (catalogService[0].category_name || catalogService[0].category_id)
                 : (service.length > 0 ? service[0].category : vendorSvc?.category),
               description: catalogService.length > 0 ? catalogService[0].description : (service.length > 0 ? service[0].description : null),
-              price: vendorVisibleAmount,
-              basePrice: vendorVisibleAmount,
+              price: vendorPrice,
+              basePrice: display.basePrice,
               duration: serviceDurationMinutes,
               duration_minutes: serviceDurationMinutes,
               durationMinutes: serviceDurationMinutes,
@@ -1693,13 +1707,27 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
 
           const serviceSnapAlias = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
           const vendorVisibleAlias = resolveVendorVisibleBookingAmount(booking, { serviceSnap: serviceSnapAlias });
+          const catalogServiceName =
+            serviceSnapAlias?.displayName ||
+            serviceSnapAlias?.serviceName ||
+            (service.length > 0 ? service[0].name : null) ||
+            booking.service_name ||
+            'Service';
+          const display = applyVendorBookingDisplayFields(booking, {
+            catalogServiceName,
+            vendorVisibleAmount: vendorVisibleAlias,
+          });
           return {
             ...booking,
-            total_amount: vendorVisibleAlias,
-            totalAmount: vendorVisibleAlias,
-            price: vendorVisibleAlias,
-            base_price: vendorVisibleAlias,
-            basePrice: vendorVisibleAlias,
+            service_name: display.service_name,
+            serviceName: display.serviceName,
+            total_amount: display.total_amount,
+            totalAmount: display.totalAmount,
+            price: display.price,
+            base_price: display.base_price,
+            basePrice: display.basePrice,
+            commerce_mode: display.commerce_mode,
+            commerceMode: display.commerceMode,
             customer: customer.length > 0 ? {
               id: customer[0].id,
               name: customer[0].full_name || customer[0].name,
@@ -1707,10 +1735,10 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
             } : null,
             service: service.length > 0 ? {
               id: service[0].id,
-              name: service[0].name,
+              name: display.serviceName,
               category: service[0].category,
-              price: vendorVisibleAlias,
-              basePrice: vendorVisibleAlias,
+              price: display.price,
+              basePrice: display.basePrice,
             } : null,
             chatEnabled: true,
             hasUnreadMessages: false,
@@ -1808,21 +1836,34 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
 
           const serviceSnapToday = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
           const vendorVisibleToday = resolveVendorVisibleBookingAmount(booking, { serviceSnap: serviceSnapToday });
+          const catalogServiceName =
+            serviceSnapToday?.serviceName ||
+            (service.length > 0 ? service[0].name : null) ||
+            booking.service_name ||
+            'Unknown Service';
+          const display = applyVendorBookingDisplayFields(booking, {
+            catalogServiceName,
+            vendorVisibleAmount: vendorVisibleToday,
+          });
           return {
             id: booking.id,
             customer_id: booking.customer_id,
             customerId: booking.customer_id,
             customer_name: customer.length > 0 ? customer[0].full_name : 'Unknown',
-            service_name: serviceSnapToday?.serviceName || (service.length > 0 ? service[0].name : 'Unknown Service'),
+            service_name: display.service_name,
+            serviceName: display.serviceName,
             booking_date: booking.booking_date,
             booking_time: booking.booking_time,
             status: booking.status,
-            total_amount: vendorVisibleToday,
-            totalAmount: vendorVisibleToday,
-            price: vendorVisibleToday,
-            base_price: vendorVisibleToday,
-            basePrice: vendorVisibleToday,
+            total_amount: display.total_amount,
+            totalAmount: display.totalAmount,
+            price: display.price,
+            base_price: display.base_price,
+            basePrice: display.basePrice,
             service_style: booking.service_style || 'at_clinic',
+            service_type: booking.service_type,
+            commerce_mode: display.commerce_mode,
+            commerceMode: display.commerceMode,
             // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
             // Explicitly check if rescheduled_at exists and is not null/empty
             isRescheduled: Boolean(booking.rescheduled_at),

@@ -60,6 +60,7 @@ const VENDOR_JOIN_SELECT = `
   p.id AS pricing_id,
   p.discount_type AS pricing_discount_type,
   p.discount_value AS pricing_discount_value,
+  p.platform_withhold_percent AS pricing_platform_withhold_percent,
   p.status AS pricing_status,
   p.effective_from AS pricing_effective_from,
   p.effective_until AS pricing_effective_until
@@ -94,6 +95,7 @@ const ADMIN_LIST_SELECT = `
   p.id AS pricing_id,
   p.discount_type AS pricing_discount_type,
   p.discount_value AS pricing_discount_value,
+  p.platform_withhold_percent AS pricing_platform_withhold_percent,
   p.status AS pricing_status,
   p.effective_from AS pricing_effective_from,
   p.effective_until AS pricing_effective_until
@@ -179,6 +181,7 @@ interface AdminListDbRow {
   readonly pricing_id: string | null;
   readonly pricing_discount_type: string | null;
   readonly pricing_discount_value: string | number | null;
+  readonly pricing_platform_withhold_percent: string | number | null;
   readonly pricing_status: string | null;
   readonly pricing_effective_from: Date | string | null;
   readonly pricing_effective_until: Date | string | null;
@@ -205,6 +208,7 @@ interface CatalogueWithVendorDbRow extends CatalogueDbRow {
   readonly pricing_id: string | null;
   readonly pricing_discount_type: string | null;
   readonly pricing_discount_value: string | number | null;
+  readonly pricing_platform_withhold_percent: string | number | null;
   readonly pricing_status: string | null;
   readonly pricing_effective_from: Date | string | null;
   readonly pricing_effective_until: Date | string | null;
@@ -322,6 +326,7 @@ function mapAdminListRow(row: AdminListDbRow): CatalogueAdminListRow {
     pricingId: row.pricing_id,
     pricingDiscountType: row.pricing_discount_type,
     pricingDiscountValue: toOptionalNumber(row.pricing_discount_value),
+    pricingPlatformWithholdPercent: toOptionalNumber(row.pricing_platform_withhold_percent),
     pricingStatus: row.pricing_status,
     pricingEffectiveFrom: row.pricing_effective_from
       ? toDate(row.pricing_effective_from)
@@ -362,6 +367,7 @@ function mapCatalogueRowWithVendor(row: CatalogueWithVendorDbRow): CatalogueRowW
     pricingId: row.pricing_id,
     pricingDiscountType: row.pricing_discount_type,
     pricingDiscountValue: toOptionalNumber(row.pricing_discount_value),
+    pricingPlatformWithholdPercent: toOptionalNumber(row.pricing_platform_withhold_percent),
     pricingStatus: row.pricing_status,
     pricingEffectiveFrom: row.pricing_effective_from
       ? toDate(row.pricing_effective_from)

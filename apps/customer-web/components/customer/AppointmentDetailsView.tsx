@@ -17,6 +17,11 @@ import {
   derivePaymentSourcesFromBooking,
   bookingSourcesHasGatewayPayment,
 } from '@/lib/payment-display-utils';
+import {
+  isWarmpawzAppointmentsBookingRow,
+  isWarmpawzNutritionBookingRow,
+  resolveCustomerBookingDisplayName,
+} from '@/lib/warmpawz-appointments-customer';
 
 type AppointmentRefundEstimate = {
   percentage: number;
@@ -43,11 +48,15 @@ export function normalizeAppointmentDetailPayload(raw: Record<string, unknown> |
   if (timeRaw.length > 5 && timeRaw.includes('.')) timeRaw = timeRaw.split('.')[0] ?? timeRaw;
   const serviceStyle = String(raw.service_style ?? raw.serviceStyle ?? '').toLowerCase() || 'at_center';
 
+  const catalogFallback = String(
+    raw.joined_service_name ?? raw.booking_service_name ?? raw.service_name ?? raw.serviceName ?? 'Service',
+  );
+
   const appointment = {
     ...raw,
     date: date || raw.date,
     startTime: timeRaw,
-    serviceName: raw.service_name ?? raw.serviceName,
+    serviceName: resolveCustomerBookingDisplayName(raw, catalogFallback),
     serviceStyle,
     duration: raw.duration,
     status: String(raw.status ?? 'scheduled').toLowerCase(),
@@ -427,7 +436,13 @@ export function AppointmentDetailsView({
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Amount</span>
+              <span className="text-sm text-gray-600">
+                {isWarmpawzAppointmentsBookingRow(appointment) &&
+                appointment.serviceStyle !== 'tele' &&
+                !isWarmpawzNutritionBookingRow(appointment)
+                  ? 'Appointment fee'
+                  : 'Amount'}
+              </span>
               <span className="text-green-600">₹{appointment.amount}</span>
             </div>
           </div>

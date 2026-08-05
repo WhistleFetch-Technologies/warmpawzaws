@@ -15,6 +15,7 @@ import { ProfileFieldLabel } from '@/components/customer/profile/ProfileFieldLab
 import { ProfileDangerZone } from '@/components/customer/profile/ProfileDangerZone';
 import { ProfileStickySaveBar } from '@/components/customer/profile/ProfileStickySaveBar';
 import { ProfileBookingPreviewCard } from '@/components/customer/profile/ProfileBookingPreviewCard';
+import { resolveCustomerBookingDisplayName } from '@/lib/warmpawz-appointments-customer';
 import {
   petTypeEmoji,
   formatPetAge,
@@ -196,9 +197,19 @@ function mapPetBookingFromApi(raw: any): Booking {
   const priceRaw = raw?.price ?? raw?.total_amount ?? 0;
   const priceNum = typeof priceRaw === 'number' ? priceRaw : parseFloat(String(priceRaw)) || 0;
 
+  const displayLabel = resolveCustomerBookingDisplayName(
+    raw,
+    String(raw?.serviceName ?? raw?.service_name ?? 'Service'),
+  );
+  // #region agent log
+  if (typeof window !== 'undefined') {
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'CustomerPetDetails.tsx:mapPetBookingFromApi',message:'pet booking mapped',data:{rawServiceName:raw?.serviceName??raw?.service_name,commerce_mode:raw?.commerce_mode,displayLabel},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+  }
+  // #endregion
+
   return {
     id: String(raw?.id ?? ''),
-    serviceType: String(raw?.serviceName ?? raw?.service_name ?? 'Service'),
+    serviceType: displayLabel,
     vendorName: String(raw?.vendorName ?? raw?.vendor_name ?? ''),
     startDate: schedule != null && schedule !== '' ? String(schedule) : '',
     totalSessions: raw?.totalSessions ?? 1,

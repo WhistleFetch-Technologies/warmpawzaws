@@ -10,6 +10,7 @@ export interface PricingRow {
   readonly catalogueId: string | null;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
+  readonly platformWithholdPercent: number;
   readonly status: PricingStatus;
   readonly effectiveFrom: Date;
   readonly effectiveUntil: Date | null;
@@ -34,6 +35,7 @@ export interface CreatePricingInput {
   readonly vendorId: string;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
+  readonly platformWithholdPercent: number;
   readonly status: PricingStatus;
   readonly effectiveFrom: Date;
   readonly effectiveUntil: Date | null;
@@ -43,6 +45,7 @@ export interface CreatePricingInput {
 export interface UpdatePricingInput {
   readonly discountType?: PricingDiscountType;
   readonly discountValue?: number;
+  readonly platformWithholdPercent?: number;
   readonly status?: PricingStatus;
   readonly effectiveFrom?: Date;
   readonly effectiveUntil?: Date | null;

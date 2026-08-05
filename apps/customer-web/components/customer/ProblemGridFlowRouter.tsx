@@ -39,6 +39,11 @@ import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-al
 import { toast } from 'sonner';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
+import { getWapptAllowedDiscoveryStyles, getWapptDefaultDiscoveryStyle } from '@/lib/wappt-hub-registry';
+import { resolveProblemGridWapptCategory } from '@/lib/problem-grid-wappt-navigation';
+import { problemGridAliasesForApi } from '@/lib/problem-grid-role-aliases';
+import { WarmpawzAppointmentsVendorList } from '@/components/customer/warmpawz-appointments/WarmpawzAppointmentsVendorList';
 import { ClinicListView } from './vet/ClinicListView';
 import { VetServicesByStyle } from './vet/VetServicesByStyle';
 import { GroomingServicesByStyle } from './grooming/GroomingServicesByStyle';
@@ -185,6 +190,25 @@ function pickProblemDiscoveryKind(
   return 'trainer';
 }
 
+function resolveWapptCategoryForProblem(problem: ProblemGridItem | null): string | null {
+  if (!problem) return null;
+  const kind = pickProblemDiscoveryKind(problem, 'at_home');
+  if (!kind) return null;
+  return resolveProblemGridWapptCategory(kind);
+}
+
+/** WAPPT vendor list already exposes at_home / at_center toggles — skip the extra style step. */
+function shouldSkipServiceStyleStepForWappt(problem: ProblemGridItem | null): boolean {
+  const category = resolveWapptCategoryForProblem(problem);
+  return Boolean(category && isWarmpawzAppointmentsHubEnabled(category));
+}
+
+function defaultWapptServiceStyleForProblem(problem: ProblemGridItem | null): ServiceStyle | null {
+  const category = resolveWapptCategoryForProblem(problem);
+  if (!category || !isWarmpawzAppointmentsHubEnabled(category)) return null;
+  return getWapptDefaultDiscoveryStyle(category) as ServiceStyle;
+}
+
 export type VendorProfileFromProblemContext = {
   vendorId: string;
   vendorName: string;
@@ -255,9 +279,15 @@ export function ProblemGridFlowRouter({
   onClose,
   onDiscoveryNavigate,
 }: ProblemGridFlowRouterProps) {
-  const [currentStep, setCurrentStep] = useState<FlowStep>('service-style');
+  const skipServiceStyleStep = shouldSkipServiceStyleStepForWappt(initialProblem || null);
+  const initialWapptStyle = defaultWapptServiceStyleForProblem(initialProblem || null);
+  const [currentStep, setCurrentStep] = useState<FlowStep>(() =>
+    skipServiceStyleStep && initialWapptStyle ? 'discovery' : 'service-style',
+  );
   const [selectedProblem, setSelectedProblem] = useState<ProblemGridItem | null>(initialProblem || null);
-  const [selectedServiceStyle, setSelectedServiceStyle] = useState<ServiceStyle | null>(null);
+  const [selectedServiceStyle, setSelectedServiceStyle] = useState<ServiceStyle | null>(() =>
+    skipServiceStyleStep ? initialWapptStyle : null,
+  );
   const [loadingProblemDetails, setLoadingProblemDetails] = useState(false);
   const [discoveryListKey, setDiscoveryListKey] = useState(0);
 
@@ -292,14 +322,36 @@ export function ProblemGridFlowRouter({
     categoryHint: selectedProblem?.category,
   }) as ServiceStyle[];
   const groomingOnlyHomeAndCenter = isGroomingProblem(selectedProblem);
-  const availableStyles = (groomingOnlyHomeAndCenter
+  const baseServiceStyles = groomingOnlyHomeAndCenter
     ? (['at_home', 'at_center'] as ServiceStyle[])
-    : normalizedAvailableStyles
-  ).filter((style) => {
+    : normalizedAvailableStyles;
+  const wapptKindForStyles = selectedProblem
+    ? pickProblemDiscoveryKind(selectedProblem, 'at_home')
+    : null;
+  const wapptCategoryForStyles = wapptKindForStyles
+    ? resolveProblemGridWapptCategory(wapptKindForStyles)
+    : null;
+  const wapptHubStylesActive =
+    Boolean(wapptCategoryForStyles) && isWarmpawzAppointmentsHubEnabled(wapptCategoryForStyles!);
+  const availableStyles = baseServiceStyles.filter((style) => {
     if (!shouldHideMarketplaceStyleTiles()) return true;
+    if (wapptHubStylesActive && wapptCategoryForStyles) {
+      return getWapptAllowedDiscoveryStyles(wapptCategoryForStyles).includes(
+        style as 'at_home' | 'at_center',
+      );
+    }
     return style === 'tele';
   });
   const hasTeleOption = availableStyles.includes('tele');
+  const wapptSkipStyleStep = shouldSkipServiceStyleStepForWappt(selectedProblem);
+
+  useEffect(() => {
+    if (!selectedProblem || !wapptSkipStyleStep) return;
+    const style = defaultWapptServiceStyleForProblem(selectedProblem);
+    if (!style) return;
+    setSelectedServiceStyle(style);
+    setCurrentStep('discovery');
+  }, [selectedProblem?.id, wapptSkipStyleStep]);
 
   useEffect(() => {
     if (selectedProblem?.id) {
@@ -310,45 +362,74 @@ export function ProblemGridFlowRouter({
   const fetchProblemDetails = async () => {
     if (!selectedProblem) return;
 
+    if (selectedProblem.allowedServiceStyles && selectedProblem.allowedServiceStyles.length > 0) {
+      const roleId =
+        selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'veterinarian';
+      const sanitized = sanitizeCustomerAllowedServiceStyles(selectedProblem.allowedServiceStyles, {
+        roleId,
+        specializationId: selectedProblem.id,
+        categoryHint: selectedProblem.category,
+      }) as ServiceStyle[];
+      if (sanitized.length > 0) {
+        setAllowedServiceStyles(sanitized);
+        return;
+      }
+    }
+
     setLoadingProblemDetails(true);
     try {
       const roleId = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'vet';
-      const res = await apiClient.get<any>(`/public/problems?roleId=${roleId}`);
+      const aliases = problemGridAliasesForApi(roleId);
+      let matchingProblem: {
+        id?: string;
+        problemId?: string;
+        allowedServiceStyles?: ServiceStyle[];
+      } | null = null;
 
-      if (res.success && res.problems) {
-        const matchingProblem = res.problems.find((p: any) => p.id === selectedProblem.id);
+      for (const apiRole of aliases) {
+        const res = await apiClient.get<{ success?: boolean; problems?: any[] }>(
+          `/public/problem-grid/${encodeURIComponent(apiRole)}`,
+        );
+        if (res?.success === false || !Array.isArray(res.problems)) continue;
+        matchingProblem =
+          res.problems.find(
+            (p: any) =>
+              String(p.id ?? p.problemId ?? '') === selectedProblem.id ||
+              String(p.problemId ?? p.id ?? '') === selectedProblem.id,
+          ) ?? null;
+        if (matchingProblem) break;
+      }
 
-        let styles: ServiceStyle[] = [];
-        if (matchingProblem?.allowedServiceStyles) {
-          styles = matchingProblem.allowedServiceStyles as ServiceStyle[];
-        } else if (selectedProblem.allowedServiceStyles) {
-          styles = selectedProblem.allowedServiceStyles;
+      if (!matchingProblem) {
+        const legacyRes = await apiClient.get<any>(`/public/problems?roleId=${encodeURIComponent(roleId)}`);
+        if (legacyRes?.success && legacyRes.problems) {
+          matchingProblem =
+            legacyRes.problems.find((p: any) => p.id === selectedProblem.id) ?? null;
         }
+      }
 
-        const sanitized = sanitizeCustomerAllowedServiceStyles(styles, {
-          roleId,
-          specializationId: selectedProblem.id,
-          categoryHint: selectedProblem.category,
-        }) as ServiceStyle[];
-        if (sanitized.length > 0) {
-          setAllowedServiceStyles(sanitized);
-        } else {
-          const rid = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'veterinarian';
-          const preserved = sanitizeCustomerAllowedServiceStyles(selectedProblem.allowedServiceStyles, {
-            roleId: rid,
-            specializationId: selectedProblem.id,
-            categoryHint: selectedProblem.category,
-          }) as ServiceStyle[];
-          setAllowedServiceStyles(preserved);
-        }
+      let styles: ServiceStyle[] = [];
+      if (matchingProblem?.allowedServiceStyles) {
+        styles = matchingProblem.allowedServiceStyles as ServiceStyle[];
+      } else if (selectedProblem.allowedServiceStyles) {
+        styles = selectedProblem.allowedServiceStyles;
+      }
+
+      const sanitized = sanitizeCustomerAllowedServiceStyles(styles, {
+        roleId,
+        specializationId: selectedProblem.id,
+        categoryHint: selectedProblem.category,
+      }) as ServiceStyle[];
+      if (sanitized.length > 0) {
+        setAllowedServiceStyles(sanitized);
       } else {
         const rid = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'veterinarian';
-        const sanitized = sanitizeCustomerAllowedServiceStyles(selectedProblem.allowedServiceStyles, {
+        const preserved = sanitizeCustomerAllowedServiceStyles(selectedProblem.allowedServiceStyles, {
           roleId: rid,
           specializationId: selectedProblem.id,
           categoryHint: selectedProblem.category,
         }) as ServiceStyle[];
-        setAllowedServiceStyles(sanitized);
+        setAllowedServiceStyles(preserved);
       }
     } catch (error: any) {
       console.error('Error fetching problem details:', error);
@@ -393,6 +474,10 @@ export function ProblemGridFlowRouter({
   };
 
   const goBackFromDiscovery = () => {
+    if (wapptSkipStyleStep) {
+      onClose?.();
+      return;
+    }
     setCurrentStep('service-style');
     setSelectedServiceStyle(null);
   };
@@ -427,6 +512,25 @@ export function ProblemGridFlowRouter({
     const profileBack = 'problem_grid_flow';
     const key = `${kind}-${selectedServiceStyle}-${specId}-${discoveryListKey}`;
     const phone = customerId || '';
+
+    const wapptCategory = resolveProblemGridWapptCategory(kind);
+    if (isWarmpawzAppointmentsHubEnabled(wapptCategory)) {
+      return (
+        <div key={key} className="mx-auto w-full max-w-customer">
+          <WarmpawzAppointmentsVendorList
+            category={wapptCategory}
+            initialServiceStyle={selectedServiceStyle}
+            lockStyleFilter={false}
+            profileBackScreen={profileBack}
+            specialization={specId}
+            listSubtitleOverride={selectedProblem.name}
+            onBack={goBackFromDiscovery}
+            onGoHome={() => onClose?.()}
+            onNavigate={onDiscoveryNavigate}
+          />
+        </div>
+      );
+    }
 
     if (kind === 'vet_at_center') {
       return (

@@ -13,6 +13,7 @@ export interface PricingAuditEntity {
   readonly vendorId: string;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
+  readonly platformWithholdPercent: number;
   readonly status: PricingStatus;
   readonly effectiveFrom: Date;
   readonly effectiveUntil: Date | null;
@@ -22,6 +23,7 @@ function buildEntitySnapshot(entity: PricingAuditEntity): Record<string, unknown
   return {
     discount_type: entity.discountType,
     discount_value: entity.discountValue,
+    platform_withhold_percent: entity.platformWithholdPercent,
     status: entity.status,
     effective_from: entity.effectiveFrom.toISOString(),
     effective_until: entity.effectiveUntil ? entity.effectiveUntil.toISOString() : null,
@@ -34,6 +36,7 @@ export function toPricingAuditEntity(row: PricingRow): PricingAuditEntity {
     vendorId: row.vendorId,
     discountType: row.discountType,
     discountValue: row.discountValue,
+    platformWithholdPercent: row.platformWithholdPercent,
     status: row.status,
     effectiveFrom: row.effectiveFrom,
     effectiveUntil: row.effectiveUntil,

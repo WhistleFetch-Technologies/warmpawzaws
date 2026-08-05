@@ -234,3 +234,48 @@ export function initializeSession(): void {
     });
   }
 }
+
+/**
+ * Attempt silent refresh when the access token is expired but the 90-day refresh
+ * window may still be open. Returns true when a usable session remains.
+ */
+export async function restoreVendorSessionIfRefreshable(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  const phone = localStorage.getItem('vendorPhone');
+  const storedRefreshExpiry = localStorage.getItem('vendorRefreshTokenExpiry');
+  const hasCognitoBundle = !!localStorage.getItem('vendorCognitoTokens');
+
+  if (!phone && !hasCognitoBundle) return false;
+
+  const readToken = () =>
+    localStorage.getItem('authToken') ||
+    localStorage.getItem('vendorSessionToken') ||
+    localStorage.getItem('vendorAuthToken');
+
+  let token = readToken();
+
+  if (token && !isTokenExpired(token)) return true;
+
+  if (
+    storedRefreshExpiry &&
+    Date.now() > parseInt(storedRefreshExpiry, 10) &&
+    !hasCognitoBundle
+  ) {
+    return false;
+  }
+
+  try {
+    const { refreshVendorTokensIfNeeded, isAuthenticated } = await import('./cognito-auth');
+    if (!hasCognitoBundle && !isAuthenticated()) return false;
+
+    const renewed = await refreshVendorTokensIfNeeded({ force: true });
+    if (renewed?.idToken) return true;
+
+    token = readToken();
+    return !!(token && !isTokenExpired(token));
+  } catch {
+    token = readToken();
+    return !!(token && !isTokenExpired(token));
+  }
+}

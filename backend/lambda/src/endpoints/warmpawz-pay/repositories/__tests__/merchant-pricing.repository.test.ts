@@ -11,6 +11,7 @@ describe('MerchantPricingRepository', () => {
           catalogue_id: 'cat-1',
           discount_type: 'percentage',
           discount_value: '10',
+          platform_withhold_percent: '5',
           status: PRICING_STATUS.ACTIVE,
           effective_from: new Date('2026-07-01T00:00:00.000Z'),
           effective_until: null,
@@ -31,6 +32,7 @@ describe('MerchantPricingRepository', () => {
     const row = await repo.findByVendorId('vendor-1');
 
     expect(row?.discountValue).toBe(10);
+    expect(row?.platformWithholdPercent).toBe(5);
     expect(row?.businessName).toBe('Happy Paws');
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('warmpawz_pay_merchant_pricing'),
@@ -65,6 +67,7 @@ describe('MerchantPricingRepository', () => {
           catalogue_id: 'cat-1',
           discount_type: 'percentage',
           discount_value: '15',
+          platform_withhold_percent: '0',
           status: PRICING_STATUS.ACTIVE,
           effective_from: new Date('2026-07-01T00:00:00.000Z'),
           effective_until: null,
@@ -81,6 +84,7 @@ describe('MerchantPricingRepository', () => {
         vendorId: 'vendor-1',
         discountType: 'percentage',
         discountValue: 15,
+        platformWithholdPercent: 5,
         status: PRICING_STATUS.ACTIVE,
         effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
         effectiveUntil: null,

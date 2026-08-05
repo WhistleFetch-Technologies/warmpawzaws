@@ -51,15 +51,22 @@ export async function executeDiscoveryByCategoryGet(c: Context) {
   }
 
   const serviceStyle = parseServiceStyle(c.req.query('serviceStyle'));
+  const specialization = (
+    c.req.query('specialization') ||
+    c.req.query('specializationId') ||
+    ''
+  )
+    .trim() || undefined;
   const limit = Math.min(
     Math.max(parseInt(String(c.req.query('limit') || DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1),
     MAX_LIMIT,
   );
   const { s: sqlOffset } = decodeDiscoveryCursor(c.req.query('cursor'));
 
-  const { rows, hasMore } = await dbListWapptDiscoveryByCategory({
+  const { rows, hasMore, specializationApplied } = await dbListWapptDiscoveryByCategory({
     category,
     serviceStyle,
+    specialization,
     limit,
     offset: sqlOffset,
   });
@@ -75,7 +82,12 @@ export async function executeDiscoveryByCategoryGet(c: Context) {
       style: serviceStyle,
       enrichedCards,
       nextCursor,
-      appliedFilters: { category, serviceStyle, limit },
+      appliedFilters: {
+        category,
+        serviceStyle,
+        limit,
+        ...(specializationApplied ? { specialization: specializationApplied } : {}),
+      },
       serviceStyleNorm: serviceStyle === 'all' ? undefined : serviceStyle,
     }),
   );

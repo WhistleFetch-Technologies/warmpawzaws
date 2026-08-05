@@ -1256,6 +1256,28 @@ export function BoardingBookingRouter({
     }
   };
 
+  const handleContinueFromWapptBoardingDetails = () => {
+    if (!checkInDate || !checkOutDate || !checkInTime || !checkOutTime) {
+      toast.error('Please select check-in and check-out dates and times');
+      return;
+    }
+    if (!selectedPet) {
+      toast.error('Please select a pet');
+      return;
+    }
+    if (getBilledMinutes() < 1) {
+      toast.error('Check-out must be after check-in');
+      return;
+    }
+    setSelectedAddress({ id: 'clinic' });
+    setVendorDisclaimerAcknowledged(false);
+    void prefillBoardingIntake(selectedPet);
+    // #region agent log
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'BoardingBookingRouter.tsx:handleContinueFromWapptBoardingDetails',message:'boarding wappt -> intake',data:{checkInDate,checkOutDate,petId:selectedPet?.id},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+    // #endregion
+    setStep('boarding_form');
+  };
+
   const handleContinueFromWapptAddress = () => {
     if (!selectedAddress) {
       toast.error('Please select a delivery address');
@@ -1294,6 +1316,14 @@ export function BoardingBookingRouter({
     }
 
     if (step === 'boarding_form') {
+      if (appointmentsMode && !isPetSitting) {
+        if (facilityDisclaimerPoints.length > 0 && !vendorDisclaimerAcknowledged) {
+          toast.error('Please acknowledge the facility disclaimer');
+          return;
+        }
+        setStep('summary');
+        return;
+      }
       handleCreateBookingForPayment();
       return;
     }
@@ -1612,6 +1642,16 @@ export function BoardingBookingRouter({
       setStep('summary');
       return;
     }
+    if (appointmentsMode && !isPetSitting) {
+      if (step === 'summary') {
+        setStep('boarding_form');
+        return;
+      }
+      if (step === 'boarding_form') {
+        setStep('datetime');
+        return;
+      }
+    }
     if (appointmentsMode && wapptFlowSteps.length > 0) {
       const prev = getWapptBookingPreviousStep(
         wapptFlowSteps,
@@ -1654,7 +1694,7 @@ export function BoardingBookingRouter({
     }
 
     setStep(steps[currentIdx - 1]);
-  }, [step, skipBoardingIntake, onBack, vendorId, serviceId, appointmentsMode, wapptFlowSteps]);
+  }, [step, skipBoardingIntake, onBack, vendorId, serviceId, appointmentsMode, wapptFlowSteps, isPetSitting]);
 
   useEffect(() => {
     onInternalBackReady?.(handleBack);
@@ -1702,6 +1742,19 @@ export function BoardingBookingRouter({
   const boardingStats = EMPTY_SERVICE_HEADER_STATS;
 
   const getStepIndicators = (): StepInfo[] | undefined => {
+    if (appointmentsMode && !isPetSitting) {
+      if (step === 'payment' || step === 'confirmation') return undefined;
+      const boardingWapptLabels = ['Stay', 'Intake', 'Summary', 'Payment'];
+      const boardingWapptKeys = ['datetime', 'boarding_form', 'summary', 'payment'] as const;
+      const idx = boardingWapptKeys.indexOf(step as (typeof boardingWapptKeys)[number]);
+      if (idx >= 0) {
+        return boardingWapptLabels.map((label, i) => ({
+          label,
+          isCompleted: i < idx,
+          isCurrent: i === idx,
+        }));
+      }
+    }
     if (appointmentsMode && wapptFlowSteps.length > 0) {
       if (step === 'payment' || step === 'confirmation') return undefined;
       const flowStep =
@@ -1933,7 +1986,7 @@ export function BoardingBookingRouter({
         )}
 
         {/* Date Selection */}
-        {step === 'datetime' && appointmentsMode ? (
+        {step === 'datetime' && appointmentsMode && isPetSitting ? (
           <WapptBookingDetailsStep
             dates={wapptSlots.dates}
             selectedDate={checkInDate}
@@ -1968,18 +2021,22 @@ export function BoardingBookingRouter({
             amount={wapptReviewTotal}
             selectedDate={checkInDate}
             selectedTime={checkInTime}
+            checkOutDate={checkOutDate}
+            checkOutTime={checkOutTime}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
+            petSpecies={selectedPet?.species}
+            variant={isPetSitting ? 'default' : 'boarding'}
             addressLine={
               wapptServiceStyle === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
             }
-            onBack={() => setStep(wapptServiceStyle === 'at_home' ? 'address' : 'datetime')}
+            onBack={() => setStep(isPetSitting ? (wapptServiceStyle === 'at_home' ? 'address' : 'datetime') : 'boarding_form')}
             onContinue={handleProceedToWapptPayment}
             loading={processing}
           />
         ) : null}
 
-        {step === 'datetime' && !appointmentsMode && (
+        {step === 'datetime' && (!appointmentsMode || (appointmentsMode && !isPetSitting)) && (
           <div className="space-y-6">
             {sameDayTimedSession ? (
               <>
@@ -2278,17 +2335,59 @@ export function BoardingBookingRouter({
               </>
             )}
 
+            {appointmentsMode && !isPetSitting ? (
+              <div className="space-y-4 border-t border-gray-100 pt-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPetModal(true)}
+                    className="flex items-center gap-1 rounded-lg bg-orange-100 px-3 py-1.5 text-sm font-medium text-orange-600 hover:bg-orange-200"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Pet
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {pets.map((pet) => (
+                    <button
+                      key={pet.id}
+                      type="button"
+                      onClick={() => setSelectedPet(pet)}
+                      className={`flex w-full items-center gap-4 rounded-xl border-2 p-4 transition-all ${
+                        selectedPet?.id === pet.id
+                          ? 'border-[#FF8C42] bg-orange-50'
+                          : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                      }`}
+                    >
+                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-100">
+                        <User className="h-7 w-7 text-orange-600" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <h3 className="font-semibold text-gray-900">{pet.name}</h3>
+                        <p className="text-sm capitalize text-gray-500">{pet.breed}</p>
+                      </div>
+                      {selectedPet?.id === pet.id ? (
+                        <CheckCircle2 className="h-6 w-6 text-orange-500" />
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <Button
-              onClick={handleNext}
+              onClick={appointmentsMode && !isPetSitting ? handleContinueFromWapptBoardingDetails : handleNext}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={
                 !checkInDate ||
                 !checkOutDate ||
+                (appointmentsMode && !isPetSitting && !selectedPet) ||
                 (isPetSitting && getBilledMinutes() < 15) ||
                 (!isPetSitting && getBilledMinutes() < 1)
               }
             >
-              Continue
+              {appointmentsMode && !isPetSitting ? 'Continue to intake' : 'Continue'}
             </Button>
           </div>
         )}
@@ -2786,7 +2885,11 @@ export function BoardingBookingRouter({
                 (facilityDisclaimerPoints.length > 0 && !vendorDisclaimerAcknowledged)
               }
             >
-              {processing ? 'Creating booking…' : 'Continue to payment'}
+              {processing
+                ? 'Creating booking…'
+                : appointmentsMode && !isPetSitting
+                  ? 'Continue to summary'
+                  : 'Continue to payment'}
             </Button>
           </div>
         )}
@@ -2846,195 +2949,6 @@ export function BoardingBookingRouter({
             setShowAddPetModal(false);
           }}
         />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Inline Add Pet Modal Component
-function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClose: () => void; onSuccess: () => void }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(false);
-  const [photoPreview, setPhotoPreview] = useState<string>('');
-  
-  const [petData, setPetData] = useState({
-    id: `pet_${Date.now()}`,
-    name: '',
-    type: 'Dog',
-    breed: '',
-    age: '',
-    gender: '',
-    weight: '',
-    color: '',
-    photo: '',
-  });
-
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size should be less than 5MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result as string);
-        setPetData({ ...petData, photo: reader.result as string });
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSavePet = async () => {
-    if (!petData.name || !petData.type || !petData.breed || !petData.age) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
-      let existingPets = [];
-      if (Array.isArray(getPetsData.pets)) {
-        existingPets = getPetsData.pets;
-      }
-      
-      const updatedPets = [...existingPets, petData];
-      
-      await apiClient.post('/customer/pets', {
-        phone: phone,
-        pets: updatedPets
-      });
-      
-      toast.success(`${petData.name} added successfully!`);
-      onSuccess();
-    } catch (error) {
-      console.error('Error saving pet:', error);
-      toast.error('Failed to save pet. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center" onClick={onClose}>
-      <div 
-        className="bg-white rounded-t-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-4 rounded-t-3xl sticky top-0 z-10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Dog className="w-5 h-5 text-white" />
-              <h3 className="text-lg font-bold text-white">Add New Pet</h3>
-            </div>
-            <button onClick={onClose} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-              <X className="w-5 h-5 text-white" />
-            </button>
-          </div>
-        </div>
-        
-        <div className="p-5 space-y-4">
-          <div className="flex flex-col items-center">
-            <div 
-              onClick={() => fileInputRef.current?.click()}
-              className="w-20 h-20 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:opacity-80 border-4 border-white shadow-lg"
-            >
-              {photoPreview ? (
-                <img src={photoPreview} alt="Pet" className="w-full h-full object-cover" />
-              ) : (
-                <Upload className="w-8 h-8 text-orange-500" />
-              )}
-            </div>
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-            <p className="text-xs text-gray-500 mt-1">Upload photo (Optional)</p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Pet Name <span className="text-red-500">*</span></label>
-            <input
-              type="text"
-              value={petData.name}
-              onChange={(e) => setPetData({ ...petData, name: e.target.value })}
-              placeholder="e.g., Oreo, Max, Bella"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Pet Type <span className="text-red-500">*</span></label>
-            <div className="grid grid-cols-3 gap-2">
-              {['Dog', 'Cat', 'Other'].map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setPetData({ ...petData, type })}
-                  className={`py-2.5 px-3 border-2 rounded-xl transition font-medium text-sm ${
-                    petData.type === type ? 'border-[#FF8C42] bg-orange-50 text-orange-600' : 'border-gray-200 text-gray-700'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    {type === 'Dog' ? <Dog className="w-4 h-4" /> : type === 'Cat' ? <Cat className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                    {type}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Breed <span className="text-red-500">*</span></label>
-            <input
-              type="text"
-              value={petData.breed}
-              onChange={(e) => setPetData({ ...petData, breed: e.target.value })}
-              placeholder="e.g., Golden Retriever"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Age (years) <span className="text-red-500">*</span></label>
-              <input
-                type="number"
-                value={petData.age}
-                onChange={(e) => setPetData({ ...petData, age: e.target.value })}
-                placeholder="e.g., 3"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
-              <select
-                value={petData.gender}
-                onChange={(e) => setPetData({ ...petData, gender: e.target.value })}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
-              >
-                <option value="">Select</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={onClose}
-              className="flex-1 py-3 border-2 border-gray-300 rounded-xl font-medium text-gray-700"
-              disabled={loading}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSavePet}
-              disabled={loading}
-              className="flex-1 py-3 bg-[#FF8C42] hover:bg-[#FF7A35] rounded-xl text-white font-medium disabled:opacity-50"
-            >
-              {loading ? 'Saving...' : 'Add Pet'}
-            </button>
-          </div>
         </div>
       </div>
     </div>

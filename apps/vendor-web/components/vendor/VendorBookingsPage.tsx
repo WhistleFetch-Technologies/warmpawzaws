@@ -4,6 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { formatVendorFacingCustomerNotes } from '@/lib/vendor-facing-booking-notes';
+import {
+  resolveVendorBookingServiceLabel,
+  shouldShowVendorBookingPrice,
+} from '@/lib/vendor-utils';
 
 interface Booking {
   id: string;
@@ -16,7 +20,8 @@ interface Booking {
   video_call_ended_at?: string;
   status: string;
   payment_status: string;
-  total_amount: number;
+  total_amount: number | null;
+  commerce_mode?: string;
   service_type: string;
   service_style?: string;
   notes?: string;
@@ -253,7 +258,7 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-500">{booking.service_name}</p>
+                    <p className="text-sm text-gray-500">{resolveVendorBookingServiceLabel(booking)}</p>
                     <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
                       <span>📅 {new Date(booking.booking_date).toLocaleDateString()}</span>
                       <span>
@@ -264,7 +269,9 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                           ? `Completed ${new Date(booking.video_call_ended_at || booking.completed_at || '').toLocaleString()}`
                           : booking.booking_time}
                       </span>
-                      <span className="font-semibold text-orange-500">₹{booking.total_amount}</span>
+                      {shouldShowVendorBookingPrice(booking) && booking.total_amount != null && (
+                        <span className="font-semibold text-orange-500">₹{booking.total_amount}</span>
+                      )}
                     </div>
                     {formatVendorFacingCustomerNotes(booking.notes) && (
                       <p className="text-sm text-gray-400 mt-1 italic">
@@ -346,9 +353,11 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
               <div className="flex justify-between items-center">
                 <div>
                   <p className="font-medium text-gray-900">{selectedBooking.customer_name}</p>
-                  <p className="text-sm text-gray-500">{selectedBooking.service_name}</p>
+                  <p className="text-sm text-gray-500">{resolveVendorBookingServiceLabel(selectedBooking)}</p>
                 </div>
-                <p className="font-bold text-orange-500">₹{selectedBooking.total_amount}</p>
+                {shouldShowVendorBookingPrice(selectedBooking) && selectedBooking.total_amount != null && (
+                  <p className="font-bold text-orange-500">₹{selectedBooking.total_amount}</p>
+                )}
               </div>
             </div>
 

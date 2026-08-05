@@ -41,8 +41,39 @@ describe('customer booking display helpers', () => {
     ).toBe('Vaccination');
   });
 
+  it('detects WAPPT rows when persisted booking_service_name is Appointment', () => {
+    expect(
+      isWarmpawzAppointmentsBookingRow({
+        commerce_mode: 'marketplace',
+        booking_service_name: 'Appointment',
+        service_name: 'Vaccination at Clinic',
+      }),
+    ).toBe(true);
+  });
+
   it('hides duration only for WAPPT rows', () => {
     expect(shouldHideWarmpawzAppointmentDuration({ commerce_mode: WAPPT_BOOKING_MODE })).toBe(true);
     expect(shouldHideWarmpawzAppointmentDuration({ commerce_mode: 'marketplace' })).toBe(false);
+  });
+
+  it('returns Tele Consultation for WAPPT tele rows', () => {
+    expect(
+      resolveCustomerBookingDisplayName({
+        commerce_mode: WAPPT_BOOKING_MODE,
+        service_style: 'tele',
+        service_name: 'Vaccination',
+      }),
+    ).toBe('Tele Consultation');
+  });
+
+  it('keeps catalog name for WAPPT nutrition rows', () => {
+    expect(
+      resolveCustomerBookingDisplayName({
+        commerce_mode: WAPPT_BOOKING_MODE,
+        service_type: 'nutrition',
+        joined_service_name: 'Diet Consultation',
+        service_name: 'Appointment',
+      }),
+    ).toBe('Diet Consultation');
   });
 });

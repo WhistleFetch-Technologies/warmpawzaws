@@ -2283,6 +2283,8 @@ export function registerProblemGridEndpoints(app: Hono) {
    * Query params: roleId (required) — e.g. 'groomer', 'trainer', 'veterinarian', or 'all' for full catalog (home View All)
    * Note: This is a PUBLIC endpoint (no auth required) since problem grid is shown to all users
    * Returns: { id, name, displayName, icon, description, roleId, allowedServiceStyles: [...] }
+   * Primary source: specialization_master.specialization_id (aligned with /public/problem-grid/:roleId).
+   * Falls back to problem_grid_mappings when catalog is empty.
    */
   app.get("/public/problems", async (c) => {
     try {
@@ -2300,7 +2302,19 @@ export function registerProblemGridEndpoints(app: Hono) {
       /** Home "View All" uses roleId=all — must return every specialization, not a single generic row */
       const isAllRoles = roleIdNorm === 'all' || roleIdNorm === '*' || roleIdNorm === 'every';
 
-      // Query problem_grid_mappings for problems matching the role (or all roles when roleId=all)
+      const canonicalProblems = await fetchPublicProblemsFromSpecializationMaster(
+        roleId,
+        isAllRoles,
+      );
+      if (canonicalProblems && canonicalProblems.length > 0) {
+        return c.json({
+          success: true,
+          problems: canonicalProblems,
+          count: canonicalProblems.length,
+        });
+      }
+
+      // Legacy fallback: problem_grid_mappings
       // Include allowed_service_styles for service style filtering
       let problemsResult;
       try {
@@ -2724,6 +2738,136 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // Distance in km
+}
+
+async function loadRoleAllowedStylesForPublicProblems(roleId: string): Promise<string[]> {
+  let roleAllowedStyles: string[] = ['at_home', 'at_center', 'tele'];
+  try {
+    const roleNameNorm = (roleId || '').toLowerCase().trim().replace(/\s+/g, '_');
+    const roleCandidates = pgExpandRoleAliases(roleNameNorm);
+    const roleCandidatesWithSpaces = roleCandidates.map((r) => r.replace(/_/g, ' '));
+    const rolesByKey = await query(
+      `SELECT id, name, config
+       FROM roles
+       WHERE (is_active = true OR is_active IS NULL)
+         AND (
+           lower(name) = ANY($1::text[])
+           OR lower(name) = ANY($2::text[])
+           OR id::text = ANY($1::text[])
+         )
+       ORDER BY updated_at DESC NULLS LAST
+       LIMIT 1`,
+      [roleCandidates, roleCandidatesWithSpaces],
+    ).catch(() => ({ rows: [] }));
+    const roleRow = rolesByKey.rows?.[0];
+    if (roleRow?.config) {
+      const config = typeof roleRow.config === 'string' ? JSON.parse(roleRow.config) : roleRow.config;
+      const serviceStylesConfig = config.serviceStyles || config.service_styles;
+      const selected = serviceStylesConfig?.selected ?? (Array.isArray(serviceStylesConfig) ? serviceStylesConfig : []);
+      if (Array.isArray(selected) && selected.length > 0) {
+        const toKey = (s: string) => {
+          const k = (s || '').toLowerCase().replace(/\s+/g, '_');
+          if (k === 'at_clinic' || k === 'at_center') return 'at_center';
+          if (k === 'video_consultation' || k === 'video' || k === 'tele_consultation') return 'tele';
+          return k;
+        };
+        roleAllowedStyles = [...new Set(selected.map((s: string) => toKey(s)).filter(Boolean))];
+        if (roleAllowedStyles.length === 0) roleAllowedStyles = ['at_home', 'at_center', 'tele'];
+      }
+    }
+  } catch (e) {
+    console.warn('Could not load role config for allowed service styles:', (e as Error).message);
+  }
+  return roleAllowedStyles;
+}
+
+function mapSpecializationMasterRowToPublicProblem(
+  row: {
+    specialization_id: string;
+    name: string;
+    display_name?: string | null;
+    allowed_service_styles?: unknown;
+    applicable_roles?: string[] | null;
+  },
+  opts: { apiRoleId: string; roleAllowedStyles: string[] },
+): Record<string, unknown> {
+  let specStyles = pgNormalizeServiceStylesArray(row.allowed_service_styles);
+  if (specStyles.length === 0) specStyles = ['at_home', 'at_center', 'tele'];
+  const allowedServiceStyles = specStyles.filter((s: string) =>
+    opts.roleAllowedStyles.includes((s || '').toLowerCase().replace(/\s+/g, '_')),
+  );
+  const finalStyles = allowedServiceStylesForProblem(
+    row.specialization_id,
+    allowedServiceStyles.length > 0 ? allowedServiceStyles : ['at_home'],
+  );
+  const displayName = row.display_name || row.name;
+  return {
+    id: row.specialization_id,
+    name: row.name,
+    displayName,
+    icon: getProblemEmoji(row.specialization_id, opts.apiRoleId),
+    description: `Find ${displayName} specialists`,
+    roleId: opts.apiRoleId,
+    allowedServiceStyles: finalStyles,
+    keywords: [String(row.name).toLowerCase(), String(row.specialization_id).toLowerCase()],
+  };
+}
+
+/** Canonical problem list from specialization_master (same ids as /public/problem-grid/:roleId). */
+async function fetchPublicProblemsFromSpecializationMaster(
+  roleId: string,
+  isAllRoles: boolean,
+): Promise<Record<string, unknown>[] | null> {
+  try {
+    if (isAllRoles) {
+      const result = await query(
+        `SELECT sm.specialization_id, sm.name, sm.display_name, sm.allowed_service_styles, sm.applicable_roles
+         FROM specialization_master sm
+         WHERE sm.is_active = true
+           AND (sm.show_in_problem_grid = true OR sm.show_in_services_dashboard = true)
+         ORDER BY sm.display_order NULLS LAST, sm.name`,
+      );
+      if (!result.rows?.length) return null;
+      return result.rows.map((row: any) => {
+        const roles = Array.isArray(row.applicable_roles) ? row.applicable_roles : [];
+        const apiRoleId = roles.length > 0 ? String(roles[0]) : 'general';
+        return mapSpecializationMasterRowToPublicProblem(row, {
+          apiRoleId,
+          roleAllowedStyles: ['at_home', 'at_center', 'tele'],
+        });
+      });
+    }
+
+    const expanded = pgExpandRoleAliases(roleId.toLowerCase().trim());
+    if (expanded.length === 0) return null;
+
+    const result = await query(
+      `SELECT sm.specialization_id, sm.name, sm.display_name, sm.allowed_service_styles, sm.applicable_roles
+       FROM specialization_master sm
+       WHERE sm.is_active = true
+         AND (sm.show_in_problem_grid = true OR sm.show_in_services_dashboard = true)
+         AND (
+           sm.applicable_roles = '{}'
+           OR sm.applicable_roles IS NULL
+           OR array_length(sm.applicable_roles, 1) IS NULL
+           OR sm.applicable_roles && $1::text[]
+         )
+       ORDER BY sm.display_order NULLS LAST, sm.name`,
+      [expanded],
+    );
+    if (!result.rows?.length) return null;
+
+    const roleAllowedStyles = await loadRoleAllowedStylesForPublicProblems(roleId);
+    return result.rows.map((row: any) =>
+      mapSpecializationMasterRowToPublicProblem(row, {
+        apiRoleId: roleId,
+        roleAllowedStyles,
+      }),
+    );
+  } catch (err: any) {
+    console.warn('[public/problems] specialization_master fetch failed:', err?.message || err);
+    return null;
+  }
 }
 
 /**

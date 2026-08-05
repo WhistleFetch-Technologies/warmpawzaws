@@ -3,7 +3,10 @@
 import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
+import {
+  shouldUseWapptVendorCancel,
+  vendorWapptCancelPath,
+} from '@/lib/wappt-booking-cancel-api';
 import {
   fetchVendorEarningsSummary,
   resolveSessionVendorIdForEarnings,
@@ -43,6 +46,7 @@ import { isPackageSessionOneStarted } from '@/lib/vendor-package-parent-decline'
 import {
   isVendorTeleConsultationBooking,
   resolveVendorBookingId,
+  resolveVendorBookingServiceLabel,
 } from '@/lib/vendor-utils';
 import { VendorChatModal } from './VendorChatModal';
 import { DeclineBookingModal } from './DeclineBookingModal';
@@ -594,7 +598,20 @@ export function VendorBookingManagement({
           phone: booking.customer?.phone || booking.customer_phone || booking.customerPhone || '+91 0000000000',
           date: booking.booking_date || booking.scheduledDate || booking.date || selectedDate,
           price: booking.price || 0,
-          serviceName: booking.service?.name || booking.service_name || booking.serviceName || 'Service',
+          serviceName: resolveVendorBookingServiceLabel({
+            commerce_mode: booking.commerce_mode ?? booking.commerceMode,
+            commerceMode: booking.commerceMode ?? booking.commerce_mode,
+            serviceName:
+              booking.service?.name || booking.service_name || booking.serviceName || 'Service',
+            service_name:
+              booking.service_name || booking.serviceName || booking.service?.name || 'Service',
+            service_type: booking.service_type || booking.serviceType,
+            service_style: booking.service_style || booking.serviceStyle,
+            serviceType: booking.service_type || booking.serviceType,
+            serviceStyle: booking.service_style || booking.serviceStyle,
+          }),
+          commerce_mode: booking.commerce_mode ?? booking.commerceMode,
+          commerceMode: booking.commerceMode ?? booking.commerce_mode,
           serviceCategory:
             booking.service?.category != null
               ? String(booking.service.category)
@@ -979,7 +996,15 @@ export function VendorBookingManagement({
     if (!cancelTargetId) return;
     setCancelSubmitting(true);
     try {
-      const data = (await apiClient.post(`/vendor/bookings/${cancelTargetId}/cancel`, {
+      const target = bookings.find((b) => b.id === cancelTargetId || b.bookingId === cancelTargetId);
+      const useWappt = shouldUseWapptVendorCancel(
+        target?.commerce_mode ?? target?.commerceMode,
+        target?.serviceType ?? target?.service_type,
+      );
+      const cancelPath = useWappt
+        ? vendorWapptCancelPath(cancelTargetId)
+        : `/vendor/bookings/${cancelTargetId}/cancel`;
+      const data = (await apiClient.post(cancelPath, {
         vendorCancellationReason: cancelPolicyReason,
       })) as any;
 

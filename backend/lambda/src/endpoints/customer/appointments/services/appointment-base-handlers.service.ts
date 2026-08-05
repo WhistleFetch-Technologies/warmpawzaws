@@ -24,6 +24,7 @@ import { hasCustomerPaidCapture } from '../../../../lib/services/refundable-base
 import { computeHoursUntilBookingStart } from '../../../../lib/utils/booking-start-wall-time';
 import { creditCustomerWalletForBookingRefund } from '../../../../utils/credit-customer-wallet';
 import * as appointment_base_handlersRepo from '../repos/appointment-base-handlers.repo';
+import { mapAppointmentRowForCustomer } from './map-appointment-row-for-customer.service';
 
 // ============================================================================
 // GET /customer/appointments - List all appointments for customer
@@ -54,9 +55,12 @@ export class GetCustomerAppointmentsHandler extends BaseHandler {
       if (rows.length === 0) {
         return this.success({ appointments: [], count: 0, message: 'No booking' });
       }
+      const mapped = rows.map((row) =>
+        mapAppointmentRowForCustomer(row as Record<string, unknown>),
+      );
       return this.success({
-        appointments: rows,
-        count: rows.length,
+        appointments: mapped,
+        count: mapped.length,
       });
     } catch (error: any) {
       console.warn('[appointments] list handler error (returning empty):', error);
@@ -121,8 +125,11 @@ export class GetAppointmentDetailsHandler extends BaseHandler {
       });
 
       try {
+        const mappedAppointment = mapAppointmentRowForCustomer(
+          appointment.rows[0] as Record<string, unknown>,
+        );
         return this.success({
-          appointment: appointment.rows[0],
+          appointment: mappedAppointment,
           prescriptions: prescriptions.rows,
           medicalRecords: medicalRecords.rows,
           appointmentHistory: appointmentHistory.rows,
