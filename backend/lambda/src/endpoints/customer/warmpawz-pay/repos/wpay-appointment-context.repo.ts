@@ -1,4 +1,5 @@
 import { query } from '../../../../database/rds-connection';
+import { ymdInIst } from '../../../../utils/ist-scheduling';
 import { WAPPT_BOOKING_MODE } from '../../../warmpawz-appointments/shared/wappt-booking-preflight';
 
 export type WpayWapptBookingContextRow = {
@@ -71,15 +72,32 @@ export async function dbFindCreditEligibleWapptBookingForPay(
   customerId: string,
   vendorId: string,
 ): Promise<WpayWapptBookingContextRow | null> {
+  const today = ymdInIst();
   const result = await query(
     `${BOOKING_SELECT}
      WHERE ${WAPPT_FILTER}
-       AND b.status = 'completed'
-     ORDER BY COALESCE(b.completed_at, b.updated_at, b.created_at) DESC
+       AND b.booking_date = $4::date
+       AND b.status NOT IN ('cancelled', 'completed', 'refunded')
+     ORDER BY COALESCE(b.booking_datetime, b.created_at) DESC
      LIMIT 1`,
-    [customerId, vendorId, WAPPT_BOOKING_MODE],
+    [customerId, vendorId, WAPPT_BOOKING_MODE, today],
   );
   return (result.rows[0] as WpayWapptBookingContextRow | undefined) ?? null;
+}
+
+export async function dbCompleteWapptBookingAfterPayBill(bookingId: string): Promise<boolean> {
+  const result = await query(
+    `UPDATE bookings
+     SET status = 'completed',
+         completed_at = COALESCE(completed_at, NOW()),
+         updated_at = NOW()
+     WHERE id = $1::uuid
+       AND commerce_mode = $2
+       AND status NOT IN ('cancelled', 'completed', 'refunded')
+     RETURNING id`,
+    [bookingId, WAPPT_BOOKING_MODE],
+  );
+  return Boolean(result.rows?.length);
 }
 
 export async function dbLoadWapptBookingForPayCredit(

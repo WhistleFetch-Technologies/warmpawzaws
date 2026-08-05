@@ -4,6 +4,7 @@ export type WpayPaymentRow = {
   id: string;
   customer_id: string;
   vendor_id: string | null;
+  booking_id: string | null;
   amount: string | number;
   original_amount: string | number | null;
   discount_amount: string | number | null;
@@ -21,7 +22,7 @@ export async function dbWpayPaymentByIdForCustomer(
   customerId: string,
 ): Promise<WpayPaymentRow | null> {
   const result = await query(
-    `SELECT id, customer_id, vendor_id, amount, original_amount, discount_amount,
+    `SELECT id, customer_id, vendor_id, booking_id, amount, original_amount, discount_amount,
             payment_status, razorpay_order_id, razorpay_payment_id, razorpay_signature,
             metadata, completed_at, created_at
      FROM payments
@@ -55,7 +56,7 @@ export async function dbWpayCompletePayment(params: {
        AND customer_id = $2::uuid
        AND payment_source = 'warmpawz_pay'
        AND payment_status IN ('pending', 'processing', 'completed')
-     RETURNING id, customer_id, vendor_id, amount, original_amount, discount_amount,
+     RETURNING id, customer_id, vendor_id, booking_id, amount, original_amount, discount_amount,
                payment_status, razorpay_order_id, razorpay_payment_id, razorpay_signature,
                metadata, completed_at, created_at`,
     [

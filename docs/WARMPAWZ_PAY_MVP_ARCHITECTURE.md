@@ -104,13 +104,13 @@ Evolve the **existing** `warmpawz-pay` customer module. Do **not** split into mi
 |------|-------|--------|
 | 1 | Customer | Books WAPPT slot; may pay booking advance |
 | 2 | Customer | Visits clinic on **appointment date** (`bookings.booking_date`) |
-| 3 | Customer + vendor | **Appointment completed** via existing OTP verification flow (not Pay Bill) |
-| 4 | Clinic | Gives physical bill |
-| 5 | Customer | Opens Warmpawz Pay → same vendor |
+| 3 | Clinic | Gives physical bill |
+| 4 | Customer | Opens Warmpawz Pay → same vendor |
+| 5 | System | Finds **active same-day appointment** with paid advance |
 | 6 | Customer | Enters gross amount; client passes `bookingId` from appointment-context |
 | 7 | System | Validates booking; deducts advance (once) + discount → payable |
 | 8 | Customer | Pays via Razorpay |
-| 9 | System | Completes **Pay Bill payment lifecycle** only (see §8) — does not change appointment status |
+| 9 | System | Completes Pay Bill lifecycle: credit consumed, booking `completed`, settlement accrued |
 
 **Appointment eligibility (MVP — all conditions required):**
 
@@ -119,15 +119,12 @@ booking.commerce_mode = 'warmpawz_appointments'
 AND booking.customer_id = :customerId
 AND booking.vendor_id = :vendorId
 AND booking.booking_date = CURRENT_DATE          -- Asia/Kolkata; no grace period
-AND booking.status = 'completed'                 -- OTP verification already done
-AND booking.status NOT IN ('cancelled', 'refunded')
+AND booking.status NOT IN ('cancelled', 'completed', 'refunded')
 AND booking advance captured (hasCustomerPaidCapture)
 AND NOT EXISTS warmpawz_pay_appointment_credits WHERE booking_id = booking.id
 ```
 
-Visit date comes from **`bookings.booking_date`** — not stored on `payments`. Pay Bill never marks the appointment complete; OTP flow owns that transition.
-
-> **Note vs current code:** Add `booking_date = CURRENT_DATE` to `dbFindCreditEligibleWapptBookingForPay` (today only checks `status = 'completed'`). Keep `status = 'completed'` in `wpay-appointment-credit.ts`.
+No OTP gate for Pay Bill credit. Visit date comes from **`bookings.booking_date`** — not stored on `payments`. Successful Pay Bill verify marks the booking `completed` via `dbCompleteWapptBookingAfterPayBill` (no marketplace OTP earnings).
 
 ---
 
@@ -153,7 +150,7 @@ Visit date comes from **`bookings.booking_date`** — not stored on `payments`. 
 | Advance credit | `0` | `resolveWapptAppointmentFeeCredit` |
 | `payments.booking_id` | `NULL` | booking UUID |
 | `settlements.booking_id` | `NULL` | same UUID |
-| Post-verify | complete payment + settlement | + insert credit row |
+| Post-verify | complete payment + settlement | + insert credit row + booking `completed` |
 | Appointment context API | ignored | UX: discover `bookingId` |
 
 ### 5.3 Not in MVP
@@ -178,18 +175,18 @@ Base path: `/customer/warmpawz-pay`
 
 **Query:** `vendorId`, `phone`
 
-**Response (unchanged shape):**
+**Response (stable shape; OTP fields deprecated):**
 
 ```json
 {
   "success": true,
-  "hasOpenAppointment": true,
-  "openAppointment": { "bookingId", "bookingDate", "appointmentFee", ... },
+  "hasOpenAppointment": false,
+  "openAppointment": null,
   "creditEligibleBooking": { "bookingId", "appointmentFee", ... }
 }
 ```
 
-**MVP rule:** `creditEligibleBooking` = booking matching §4.B (today’s `booking_date`, advance paid, credit not consumed). UI passes returned `bookingId` on initiate.
+**MVP rule:** `creditEligibleBooking` = **active** same-day WAPPT booking with advance paid and credit not consumed. `openAppointment` is always `null` (OTP gate removed). UI passes returned `bookingId` on initiate.
 
 Walk-in: both null → initiate without `bookingId`.
 
@@ -335,7 +332,7 @@ payableAmount          = max(0.01, billBase - discountAmount)
 
 ## 8. Pay Bill payment lifecycle (appointment journey — after successful verify)
 
-**Goal:** Record Pay Bill payment and advance consumption **without** touching appointment lifecycle (`bookings.status` is set by OTP flow only).
+**Goal:** Record Pay Bill payment, advance consumption, and mark appointment **completed**. Vendor revenue accrues via wpay settlement — **not** `ensureVendorEarningsForCompletedBooking`.
 
 **Source of truth:**
 
@@ -344,12 +341,13 @@ payableAmount          = max(0.01, billBase - discountAmount)
 | Pay Bill paid | `payments` (`completed`, `payment_source = 'warmpawz_pay'`, `booking_id` set) |
 | Advance consumed | `warmpawz_pay_appointment_credits` row |
 | Visit date | `bookings.booking_date` |
-| Appointment still exists | `bookings` row unchanged (not deleted) |
+| Appointment completed | `bookings.status = 'completed'` (set by Pay Bill verify) |
 
 **On verify success when `payments.booking_id` is set:**
 
 1. Insert `warmpawz_pay_appointment_credits` (idempotent PK on `booking_id`).
-2. **Do not** update `bookings.metadata` or `bookings.status` in MVP.
+2. `dbCompleteWapptBookingAfterPayBill` → `bookings.status = 'completed'`.
+3. **Do not** update `bookings.metadata` or call marketplace earnings helpers.
 
 **Payment lifecycle complete when:**
 

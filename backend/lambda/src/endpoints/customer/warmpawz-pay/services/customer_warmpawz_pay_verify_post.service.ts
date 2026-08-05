@@ -5,6 +5,7 @@ import { verifyWpayRazorpaySignature } from '../../../../utils/wpay-razorpay-ord
 import { dbWpayCompletePayment, dbWpayPaymentByIdForCustomer } from '../repos/wpay-payment.repo';
 import {
   dbConsumeAppointmentCredit,
+  dbCompleteWapptBookingAfterPayBill,
   dbIsAppointmentCreditConsumed,
   dbLoadWapptBookingForPayCredit,
 } from '../repos/wpay-appointment-context.repo';
@@ -195,6 +196,8 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
           paymentId,
           bookingId: creditCheck.bookingId,
         });
+      } else {
+        await dbCompleteWapptBookingAfterPayBill(creditCheck.bookingId);
       }
     }
 

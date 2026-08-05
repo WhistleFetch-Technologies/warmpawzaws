@@ -85,6 +85,8 @@ export async function accrueWpaySettlement(
     ? new Date(payment.completed_at).toISOString().split('T')[0]
     : new Date().toISOString().split('T')[0];
 
+  const bookingId = payment.booking_id ? String(payment.booking_id) : null;
+
   const settlementBreakup = {
     flowType: 'pay_bill',
     quotedAmount,
@@ -115,23 +117,24 @@ export async function accrueWpaySettlement(
      ) VALUES (
        $1::uuid,
        $2::uuid,
-       NULL,
+       $3::uuid,
        'warmpawz_pay',
-       $3,
        $4,
        $5,
+       $6,
        'pending',
-       $6::date,
-       $6::date,
+       $7::date,
+       $7::date,
        ARRAY[$2::uuid],
-       $7::jsonb,
-       $6::date
+       $8::jsonb,
+       $7::date
      )
      ON CONFLICT DO NOTHING
      RETURNING id::text AS id`,
     [
       vendorId,
       payment.id,
+      bookingId,
       payableAmount,
       platformWithholdAmount,
       vendorNetAmount,

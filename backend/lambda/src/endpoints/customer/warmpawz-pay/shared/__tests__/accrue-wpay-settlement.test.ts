@@ -16,6 +16,7 @@ const basePayment: WpayPaymentRow = {
   id: 'pay-1',
   customer_id: 'cust-1',
   vendor_id: 'vendor-1',
+  booking_id: null,
   amount: 900,
   original_amount: 1000,
   discount_amount: 100,
@@ -56,8 +57,25 @@ describe('accrue-wpay-settlement', () => {
     expect(result.settlementId).toBe('settlement-1');
     expect(mockedQuery).toHaveBeenCalledTimes(3);
     const insertArgs = mockedQuery.mock.calls[2]?.[1];
-    expect(insertArgs?.[3]).toBe(45);
-    expect(insertArgs?.[4]).toBe(855);
+    expect(insertArgs?.[2]).toBeNull();
+    expect(insertArgs?.[4]).toBe(45);
+    expect(insertArgs?.[5]).toBe(855);
+  });
+
+  it('passes booking_id into settlement insert for appointment pay', async () => {
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [] } as never)
+      .mockResolvedValueOnce({ rows: [{ platform_withhold_percent: '5' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ id: 'settlement-2' }] } as never);
+
+    const result = await accrueWpaySettlement({
+      ...basePayment,
+      booking_id: 'booking-1',
+    });
+
+    expect(result.inserted).toBe(true);
+    const insertArgs = mockedQuery.mock.calls[2]?.[1];
+    expect(insertArgs?.[2]).toBe('booking-1');
   });
 
   it('is idempotent when settlement already exists', async () => {

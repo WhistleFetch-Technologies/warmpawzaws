@@ -77,6 +77,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       customerId,
       vendorId,
       payableAmount: quote.payableAmount,
+      bookingId: appointmentFeeBookingId,
       quote: {
         originalAmount: quote.originalAmount,
         discountAmount: quote.discountAmount,

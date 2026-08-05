@@ -30,8 +30,8 @@ Both:  S16 smoke → Bindu deploy lambda (S17) → Abhi deploy customer-web (S18
 | Step | Owner | Next pulls | Deliverable | Status |
 |------|-------|------------|-------------|--------|
 | **S13** | **Bindu** | Abhi | Dev RDS check: `1093`, `1094` applied. New migration **only** if schema gap. | pending |
-| **S14** | **Bindu** | Abhi | Backend: active+today eligibility, verify completes booking, `payments.booking_id`, `idempotency_key`, settlement `booking_id`, tests. Build + **push**. | pending |
-| **S15** | **Abhi** | Bindu | Pull S14. Context API cleanup, remove OTP UI, update ADR/plan docs. Build customer-web + **push**. | pending |
+| **S14** | **Bindu** | Abhi | Backend: active+today eligibility, verify completes booking, `payments.booking_id`, `idempotency_key`, settlement `booking_id`, tests. Build + **push**. | done |
+| **S15** | **Abhi** | Bindu | Pull S14. Context API cleanup, remove OTP UI, update ADR/plan docs. Build customer-web + **push**. | done |
 | **S16** | **Both** | — | Dev smoke: walk-in, same-day credit, next-day no credit, forged bookingId | pending |
 | **S17** | **Bindu** | Abhi | `./scripts/deploy-lambda-direct.sh` (dev) | pending |
 | **S18** | **Abhi** | — | `./scripts/deploy-customer-web.sh` (dev) | pending |

@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Calendar, Copy, QrCode } from 'lucide-react';
+import { QrCode } from 'lucide-react';
 import { useWpayVendorId } from '@/lib/warmpawz-pay/use-wpay-vendor-id';
 import {
   fetchWpayAppointmentContext,
   fetchWpayVendorDetail,
   readCustomerPhoneFromStorage,
   type WpayAppointmentContext,
-  type WpayAppointmentContextBooking,
   type WpayVendorDetail,
 } from '@/lib/warmpawz-pay/wpay-api';
 import { previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
@@ -20,80 +19,10 @@ import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryP
 import { StarRating } from '@/components/customer/shared/StarRating';
 
 const QUICK_AMOUNTS = [500, 1000, 1500, 2000];
-const APPOINTMENT_POLL_MS = 4000;
 
 function formatInr(n: number): string {
   const fractionDigits = Number.isInteger(n) ? 0 : 2;
   return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })}`;
-}
-
-function formatAppointmentWhen(booking: WpayAppointmentContextBooking): string {
-  if (booking.bookingDatetime) {
-    try {
-      return new Date(booking.bookingDatetime).toLocaleString('en-IN', {
-        day: 'numeric',
-        month: 'short',
-        hour: 'numeric',
-        minute: '2-digit',
-      });
-    } catch {
-      /* fall through */
-    }
-  }
-  const parts = [booking.bookingDate, booking.bookingTime].filter(Boolean);
-  return parts.length ? parts.join(' · ') : 'Scheduled appointment';
-}
-
-function WpayAppointmentOtpCard({ booking }: { booking: WpayAppointmentContextBooking }) {
-  const displayOtp = booking.completionOtp || booking.otpCode;
-  const [copied, setCopied] = useState(false);
-
-  const onCopy = useCallback(async () => {
-    if (!displayOtp) return;
-    try {
-      await navigator.clipboard.writeText(displayOtp);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* ignore */
-    }
-  }, [displayOtp]);
-
-  return (
-    <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
-      <div className="flex items-start gap-3">
-        <div className="rounded-lg bg-white p-2 text-[#FF6B00]">
-          <Calendar className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-900">{booking.serviceName}</p>
-          <p className="mt-0.5 text-xs text-gray-600">{formatAppointmentWhen(booking)}</p>
-          <p className="mt-1 text-xs text-gray-500">
-            Show this OTP to the vendor to complete your appointment before paying the bill.
-          </p>
-        </div>
-      </div>
-      {displayOtp ? (
-        <div className="mt-3 rounded-lg bg-white p-3 text-center">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Your OTP</p>
-          <p className="mt-1 text-2xl font-bold tracking-[0.2em] text-gray-900">{displayOtp}</p>
-          <button
-            type="button"
-            onClick={() => void onCopy()}
-            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#FF6B00]"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            {copied ? 'Copied' : 'Copy OTP'}
-          </button>
-        </div>
-      ) : (
-        <p className="mt-3 text-xs text-amber-800">OTP will appear when your appointment is ready.</p>
-      )}
-      <p className="mt-2 text-xs text-amber-800">
-        Waiting for vendor to complete your appointment… This screen updates automatically.
-      </p>
-    </div>
-  );
 }
 
 export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
@@ -140,16 +69,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     void refreshAppointmentContext();
   }, [refreshAppointmentContext]);
 
-  const openAppointment = appointmentContext?.openAppointment ?? null;
   const creditEligibleBooking = appointmentContext?.creditEligibleBooking ?? null;
-
-  useEffect(() => {
-    if (!openAppointment || creditEligibleBooking) return;
-    const id = window.setInterval(() => {
-      void refreshAppointmentContext();
-    }, APPOINTMENT_POLL_MS);
-    return () => window.clearInterval(id);
-  }, [openAppointment, creditEligibleBooking, refreshAppointmentContext]);
 
   const billAmount = useMemo(() => {
     const n = parseFloat(amountInput.replace(/,/g, ''));
@@ -171,13 +91,9 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
   const onGetDiscount = useCallback(() => {
     if (billAmount <= 0) return;
-    if (openAppointment && !creditEligibleBooking) {
-      setPayError('Please complete your appointment with the vendor first (OTP).');
-      return;
-    }
     setPayError(null);
     setQuoteReady(true);
-  }, [billAmount, openAppointment, creditEligibleBooking]);
+  }, [billAmount]);
 
   const onProceedToPay = useCallback(async () => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
@@ -290,13 +206,11 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
           </div>
 
           <div className="space-y-4">
-            {openAppointment ? <WpayAppointmentOtpCard booking={openAppointment} /> : null}
-
-            {creditEligibleBooking && !openAppointment ? (
+            {creditEligibleBooking ? (
               <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-900">
-                <p className="font-semibold">Appointment completed</p>
+                <p className="font-semibold">Appointment found</p>
                 <p className="mt-1 text-xs text-green-800">
-                  {formatInr(creditEligibleBooking.appointmentFee)} appointment fee will be credited to your bill.
+                  {formatInr(creditEligibleBooking.appointmentFee)} appointment fee will be deducted from your bill.
                 </p>
               </div>
             ) : null}

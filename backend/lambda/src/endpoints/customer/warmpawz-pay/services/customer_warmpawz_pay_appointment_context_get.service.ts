@@ -1,9 +1,6 @@
 import type { Context } from 'hono';
 import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
-import {
-  dbFindCreditEligibleWapptBookingForPay,
-  dbFindOpenWapptBookingForPay,
-} from '../repos/wpay-appointment-context.repo';
+import { dbFindCreditEligibleWapptBookingForPay } from '../repos/wpay-appointment-context.repo';
 import { mapWpayAppointmentContextBooking } from '../shared/wpay-appointment-credit';
 
 const UUID_RE =
@@ -26,18 +23,13 @@ export async function executeCustomerWarmpawzPayAppointmentContextGet(c: Context
       return c.json({ success: false, error: 'Customer not found' }, 404);
     }
 
-    const openRow = await dbFindOpenWapptBookingForPay(customerId, vendorId);
-    const creditRow = openRow
-      ? null
-      : await dbFindCreditEligibleWapptBookingForPay(customerId, vendorId);
-
-    const openAppointment = openRow ? mapWpayAppointmentContextBooking(openRow) : null;
+    const creditRow = await dbFindCreditEligibleWapptBookingForPay(customerId, vendorId);
     const creditEligibleBooking = creditRow ? mapWpayAppointmentContextBooking(creditRow) : null;
 
     return c.json({
       success: true,
-      hasOpenAppointment: Boolean(openAppointment),
-      openAppointment,
+      hasOpenAppointment: false,
+      openAppointment: null,
       creditEligibleBooking,
     });
   } catch (error: unknown) {

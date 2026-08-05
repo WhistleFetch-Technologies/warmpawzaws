@@ -1,4 +1,5 @@
 import {
+  assertBookingEligibleForPayCredit,
   mapWpayAppointmentContextBooking,
   resolveWapptAppointmentFeeCredit,
   resolveWapptAppointmentFeeFromBooking,
@@ -9,16 +10,20 @@ jest.mock('../../../../../lib/services/refundable-base', () => ({
   hasCustomerPaidCapture: jest.fn().mockResolvedValue(true),
 }));
 
+jest.mock('../../../../../utils/ist-scheduling', () => ({
+  ymdInIst: jest.fn().mockReturnValue('2026-08-05'),
+}));
+
 const { hasCustomerPaidCapture } = jest.requireMock('../../../../../lib/services/refundable-base');
 
 const baseRow: WpayWapptBookingContextRow = {
   id: 'booking-1',
   vendor_id: 'vendor-1',
   customer_id: 'cust-1',
-  status: 'completed',
-  booking_date: '2026-08-04',
+  status: 'confirmed',
+  booking_date: '2026-08-05',
   booking_time: '10:00',
-  booking_datetime: '2026-08-04T10:00:00.000Z',
+  booking_datetime: '2026-08-05T10:00:00.000Z',
   service_type: 'at_center',
   service_category: 'vet',
   commerce_mode: 'warmpawz_appointments',
@@ -26,7 +31,7 @@ const baseRow: WpayWapptBookingContextRow = {
   payment_status: 'paid',
   otp_code: '123456',
   completion_otp: null,
-  otp_verified: true,
+  otp_verified: false,
   business_name: 'Happy Paws',
   owner_name: 'Dr Vet',
 };
@@ -37,22 +42,19 @@ describe('wpay-appointment-credit', () => {
     hasCustomerPaidCapture.mockResolvedValue(true);
   });
 
-  it('maps booking context for OTP display', () => {
-    const mapped = mapWpayAppointmentContextBooking({
-      ...baseRow,
-      status: 'confirmed',
-    });
+  it('maps booking context with creditEligible for active same-day booking', () => {
+    const mapped = mapWpayAppointmentContextBooking(baseRow);
     expect(mapped.bookingId).toBe('booking-1');
     expect(mapped.serviceName).toBe('Appointment');
     expect(mapped.otpCode).toBe('123456');
-    expect(mapped.creditEligible).toBe(false);
+    expect(mapped.creditEligible).toBe(true);
   });
 
   it('resolves appointment fee from booking total', () => {
     expect(resolveWapptAppointmentFeeFromBooking(baseRow)).toBe(200);
   });
 
-  it('allows credit for completed paid booking', async () => {
+  it('allows credit for active same-day paid booking', async () => {
     const result = await resolveWapptAppointmentFeeCredit({
       booking: baseRow,
       creditAlreadyConsumed: false,
@@ -60,9 +62,18 @@ describe('wpay-appointment-credit', () => {
     expect(result).toEqual({ credit: 200 });
   });
 
-  it('rejects credit when booking not completed', async () => {
+  it('rejects credit when booking date is not today', async () => {
     const result = await resolveWapptAppointmentFeeCredit({
-      booking: { ...baseRow, status: 'confirmed' },
+      booking: { ...baseRow, booking_date: '2026-08-04' },
+      creditAlreadyConsumed: false,
+    });
+    expect(result.credit).toBe(0);
+    expect(result.status).toBe(409);
+  });
+
+  it('rejects credit when booking is cancelled', async () => {
+    const result = await resolveWapptAppointmentFeeCredit({
+      booking: { ...baseRow, status: 'cancelled' },
       creditAlreadyConsumed: false,
     });
     expect(result.credit).toBe(0);
@@ -76,5 +87,9 @@ describe('wpay-appointment-credit', () => {
     });
     expect(result.credit).toBe(0);
     expect(result.status).toBe(409);
+  });
+
+  it('assertBookingEligibleForPayCredit passes for active same-day booking', () => {
+    expect(assertBookingEligibleForPayCredit(baseRow)).toEqual({ ok: true });
   });
 });

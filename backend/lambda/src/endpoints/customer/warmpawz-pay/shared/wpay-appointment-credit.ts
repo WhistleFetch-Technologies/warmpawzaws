@@ -1,9 +1,41 @@
 import { hasCustomerPaidCapture } from '../../../../lib/services/refundable-base';
 import { resolveCustomerBookingServiceDisplayName } from '../../../../utils/customer-booking-display-name';
+import { ymdInIst } from '../../../../utils/ist-scheduling';
 import type { WpayWapptBookingContextRow } from '../repos/wpay-appointment-context.repo';
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+const INACTIVE_PAY_CREDIT_STATUSES = new Set(['cancelled', 'completed', 'refunded']);
+
+export function isWapptBookingActiveForPayCredit(status: string | null | undefined): boolean {
+  const key = String(status ?? '').toLowerCase();
+  return key.length > 0 && !INACTIVE_PAY_CREDIT_STATUSES.has(key);
+}
+
+export function assertBookingEligibleForPayCredit(
+  booking: WpayWapptBookingContextRow,
+): { ok: true } | { ok: false; error: string; status: number } {
+  const today = ymdInIst();
+  const bookingDate = String(booking.booking_date ?? '').trim();
+  if (bookingDate !== today) {
+    return {
+      ok: false,
+      error: 'Appointment fee credit is only available on your appointment date',
+      status: 409,
+    };
+  }
+
+  if (!isWapptBookingActiveForPayCredit(booking.status)) {
+    return {
+      ok: false,
+      error: 'This appointment is not eligible for Pay Bill credit',
+      status: 409,
+    };
+  }
+
+  return { ok: true };
 }
 
 export function resolveWapptAppointmentFeeFromBooking(row: WpayWapptBookingContextRow): number {
@@ -16,6 +48,12 @@ export function mapWpayAppointmentContextBooking(row: WpayWapptBookingContextRow
   const appointmentFee = resolveWapptAppointmentFeeFromBooking(row);
   const otpCode = String(row.otp_code ?? '').trim() || null;
   const completionOtp = String(row.completion_otp ?? '').trim() || otpCode;
+  const today = ymdInIst();
+  const bookingDate = String(row.booking_date ?? '').trim();
+  const creditEligible =
+    appointmentFee > 0 &&
+    bookingDate === today &&
+    isWapptBookingActiveForPayCredit(row.status);
 
   return {
     bookingId: String(row.id),
@@ -29,7 +67,7 @@ export function mapWpayAppointmentContextBooking(row: WpayWapptBookingContextRow
     otpCode,
     completionOtp,
     otpVerified: Boolean(row.otp_verified),
-    creditEligible: String(row.status).toLowerCase() === 'completed' && appointmentFee > 0,
+    creditEligible,
   };
 }
 
@@ -41,13 +79,9 @@ export async function resolveWapptAppointmentFeeCredit(params: {
     return { credit: 0, error: 'Appointment fee credit already used', status: 409 };
   }
 
-  const status = String(params.booking.status ?? '').toLowerCase();
-  if (status !== 'completed') {
-    return {
-      credit: 0,
-      error: 'Complete your appointment with the vendor before applying appointment fee credit',
-      status: 409,
-    };
+  const eligibility = assertBookingEligibleForPayCredit(params.booking);
+  if (!eligibility.ok) {
+    return { credit: 0, error: eligibility.error, status: eligibility.status };
   }
 
   const paid = await hasCustomerPaidCapture(String(params.booking.id), {

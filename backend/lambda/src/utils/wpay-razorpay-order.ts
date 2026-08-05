@@ -1,6 +1,7 @@
-import { createHmac } from 'crypto';
+import { createHmac, createHash } from 'crypto';
 import { insert } from '../database/rds-connection';
 import { getRazorpayConfig, razorpayRequest } from './payments/razorpay-client';
+import { ymdInIst } from './ist-scheduling';
 
 export function verifyWpayRazorpaySignature(
   razorpayOrderId: string,
@@ -17,6 +18,7 @@ export async function createWpayRazorpayOrder(params: {
   customerId: string;
   vendorId: string;
   payableAmount: number;
+  bookingId?: string | null;
   quote: {
     originalAmount: number;
     discountAmount: number;
@@ -32,7 +34,7 @@ export async function createWpayRazorpayOrder(params: {
   keyId: string;
   paymentId: string;
 }> {
-  const { customerId, vendorId, payableAmount, quote } = params;
+  const { customerId, vendorId, payableAmount, bookingId, quote } = params;
   const config = await getRazorpayConfig();
   if (!config?.keyId || !config?.keySecret) {
     throw new Error('Razorpay is not configured');
@@ -64,8 +66,14 @@ export async function createWpayRazorpayOrder(params: {
     throw new Error('Failed to create Razorpay order');
   }
 
+  const idempotencyKey = createHash('sha256')
+    .update(
+      `${customerId}|${vendorId}|${bookingId ?? 'walkin'}|${quote.originalAmount}|${ymdInIst()}`,
+    )
+    .digest('hex');
+
   const payRows = await insert('payments', {
-    booking_id: null,
+    booking_id: bookingId ?? null,
     customer_id: customerId,
     vendor_id: vendorId,
     razorpay_order_id: razorpayOrder.id,
@@ -74,6 +82,7 @@ export async function createWpayRazorpayOrder(params: {
     payment_method: 'razorpay',
     payment_status: 'pending',
     payment_source: 'warmpawz_pay',
+    idempotency_key: idempotencyKey,
     metadata: {
       quotedOriginalAmount: quote.originalAmount,
       quotedDiscountAmount: quote.discountAmount,
