@@ -24,7 +24,14 @@ export function useWapptHubFeaturedVendors(category: string, enabled = true) {
 
   const vendors = useMemo((): BoardingListVendor[] => {
     const filtered = applyWapptHubDiscoveryToProviders(feed.vendors, wapptCategory);
-    const { list } = buildBoardingVendorListFromRows(filtered, 'all');
+    // Ensure hub Featured/Top cards open WarmpawzAppointmentsVendorProfile
+    // (shouldHideDiscoveryPricing / open*Profile gates key off this flag).
+    const stamped = filtered.map((row) => ({
+      ...row,
+      warmpawzAppointments: true,
+      appointmentsMode: true,
+    }));
+    const { list } = buildBoardingVendorListFromRows(stamped, 'all');
     return list;
   }, [feed.vendors, wapptCategory]);
 

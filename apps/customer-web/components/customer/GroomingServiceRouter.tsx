@@ -44,6 +44,7 @@ import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buil
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { mergeWapptServiceTypes } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import {
@@ -133,6 +134,8 @@ function firstGroomingServiceUuid(services: any[]): string | undefined {
 
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('grooming');
+  /** Featured/Top list + profile: same WAPPT source as search when Pay module is capable. */
+  const wapptFeaturedEnabled = canLoadWapptSearchHub('grooming');
   const { problems: bootstrapProblems } = useCategoryBootstrap({
     category: 'grooming',
     roleId: 'groomer',
@@ -153,11 +156,11 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }, [bootstrapProblems]);
 
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_GROOMING);
-  const wapptDiscovery = useWapptHubFeaturedVendors('grooming', wapptHubEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('grooming', wapptFeaturedEnabled);
 
-  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
 
   const {
     data: groomingCenterCount = 0,
@@ -231,7 +234,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           serviceStyle: 'at_center',
           vendorName: v.name,
         }),
-        profileBackScreen: 'wappt-discovery',
+        profileBackScreen: 'grooming',
       });
     },
     [onNavigate],
@@ -253,7 +256,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         type: 'vendor',
       };
       const accountId = pickCustomerVendorAccountId(row) || v.id;
-      if (shouldHideDiscoveryPricing(rawObj)) {
+      if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(rawObj)) {
         onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
           ...buildWarmpawzAppointmentsProfileNav({
             vendorId: accountId,
@@ -261,7 +264,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             serviceStyle: 'at_center',
             vendorName: v.name,
           }),
-          profileBackScreen: 'wappt-discovery',
+          profileBackScreen: 'grooming',
         });
         return;
       }
@@ -274,7 +277,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         vendorData: v.raw,
       });
     },
-    [onNavigate, vendors]
+    [onNavigate, vendors, wapptFeaturedEnabled]
   );
 
   const loadPreviousGroomer = async () => {
@@ -648,7 +651,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     categoryLabelFallback="Grooming"
                     onSelectSlot={(vendor, e) => {
                       if (
-                        wapptHubEnabled ||
+                        wapptFeaturedEnabled ||
                         shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
                       ) {
                         handleWarmpawzBookAppointment(vendor);
@@ -656,9 +659,17 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                       }
                       openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor));
                     }}
-                    onOpenProfile={(e, vendor) =>
-                      openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor))
-                    }
+                    onOpenProfile={(e, vendor) => {
+                      if (
+                        wapptFeaturedEnabled ||
+                        shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                      ) {
+                        e.stopPropagation();
+                        handleWarmpawzBookAppointment(vendor);
+                        return;
+                      }
+                      openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor));
+                    }}
                   />
                 ))
               )}

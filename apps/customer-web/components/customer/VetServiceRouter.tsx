@@ -42,6 +42,7 @@ import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
+import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -106,14 +107,15 @@ function VetHeaderBackground() {
 
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('vet');
+  const wapptFeaturedEnabled = canLoadWapptSearchHub('vet');
   const { problems: bootstrapProblems } = useCategoryBootstrap({ category: 'vet', roleId: 'vet' });
   const legacyProblems = useProblemGridByRole('vet');
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_VET);
-  const wapptDiscovery = useWapptHubFeaturedVendors('vet', wapptHubEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('vet', wapptFeaturedEnabled);
 
-  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
   const [pets, setPets] = useState<any[]>([]);
@@ -381,7 +383,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     const rawVendorId = String(raw.vendorId || raw.vendor_id || '').trim();
     const rawProviderId = String(raw.providerId || raw.provider_id || '').trim();
 
-    if (shouldHideDiscoveryPricing(raw)) {
+    if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(raw)) {
       const vendorId = pickCustomerVendorAccountId(raw) || rawVendorId || v.id;
       handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
         ...buildWarmpawzAppointmentsProfileNav({
@@ -390,7 +392,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           serviceStyle: 'at_center',
           vendorName: v.name,
         }),
-        profileBackScreen: 'wappt-discovery',
+        profileBackScreen: 'vet',
       });
       return;
     }
@@ -431,7 +433,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           serviceStyle: 'at_center',
           vendorName: v.name,
         }),
-        profileBackScreen: 'wappt-discovery',
+        profileBackScreen: 'vet',
       });
     },
     [handleNavigate],
@@ -665,7 +667,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   categoryLabelFallback="Veterinarian"
                   onSelectSlot={(vendor, e) => {
                     if (
-                      wapptHubEnabled ||
+                      wapptFeaturedEnabled ||
                       shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
                     ) {
                       handleWarmpawzBookAppointment(vendor);
@@ -673,9 +675,17 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     }
                     openVetDetails(e, resolveServiceHubVendorProfileKey(vendor));
                   }}
-                  onOpenProfile={(e, vendor) =>
-                    openVetCenterProfile(e, resolveServiceHubVendorProfileKey(vendor))
-                  }
+                  onOpenProfile={(e, vendor) => {
+                    if (
+                      wapptFeaturedEnabled ||
+                      shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                    ) {
+                      e.stopPropagation();
+                      handleWarmpawzBookAppointment(vendor);
+                      return;
+                    }
+                    openVetCenterProfile(e, resolveServiceHubVendorProfileKey(vendor));
+                  }}
                 />
               ))
             ) : (

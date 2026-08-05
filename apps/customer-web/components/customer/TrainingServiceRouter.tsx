@@ -51,6 +51,7 @@ import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -98,6 +99,7 @@ function TrainingHeaderBackground() {
 
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('training');
+  const wapptFeaturedEnabled = canLoadWapptSearchHub('training');
   const wapptTile = buildWapptHubTile('training');
   const { problems: bootstrapProblems } = useCategoryBootstrap({
     category: 'training',
@@ -115,11 +117,11 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     return trainingGoalsLegacy;
   }, [bootstrapProblems, trainingGoalsLegacy]);
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_TRAINING);
-  const wapptDiscovery = useWapptHubFeaturedVendors('training', wapptHubEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('training', wapptFeaturedEnabled);
 
-  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
   const {
     data: trainingCenterCount = 0,
     isLoading: trainingCenterLoading,
@@ -212,7 +214,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           serviceStyle: 'at_center',
           vendorName: v.name,
         }),
-        profileBackScreen: 'wappt-discovery',
+        profileBackScreen: 'training',
       });
     },
     [onNavigate],
@@ -228,7 +230,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       }
       const rawObj = (v.raw ?? {}) as Record<string, unknown>;
       const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
-      if (shouldHideDiscoveryPricing(rawObj)) {
+      if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(rawObj)) {
         onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
           ...buildWarmpawzAppointmentsProfileNav({
             vendorId,
@@ -236,13 +238,13 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             serviceStyle: 'at_center',
             vendorName: v.name,
           }),
-          profileBackScreen: 'wappt-discovery',
+          profileBackScreen: 'training',
         });
         return;
       }
       onNavigate?.('training_center', { embedVendorId: vendorId });
     },
-    [onNavigate, vendors]
+    [onNavigate, vendors, wapptFeaturedEnabled]
   );
 
   const serviceTypes = useMemo(() => {
@@ -570,7 +572,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     categoryLabelFallback="Training"
                     onSelectSlot={(vendor, e) => {
                       if (
-                        wapptHubEnabled ||
+                        wapptFeaturedEnabled ||
                         shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
                       ) {
                         handleWarmpawzBookAppointment(vendor);
@@ -578,9 +580,17 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                       }
                       openTrainerDetails(e, resolveServiceHubVendorProfileKey(vendor));
                     }}
-                    onOpenProfile={(e, vendor) =>
-                      openTrainerDetails(e, resolveServiceHubVendorProfileKey(vendor))
-                    }
+                    onOpenProfile={(e, vendor) => {
+                      if (
+                        wapptFeaturedEnabled ||
+                        shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                      ) {
+                        e.stopPropagation();
+                        handleWarmpawzBookAppointment(vendor);
+                        return;
+                      }
+                      openTrainerDetails(e, resolveServiceHubVendorProfileKey(vendor));
+                    }}
                   />
                 ))
               )}

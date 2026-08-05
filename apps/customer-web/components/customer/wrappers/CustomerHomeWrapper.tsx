@@ -3903,6 +3903,12 @@ export function CustomerHomeWrapper({
             setGroomingCenterProfileVendorId(String(data.vendorId));
             navigateToScreen('grooming_center');
           }
+        } else if (screen === 'wappt-vendor-profile') {
+          handleWapptShellNavigate(
+            screen,
+            (data ?? {}) as Record<string, unknown>,
+            'grooming',
+          );
         } else {
           if (process.env.NODE_ENV === 'development') {
             console.warn('🟡 [CustomerHomeWrapper] Unhandled grooming navigation:', screen, data);
@@ -3977,6 +3983,12 @@ export function CustomerHomeWrapper({
           openPurchasePackageScreen(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null, {
             mergeWalkerData: true,
           });
+        } else if (screen === 'wappt-vendor-profile') {
+          handleWapptShellNavigate(
+            screen,
+            (data ?? {}) as Record<string, unknown>,
+            'training',
+          );
         } else {
           if (process.env.NODE_ENV === 'development') {
             console.warn('🟡 [CustomerHomeWrapper] Unhandled training navigation:', screen, data);
@@ -4029,6 +4041,8 @@ export function CustomerHomeWrapper({
               serviceType: String(navData.serviceType ?? 'behaviorist'),
             });
             navigateToScreen('create-booking');
+          } else if (screen === 'wappt-vendor-profile') {
+            handleWapptShellNavigate(screen, navData, 'behaviorist');
           } else {
             navigateToScreen(screen as ScreenType);
           }
@@ -4083,6 +4097,12 @@ export function CustomerHomeWrapper({
             bid,
             normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'all')),
           );
+        } else if (screen === 'wappt-vendor-profile') {
+          handleWapptShellNavigate(
+            screen,
+            (data ?? {}) as Record<string, unknown>,
+            'boarding',
+          );
         } else {
           navigateToScreen(screen as ScreenType);
         }
@@ -4129,6 +4149,12 @@ export function CustomerHomeWrapper({
             bid,
             normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'all')),
           );
+        } else if (screen === 'wappt-vendor-profile') {
+          handleWapptShellNavigate(
+            screen,
+            (data ?? {}) as Record<string, unknown>,
+            'boarding',
+          );
         } else if (screen) {
           navigateToScreen(screen as ScreenType);
         } else {
@@ -4173,6 +4199,12 @@ export function CustomerHomeWrapper({
               typeof data?.sittingOptionId === 'string' ? data.sittingOptionId : null
             );
             navigateToScreen('pet-sitter-vendors');
+          } else if (screen === 'wappt-vendor-profile') {
+            handleWapptShellNavigate(
+              screen,
+              (data ?? {}) as Record<string, unknown>,
+              'sitting',
+            );
           } else if (screen) {
             navigateToScreen(screen as ScreenType);
           } else {
