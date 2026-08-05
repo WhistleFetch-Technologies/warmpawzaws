@@ -117,6 +117,7 @@ function BookingGroomingContent() {
       vendorName={intent.vendorName}
       price={intent.price}
       duration={intent.duration}
+      appointmentsMode={intent.appointmentsMode === true}
       onBack={handleBack}
       onNavigate={handleNavigate}
       onViewBooking={handleViewBooking}

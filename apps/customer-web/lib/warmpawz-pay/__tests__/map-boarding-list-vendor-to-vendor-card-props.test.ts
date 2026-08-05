@@ -2,11 +2,8 @@ import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 import {
   boardingListVendorToDiscoverySource,
   mapBoardingListVendorToVendorCardProps,
-  mapWalkerRowToVendorCardProps,
   resolveBoardingListVendorAddress,
   resolveBoardingListVendorSubtitle,
-  resolveWalkerRowAddress,
-  resolveWalkerRowName,
 } from '../map-boarding-list-vendor-to-vendor-card-props';
 
 const mockRouter = {} as import('next/dist/shared/lib/app-router-context.shared-runtime').AppRouterInstance;
@@ -101,35 +98,5 @@ describe('mapBoardingListVendorToVendorCardProps', () => {
     expect(props.primaryAction?.subtitle).toBe('Reserve your slot');
     expect(props.secondaryAction?.label).toBe('Pay with Warmpawz');
     expect(props.secondaryAction?.subtitle).toBe('Get discount');
-  });
-});
-
-describe('mapWalkerRowToVendorCardProps', () => {
-  it('maps walker rows to rich card props', () => {
-    const walker = {
-      id: 'walker-1',
-      vendorId: 'vendor-w-1',
-      name: 'Ravi Walker',
-      address: 'Indiranagar, Bengaluru',
-      rating: 4.9,
-      reviewCount: 8,
-      isVerified: true,
-      nextAvailableSlot: 'Today 5:00 PM',
-    };
-
-    expect(resolveWalkerRowName(walker)).toBe('Ravi Walker');
-    expect(resolveWalkerRowAddress(walker)).toBe('Indiranagar, Bengaluru');
-
-    const props = mapWalkerRowToVendorCardProps({
-      walker,
-      router: mockRouter,
-      onSelectSlot: jest.fn(),
-      onOpenProfile: jest.fn(),
-    });
-
-    expect(props.name).toBe('Ravi Walker');
-    expect(props.subtitle).toBe('Pet Walker');
-    expect(props.primaryAction?.label).toBe('Select Slot for Appointment');
-    expect(props.secondaryAction?.label).toBe('Pay with Warmpawz');
   });
 });

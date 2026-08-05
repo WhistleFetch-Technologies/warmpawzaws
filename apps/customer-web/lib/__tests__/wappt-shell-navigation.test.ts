@@ -56,6 +56,33 @@ describe('handleWapptShellScreenNavigate', () => {
     expect(actions.navigateToScreen).toHaveBeenCalledWith('walker-booking');
   });
 
+  it('opens walker wappt-vendor-profile with profileBackScreen walker (Available Walkers hub)', () => {
+    const actions = createActions();
+    handleWapptShellScreenNavigate(
+      'walker',
+      'wappt-vendor-profile',
+      {
+        vendorId: 'w-avail-1',
+        vendorName: 'private walker',
+        serviceStyle: 'at_home',
+        profileBackScreen: 'walker',
+      },
+      actions,
+    );
+    expect(actions.setWapptProfileData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vendorId: 'w-avail-1',
+        category: 'walker',
+        serviceStyle: 'at_home',
+        profileBackScreen: 'walker',
+      }),
+    );
+    expect(actions.navigateToScreen).toHaveBeenCalledWith(
+      'wappt-vendor-profile',
+      'vendor:w-avail-1',
+    );
+  });
+
   it('routes boarding booking through boarding opener', () => {
     const actions = createActions();
     handleWapptShellScreenNavigate(

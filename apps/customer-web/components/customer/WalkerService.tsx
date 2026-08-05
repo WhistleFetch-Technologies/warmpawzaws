@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Dog,
@@ -37,7 +38,9 @@ import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import { WalkerHubVendorCard } from './shared/WalkerHubVendorCard';
+import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
+import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import {
   fetchWalkerVendorCatalogMerged,
   firstServiceIdFromServicePackageRow,
@@ -231,6 +234,45 @@ function resolveWalkerVendorId(walker: any): string | undefined {
   return s || undefined;
 }
 
+function resolveWalkerRowDisplayName(walker: Record<string, unknown>): string {
+  return String(walker.name || walker.businessName || walker.business_name || 'Pet Walker').trim();
+}
+
+function resolveWalkerRowAddress(walker: Record<string, unknown>): string {
+  const loc = walker.location as { address?: string } | undefined;
+  const raw = String(loc?.address || walker.address || walker.city || '').trim();
+  return raw || 'Location on booking';
+}
+
+/** Map hub/discover walker rows into WAPPT discovery card source (same as Book Appointment list). */
+function walkerRowToWapptCardSource(walker: Record<string, unknown>) {
+  const vendorId = resolveWalkerVendorId(walker) || String(walker.id || walker.vendorId || '').trim();
+  const reviewCount =
+    Number(walker.reviewCount ?? walker.reviewsCount ?? walker.totalReviews ?? 0) || 0;
+  const ratingRaw = walker.rating != null ? Number(walker.rating) : NaN;
+  const rating = Number.isFinite(ratingRaw) && ratingRaw > 0 ? ratingRaw : undefined;
+  const photo =
+    (typeof walker.photo === 'string' && walker.photo) ||
+    (typeof walker.photoUrl === 'string' && walker.photoUrl) ||
+    (typeof walker.profileImage === 'string' && walker.profileImage) ||
+    (typeof walker.profile_image === 'string' && walker.profile_image) ||
+    undefined;
+  const nextSlot = resolveNextAvailableLabel(walker);
+
+  return {
+    name: resolveWalkerRowDisplayName(walker),
+    photo,
+    isVerified: Boolean(walker.isVerified),
+    rating: rating ?? 0,
+    reviewCount,
+    nextAvailableSlot: nextSlot ?? undefined,
+    providerType: 'vendor' as const,
+    city: typeof walker.city === 'string' ? walker.city : undefined,
+    vendorId: vendorId || undefined,
+    providerId: vendorId || undefined,
+  };
+}
+
 function walkerRowMatchesQuery(w: Record<string, unknown>, rawQuery: string): boolean {
   const needle = rawQuery.trim().toLowerCase();
   if (!needle) return true;
@@ -242,6 +284,7 @@ function walkerRowMatchesQuery(w: Record<string, unknown>, rawQuery: string): bo
 }
 
 export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }: WalkerServiceProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [walkers, setWalkers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -522,8 +565,8 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           category: 'walker',
           serviceStyle: 'at_home',
           vendorName: walker.name || walker.businessName || 'Walker',
+          profileBackScreen: 'walker',
         }),
-        profileBackScreen: 'wappt-discovery',
       });
       return;
     }
@@ -685,8 +728,8 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           category: 'walker',
           serviceStyle: 'at_home',
           vendorName: walker.name || walker.businessName || 'Walker',
+          profileBackScreen: 'walker',
         }),
-        profileBackScreen: 'wappt-discovery',
       });
       return;
     }
@@ -1065,14 +1108,25 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
             </Card>
           ) : (
             <div className="space-y-4">
-              {(searchQuery.trim() ? walkersForList : walkersForList.slice(0, 3)).map((walker, index) => (
-                <WalkerHubVendorCard
-                  key={walker.id || walker.vendorId || index}
-                  walker={walker as Record<string, unknown>}
-                  onSelectSlot={(row) => handleWalkerSelect(row)}
-                  onOpenProfile={(e, row) => handleOpenWalkerProfile(row, e)}
-                />
-              ))}
+              {(searchQuery.trim() ? walkersForList : walkersForList.slice(0, 3)).map((walker, index) => {
+                const row = walker as Record<string, unknown>;
+                const provider = walkerRowToWapptCardSource(row);
+                return (
+                  <WarmpawzPayVendorCard
+                    key={String(provider.vendorId || walker.id || index)}
+                    {...buildWapptDiscoveryVendorCardProps({
+                      provider,
+                      subtitle: 'Pet Walker',
+                      address: resolveWalkerRowAddress(row),
+                      category: 'walker',
+                      serviceKey: 'walker',
+                      onPrimary: () => handleWalkerSelect(row),
+                      onProfileClick: (e) => handleOpenWalkerProfile(row, e),
+                      router,
+                    })}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

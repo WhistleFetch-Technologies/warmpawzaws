@@ -116,6 +116,7 @@ function BookingWalkerContent() {
       serviceStyle={intent.serviceStyle || 'at_home'}
       price={intent.price}
       duration={intent.duration}
+      appointmentsMode={intent.appointmentsMode === true}
       onBack={handleBack}
       onNavigate={handleNavigate}
       onViewBooking={handleViewBooking}

@@ -34,7 +34,7 @@ import {
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
-import { useProblemGridByRole } from './useProblemGridByRole';
+import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { HUB_DISCOVERY_GROOMING } from '@/lib/service-hub-discovery-config';
 import {
   type BoardingListVendor,
@@ -44,6 +44,7 @@ import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buil
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { mergeWapptServiceTypes } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import {
@@ -158,29 +159,34 @@ function resolveGroomingNeedCardVisual(specId: string, index: number) {
 
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('grooming');
-  const groomingProblems = useProblemGridByRole('groomer');
+  /** Featured/Top list + profile: same WAPPT source as search when Pay module is capable. */
+  const wapptFeaturedEnabled = canLoadWapptSearchHub('grooming');
+  const { problems: bootstrapProblems } = useCategoryBootstrap({
+    category: 'grooming',
+    roleId: 'groomer',
+  });
   const groomingNeedCards = useMemo(() => {
-    const tiles = groomingProblems.filter((p) => p.id !== 'view_all');
+    const tiles = bootstrapProblems.filter((p) => p.id !== 'view_all');
     if (tiles.length === 0) return GROOMING_NEED_CARDS;
     return tiles.map((p, i) => {
       const fallback = resolveGroomingNeedCardVisual(p.id, i);
       return {
         id: p.id,
-        name: p.name,
+        name: p.title,
         image: fallback.image,
         Icon: fallback.Icon,
         iconColor: fallback.iconColor,
         iconBg: fallback.iconBg,
       };
     });
-  }, [groomingProblems]);
+  }, [bootstrapProblems]);
 
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_GROOMING);
-  const wapptDiscovery = useWapptHubFeaturedVendors('grooming', wapptHubEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('grooming', wapptFeaturedEnabled);
 
-  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
 
   const {
     data: groomingCenterCount = 0,
@@ -254,7 +260,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           serviceStyle: 'at_center',
           vendorName: v.name,
         }),
-        profileBackScreen: 'wappt-discovery',
+        profileBackScreen: 'grooming',
       });
     },
     [onNavigate],
@@ -276,7 +282,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         type: 'vendor',
       };
       const accountId = pickCustomerVendorAccountId(row) || v.id;
-      if (shouldHideDiscoveryPricing(rawObj)) {
+      if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(rawObj)) {
         onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
           ...buildWarmpawzAppointmentsProfileNav({
             vendorId: accountId,
@@ -284,7 +290,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             serviceStyle: 'at_center',
             vendorName: v.name,
           }),
-          profileBackScreen: 'wappt-discovery',
+          profileBackScreen: 'grooming',
         });
         return;
       }
@@ -297,7 +303,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         vendorData: v.raw,
       });
     },
-    [onNavigate, vendors]
+    [onNavigate, vendors, wapptFeaturedEnabled]
   );
 
   const loadPreviousGroomer = async () => {
@@ -671,7 +677,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     categoryLabelFallback="Grooming"
                     onSelectSlot={(vendor, e) => {
                       if (
-                        wapptHubEnabled ||
+                        wapptFeaturedEnabled ||
                         shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
                       ) {
                         handleWarmpawzBookAppointment(vendor);
@@ -679,9 +685,17 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                       }
                       openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor));
                     }}
-                    onOpenProfile={(e, vendor) =>
-                      openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor))
-                    }
+                    onOpenProfile={(e, vendor) => {
+                      if (
+                        wapptFeaturedEnabled ||
+                        shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                      ) {
+                        e.stopPropagation();
+                        handleWarmpawzBookAppointment(vendor);
+                        return;
+                      }
+                      openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor));
+                    }}
                   />
                 ))
               )}

@@ -110,7 +110,8 @@ Example (discovery appointments):
 | Vet clinic list | `components/customer/vet/ClinicListView.tsx` | `buildWapptDiscoveryVendorCardProps` / `mapDiscoveryProviderToVendorCardProps` | Clinic discovery rows |
 | Home service providers | `components/customer/home-services/HomeServiceProviderListView.tsx` | `mapDiscoveryProviderToVendorCardProps` | Provider list rows |
 | Warmpawz Appointments list | `components/customer/warmpawz-appointments/WarmpawzAppointmentsVendorList.tsx` | `mapDiscoveryProviderToVendorCardProps` | Category vendor list |
-| Service hubs + list views | `ServiceHubVendorCard`, `WalkerHubVendorCard` | `map-boarding-list-vendor-to-vendor-card-props` | Featured vets/groomers/trainers/walkers/stays/sitters |
+| Service hubs + list views | `ServiceHubVendorCard` | `map-boarding-list-vendor-to-vendor-card-props` | Featured vets/groomers/trainers/stays/sitters |
+| Walker Available Walkers | `WalkerService` | `buildWapptDiscoveryVendorCardProps` | Same card path as Book Appointment discovery |
 | Search vendor cards | `SearchHubVendorCard` via `app/search/page.tsx` | `map-boarding-list-vendor-to-vendor-card-props` | GET /search + WAPPT merge rows |
 | Warmpawz Pay Hub | `app/warmpawz-pay/page.tsx` | `mapWpayVendorCardToProps` | Vendor list rows |
 

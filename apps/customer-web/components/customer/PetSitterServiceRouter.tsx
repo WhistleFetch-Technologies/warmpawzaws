@@ -32,6 +32,7 @@ import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, 
 import { shouldHideDiscoveryPricing } from "@/lib/wappt-discovery-ui";
 import { buildWapptHubTile } from "@/lib/wappt-hub-registry";
 import { useWapptHubFeaturedVendors } from "@/hooks/useWapptHubFeaturedVendors";
+import { canLoadWapptSearchHub } from "@/lib/search-wappt-vendors";
 import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
 import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
 import {
@@ -218,14 +219,15 @@ export function PetSitterServiceRouter({
   initialSittingOptionId,
 }: PetSitterServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('sitting');
+  const wapptFeaturedEnabled = canLoadWapptSearchHub('sitting');
   const wapptTile = buildWapptHubTile('sitting');
   const loadSitterRows = useCallback(() => fetchPetSitterHubRows(phone), [phone]);
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_SITTING, loadSitterRows);
-  const wapptDiscovery = useWapptHubFeaturedVendors('sitting', wapptHubEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('sitting', wapptFeaturedEnabled);
 
-  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
   const [previousSitter, setPreviousSitter] = useState<any>(null);
   /** Carried into `pet-sitter-booking` so the sitting flow can pre-match the vendor’s service row. */
   const [selectedSittingOption, setSelectedSittingOption] = useState<string | null>(null);
@@ -301,7 +303,7 @@ export function PetSitterServiceRouter({
           serviceStyle: 'at_home',
           vendorName: v.name,
         }),
-        profileBackScreen: 'wappt-discovery',
+        profileBackScreen: 'pet-sitter',
       });
     },
     [onNavigate],
@@ -321,7 +323,7 @@ export function PetSitterServiceRouter({
       type: "vendor",
     };
     const vid = pickCustomerVendorAccountId(row) || v.id;
-    if (shouldHideDiscoveryPricing(row)) {
+    if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(row)) {
       onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId: vid,
@@ -329,7 +331,7 @@ export function PetSitterServiceRouter({
           serviceStyle: 'at_home',
           vendorName: v.name,
         }),
-        profileBackScreen: 'wappt-discovery',
+        profileBackScreen: 'pet-sitter',
       });
       return;
     }
@@ -642,7 +644,7 @@ export function PetSitterServiceRouter({
                       categoryLabelFallback="Sitting"
                       onSelectSlot={(vendor, e) => {
                         if (
-                          wapptHubEnabled ||
+                          wapptFeaturedEnabled ||
                           shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
                         ) {
                           handleWarmpawzBookAppointment(vendor);
@@ -650,9 +652,17 @@ export function PetSitterServiceRouter({
                         }
                         openSitterVendorProfile(e, resolveServiceHubVendorProfileKey(vendor));
                       }}
-                      onOpenProfile={(e, vendor) =>
-                        openSitterVendorProfile(e, resolveServiceHubVendorProfileKey(vendor))
-                      }
+                      onOpenProfile={(e, vendor) => {
+                        if (
+                          wapptFeaturedEnabled ||
+                          shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                        ) {
+                          e.stopPropagation();
+                          handleWarmpawzBookAppointment(vendor);
+                          return;
+                        }
+                        openSitterVendorProfile(e, resolveServiceHubVendorProfileKey(vendor));
+                      }}
                     />
                   ))
                 )}

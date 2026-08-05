@@ -18,7 +18,7 @@ import {
   markSkipPackageAutoRedirect,
   stripPackagePurchaseOverlayFields,
 } from '@/lib/vendor-package-purchase-nav';
-import { pickWalkerVendorId } from '@warmpawz/shared-types';
+import { pickWalkerVendorId, pickCustomerVendorAccountId, firstNonEmptyString } from '@warmpawz/shared-types';
 import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { apiClient } from '@/lib/api-client';
@@ -121,7 +121,6 @@ import {
   getWebCustomerVendorStyleListingNavTarget,
   normalizeLegacyVetVendorProfilePayload,
 } from '@/lib/customer-vendor-profile-navigation';
-import { pickCustomerVendorAccountId, firstNonEmptyString } from '@warmpawz/shared-types';
 import { useNotificationService } from '../useNotificationService';
 import { EcommerceRouteRedirect } from '@/components/ecommerce/EcommerceRouteRedirect';
 import { ProfileOrdersRedirect } from '@/components/ecommerce/ProfileOrdersRedirect';
@@ -2132,6 +2131,11 @@ export function CustomerHomeWrapper({
       openWapptDiscovery(String(data?.category || 'walker'), data);
       return;
     }
+    // Available Walkers / WAPPT hub: open shared appointments profile (same as Book Appointment list).
+    if (screen === 'wappt-vendor-profile') {
+      handleWapptShellNavigate(screen, data as Record<string, unknown> | undefined, 'walker');
+      return;
+    }
     const walkerPayload =
       data?.appointmentsMode === true ? buildWapptShellBookingPayload('walker', data) : data;
     setWalkerServiceData(walkerPayload);
@@ -3947,6 +3951,12 @@ export function CustomerHomeWrapper({
             setGroomingCenterProfileVendorId(String(data.vendorId));
             navigateToScreen('grooming_center');
           }
+        } else if (screen === 'wappt-vendor-profile') {
+          handleWapptShellNavigate(
+            screen,
+            (data ?? {}) as Record<string, unknown>,
+            'grooming',
+          );
         } else {
           if (process.env.NODE_ENV === 'development') {
             console.warn('🟡 [CustomerHomeWrapper] Unhandled grooming navigation:', screen, data);
@@ -4021,6 +4031,12 @@ export function CustomerHomeWrapper({
           openPurchasePackageScreen(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null, {
             mergeWalkerData: true,
           });
+        } else if (screen === 'wappt-vendor-profile') {
+          handleWapptShellNavigate(
+            screen,
+            (data ?? {}) as Record<string, unknown>,
+            'training',
+          );
         } else {
           if (process.env.NODE_ENV === 'development') {
             console.warn('🟡 [CustomerHomeWrapper] Unhandled training navigation:', screen, data);
@@ -4073,6 +4089,8 @@ export function CustomerHomeWrapper({
               serviceType: String(navData.serviceType ?? 'behaviorist'),
             });
             navigateToScreen('create-booking');
+          } else if (screen === 'wappt-vendor-profile') {
+            handleWapptShellNavigate(screen, navData, 'behaviorist');
           } else {
             navigateToScreen(screen as ScreenType);
           }
@@ -4127,6 +4145,12 @@ export function CustomerHomeWrapper({
             bid,
             normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'all')),
           );
+        } else if (screen === 'wappt-vendor-profile') {
+          handleWapptShellNavigate(
+            screen,
+            (data ?? {}) as Record<string, unknown>,
+            'boarding',
+          );
         } else {
           navigateToScreen(screen as ScreenType);
         }
@@ -4173,6 +4197,12 @@ export function CustomerHomeWrapper({
             bid,
             normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'all')),
           );
+        } else if (screen === 'wappt-vendor-profile') {
+          handleWapptShellNavigate(
+            screen,
+            (data ?? {}) as Record<string, unknown>,
+            'boarding',
+          );
         } else if (screen) {
           navigateToScreen(screen as ScreenType);
         } else {
@@ -4217,6 +4247,12 @@ export function CustomerHomeWrapper({
               typeof data?.sittingOptionId === 'string' ? data.sittingOptionId : null
             );
             navigateToScreen('pet-sitter-vendors');
+          } else if (screen === 'wappt-vendor-profile') {
+            handleWapptShellNavigate(
+              screen,
+              (data ?? {}) as Record<string, unknown>,
+              'sitting',
+            );
           } else if (screen) {
             navigateToScreen(screen as ScreenType);
           } else {

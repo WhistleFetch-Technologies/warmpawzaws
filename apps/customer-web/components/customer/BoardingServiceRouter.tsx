@@ -47,6 +47,7 @@ import {
 } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 const BOARDING_IMG = '/images/home/Boarding';
@@ -284,13 +285,14 @@ function navigateToBoardingVendorList(
 export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: BoardingServiceRouterProps) {
   const router = useRouter();
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('boarding');
+  const wapptFeaturedEnabled = canLoadWapptSearchHub('boarding');
   const wapptTile = buildWapptHubTile('boarding');
   const marketplaceDiscovery = useBoardingVendorDiscovery(phone, HUB_SERVICE_SLUG);
-  const wapptDiscovery = useWapptHubFeaturedVendors('boarding', wapptHubEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('boarding', wapptFeaturedEnabled);
 
-  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
 
   const [previousFacility, setPreviousFacility] = useState<any>(null);
 
@@ -343,7 +345,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           serviceStyle: 'at_center',
           vendorName: v.name,
         }),
-        profileBackScreen: 'wappt-discovery',
+        profileBackScreen: 'boarding',
       });
     },
     [onNavigate],
@@ -602,7 +604,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                       categoryLabelFallback="Boarding"
                       onSelectSlot={(vendor, e) => {
                         if (
-                          wapptHubEnabled ||
+                          wapptFeaturedEnabled ||
                           shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
                         ) {
                           handleWarmpawzBookAppointment(vendor);
@@ -610,9 +612,17 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                         }
                         openVendorProfile(e, resolveServiceHubVendorProfileKey(vendor));
                       }}
-                      onOpenProfile={(e, vendor) =>
-                        openVendorProfile(e, resolveServiceHubVendorProfileKey(vendor))
-                      }
+                      onOpenProfile={(e, vendor) => {
+                        if (
+                          wapptFeaturedEnabled ||
+                          shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                        ) {
+                          e.stopPropagation();
+                          handleWarmpawzBookAppointment(vendor);
+                          return;
+                        }
+                        openVendorProfile(e, resolveServiceHubVendorProfileKey(vendor));
+                      }}
                     />
                   ))
                 )}
