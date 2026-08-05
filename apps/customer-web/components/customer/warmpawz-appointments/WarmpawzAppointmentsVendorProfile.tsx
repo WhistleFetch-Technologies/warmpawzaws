@@ -2,7 +2,6 @@
 
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Award,
   Building2,
   Calendar,
   Check,
@@ -25,9 +24,16 @@ import { VendorHeroPhotoCarousel } from '@/components/customer/shared/VendorHero
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { ServiceDescriptionInline } from '@/components/customer/shared/ServiceDescriptionInline';
 import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/DiscoveryVendorFeedSentinel';
+import { VendorOverviewAboutCard } from '@/components/customer/shared/VendorOverviewAboutCard';
+import { VendorStatsCard } from '@/components/customer/shared/VendorStatsCard';
+import { VendorSpecializationChips } from '@/components/customer/shared/VendorSpecializationChips';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
-import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
+import {
+  resolveCustomerVendorAmenities,
+  resolveVendorProfileHeroGallery,
+  shouldShowVendorAmenities,
+} from '@/lib/vendor-display-media';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import {
@@ -105,13 +111,49 @@ export function WarmpawzAppointmentsVendorProfile({
     return fallback ? [fallback] : [];
   }, [facility, vendor, provider, providerName, category]);
 
-  const amenities = (facility?.amenities ?? vendor?.amenities ?? []) as string[];
+  const { amenities: resolvedAmenities, customAmenities } = useMemo(
+    () =>
+      resolveCustomerVendorAmenities({
+        ...(facility && typeof facility === 'object' ? facility : {}),
+        ...(vendor && typeof vendor === 'object' ? vendor : {}),
+      }),
+    [facility, vendor],
+  );
+  const amenities = useMemo(
+    () => [...resolvedAmenities, ...customAmenities],
+    [resolvedAmenities, customAmenities],
+  );
   const address =
     String(vendor?.address ?? facility?.address ?? provider?.address ?? '').trim() || '';
   const phoneNumber = String(vendor?.phone ?? facility?.phone ?? provider?.phone ?? '').trim();
   const description =
     String(vendor?.description || facility?.description || '').trim() ||
     config.aboutFallback(providerName);
+
+  const specializationLabels = useMemo(() => {
+    const fromFacility = facility?.specializations;
+    if (Array.isArray(fromFacility) && fromFacility.length > 0) {
+      return fromFacility.map((s) => String(s).trim()).filter(Boolean);
+    }
+    const fromVendor = vendor?.specializations;
+    if (Array.isArray(fromVendor) && fromVendor.length > 0) {
+      return fromVendor.map((s) => String(s).trim()).filter(Boolean);
+    }
+    if (overviewSpecializations?.trim()) {
+      return overviewSpecializations
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return [] as string[];
+  }, [facility, vendor, overviewSpecializations]);
+
+  const reviewCountForStats =
+    rating?.totalReviews != null && Number.isFinite(Number(rating.totalReviews))
+      ? Number(rating.totalReviews)
+      : provider?.reviewCount != null && Number.isFinite(Number(provider.reviewCount))
+        ? Number(provider.reviewCount)
+        : null;
 
   const profileVendorId = String(
     vendorId ??
@@ -423,56 +465,22 @@ export function WarmpawzAppointmentsVendorProfile({
 
           <div className="mb-4 min-h-[400px] rounded-b-2xl bg-white p-5">
             {activeTab === 'overview' ? (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-900">
-                    <HeaderIcon className="h-5 w-5 text-[#FF8C42]" />
-                    About
-                  </h3>
-                  <p className="text-sm leading-relaxed text-gray-700">{description}</p>
-                </div>
-                <div className="rounded-xl bg-gray-50 p-4 text-center">
-                  <div className="text-2xl font-bold text-gray-900">{provider.services.length}</div>
-                  <div className="mt-1 text-xs text-gray-500">Services</div>
-                </div>
-                {provider.qualifications ? (
-                  <div>
-                    <h3 className="mb-3 text-lg font-bold text-gray-900">Qualifications</h3>
-                    <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
-                      <p className="text-sm text-gray-600">{provider.qualifications}</p>
-                    </div>
-                  </div>
-                ) : null}
-                {overviewEnrichmentLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <Loader2 className="h-4 w-4 animate-spin text-[#FF8C42]" />
-                    Loading specializations…
-                  </div>
-                ) : null}
-                {overviewSpecializations ? (
-                  <div>
-                    <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-900">
-                      <Award className="h-5 w-5 text-[#FF8C42]" />
-                      Specializations
-                    </h3>
-                    <div className="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-4">
-                      <p className="text-sm text-gray-600">{overviewSpecializations}</p>
-                    </div>
-                  </div>
-                ) : null}
-                {shouldShowVendorAmenities(serviceStyle) && amenities.length > 0 ? (
-                  <div>
-                    <h3 className="mb-3 text-lg font-bold text-gray-900">All Features</h3>
-                    <div className="grid grid-cols-2 gap-2">
-                      {amenities.map((amenity, idx) => (
-                        <div key={idx} className="flex items-center gap-2 rounded-lg bg-gray-50 p-3">
-                          <Check className="h-4 w-4 flex-shrink-0 text-green-500" />
-                          <span className="text-sm text-gray-700">{amenity}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
+              <div className="space-y-4">
+                <VendorOverviewAboutCard description={description} icon={HeaderIcon} />
+                <VendorStatsCard
+                  servicesCount={provider.services.length}
+                  experienceYears={
+                    provider.experienceYears != null &&
+                    Number.isFinite(Number(provider.experienceYears))
+                      ? Number(provider.experienceYears)
+                      : null
+                  }
+                  reviewCount={reviewCountForStats}
+                />
+                <VendorSpecializationChips
+                  specializations={specializationLabels}
+                  loading={overviewEnrichmentLoading && specializationLabels.length === 0}
+                />
               </div>
             ) : null}
 

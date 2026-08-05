@@ -5,6 +5,11 @@ import { apiClient } from '@/lib/api-client';
 import { fetchDiscoveryProfileVendorRow } from '@/lib/discovery-profile-vendor-bootstrap';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
+import { mapFacilityRecentReviews } from '@/lib/universal-provider-profile-enrichment';
+import {
+  mapWapptFacilityRating,
+  type WapptFacilityRating,
+} from '@/lib/map-wappt-facility-rating';
 import {
   buildVendorServicesPageUrl,
   vendorServicesNextCursor,
@@ -12,13 +17,8 @@ import {
 } from '@/lib/vendor-services-page';
 import { resolveWapptVendorProfileConfig } from '@/lib/warmpawz-appointments/wappt-vendor-profile-config';
 
-function formatFacilitySpecializations(
-  facility: Record<string, unknown> | null | undefined,
-): string {
-  const specs = facility?.specializations;
-  if (!Array.isArray(specs) || specs.length === 0) return '';
-  return specs.map((s) => String(s).trim()).filter(Boolean).join(', ');
-}
+export type { WapptFacilityRating } from '@/lib/map-wappt-facility-rating';
+export { mapWapptFacilityRating } from '@/lib/map-wappt-facility-rating';
 
 export type WapptProfileService = {
   id: string;
@@ -49,11 +49,6 @@ export type WapptProfileProvider = {
   servicesLoadingMore: boolean;
 };
 
-export type WapptFacilityRating = {
-  averageRating?: number;
-  totalReviews?: number;
-};
-
 export type WapptProfileReview = {
   id: string;
   customerName?: string;
@@ -61,6 +56,21 @@ export type WapptProfileReview = {
   comment?: string;
   date: string;
 };
+
+type FacilityApiResponse = {
+  success?: boolean;
+  facility?: Record<string, unknown>;
+  rating?: unknown;
+  recentReviews?: unknown[];
+};
+
+function formatFacilitySpecializations(
+  facility: Record<string, unknown> | null | undefined,
+): string {
+  const specs = facility?.specializations;
+  if (!Array.isArray(specs) || specs.length === 0) return '';
+  return specs.map((s) => String(s).trim()).filter(Boolean).join(', ');
+}
 
 function mapGenericServiceRow(row: Record<string, unknown>): WapptProfileService {
   return {
@@ -71,6 +81,13 @@ function mapGenericServiceRow(row: Record<string, unknown>): WapptProfileService
     duration: row.duration != null ? Number(row.duration) : undefined,
     category: typeof row.category === 'string' ? row.category : undefined,
   };
+}
+
+function parseExperienceYears(row: Record<string, unknown>): number | undefined {
+  const raw = row.experienceYears ?? row.experience_years;
+  if (raw == null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 function mapProviderRow(row: Record<string, unknown>): WapptProfileProvider {
@@ -86,8 +103,10 @@ function mapProviderRow(row: Record<string, unknown>): WapptProfileProvider {
     rating: base.rating,
     reviewCount: base.reviewCount,
     isVerified: base.isVerified,
-    experienceYears: base.experienceYears,
-    qualifications: base.qualifications,
+    experienceYears: parseExperienceYears(row) ?? base.experienceYears,
+    qualifications:
+      (typeof row.qualifications === 'string' ? row.qualifications : undefined) ??
+      base.qualifications,
     services: [],
     servicesHydrated: false,
     servicesLoadingMore: false,
@@ -145,6 +164,28 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
     setReviews([]);
   }, [vendorId]);
 
+  const applyFacilityResponse = useCallback((facilityRes: FacilityApiResponse | null) => {
+    if (!facilityRes?.success) return false;
+
+    if (facilityRes.facility) {
+      setFacility(facilityRes.facility);
+      const specStr = formatFacilitySpecializations(facilityRes.facility);
+      if (specStr) {
+        setOverviewSpecializations(specStr);
+      }
+    }
+
+    const mappedRating = mapWapptFacilityRating(facilityRes.rating);
+    if (mappedRating) {
+      setRating(mappedRating);
+    }
+
+    const mappedReviews = mapFacilityRecentReviews(facilityRes.recentReviews);
+    setReviews(mappedReviews);
+
+    return true;
+  }, []);
+
   const loadOverviewSpecializations = useCallback(async () => {
     const wantId = String(vendorId || '').trim();
     if (!wantId || overviewEnrichmentLoadedRef.current || overviewEnrichmentInflightRef.current) {
@@ -156,21 +197,9 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
     try {
       const facilityRes = (await apiClient
         .get(`/customer/facility/${encodeURIComponent(wantId)}`)
-        .catch(() => null)) as {
-        success?: boolean;
-        facility?: Record<string, unknown>;
-        rating?: WapptFacilityRating;
-      } | null;
+        .catch(() => null)) as FacilityApiResponse | null;
 
-      if (facilityRes?.success) {
-        if (facilityRes.facility) {
-          setFacility(facilityRes.facility);
-          const specStr = formatFacilitySpecializations(facilityRes.facility);
-          if (specStr) {
-            setOverviewSpecializations(specStr);
-          }
-        }
-      }
+      applyFacilityResponse(facilityRes);
       overviewEnrichmentLoadedRef.current = true;
     } catch (e) {
       console.warn('[WAPPT profile] overview specializations fetch failed', e);
@@ -178,7 +207,7 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
       overviewEnrichmentInflightRef.current = false;
       setOverviewEnrichmentLoading(false);
     }
-  }, [vendorId]);
+  }, [applyFacilityResponse, vendorId]);
 
   const fetchServices = useCallback(
     async (append = false) => {
@@ -277,9 +306,12 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
 
     void (async () => {
       try {
-        const [bootstrapRow, vendorRes] = await Promise.all([
+        const [bootstrapRow, vendorRes, facilityRes] = await Promise.all([
           fetchDiscoveryProfileVendorRow(wantId),
           apiClient.get(`/customer/vendor/${encodeURIComponent(wantId)}`).catch(() => null),
+          apiClient
+            .get(`/customer/facility/${encodeURIComponent(wantId)}`)
+            .catch(() => null) as Promise<FacilityApiResponse | null>,
         ]);
 
         if (cancelled) return;
@@ -303,6 +335,10 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
           setVendor(seeded);
         }
 
+        if (applyFacilityResponse(facilityRes as FacilityApiResponse | null)) {
+          overviewEnrichmentLoadedRef.current = true;
+        }
+
         const row =
           bootstrapRow ??
           (vendorData
@@ -320,6 +356,11 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
                   vendorData.experience_years ??
                   vendorData.experienceYears ??
                   (bootstrapRow as Record<string, unknown> | null)?.experienceYears,
+                reviewCount:
+                  vendorData.review_count ??
+                  vendorData.reviewCount ??
+                  vendorData.totalReviews ??
+                  (bootstrapRow as Record<string, unknown> | null)?.reviewCount,
                 photoUrl:
                   vendorData.profile_photo_url ??
                   vendorData.photoUrl ??
@@ -342,6 +383,10 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
         if (initialVendorName && !mapped.name) {
           mapped.name = initialVendorName;
         }
+        if (mapped.experienceYears == null && vendorData) {
+          const fromVendor = parseExperienceYears(vendorData);
+          if (fromVendor != null) mapped.experienceYears = fromVendor;
+        }
         setProvider(mapped);
       } catch (e) {
         console.error('[WAPPT profile] load failed', e);
@@ -357,7 +402,7 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
     return () => {
       cancelled = true;
     };
-  }, [vendorId, initialVendorName]);
+  }, [applyFacilityResponse, vendorId, initialVendorName]);
 
   useEffect(() => {
     if (!provider || provider.servicesHydrated || fetchingServices) return;

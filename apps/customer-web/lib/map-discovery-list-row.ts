@@ -71,7 +71,12 @@ export function mapDiscoveryRowBaseFields(row: DiscoveryListRow) {
     roleDisplayName: (row.roleDisplayName ?? row.roleName ?? row.role) as string | undefined,
     roleName: (row.roleName ?? row.role) as string | undefined,
     roleId: (row.roleId ?? row.role_id) as string | null | undefined,
-    experienceYears: row.experienceYears as number | undefined,
+    experienceYears: (() => {
+      const raw = row.experienceYears ?? row.experience_years;
+      if (raw == null || raw === '') return undefined;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : undefined;
+    })(),
     qualifications: row.qualifications as string | undefined,
     rating,
     reviewCount,
