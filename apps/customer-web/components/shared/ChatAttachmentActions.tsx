@@ -1,12 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { isAndroidMobileContext, shareAndroidLinkNow } from '@/lib/android-attachment-share';
 import { shouldUseMobileSavePipeline } from '@/lib/capacitor-pdf-save';
 import {
   getChatAttachmentSaveMessage,
+  resolveShareLinkUrl,
   saveOrShareChatAttachment,
+  warmChatAttachmentCache,
 } from '@/lib/chat-attachment-save';
 
 export type ChatAttachmentActionsProps = {
@@ -15,7 +18,6 @@ export type ChatAttachmentActionsProps = {
   fileName?: string | null;
   title?: string | null;
   className?: string;
-  /** Dark bubble styling for in-call video chat */
   compact?: boolean;
 };
 
@@ -29,17 +31,48 @@ export function ChatAttachmentActions({
 }: ChatAttachmentActionsProps) {
   const [saving, setSaving] = useState(false);
 
-  const label = shouldUseMobileSavePipeline() ? 'Save or share' : 'Download';
+  const cacheOptions = { fileUrl, fileId, fileName, title };
+  const isAndroid = isAndroidMobileContext();
+  const useMobilePipeline = shouldUseMobileSavePipeline();
+  const displayName = fileName?.trim() || 'document';
+  const label = useMobilePipeline ? 'Save or share' : 'Download';
+
+  useEffect(() => {
+    warmChatAttachmentCache(cacheOptions);
+  }, [fileUrl, fileId, fileName, title]);
 
   const handleSave = async () => {
     if (saving) return;
-    if (!fileUrl?.trim() && !fileId?.trim()) {
-      toast.error('File is not available');
+
+    const linkUrl = resolveShareLinkUrl({ fileUrl, fileId });
+    if (!linkUrl) {
+      toast.error('File link is not available');
       return;
     }
 
     setSaving(true);
     try {
+      if (isAndroid) {
+        const result = await shareAndroidLinkNow({
+          url: linkUrl,
+          fileName: displayName,
+          title,
+        });
+
+        if (result === 'shared') {
+          toast.success(getChatAttachmentSaveMessage('shared', displayName));
+          return;
+        }
+
+        if (result === 'copied') {
+          toast.success(`Link copied. Paste in WhatsApp, Notes, or any app to share ${displayName}.`);
+          return;
+        }
+
+        toast.error('Could not open share. Please try again.');
+        return;
+      }
+
       const { fileName: savedName, saveResult } = await saveOrShareChatAttachment({
         fileUrl,
         fileId,
