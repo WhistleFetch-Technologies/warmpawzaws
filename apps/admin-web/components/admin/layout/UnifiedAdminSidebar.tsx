@@ -87,7 +87,6 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   'notification-engine': Bell,
   reports: BarChart3,
   'platform-settings': Settings,
-  'warmpawz-appointments-catalogue': Calendar,
 };
 
 function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void): () => void {
