@@ -7,6 +7,19 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Normalize bookings.booking_date (DATE or ISO string) to YYYY-MM-DD in IST. */
+export function ymdFromBookingDateField(raw: string | Date | null | undefined): string {
+  if (!raw) return '';
+  if (raw instanceof Date) {
+    return ymdInIst(raw);
+  }
+  const s = String(raw).trim();
+  const isoPrefix = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoPrefix) return isoPrefix[1];
+  const parsed = new Date(s);
+  return Number.isFinite(parsed.getTime()) ? ymdInIst(parsed) : '';
+}
+
 const INACTIVE_PAY_CREDIT_STATUSES = new Set(['cancelled', 'completed', 'refunded']);
 
 export function isWapptBookingActiveForPayCredit(status: string | null | undefined): boolean {
@@ -18,7 +31,7 @@ export function assertBookingEligibleForPayCredit(
   booking: WpayWapptBookingContextRow,
 ): { ok: true } | { ok: false; error: string; status: number } {
   const today = ymdInIst();
-  const bookingDate = String(booking.booking_date ?? '').trim();
+  const bookingDate = ymdFromBookingDateField(booking.booking_date);
   if (bookingDate !== today) {
     return {
       ok: false,
@@ -47,9 +60,9 @@ export function mapWpayAppointmentContextBooking(row: WpayWapptBookingContextRow
   const vendorName = String(row.business_name || row.owner_name || 'Vendor').trim();
   const appointmentFee = resolveWapptAppointmentFeeFromBooking(row);
   const otpCode = String(row.otp_code ?? '').trim() || null;
-  const completionOtp = String(row.completion_otp ?? '').trim() || otpCode;
+  const completionOtp = otpCode;
   const today = ymdInIst();
-  const bookingDate = String(row.booking_date ?? '').trim();
+  const bookingDate = ymdFromBookingDateField(row.booking_date);
   const creditEligible =
     appointmentFee > 0 &&
     bookingDate === today &&

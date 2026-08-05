@@ -30,7 +30,6 @@ const baseRow: WpayWapptBookingContextRow = {
   total_amount: 200,
   payment_status: 'paid',
   otp_code: '123456',
-  completion_otp: null,
   otp_verified: false,
   business_name: 'Happy Paws',
   owner_name: 'Dr Vet',
@@ -47,6 +46,14 @@ describe('wpay-appointment-credit', () => {
     expect(mapped.bookingId).toBe('booking-1');
     expect(mapped.serviceName).toBe('Appointment');
     expect(mapped.otpCode).toBe('123456');
+    expect(mapped.creditEligible).toBe(true);
+  });
+
+  it('maps creditEligible when booking_date is a Date object from Postgres', () => {
+    const mapped = mapWpayAppointmentContextBooking({
+      ...baseRow,
+      booking_date: new Date('2026-08-05T00:00:00.000Z') as unknown as string,
+    });
     expect(mapped.creditEligible).toBe(true);
   });
 

@@ -16,7 +16,6 @@ export type WpayWapptBookingContextRow = {
   total_amount: string | number | null;
   payment_status: string | null;
   otp_code: string | null;
-  completion_otp: string | null;
   otp_verified: boolean | null;
   business_name: string | null;
   owner_name: string | null;
@@ -36,7 +35,6 @@ const BOOKING_SELECT = `
          b.total_amount,
          b.payment_status,
          b.otp_code,
-         b.completion_otp,
          b.otp_verified,
          v.business_name,
          v.owner_name
