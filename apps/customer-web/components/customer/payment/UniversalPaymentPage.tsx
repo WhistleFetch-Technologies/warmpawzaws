@@ -3885,17 +3885,9 @@ export function UniversalPaymentPage({
         {/* Address Selection (if needed and on top) */}
         {showAddressSelection && (
           <div className={paymentSecondaryCardClass}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-[#FF8C42]" />
-                <h2 className="font-semibold text-gray-900">Delivery Address</h2>
-              </div>
-              <button
-                onClick={() => setShowAddressModal(true)}
-                className="text-sm text-[#FF8C42] font-medium hover:underline"
-              >
-                Change
-              </button>
+            <div className="flex items-center gap-2 mb-3">
+              <MapPin className="w-5 h-5 text-[#FF8C42]" />
+              <h2 className="font-semibold text-gray-900">Delivery Address</h2>
             </div>
 
             {selectedAddress ? (
