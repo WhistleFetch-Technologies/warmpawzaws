@@ -70,6 +70,7 @@ import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { filterHubDiscoveryRowsByRadius } from '@/lib/hub-discovery-radius-filter';
+import { discoveryVendorList } from '@/lib/discovery-list';
 import {
   filterComingSoonBannersForReviewAccount,
   filterHomeServiceTilesForReviewAccount,
@@ -423,10 +424,17 @@ export function CustomerHomeComplete({
           const res = await apiClient.get<any>(
             `/customer/services/by-style?style=${style}&category=vet`
           );
-          const providers = res?.providers || res?.vendors || [];
+          const providers = discoveryVendorList(res);
           const prices: number[] = [];
           for (const p of providers) {
-            for (const s of (p?.services || [])) {
+            const priceMin = Number(p?.priceMin);
+            if (Number.isFinite(priceMin) && priceMin > 0) {
+              prices.push(priceMin);
+              continue;
+            }
+            const services = p?.services;
+            if (!Array.isArray(services)) continue;
+            for (const s of services) {
               const n = Number(s?.price ?? s?.custom_price);
               if (Number.isFinite(n) && n > 0) prices.push(n);
             }
@@ -1278,7 +1286,7 @@ export function CustomerHomeComplete({
       if (groomingResult.status === 'fulfilled' && groomingResult.value) {
         const groomingResp = groomingResult.value;
         const groomingRows = filterHubDiscoveryRowsByRadius(
-          groomingResp.providers || groomingResp.vendors || groomingResp.services || [],
+          discoveryVendorList(groomingResp),
           { serviceStyle: 'at_center', latitude, longitude }
         );
         if (groomingRows.length > 0) {
@@ -1308,7 +1316,7 @@ export function CustomerHomeComplete({
       if (vetResult.status === 'fulfilled' && vetResult.value) {
         const vetResp = vetResult.value;
         const vetRows = filterHubDiscoveryRowsByRadius(
-          vetResp.providers || vetResp.vendors || vetResp.services || [],
+          discoveryVendorList(vetResp),
           { serviceStyle: 'at_center', latitude, longitude }
         );
         if (vetRows.length > 0) {

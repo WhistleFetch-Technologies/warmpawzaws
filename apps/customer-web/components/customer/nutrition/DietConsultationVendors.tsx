@@ -9,6 +9,7 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouter } from './NutritionistBookingRouter';
 import { DietConsultationVendorsProps, Vendor } from './constants/interface';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { discoveryVendorList } from '@/lib/discovery-list';
 
 
 
@@ -73,7 +74,7 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
 
       const providersById = new Map<string, any>();
       for (const response of responses) {
-        const list = (response as any)?.providers || (response as any)?.vendors || [];
+        const list = discoveryVendorList(response);
         for (const provider of list) {
           const id = String(provider?.id || provider?.vendorId || provider?.providerId || '').trim();
           if (!id) continue;

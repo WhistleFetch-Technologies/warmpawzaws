@@ -898,7 +898,8 @@ export async function presignCustomerFacilityGalleryUrls(vendorId: string, rawIn
   return photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
 }
 
-export { columnExists } from '../../../../utils/schema-probes';
+import { columnExists } from '../../../../utils/schema-probes';
+export { columnExists };
 
 /**
  * Migration 737 adds vendors.service_distance_km. Many environments (dev / not-yet-migrated)
