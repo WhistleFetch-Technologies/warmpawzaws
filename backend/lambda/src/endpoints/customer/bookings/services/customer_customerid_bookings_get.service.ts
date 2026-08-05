@@ -107,8 +107,8 @@ export async function executecustomerCustomeridBookingsGet(c: Context) {
           serviceId: b.service_id,
           serviceName:
             b.commerce_mode === 'warmpawz_appointments'
-              ? b.service_name || 'Appointment'
-              : b.list_svc_name ?? b.service_name,
+              ? 'Appointment'
+              : b.list_svc_name ?? null,
           serviceCategory: b.list_svc_category ?? b.service_category,
           serviceDescription: b.list_svc_description ?? null,
           serviceDurationMinutes:

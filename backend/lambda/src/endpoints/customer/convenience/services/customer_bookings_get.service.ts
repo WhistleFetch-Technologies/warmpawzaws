@@ -138,12 +138,12 @@ export async function executecustomerBookingsGet(c: Context) {
             ...packageFieldsFromBookingRow(b),
             serviceName:
               b.commerce_mode === 'warmpawz_appointments'
-                ? b.service_name || 'Appointment'
-                : b.service_name ?? b.joined_service_name ?? null,
+                ? 'Appointment'
+                : b.joined_service_name ?? null,
             service_name:
               b.commerce_mode === 'warmpawz_appointments'
-                ? b.service_name || 'Appointment'
-                : b.service_name ?? b.joined_service_name ?? null,
+                ? 'Appointment'
+                : b.joined_service_name ?? null,
             commerceMode: b.commerce_mode ?? 'marketplace',
             commerce_mode: b.commerce_mode ?? 'marketplace',
           };

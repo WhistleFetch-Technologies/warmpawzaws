@@ -17,7 +17,7 @@ export async function dbCustomerBookingsBookingidGet0(bookingId: string) {
             v.city as vendor_city,
             v.state as vendor_state,
             v.pincode as vendor_pincode,
-            b.service_name AS booking_service_name,
+            COALESCE(br_svc.br_name, s.name) AS booking_service_name,
             COALESCE(br_svc.br_name, s.name) AS service_name,
             COALESCE(br_svc.br_description, s.description) AS service_description,
             COALESCE(br_svc.br_category, s.category) AS service_category,
