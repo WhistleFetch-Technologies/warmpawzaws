@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import {
-  buildWarmpawzAppointmentsBookingNav,
-  resolveWarmpawzBookingScreen,
+  buildWarmpawzAppointmentsProfileNav,
+  WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
 import { buildSearchVendorDetailsUrl } from '@/lib/search-booking-launch';
 import { withBannerNavigationOrigin } from '@/lib/banner-navigation-origin';
@@ -69,6 +69,7 @@ export function openWalkInVendorDetails(provider: WalkInProvider, router: AppRou
   );
 }
 
+/** Open WAPPT vendor profile; booking continues via Select Slot for Appointment. */
 export function bookWalkInAppointment(
   provider: WalkInProvider,
   router: AppRouterInstance,
@@ -77,24 +78,24 @@ export function bookWalkInAppointment(
   const vendorId = String(provider.id ?? '').trim();
   if (!vendorId) return;
 
-  const screen = resolveWarmpawzBookingScreen(provider.category);
-  const bookingPayload = {
-    ...buildWarmpawzAppointmentsBookingNav({
+  const profilePayload = {
+    ...buildWarmpawzAppointmentsProfileNav({
       vendorId,
       vendorName: provider.displayName,
       serviceStyle: 'at_center',
       category: provider.category,
+      profileBackScreen: 'home',
     }),
-    appointmentsMode: true,
   };
 
   if (onNavigate) {
-    onNavigate(screen, bookingPayload);
+    onNavigate(WAPPT_VENDOR_PROFILE_SCREEN, profilePayload);
     return;
   }
 
-  const data = withBannerNavigationOrigin(bookingPayload, WALK_IN_VENDORS_PATH);
-  persistWalkInShellNav(screen, data);
+  // /walk-in listing: hand off into home shell so back stack stays consistent.
+  const data = withBannerNavigationOrigin(profilePayload, WALK_IN_VENDORS_PATH);
+  persistWalkInShellNav(WAPPT_VENDOR_PROFILE_SCREEN, data);
   router.push('/');
 }
 

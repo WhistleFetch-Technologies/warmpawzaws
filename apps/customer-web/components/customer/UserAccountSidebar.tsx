@@ -2,17 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
-import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
-import { isWarmpawzPayModuleCapable } from '@/lib/commerce-switch-routing';
 import { filterAccountMenuForReviewAccount } from '@/lib/app-review-demo-account';
 import { Button } from '@/components/ui/button';
 import { 
-  User, Calendar, Edit2,
+  User, Edit2,
   Heart, ChevronRight, Package, Package2,
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
   Trash2, Plus, Check, Wallet, ShoppingBag,
-  Gift, Users, Award, Smartphone, Building2, MessageSquare, X, QrCode
+  Gift, Users, Award, Smartphone, Building2, MessageSquare, X
 } from 'lucide-react';
 import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccountHero';
 import { ProfileMenuFloatingSheet } from '@/components/customer/profile/ProfileMenuFloatingSheet';
@@ -524,7 +522,6 @@ interface UserAccountSidebarProps {
   /** X button: exit to app home (full shell reset). Falls back to closing the sheet if omitted. */
   onNavigateHome?: () => void;
   onViewBooking?: (bookingId: string, petId: string) => void;
-  onViewAppointments?: () => void;
   onViewWallet?: () => void;
   /** Full-page `/my-packages` (same pattern as wallet). */
   onViewMyPackages?: () => void;
@@ -540,16 +537,12 @@ export function UserAccountSidebar({
   onClose,
   onNavigateHome,
   onViewBooking,
-  onViewAppointments,
   onViewWallet,
   onViewMyPackages,
   onViewProfile,
   onNavigate,
   onRegisterOverlayBack,
 }: UserAccountSidebarProps) {
-  const commerce = useCommerceConfigOptional();
-  const showWarmpawzPayMenu =
-    commerce?.isWarmpawzPay === true && commerce.isLoaded && isWarmpawzPayModuleCapable();
   const [isOpen, setIsOpen] = useState(false);
   const [activeView, setActiveView] = useState<
     'menu' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'
@@ -1315,19 +1308,6 @@ export function UserAccountSidebar({
       action: 'wallet' as const,
       isExternal: true,
     },
-    ...(showWarmpawzPayMenu
-      ? [
-          {
-            icon: QrCode,
-            label: 'Warmpawz Pay',
-            subtitle: 'View pay-at-vendor transactions',
-            iconBg: 'bg-orange-100',
-            iconColor: 'text-orange-600',
-            action: 'warmpawz-pay' as const,
-            isExternal: true,
-          },
-        ]
-      : []),
     {
       icon: Award,
       label: 'Rewards & Points',
@@ -1344,15 +1324,6 @@ export function UserAccountSidebar({
       iconBg: 'bg-cyan-100',
       iconColor: 'text-cyan-600',
       action: 'referral-system' as const,
-      isExternal: true,
-    },
-    {
-      icon: Calendar,
-      label: 'My Appointments',
-      subtitle: 'View upcoming and past appointments',
-      iconBg: 'bg-purple-100',
-      iconColor: 'text-purple-600',
-      action: 'appointments' as const,
       isExternal: true,
     },
     {
@@ -1418,7 +1389,7 @@ export function UserAccountSidebar({
       view: 'help' as const,
     },
   ],
-    [showWarmpawzPayMenu, activeBookings.length, cartItems.length, savedBadgeCount]
+    [activeBookings.length, cartItems.length, savedBadgeCount]
   );
 
   const visibleMenuItems = filterAccountMenuForReviewAccount(
@@ -1511,9 +1482,6 @@ export function UserAccountSidebar({
                     if (item.isExternal) {
                       if (item.action === 'profile') {
                         if (onViewProfile) onViewProfile();
-                        handleClose();
-                      } else if (item.action === 'appointments' && onViewAppointments) {
-                        onViewAppointments();
                         handleClose();
                       } else if (item.action === 'my-packages' && onViewMyPackages) {
                         onViewMyPackages();
