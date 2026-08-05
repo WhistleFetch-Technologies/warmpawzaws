@@ -7,7 +7,13 @@ import {
 } from '../shell-stack';
 
 describe('shell-stack', () => {
-  type Screen = 'home' | 'vet' | 'vet-clinic-list' | 'vet-clinic-profile';
+  type Screen =
+    | 'home'
+    | 'vet'
+    | 'vet-all-doctors'
+    | 'vet-doctor-details'
+    | 'vet-clinic-list'
+    | 'vet-clinic-profile';
 
   it('pushes forward when screen is new', () => {
     const h = pushShellEntry([{ screen: 'home' }], 'vet');
@@ -98,6 +104,42 @@ describe('shell-stack', () => {
   it('shellCanPop', () => {
     expect(shellCanPop([{ screen: 'home' }])).toBe(false);
     expect(shellCanPop([{ screen: 'home' }, { screen: 'vet' }])).toBe(true);
+  });
+
+  describe('vet Featured Vets View All', () => {
+    it('pushes vet-all-doctors from vet hub on first visit', () => {
+      const h = pushShellEntry(
+        [{ screen: 'home' as Screen }, { screen: 'vet' as Screen }],
+        'vet-all-doctors',
+      );
+      expect(shellCurrentScreen(h)).toBe('vet-all-doctors');
+      expect(h.map((e) => e.screen)).toEqual(['home', 'vet', 'vet-all-doctors']);
+    });
+
+    it('back from vet-all-doctors pops to vet', () => {
+      const start = [
+        { screen: 'home' as Screen },
+        { screen: 'vet' as Screen },
+        { screen: 'vet-all-doctors' as Screen },
+      ];
+      const h = popShellEntry(start);
+      expect(shellCurrentScreen(h)).toBe('vet');
+    });
+
+    it('doctor drill-down from vet-all-doctors pushes with route key', () => {
+      const start = [
+        { screen: 'home' as Screen },
+        { screen: 'vet' as Screen },
+        { screen: 'vet-all-doctors' as Screen },
+      ];
+      const h = pushShellEntry(start, 'vet-doctor-details', {
+        mode: 'push',
+        key: 'doctor:doc-1',
+      });
+      expect(shellCurrentScreen(h)).toBe('vet-doctor-details');
+      expect(h).toHaveLength(4);
+      expect(h[3].key).toBe('doctor:doc-1');
+    });
   });
 
   describe('shop order tracking (embedded ecommerce)', () => {

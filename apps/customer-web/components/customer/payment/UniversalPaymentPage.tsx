@@ -59,7 +59,10 @@ import {
   sanitizeRazorpayInstanceOptions,
   getWarmpawzRazorpayUpiDisplayConfig,
 } from '@/lib/razorpay/razorpay-utils';
-import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  WARMPAWZ_RAZORPAY_CHECKOUT_THEME,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
 import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
 import {
@@ -3555,7 +3558,7 @@ export function UniversalPaymentPage({
           razorpayGatewaySuccessHandled = true;
           await processRazorpaySuccess(response);
         },
-        theme: { color: '#FF8C42' },
+        theme: WARMPAWZ_RAZORPAY_CHECKOUT_THEME,
         modal: {
           ondismiss: () => {
             setProcessing(false);
@@ -3596,7 +3599,7 @@ export function UniversalPaymentPage({
           name: 'Warmpawz',
           order_id: razorpayOrderId,
           ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
-          theme: { color: '#FF8C42' },
+          theme: WARMPAWZ_RAZORPAY_CHECKOUT_THEME,
           // Keep parity with web `new Razorpay(options)` â€” UPI display block
           // (collect/intent/qr) + `method: { upi: true }` is what surfaces UPI
           // on react-native-razorpay too. With a manual VPA, switch to single

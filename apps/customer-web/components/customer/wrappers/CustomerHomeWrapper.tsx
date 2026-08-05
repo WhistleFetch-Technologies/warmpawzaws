@@ -176,6 +176,7 @@ const VetDoctorDetails = dynamic(() => import('../vet/VetDoctorDetails').then((m
 const ClinicListView = dynamic(() => import('../vet/ClinicListView').then((m) => ({ default: m.ClinicListView })), { loading: LoadingSpinner });
 const ClinicProfileView = dynamic(() => import('../vet/ClinicProfileView').then((m) => ({ default: m.ClinicProfileView })), { loading: LoadingSpinner });
 const VetServicesByStyle = dynamic(() => import('../vet/VetServicesByStyle').then((m) => ({ default: m.VetServicesByStyle })), { loading: LoadingSpinner });
+const VetVendorListView = dynamic(() => import('../vet/VetVendorListView').then((m) => ({ default: m.VetVendorListView })), { loading: LoadingSpinner });
 const TeleConsultationRouter = dynamic(() => import('../vet/TeleConsultationRouter').then((m) => ({ default: m.TeleConsultationRouter })), { loading: LoadingSpinner, ssr: false });
 const HomeVisitRouter = dynamic(() => import('../vet/HomeVisitRouter').then((m) => ({ default: m.HomeVisitRouter })), { loading: LoadingSpinner });
 const UniversalPaymentPage = dynamic(() => import('../payment/UniversalPaymentPage').then((m) => ({ default: m.UniversalPaymentPage })), { loading: LoadingSpinner });
@@ -289,6 +290,7 @@ type ScreenType =
   | 'vet-booking'
   | 'vet-doctor-details'
   | 'vet-clinic-list'
+  | 'vet-all-doctors'
   | 'vet-clinic-profile'
   | 'vet-clinic-booking'
   | 'vet-services-by-style'
@@ -1772,16 +1774,17 @@ export function CustomerHomeWrapper({
     // Merge listing context when opening profiles or drilling into the same style browser (chevron / View All).
     if (screen === 'vet-clinic-profile' || screen === 'vet-doctor-details' || screen === 'vet-services-by-style') {
       setVetServiceData((prev: any) => mergeBannerNavigationPayload(prev, data || {}));
-      navigateToScreen(screen as ScreenType);
+      const key =
+        screen === 'vet-doctor-details' && data?.doctorId
+          ? routeKey.doctor(String(data.doctorId))
+          : screen === 'vet-clinic-profile' && (data?.id || data?.clinicId)
+            ? routeKey.clinic(String(data.id ?? data.clinicId))
+            : undefined;
+      navigateToScreen(screen as ScreenType, key);
       return;
     }
     if (screen === 'vet-all-doctors') {
-      setVetServiceData({
-        serviceStyle: 'tele',
-        serviceTypeName: 'All veterinarians',
-        category: 'vet',
-      });
-      navigateToScreen('vet-services-by-style');
+      navigateToScreen('vet-all-doctors');
       return;
     }
     setVetServiceData((prev: any) => mergeBannerNavigationPayload(prev, data || {}));
@@ -3104,6 +3107,16 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'walk-live-tracking') return <WalkLiveTrackingView bookingId={walkerServiceData?.bookingId || walkerServiceData?.sessionId || ''} onBack={handleBack} />;
   if (currentScreen === 'schedule-walk') return <CreateBookingPage phone={phone} vendorId={walkerServiceData?.vendorId} serviceId={walkerServiceData?.packageId} serviceStyle="at_home" onBack={handleBack} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
   // ✅ FIX: Vet Service with Frame UI (ServiceDashboardHeader)
+  if (currentScreen === 'vet-all-doctors') {
+    return renderScreenWithLayout('vet-all-doctors',
+      <VetVendorListView
+        phone={phone}
+        onBack={handleBack}
+        onNavigate={handleVetNavigate}
+      />,
+      { title: 'All Veterinarians', subtitle: 'Browse featured vets', showBackButton: true, skipHeader: true }
+    );
+  }
   if (currentScreen === 'vet') {
     return renderScreenWithLayout('vet',
       <VetServiceRouter 
@@ -3349,7 +3362,10 @@ export function CustomerHomeWrapper({
             handleBack();
             return;
           }
-          if (vetServiceData?.vendorId && vetServiceData?.returnScreen === 'vet') {
+          if (
+            vetServiceData?.vendorId &&
+            (vetServiceData?.returnScreen === 'vet' || vetServiceData?.returnScreen === 'vet-all-doctors')
+          ) {
             setVetServiceData(null);
             handleBack();
             return;
