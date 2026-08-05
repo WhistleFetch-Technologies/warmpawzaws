@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { discoveryVendorList } from '@/lib/discovery-list';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
@@ -197,13 +198,14 @@ export function BoardingVendorProfileView({
         const styleRes = (await apiClient.get(
           `/customer/services/by-style?style=at_center&category=boarding${phoneParam}`
         ).catch(() => null)) as any;
-        const providers = styleRes?.providers || styleRes?.vendors || [];
-        const thisProvider = providers.find((p: any) => {
+        const providers = discoveryVendorList(styleRes);
+        const thisProvider = providers.find((p) => {
           const pid = String(p?.providerId || p?.vendorId || p?.id || '').trim();
           const vid = String(p?.vendorId || p?.id || '').trim();
           return pid === String(vendorId) || vid === String(vendorId);
         });
-        mapped = mapBoardingPlans(thisProvider?.services || []);
+        const providerServices = thisProvider?.services;
+        mapped = mapBoardingPlans(Array.isArray(providerServices) ? providerServices : []);
       }
 
       setPublishedPlans(mapped);
