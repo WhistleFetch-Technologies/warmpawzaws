@@ -1823,6 +1823,10 @@ export async function fetchCustomerVendorProfileBundle(vendorId: string): Promis
       description: vendor.description || '',
       photoUrl: await getVendorListingPhotoUrl(vendor),
       vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
+      /** Solo/professional profile field — vendors.experience_years (saved in vendor-web). */
+      experience_years: vendor.experience_years ?? null,
+      experienceYears: vendor.experience_years ?? null,
+      qualifications: vendor.qualifications ?? null,
       specializations: specializationsForProfile,
       serviceStyles: vendorServiceStyles,
       facilityPhotos,
