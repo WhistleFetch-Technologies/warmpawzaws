@@ -116,6 +116,7 @@ function BookingTrainingContent() {
       serviceStyle={intent.serviceStyle || 'at_center'}
       price={intent.price}
       duration={intent.duration}
+      appointmentsMode={intent.appointmentsMode === true}
       onBack={handleBack}
       onNavigate={handleNavigate}
       onViewBooking={handleViewBooking}

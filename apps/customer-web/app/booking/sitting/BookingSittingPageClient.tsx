@@ -117,6 +117,7 @@ function BookingSittingContent() {
       price={intent.price}
       duration={intent.duration}
       flowVariant="pet_sitting"
+      appointmentsMode={intent.appointmentsMode === true}
       onBack={handleBack}
       onNavigate={handleNavigate}
       onViewBooking={handleViewBooking}

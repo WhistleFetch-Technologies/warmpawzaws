@@ -85,10 +85,10 @@ import {
   resolveWapptHubsForSearch,
   type SearchWapptVendorRow,
 } from '@/lib/search-wappt-vendors';
-import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { filterMarketplaceRowsWhenWapptPresent } from '@/lib/search-wappt-dedup';
 import { resolveSearchHubVendorCardMeta } from '@/lib/search-hub-vendor-card-config';
 import { searchCardToBoardingListVendor } from '@/lib/search-training-vendor-map';
+import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
 
 interface SearchResult {
   id: string;
@@ -305,6 +305,9 @@ function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { openAccountMenu, accountSidebar, handleTabbedBottomNav } = useCustomerAccountSidebarHost();
+  const commerce = useCommerceConfigOptional();
+  const commerceReady = commerce?.isLoaded !== false;
+  const commerceModelId = commerce?.activeModelId ?? 'pending';
   const initialQuery = searchParams.get('q') || '';
   const initialCategory = searchParams.get('category') || '';
   const vendorIdParam = searchParams.get('vendorId');
@@ -443,29 +446,55 @@ function SearchContent() {
     e.stopPropagation();
     const vendorId = vendor.id;
     const returnUrl = buildReturnSearchUrl();
+    const vendorName = vendor.name;
     switch (hubCategory) {
       case 'vet':
         launchSearchVetCenterProfile({
           vendorId,
-          vendorName: vendor.name,
+          vendorName,
           router,
           returnSearchUrl: returnUrl,
         });
         break;
       case 'grooming':
-        launchSearchGroomingCenterProfile({ vendorId, router, returnSearchUrl: returnUrl });
+        launchSearchGroomingCenterProfile({
+          vendorId,
+          vendorName,
+          router,
+          returnSearchUrl: returnUrl,
+        });
         break;
       case 'training':
-        launchSearchTrainingCenterProfile({ vendorId, router, returnSearchUrl: returnUrl });
+        launchSearchTrainingCenterProfile({
+          vendorId,
+          vendorName,
+          router,
+          returnSearchUrl: returnUrl,
+        });
         break;
       case 'boarding':
-        launchSearchBoardingCenterProfile({ vendorId, router, returnSearchUrl: returnUrl });
+        launchSearchBoardingCenterProfile({
+          vendorId,
+          vendorName,
+          router,
+          returnSearchUrl: returnUrl,
+        });
         break;
       case 'walker':
-        launchSearchWalkerCenterProfile({ vendorId, router, returnSearchUrl: returnUrl });
+        launchSearchWalkerCenterProfile({
+          vendorId,
+          vendorName,
+          router,
+          returnSearchUrl: returnUrl,
+        });
         break;
       case 'sitting':
-        launchSearchSittingCenterProfile({ vendorId, router, returnSearchUrl: returnUrl });
+        launchSearchSittingCenterProfile({
+          vendorId,
+          vendorName,
+          router,
+          returnSearchUrl: returnUrl,
+        });
         break;
       default:
         router.push(buildSearchVendorDetailsUrl(vendorId, vendor.name, hubCategory));
@@ -506,6 +535,9 @@ function SearchContent() {
 
   useEffect(() => {
     if (vendorIdParam) return;
+    // Wait for Commerce Switch so WAPPT listing eligibility is not decided on the
+    // default marketplace fallback before sync completes.
+    if (!commerceReady) return;
     if (!searchFetchTrigger) {
       setApiResults([]);
       setNutritionVendors([]);
@@ -549,15 +581,7 @@ function SearchContent() {
           keyword: searchFetchTrigger.kind === 'keyword' ? searchFetchTrigger.q : undefined,
         });
         if (cancelled) return;
-        if (
-          wapptRows.length > 0 &&
-          (isWarmpawzAppointmentsHubEnabled('vet') ||
-            isWarmpawzAppointmentsHubEnabled('grooming') ||
-            isWarmpawzAppointmentsHubEnabled('training') ||
-            isWarmpawzAppointmentsHubEnabled('boarding') ||
-            isWarmpawzAppointmentsHubEnabled('walker') ||
-            isWarmpawzAppointmentsHubEnabled('sitting'))
-        ) {
+        if (wapptRows.length > 0) {
           mapped = filterMarketplaceRowsWhenWapptPresent(
             mapped,
             wapptRows,
@@ -657,7 +681,7 @@ function SearchContent() {
     return () => {
       cancelled = true;
     };
-  }, [searchFetchTrigger, vendorIdParam, discoveryCoordsReady]);
+  }, [searchFetchTrigger, vendorIdParam, discoveryCoordsReady, commerceReady, commerceModelId]);
 
   /** Keyword results loaded: keep localStorage context in sync when only the hub chip changes (no refetch). */
   useEffect(() => {

@@ -28,6 +28,12 @@ import {
   launchWarmpawzPayServiceBooking,
   resolveServiceBookingCommerceRouteForNavigation,
 } from '@/lib/commerce-switch-routing';
+import {
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
+  resolveWarmpawzBookingCategory,
+} from '@/lib/warmpawz-appointments-customer';
+import { getWapptHubConfig, normalizeWapptHubCategory } from '@/lib/wappt-hub-registry';
 
 export const SEARCH_BOOKING_INTENT_KEY = 'warmpawz_search_booking_intent';
 export const SEARCH_NUTRITION_BOOKING_INTENT_KEY = 'warmpawz_search_nutrition_booking_intent';
@@ -43,6 +49,8 @@ export const SEARCH_WALKER_CENTER_RETURN_KEY = 'warmpawz_search_walker_center_re
 export const SEARCH_SITTING_BOOKING_INTENT_KEY = 'warmpawz_search_sitting_booking_intent';
 export const SEARCH_SITTING_CENTER_RETURN_KEY = 'warmpawz_search_sitting_center_return';
 export const SEARCH_VET_CENTER_RETURN_KEY = 'warmpawz_search_vet_center_return';
+/** Shared return key for `/search/vendor-profile` (WAPPT profile from search hubs). */
+export const SEARCH_APPOINTMENTS_PROFILE_RETURN_KEY = 'warmpawz_search_wappt_profile_return';
 
 export interface SearchVetBookingIntent {
   vendorId: string;
@@ -64,6 +72,7 @@ export interface SearchVetBookingIntent {
   };
   category: string;
   returnSearchUrl?: string;
+  appointmentsMode?: boolean;
 }
 
 export interface SearchNutritionBookingIntent {
@@ -73,6 +82,7 @@ export interface SearchNutritionBookingIntent {
   serviceStyle?: string;
   returnSearchUrl?: string;
   nutritionist?: Record<string, unknown>;
+  appointmentsMode?: boolean;
 }
 
 export interface SearchTrainingBookingIntent {
@@ -86,6 +96,7 @@ export interface SearchTrainingBookingIntent {
   serviceType?: string;
   returnSearchUrl?: string;
   trainer?: Record<string, unknown>;
+  appointmentsMode?: boolean;
 }
 
 export interface SearchGroomingBookingIntent {
@@ -99,6 +110,7 @@ export interface SearchGroomingBookingIntent {
   serviceType?: string;
   returnSearchUrl?: string;
   groomer?: Record<string, unknown>;
+  appointmentsMode?: boolean;
 }
 
 export interface SearchBoardingBookingIntent {
@@ -112,6 +124,7 @@ export interface SearchBoardingBookingIntent {
   serviceType?: string;
   returnSearchUrl?: string;
   facility?: Record<string, unknown>;
+  appointmentsMode?: boolean;
 }
 
 export interface SearchWalkerBookingIntent {
@@ -125,6 +138,7 @@ export interface SearchWalkerBookingIntent {
   serviceType?: string;
   returnSearchUrl?: string;
   walker?: Record<string, unknown>;
+  appointmentsMode?: boolean;
 }
 
 export interface SearchSittingBookingIntent {
@@ -138,6 +152,7 @@ export interface SearchSittingBookingIntent {
   serviceType?: string;
   returnSearchUrl?: string;
   sitter?: Record<string, unknown>;
+  appointmentsMode?: boolean;
 }
 
 export interface SearchBookingLaunchParams {
@@ -170,6 +185,319 @@ export function resolveSearchCategoryPersona(category: string): {
   if (isResortCategory(c)) return { persona: 'resort', serviceStyle: 'at_center' };
   if (isPharmacyCategory(c)) return { persona: 'pharmacy', serviceStyle: 'at_center' };
   return { persona: 'vet', serviceStyle: 'at_center' };
+}
+
+/** Default WAPPT serviceStyle for a search hub category. */
+export function resolveSearchHubAppointmentsServiceStyle(category: string): string {
+  const hub = normalizeWapptHubCategory(category);
+  const config = hub ? getWapptHubConfig(hub) : null;
+  if (config) return config.defaultDiscoveryStyle;
+  return resolveSearchCategoryPersona(category).serviceStyle;
+}
+
+/**
+ * Search → Book Appointment vendor profile (WarmpawzAppointmentsVendorProfile).
+ * Prefer this over marketplace `/grooming/center`, `/vendor/...`, etc.
+ */
+export function buildSearchAppointmentsVendorProfileUrl(opts: {
+  vendorId: string;
+  category: string;
+  vendorName?: string;
+  serviceStyle?: string;
+}): string {
+  const category =
+    normalizeWapptHubCategory(opts.category) ||
+    resolveWarmpawzBookingCategory(opts.category) ||
+    'grooming';
+  const serviceStyle =
+    opts.serviceStyle?.trim() || resolveSearchHubAppointmentsServiceStyle(category);
+  const qs = new URLSearchParams();
+  qs.set('vendorId', opts.vendorId);
+  qs.set('category', category);
+  qs.set('serviceStyle', serviceStyle);
+  if (opts.vendorName?.trim()) qs.set('vendorName', opts.vendorName.trim());
+  return `/search/vendor-profile?${qs.toString()}`;
+}
+
+function persistSearchAppointmentsProfileReturn(
+  category: string,
+  returnSearchUrl?: string
+): string {
+  const url = returnSearchUrl || `/search?category=${encodeURIComponent(category)}`;
+  const payload = JSON.stringify({ returnSearchUrl: url, category });
+  try {
+    sessionStorage.setItem(SEARCH_APPOINTMENTS_PROFILE_RETURN_KEY, payload);
+    const hub = normalizeWapptHubCategory(category);
+    if (hub === 'grooming') sessionStorage.setItem(SEARCH_GROOMING_CENTER_RETURN_KEY, payload);
+    else if (hub === 'training' || hub === 'behaviorist')
+      sessionStorage.setItem(SEARCH_TRAINING_CENTER_RETURN_KEY, payload);
+    else if (hub === 'boarding') sessionStorage.setItem(SEARCH_BOARDING_CENTER_RETURN_KEY, payload);
+    else if (hub === 'walker') sessionStorage.setItem(SEARCH_WALKER_CENTER_RETURN_KEY, payload);
+    else if (hub === 'sitting') sessionStorage.setItem(SEARCH_SITTING_CENTER_RETURN_KEY, payload);
+    else if (hub === 'vet') sessionStorage.setItem(SEARCH_VET_CENTER_RETURN_KEY, payload);
+  } catch {
+    /* ignore */
+  }
+  return url;
+}
+
+export function readSearchAppointmentsProfileReturnUrl(fallback = '/search'): string {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = sessionStorage.getItem(SEARCH_APPOINTMENTS_PROFILE_RETURN_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as { returnSearchUrl?: string };
+    return parsed.returnSearchUrl || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Open shared WAPPT vendor profile from any search hub card. */
+export function launchSearchHubAppointmentsVendorProfile(opts: {
+  vendorId: string;
+  category: string;
+  vendorName?: string;
+  serviceStyle?: string;
+  router: AppRouterInstance;
+  returnSearchUrl?: string;
+}): void {
+  const category =
+    normalizeWapptHubCategory(opts.category) ||
+    resolveWarmpawzBookingCategory(opts.category) ||
+    'grooming';
+  persistSearchAppointmentsProfileReturn(category, opts.returnSearchUrl);
+  opts.router.push(
+    buildSearchAppointmentsVendorProfileUrl({
+      vendorId: opts.vendorId,
+      category,
+      vendorName: opts.vendorName,
+      serviceStyle: opts.serviceStyle,
+    })
+  );
+}
+
+/**
+ * Handle WarmpawzAppointmentsVendorProfile onNavigate from `/search/vendor-profile`.
+ * Stores appointmentsMode booking intent and opens the matching `/booking/*` URL page.
+ */
+export function launchSearchAppointmentsBookingFromProfile(opts: {
+  screen: string;
+  data?: Record<string, unknown>;
+  router: AppRouterInstance;
+  returnSearchUrl: string;
+  fallbackCategory: string;
+  fallbackVendorId: string;
+}): boolean {
+  const data = opts.data || {};
+  const screen = opts.screen;
+  const bookingScreens = new Set([
+    'grooming-booking',
+    'training-booking',
+    'vet-booking',
+    'walker-booking',
+    'boarding-booking',
+    'pet-sitter-booking',
+    'nutritionist-booking',
+    'booking',
+    'create-booking',
+  ]);
+  if (!bookingScreens.has(screen)) {
+    if (screen === 'booking-details' || screen === 'booking-confirmation') {
+      const bookingId = data.bookingId;
+      if (bookingId) {
+        opts.router.push(`/bookings?highlight=${encodeURIComponent(String(bookingId))}`);
+        return true;
+      }
+    }
+    if (screen === 'my-bookings') {
+      opts.router.push('/bookings');
+      return true;
+    }
+    return false;
+  }
+
+  const vendorId = String(data.vendorId || opts.fallbackVendorId || '').trim();
+  if (!vendorId) return false;
+
+  const category = resolveWarmpawzBookingCategory(
+    String(data.category || opts.fallbackCategory || 'grooming')
+  );
+  const hub = normalizeWapptHubCategory(category) || category;
+  const vendorName = data.vendorName ? String(data.vendorName) : undefined;
+  const serviceStyle =
+    (data.serviceStyle ? String(data.serviceStyle) : undefined) ||
+    resolveSearchHubAppointmentsServiceStyle(hub);
+  const appointmentsMode = data.appointmentsMode !== false;
+  const serviceId = appointmentsMode
+    ? WAPPT_APPOINTMENT_SERVICE_ID
+    : data.serviceId
+      ? String(data.serviceId)
+      : undefined;
+  const returnSearchUrl = opts.returnSearchUrl;
+
+  try {
+    if (hub === 'vet') {
+      const name = vendorName || 'Provider';
+      const intent: SearchVetBookingIntent = {
+        vendorId,
+        vendorName: name,
+        serviceId: serviceId || WAPPT_APPOINTMENT_SERVICE_ID,
+        serviceName: data.serviceName ? String(data.serviceName) : 'Appointment',
+        price: typeof data.price === 'number' ? data.price : 0,
+        duration:
+          typeof data.duration === 'number' ? data.duration : WAPPT_DEFAULT_SLOT_DURATION_MIN,
+        serviceStyle,
+        serviceType: String(data.serviceType || serviceStyle || 'at_center'),
+        service: (data.service as Record<string, unknown>) || {},
+        clinic: {
+          id: vendorId,
+          name,
+          address: '',
+          rating: 0,
+          review_count: 0,
+          timing: '',
+        },
+        category: 'vet',
+        returnSearchUrl,
+        appointmentsMode,
+      };
+      sessionStorage.setItem(SEARCH_BOOKING_INTENT_KEY, JSON.stringify(intent));
+      opts.router.push('/booking/vet');
+      return true;
+    }
+    if (hub === 'grooming') {
+      const intent: SearchGroomingBookingIntent = {
+        vendorId,
+        vendorName,
+        serviceId,
+        serviceName: data.serviceName ? String(data.serviceName) : undefined,
+        price: typeof data.price === 'number' ? data.price : undefined,
+        duration: typeof data.duration === 'number' ? data.duration : undefined,
+        serviceStyle,
+        serviceType: 'grooming',
+        returnSearchUrl,
+        appointmentsMode,
+        groomer:
+          (data.vendor as Record<string, unknown>) ||
+          (data.groomer as Record<string, unknown>) ||
+          (vendorName
+            ? { id: vendorId, vendorId, name: vendorName, businessName: vendorName }
+            : undefined),
+      };
+      sessionStorage.setItem(SEARCH_GROOMING_BOOKING_INTENT_KEY, JSON.stringify(intent));
+      opts.router.push('/booking/grooming');
+      return true;
+    }
+    if (hub === 'training' || hub === 'behaviorist') {
+      const intent: SearchTrainingBookingIntent = {
+        vendorId,
+        vendorName,
+        serviceId,
+        serviceName: data.serviceName ? String(data.serviceName) : undefined,
+        price: typeof data.price === 'number' ? data.price : undefined,
+        duration: typeof data.duration === 'number' ? data.duration : undefined,
+        serviceStyle,
+        serviceType: hub === 'behaviorist' ? 'behaviorist' : 'training',
+        returnSearchUrl,
+        appointmentsMode,
+        trainer:
+          (data.vendor as Record<string, unknown>) ||
+          (data.trainer as Record<string, unknown>) ||
+          (vendorName
+            ? { id: vendorId, vendorId, name: vendorName, businessName: vendorName }
+            : undefined),
+      };
+      sessionStorage.setItem(SEARCH_TRAINING_BOOKING_INTENT_KEY, JSON.stringify(intent));
+      opts.router.push('/booking/training');
+      return true;
+    }
+    if (hub === 'boarding') {
+      const intent: SearchBoardingBookingIntent = {
+        vendorId,
+        vendorName,
+        serviceId,
+        serviceName: data.serviceName ? String(data.serviceName) : undefined,
+        price: typeof data.price === 'number' ? data.price : undefined,
+        duration: typeof data.duration === 'number' ? data.duration : undefined,
+        serviceStyle,
+        serviceType: 'boarding',
+        returnSearchUrl,
+        appointmentsMode,
+        facility:
+          (data.facility as Record<string, unknown>) ||
+          (vendorName
+            ? { id: vendorId, vendorId, name: vendorName, businessName: vendorName }
+            : undefined),
+      };
+      sessionStorage.setItem(SEARCH_BOARDING_BOOKING_INTENT_KEY, JSON.stringify(intent));
+      opts.router.push('/booking/boarding');
+      return true;
+    }
+    if (hub === 'walker') {
+      const intent: SearchWalkerBookingIntent = {
+        vendorId,
+        vendorName,
+        serviceId,
+        serviceName: data.serviceName ? String(data.serviceName) : undefined,
+        price: typeof data.price === 'number' ? data.price : undefined,
+        duration: typeof data.duration === 'number' ? data.duration : undefined,
+        serviceStyle,
+        serviceType: 'walking',
+        returnSearchUrl,
+        appointmentsMode,
+        walker:
+          (data.walker as Record<string, unknown>) ||
+          (vendorName
+            ? { id: vendorId, vendorId, name: vendorName, businessName: vendorName }
+            : undefined),
+      };
+      sessionStorage.setItem(SEARCH_WALKER_BOOKING_INTENT_KEY, JSON.stringify(intent));
+      opts.router.push('/booking/walker');
+      return true;
+    }
+    if (hub === 'sitting') {
+      const intent: SearchSittingBookingIntent = {
+        vendorId,
+        vendorName,
+        serviceId,
+        serviceName: data.serviceName ? String(data.serviceName) : undefined,
+        price: typeof data.price === 'number' ? data.price : undefined,
+        duration: typeof data.duration === 'number' ? data.duration : undefined,
+        serviceStyle,
+        serviceType: 'sitting',
+        returnSearchUrl,
+        appointmentsMode,
+        sitter:
+          (data.sitter as Record<string, unknown>) ||
+          (vendorName
+            ? { id: vendorId, vendorId, name: vendorName, businessName: vendorName }
+            : undefined),
+      };
+      sessionStorage.setItem(SEARCH_SITTING_BOOKING_INTENT_KEY, JSON.stringify(intent));
+      opts.router.push('/booking/sitting');
+      return true;
+    }
+    if (hub === 'nutrition') {
+      const intent: SearchNutritionBookingIntent = {
+        vendorId,
+        vendorName,
+        category: 'nutrition',
+        serviceStyle,
+        returnSearchUrl,
+        appointmentsMode,
+        nutritionist:
+          (data.nutritionist as Record<string, unknown>) ||
+          (vendorName ? { id: vendorId, name: vendorName } : undefined),
+      };
+      sessionStorage.setItem(SEARCH_NUTRITION_BOOKING_INTENT_KEY, JSON.stringify(intent));
+      opts.router.push('/booking/nutrition');
+      return true;
+    }
+  } catch {
+    /* ignore quota */
+  }
+  return false;
 }
 
 /** Vendor profile deep link — same entry as Services "Details" (VendorShareDeepLinkClient). */
@@ -285,22 +613,25 @@ export function launchSearchTrainingBooking({
 
 export function launchSearchTrainingCenterProfile({
   vendorId,
+  vendorName,
   router,
   returnSearchUrl,
+  serviceStyle,
 }: {
   vendorId: string;
+  vendorName?: string;
   router: AppRouterInstance;
   returnSearchUrl?: string;
+  serviceStyle?: string;
 }): void {
-  try {
-    sessionStorage.setItem(
-      SEARCH_TRAINING_CENTER_RETURN_KEY,
-      JSON.stringify({ returnSearchUrl: returnSearchUrl || '/search?category=training' })
-    );
-  } catch {
-    /* ignore */
-  }
-  router.push(`/training/center?vendorId=${encodeURIComponent(vendorId)}`);
+  launchSearchHubAppointmentsVendorProfile({
+    vendorId,
+    vendorName,
+    category: 'training',
+    serviceStyle,
+    router,
+    returnSearchUrl: returnSearchUrl || '/search?category=training',
+  });
 }
 
 export function launchSearchGroomingBooking({
@@ -352,22 +683,25 @@ export function launchSearchGroomingBooking({
 
 export function launchSearchGroomingCenterProfile({
   vendorId,
+  vendorName,
   router,
   returnSearchUrl,
+  serviceStyle,
 }: {
   vendorId: string;
+  vendorName?: string;
   router: AppRouterInstance;
   returnSearchUrl?: string;
+  serviceStyle?: string;
 }): void {
-  try {
-    sessionStorage.setItem(
-      SEARCH_GROOMING_CENTER_RETURN_KEY,
-      JSON.stringify({ returnSearchUrl: returnSearchUrl || '/search?category=grooming' })
-    );
-  } catch {
-    /* ignore */
-  }
-  router.push(`/grooming/center?vendorId=${encodeURIComponent(vendorId)}`);
+  launchSearchHubAppointmentsVendorProfile({
+    vendorId,
+    vendorName,
+    category: 'grooming',
+    serviceStyle,
+    router,
+    returnSearchUrl: returnSearchUrl || '/search?category=grooming',
+  });
 }
 
 export function launchSearchVetCenterProfile({
@@ -375,21 +709,22 @@ export function launchSearchVetCenterProfile({
   vendorName,
   router,
   returnSearchUrl,
+  serviceStyle,
 }: {
   vendorId: string;
   vendorName?: string;
   router: AppRouterInstance;
   returnSearchUrl?: string;
+  serviceStyle?: string;
 }): void {
-  try {
-    sessionStorage.setItem(
-      SEARCH_VET_CENTER_RETURN_KEY,
-      JSON.stringify({ returnSearchUrl: returnSearchUrl || '/search?category=vet' })
-    );
-  } catch {
-    /* ignore */
-  }
-  router.push(buildSearchVendorDetailsUrl(vendorId, vendorName || 'Provider', 'vet'));
+  launchSearchHubAppointmentsVendorProfile({
+    vendorId,
+    vendorName,
+    category: 'vet',
+    serviceStyle,
+    router,
+    returnSearchUrl: returnSearchUrl || '/search?category=vet',
+  });
 }
 
 export function launchSearchBoardingBooking({
@@ -441,24 +776,25 @@ export function launchSearchBoardingBooking({
 
 export function launchSearchBoardingCenterProfile({
   vendorId,
+  vendorName,
   router,
   returnSearchUrl,
+  serviceStyle,
 }: {
   vendorId: string;
+  vendorName?: string;
   router: AppRouterInstance;
   returnSearchUrl?: string;
+  serviceStyle?: string;
 }): void {
-  try {
-    sessionStorage.setItem(
-      SEARCH_BOARDING_CENTER_RETURN_KEY,
-      JSON.stringify({ returnSearchUrl: returnSearchUrl || '/search?category=boarding' })
-    );
-  } catch {
-    /* ignore */
-  }
-  router.push(
-    `/pet-boarding/vendor/${encodeURIComponent(vendorId)}?service=all`
-  );
+  launchSearchHubAppointmentsVendorProfile({
+    vendorId,
+    vendorName,
+    category: 'boarding',
+    serviceStyle,
+    router,
+    returnSearchUrl: returnSearchUrl || '/search?category=boarding',
+  });
 }
 
 export function launchSearchWalkerBooking({
@@ -510,22 +846,25 @@ export function launchSearchWalkerBooking({
 
 export function launchSearchWalkerCenterProfile({
   vendorId,
+  vendorName,
   router,
   returnSearchUrl,
+  serviceStyle,
 }: {
   vendorId: string;
+  vendorName?: string;
   router: AppRouterInstance;
   returnSearchUrl?: string;
+  serviceStyle?: string;
 }): void {
-  try {
-    sessionStorage.setItem(
-      SEARCH_WALKER_CENTER_RETURN_KEY,
-      JSON.stringify({ returnSearchUrl: returnSearchUrl || '/search?category=walker' })
-    );
-  } catch {
-    /* ignore */
-  }
-  router.push(`/walker/vendor/${encodeURIComponent(vendorId)}`);
+  launchSearchHubAppointmentsVendorProfile({
+    vendorId,
+    vendorName,
+    category: 'walker',
+    serviceStyle,
+    router,
+    returnSearchUrl: returnSearchUrl || '/search?category=walker',
+  });
 }
 
 export function launchSearchSittingBooking({
@@ -577,22 +916,25 @@ export function launchSearchSittingBooking({
 
 export function launchSearchSittingCenterProfile({
   vendorId,
+  vendorName,
   router,
   returnSearchUrl,
+  serviceStyle,
 }: {
   vendorId: string;
+  vendorName?: string;
   router: AppRouterInstance;
   returnSearchUrl?: string;
+  serviceStyle?: string;
 }): void {
-  try {
-    sessionStorage.setItem(
-      SEARCH_SITTING_CENTER_RETURN_KEY,
-      JSON.stringify({ returnSearchUrl: returnSearchUrl || '/search?category=sitting' })
-    );
-  } catch {
-    /* ignore */
-  }
-  router.push(`/pet-sitter/vendor/${encodeURIComponent(vendorId)}?service=all`);
+  launchSearchHubAppointmentsVendorProfile({
+    vendorId,
+    vendorName,
+    category: 'sitting',
+    serviceStyle,
+    router,
+    returnSearchUrl: returnSearchUrl || '/search?category=sitting',
+  });
 }
 
 export function launchSearchNutritionMealPlans({

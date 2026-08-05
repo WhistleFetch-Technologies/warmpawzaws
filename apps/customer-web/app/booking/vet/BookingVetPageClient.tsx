@@ -120,6 +120,7 @@ function BookingVetContent() {
       serviceType={intent.serviceType}
       price={intent.price}
       duration={intent.duration}
+      appointmentsMode={intent.appointmentsMode === true}
       onBack={handleBack}
       onNavigate={handleNavigate}
       onViewBooking={handleViewBooking}

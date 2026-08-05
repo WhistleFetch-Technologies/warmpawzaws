@@ -6,12 +6,37 @@
 import { apiClient } from '@/lib/api-client';
 import { applyWapptHubDiscoveryToProviders } from '@/lib/filter-hub-services';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
-import { getWapptDiscoveryCategory } from '@/lib/wappt-hub-registry';
+import { isWarmpawzPayModuleCapable } from '@/lib/commerce-switch-routing/warmpawz-pay-feature';
+import {
+  getWapptDiscoveryCategory,
+  getWapptHubConfig,
+  normalizeWapptHubCategory,
+} from '@/lib/wappt-hub-registry';
 import { discoveryNextCursor, discoveryVendorList } from '@/lib/discovery-list';
 import { inferHubSlugFromSearchQuery } from '@/lib/search-hub-category-filter';
 
 /** Hubs where search chip emptiness was reported (vet / groom / train). */
-export const SEARCH_WAPPT_PARITY_HUBS = ['vet', 'grooming', 'training'] as const;
+export const SEARCH_WAPPT_PARITY_HUBS = [
+  'vet',
+  'grooming',
+  'training',
+  'boarding',
+  'walker',
+  'sitting',
+] as const;
+
+/**
+ * Whether search should load WAPPT discovery for a hub chip.
+ * Prefer Commerce Switch (appointments hub enabled). Also allow Pay-capable builds
+ * when Switch is marketplace — GET /search hub browse can return empty while
+ * WAPPT discovery still has providers (common on local/dev).
+ */
+export function canLoadWapptSearchHub(category: string): boolean {
+  const hub = normalizeWapptHubCategory(category);
+  if (!hub || !getWapptHubConfig(hub)) return false;
+  if (isWarmpawzAppointmentsHubEnabled(hub)) return true;
+  return isWarmpawzPayModuleCapable();
+}
 
 export type SearchWapptVendorRow = {
   id: string;
@@ -96,17 +121,19 @@ export function resolveWapptHubsForSearch(opts: {
   browseAll?: boolean;
 }): string[] {
   const category = (opts.category || '').trim().toLowerCase();
-  if (category && isWarmpawzAppointmentsHubEnabled(category)) {
-    return [category];
+  if (category && canLoadWapptSearchHub(category)) {
+    const hub = normalizeWapptHubCategory(category);
+    return hub ? [hub] : [category];
   }
 
   const inferred = inferHubSlugFromSearchQuery(opts.query || '');
-  if (inferred && isWarmpawzAppointmentsHubEnabled(inferred)) {
-    return [inferred];
+  if (inferred && canLoadWapptSearchHub(inferred)) {
+    const hub = normalizeWapptHubCategory(inferred);
+    return hub ? [hub] : [inferred];
   }
 
   if (opts.browseAll) {
-    return SEARCH_WAPPT_PARITY_HUBS.filter((hub) => isWarmpawzAppointmentsHubEnabled(hub));
+    return SEARCH_WAPPT_PARITY_HUBS.filter((hub) => canLoadWapptSearchHub(hub));
   }
 
   return [];
@@ -117,7 +144,7 @@ export async function fetchWapptSearchVendorResults(
   hubSlug: string,
   opts?: { keyword?: string; limit?: number }
 ): Promise<SearchWapptVendorRow[]> {
-  if (!isWarmpawzAppointmentsHubEnabled(hubSlug)) return [];
+  if (!canLoadWapptSearchHub(hubSlug)) return [];
 
   const rows = await fetchWapptDiscoveryRows(hubSlug, opts?.limit ?? 50);
   const qLower = (opts?.keyword || '').trim().toLowerCase();
