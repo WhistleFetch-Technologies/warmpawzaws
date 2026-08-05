@@ -94,10 +94,6 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
           setSidebarOpen(false);
           router.push(`/bookings?reviewBookingId=${encodeURIComponent(bookingId)}`);
         }}
-        onViewAppointments={() => {
-          setSidebarOpen(false);
-          router.push('/bookings');
-        }}
         onViewWallet={() => {
           setSidebarOpen(false);
           router.push('/wallet');

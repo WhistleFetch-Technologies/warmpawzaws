@@ -134,8 +134,9 @@ export async function runWpayRazorpayCheckout(params: {
     }
 
     const rz = new RazorpayCtor(options);
-    rz.on('payment.failed', (resp: { error?: { description?: string; reason?: string } }) => {
-      const msg = resp?.error?.description || resp?.error?.reason || 'Payment failed';
+    rz.on('payment.failed', (resp: unknown) => {
+      const err = resp as { error?: { description?: string; reason?: string } } | null;
+      const msg = err?.error?.description || err?.error?.reason || 'Payment failed';
       reject(new Error(msg));
     });
     rz.open();

@@ -1733,6 +1733,9 @@ export function CustomerHomeWrapper({
         })
       );
       navigateToScreen('pet-sitter-booking');
+    } else if (service === 'wappt-vendor-profile') {
+      // Walk-in Book Now / pending shell nav → shared WAPPT vendor profile (Select Slot flow).
+      handleVetNavigate(service, data);
     } else if (service === 'vet-clinic-profile' || service === 'vet-doctor-details') {
       handleVetNavigate(service, data);
     } else {

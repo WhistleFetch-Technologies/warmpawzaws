@@ -42,7 +42,6 @@ import {
 import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccountHero';
 import { ProfileStatCards, type ProfileStatCounts } from '@/components/customer/profile/ProfileStatCards';
 import { ProfileQuickActions } from '@/components/customer/profile/ProfileQuickActions';
-import { ProfileWpayHistorySection } from '@/components/customer/profile/ProfileWpayHistorySection';
 import { ProfileInfoSection } from '@/components/customer/profile/ProfileInfoSection';
 import { ProfileFieldLabel } from '@/components/customer/profile/ProfileFieldLabel';
 import { ProfileReadOnlyField } from '@/components/customer/profile/ProfileReadOnlyField';
@@ -669,8 +668,6 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
               />
 
               <div className="space-y-4 px-4 sm:px-5">
-                <ProfileWpayHistorySection />
-
                 <ProfileInfoSection
                   title="Personal Information"
                   titleIcon={User}
