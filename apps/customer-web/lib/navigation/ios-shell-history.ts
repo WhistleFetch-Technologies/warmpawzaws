@@ -11,13 +11,14 @@ export function isCapacitorIosPlatform(): boolean {
 }
 
 let popstateFromGesture = false;
-let programmaticHistorySyncInProgress = false;
+/** Remaining popstate events to suppress after programmatic history.back sync. */
+let programmaticPopstatesToSuppress = 0;
 let installed = false;
 
 /** Reset module state between unit tests. */
 export function resetIosShellHistoryForTests(): void {
   popstateFromGesture = false;
-  programmaticHistorySyncInProgress = false;
+  programmaticPopstatesToSuppress = 0;
   installed = false;
 }
 
@@ -51,15 +52,9 @@ export function syncIosHistoryAfterShellPop(steps = 1): void {
     popstateFromGesture = false;
     return;
   }
-  programmaticHistorySyncInProgress = true;
-  try {
-    for (let i = 0; i < steps; i++) {
-      window.history.back();
-    }
-  } finally {
-    queueMicrotask(() => {
-      programmaticHistorySyncInProgress = false;
-    });
+  programmaticPopstatesToSuppress += steps;
+  for (let i = 0; i < steps; i++) {
+    window.history.back();
   }
 }
 
@@ -83,11 +78,6 @@ export function syncIosShellStackDepth(
   if (nextDepth >= prevDepth) return;
 
   if (consumeIosPopstateGestureFlag()) return;
-
-  if (nextDepth === 1) {
-    replaceIosShellHistoryState(currentScreen);
-    return;
-  }
 
   syncIosHistoryAfterShellPop(prevDepth - nextDepth);
 }
@@ -116,8 +106,8 @@ export function initIosShellHistoryBridge(): () => void {
   const onPopState = () => {
     const path = window.location.pathname || '/';
     if (path !== '/' && path !== '') return;
-    if (programmaticHistorySyncInProgress) {
-      programmaticHistorySyncInProgress = false;
+    if (programmaticPopstatesToSuppress > 0) {
+      programmaticPopstatesToSuppress -= 1;
       return;
     }
     popstateFromGesture = true;
@@ -129,7 +119,7 @@ export function initIosShellHistoryBridge(): () => void {
   return () => {
     window.removeEventListener('popstate', onPopState);
     installed = false;
-    programmaticHistorySyncInProgress = false;
+    programmaticPopstatesToSuppress = 0;
     popstateFromGesture = false;
   };
 }

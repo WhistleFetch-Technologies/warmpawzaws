@@ -722,7 +722,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       <StandardizedFooter
         currentTab="home"
         onTabChange={(tab) => {
-          if (tab === 'home') onBack();
+          if (tab === 'home') onNavigate('home');
           else if (tab === 'bookings') onNavigate('my-bookings');
           else if (tab === 'shop') onNavigate('shop');
           else if (tab === 'profile') onNavigate('profile');
