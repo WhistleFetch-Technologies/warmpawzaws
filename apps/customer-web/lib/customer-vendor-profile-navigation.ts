@@ -174,11 +174,31 @@ export function getWebWalkerDiscoveryChevronNavTarget(input: {
     input.providerDisplayName?.trim() ||
     String(row.name || row.businessName || row.business_name || 'Walker').trim() ||
     'Walker';
+  return buildWalkerProviderProfileNavPayload({
+    vendorId: String(vendorId).trim(),
+    displayName,
+    serviceStyle: input.serviceStyle,
+    profileBackScreen: input.profileBackScreen,
+    specialization: input.specialization,
+    walkerSeed: row,
+  });
+}
+
+/** UniversalServicesByStyle vendorId embed must redirect to HomeServiceProviderProfile, not vet-style profile UI. */
+export function buildWalkerProviderProfileNavPayload(input: {
+  vendorId: string;
+  displayName?: string;
+  serviceStyle: string;
+  profileBackScreen?: string;
+  specialization?: string;
+  walkerSeed?: Record<string, unknown>;
+}): { screen: string; data: Record<string, unknown> } {
+  const displayName = input.displayName?.trim() || 'Walker';
   return {
     screen: 'walker-provider-profile',
     data: {
-      vendorId: String(vendorId).trim(),
-      walker: { name: displayName, ...row },
+      vendorId: input.vendorId,
+      walker: { name: displayName, vendorId: input.vendorId, ...(input.walkerSeed ?? {}) },
       serviceType: 'walking',
       serviceStyle: String(input.serviceStyle),
       ...(input.profileBackScreen ? { walkerProfileBackScreen: input.profileBackScreen } : {}),

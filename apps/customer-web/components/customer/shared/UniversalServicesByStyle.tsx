@@ -23,6 +23,7 @@ import {
   getWebGroomingTrainingEmbedVendorId,
   getWebVetDiscoveryChevronNavTarget,
   getWebWalkerDiscoveryChevronNavTarget,
+  buildWalkerProviderProfileNavPayload,
 } from '@/lib/customer-vendor-profile-navigation';
 import { toast } from 'sonner';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
@@ -49,6 +50,10 @@ import {
   normalizeRatingCount,
 } from '@/lib/rating-display';
 import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
+import {
+  mapFacilityRecentReviews,
+  normalizeFacilityRating,
+} from '@/lib/universal-provider-profile-enrichment';
 import { roleIdToSharePersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from './ServiceStyleLaunchBlocked';
@@ -160,6 +165,7 @@ export function UniversalServicesByStyle({
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
   const providersRef = useRef(providers);
   providersRef.current = providers;
+  const walkerProfileRedirectIssuedRef = useRef(false);
   const launchGate = useServiceStyleLaunchGate(phone, finalCategory, serviceStyle);
 
   const feedEnabled = launchGate.ready && !launchGate.blocked;
@@ -252,6 +258,31 @@ export function UniversalServicesByStyle({
     void loadVendorProfile();
   }, [feedEnabled, vendorId, serviceStyle]);
 
+  /** Walkers use HomeServiceProviderProfile — never the vet-style embed profile UI. */
+  useEffect(() => {
+    if (roleId !== 'walker' || !vendorId) return;
+    const vid = String(vendorId).trim();
+    if (!vid || walkerProfileRedirectIssuedRef.current) return;
+    walkerProfileRedirectIssuedRef.current = true;
+    const providerRow = providersRef.current[0];
+    const displayName =
+      vendor?.business_name ||
+      vendor?.businessName ||
+      vendor?.name ||
+      providerRow?.name ||
+      'Walker';
+    const { screen, data } = buildWalkerProviderProfileNavPayload({
+      vendorId: vid,
+      displayName,
+      serviceStyle: String(serviceStyle),
+      profileBackScreen,
+      walkerSeed: providerRow
+        ? { id: providerRow.providerId, name: providerRow.name }
+        : undefined,
+    });
+    onNavigate(screen, data);
+  }, [roleId, vendorId, serviceStyle, profileBackScreen, onNavigate, vendor]);
+
   const isProfileView = vendorId && providers.length === 1;
   const profileProvider = isProfileView ? providers[0] : null;
 
@@ -277,8 +308,18 @@ export function UniversalServicesByStyle({
 
       if (facilityRes?.success) {
         setFacility(facilityRes.facility);
-        setRating(facilityRes.rating);
-        setReviews(facilityRes.recentReviews || []);
+        const providerRow = providersRef.current.find(
+          (p) => p.providerId === vendorId || p.vendorId === vendorId
+        );
+        const recentReviews = mapFacilityRecentReviews(facilityRes.recentReviews);
+        setReviews(recentReviews);
+        setRating(
+          normalizeFacilityRating(facilityRes.rating, {
+            recentReviews,
+            fallbackReviewCount: providerRow?.reviewCount,
+            fallbackAverage: providerRow?.rating,
+          })
+        );
       }
     } catch (error) {
       console.error('Error loading vendor profile:', error);
@@ -688,6 +729,17 @@ export function UniversalServicesByStyle({
     );
   }
 
+  if (roleId === 'walker' && vendorId) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
+          <p className="text-gray-600">Opening walker profile...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Profile View Mode - Zomato-style for vet provider (tele/at_home/at_center)
   if (isProfileView && profileProvider) {
     const providerName = vendor?.business_name || vendor?.name || profileProvider.name;
@@ -925,7 +977,7 @@ export function UniversalServicesByStyle({
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-gray-900">
-                      {rating?.totalReviews || profileProvider.reviewCount || '10+'}
+                      {normalizeRatingCount(rating?.totalReviews ?? profileProvider.reviewCount) || '—'}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">Reviews</div>
                   </div>

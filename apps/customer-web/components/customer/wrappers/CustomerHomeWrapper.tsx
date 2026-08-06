@@ -2950,19 +2950,6 @@ export function CustomerHomeWrapper({
         serviceType="walker"
         config={SERVICE_CONFIGS.walker}
         onBack={() => backFromBannerOr(handleBack, walkerServiceData)}
-        onOpenWalkServicesAndBundles={() => {
-          const resolvedVid =
-            String(vid || '').trim() ||
-            pickWalkerVendorId((walkerServiceData?.walker || {}) as Record<string, unknown>);
-          handleWalkerNavigate('walker-booking', {
-            vendorId: resolvedVid,
-            walker: walkerServiceData?.walker,
-            serviceType: 'walking',
-            serviceStyle: 'at_home',
-            walkerProfileBackScreen:
-              (walkerServiceData?.walkerProfileBackScreen as ScreenType) || 'walker',
-          });
-        }}
         onSelectService={(service, rawRow) => {
           if (rawRow && isVendorServicePackageRow(rawRow)) {
             const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
@@ -5480,6 +5467,10 @@ export function CustomerHomeWrapper({
           navigateToScreen('home-service-selection');
         }}
         onNavigate={(screen, data) => {
+          if (screen === 'walker-booking' || screen === 'purchase-package') {
+            handleWalkerNavigate(screen, data);
+            return;
+          }
           if (screen === 'my-bookings' && data?.bookingId) handleViewBooking(data.bookingId);
         }}
         onViewBooking={handleViewBooking}
@@ -5668,7 +5659,14 @@ export function CustomerHomeWrapper({
       return;
     }
 
-    if (screen === 'grooming-booking' || (screen === 'create-booking' && data?.serviceType === 'grooming')) {
+    const isGroomingContext =
+      selectedProblem?.roleId === 'groomer' ||
+      String(selectedProblem?.category || '').toLowerCase() === 'grooming';
+
+    if (
+      screen === 'grooming-booking' ||
+      (screen === 'create-booking' && (data?.serviceType === 'grooming' || isGroomingContext))
+    ) {
       const st = String(data?.serviceStyle || '').toLowerCase();
       if (st === 'at_home' || st === 'home_visit') groomingHomeNavigate(screen, data);
       else groomingCenterNavigate(screen, data);
