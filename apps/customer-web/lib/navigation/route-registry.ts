@@ -7,6 +7,9 @@ export type CustomerTabId = 'home' | 'shop' | 'bookings' | 'profile' | 'warmpawz
 export const routeKey = {
   product: (id: string) => `product:${String(id).trim()}`,
   vendor: (id: string) => `vendor:${String(id).trim()}`,
+  /** WAPPT profile — include serviceStyle so same vendor reopens with correct tab/style. */
+  wapptProfile: (vendorId: string, serviceStyle?: string) =>
+    `vendor:${String(vendorId).trim()}:style:${String(serviceStyle || 'at_center').trim()}`,
   order: (id: string) => `order:${String(id).trim()}`,
   booking: (id: string) => `booking:${String(id).trim()}`,
   clinic: (id: string) => `clinic:${String(id).trim()}`,

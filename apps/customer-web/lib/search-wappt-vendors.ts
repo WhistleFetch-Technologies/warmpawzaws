@@ -49,6 +49,8 @@ export type SearchWapptVendorRow = {
   imageUrl?: string;
   distanceKm: number | null;
   roleDisplayName?: string;
+  preferredServiceStyle?: string;
+  serviceStyle?: string;
   nextAvailableSlot?: string;
 };
 
@@ -71,6 +73,10 @@ function mapDiscoveryRowToSearchWapptVendor(
   const distRaw = row.distanceKm ?? row.distance;
   const distanceKm =
     distRaw != null && Number.isFinite(Number(distRaw)) ? Number(distRaw) : null;
+  const preferredServiceStyle =
+    String(row.preferredServiceStyle ?? row.preferred_service_style ?? '').trim() || undefined;
+  const serviceStyle =
+    String(row.serviceStyle ?? row.service_style ?? '').trim() || undefined;
   return {
     id,
     name,
@@ -82,6 +88,8 @@ function mapDiscoveryRowToSearchWapptVendor(
     imageUrl: String(row.photoUrl ?? row.photo ?? row.profileImage ?? '').trim() || undefined,
     distanceKm,
     roleDisplayName: String(row.roleDisplayName ?? row.roleName ?? '').trim() || undefined,
+    preferredServiceStyle,
+    serviceStyle,
     nextAvailableSlot,
   };
 }

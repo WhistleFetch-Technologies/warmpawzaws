@@ -419,15 +419,22 @@ describe('buildDiscoveryVendorExistsSql', () => {
     expect(bind?.exact).not.toContain('general');
     const walkerBind = vendorServicesHubCategoryBindParams('walking');
     expect(walkerBind?.exact).toEqual(expect.arrayContaining(['walking & exercise']));
+    const groomingBind = vendorServicesHubCategoryBindParams('grooming');
+    expect(groomingBind?.exact).toEqual(
+      expect.arrayContaining(['grooming & hygiene', 'pet_groomer']),
+    );
   });
 
-  it('sqlVendorServicesHubCategoryFilter builds parameterized vet and walker SQL', () => {
+  it('sqlVendorServicesHubCategoryFilter builds parameterized vet, walker, and grooming SQL', () => {
     const vetSql = sqlVendorServicesHubCategoryFilter('vet', 'vs', 2, 3);
     expect(vetSql).toContain('ANY($2::text[])');
     expect(vetSql).toContain('vet_clinic');
     const walkSql = sqlVendorServicesHubCategoryFilter('walker', 'vs', 2, 3);
     expect(walkSql).toContain('dog%walk%');
-    expect(sqlVendorServicesHubCategoryFilter('grooming', 'vs', 2, 3)).toBeNull();
+    const groomSql = sqlVendorServicesHubCategoryFilter('grooming', 'vs', 2, 3);
+    expect(groomSql).toContain('ANY($2::text[])');
+    expect(groomSql).toContain('groomer_center');
+    expect(groomSql).toContain("= 'general'");
   });
 
   it('sqlVetHubExcludeNonVetServices excludes grooming/training/walking catalog without service_name matching', () => {

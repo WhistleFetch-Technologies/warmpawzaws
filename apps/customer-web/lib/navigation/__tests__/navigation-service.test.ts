@@ -17,6 +17,7 @@ describe('navigation Phase 3', () => {
     it('builds product path and key', () => {
       expect(productPath('abc 123')).toBe('/shop/abc%20123');
       expect(routeKey.product('abc')).toBe('product:abc');
+      expect(routeKey.wapptProfile('v1', 'at_home')).toBe('vendor:v1:style:at_home');
     });
 
     it('isCurrentPath normalizes trailing slashes', () => {

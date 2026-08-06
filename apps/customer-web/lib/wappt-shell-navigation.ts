@@ -29,6 +29,7 @@ export type WapptShellScreenActions = {
   setWapptProfileData: (data: WapptProfileShellState) => void;
   navigateToScreen: (screen: string, key?: string) => void;
   routeKeyVendor: (vendorId: string) => string;
+  routeKeyWapptProfile: (vendorId: string, serviceStyle?: string) => string;
   handleVetNavigate: (screen: string, payload: Record<string, unknown>) => void;
   mergeVetBookingState: (payload: Record<string, unknown>) => void;
   setWalkerBookingState: (payload: Record<string, unknown>) => void;
@@ -105,7 +106,10 @@ export function handleWapptShellScreenNavigate(
     });
     actions.navigateToScreen(
       'wappt-vendor-profile',
-      actions.routeKeyVendor(String(payload.vendorId || '')),
+      actions.routeKeyWapptProfile(
+        String(payload.vendorId || ''),
+        String(payload.serviceStyle || 'at_center'),
+      ),
     );
     return;
   }

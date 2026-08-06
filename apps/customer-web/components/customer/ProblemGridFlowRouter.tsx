@@ -40,6 +40,7 @@ import { toast } from 'sonner';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
+import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 import { getWapptAllowedDiscoveryStyles, getWapptDefaultDiscoveryStyle } from '@/lib/wappt-hub-registry';
 import { resolveProblemGridWapptCategory } from '@/lib/problem-grid-wappt-navigation';
 import { problemGridAliasesForApi } from '@/lib/problem-grid-role-aliases';
@@ -514,7 +515,7 @@ export function ProblemGridFlowRouter({
     const phone = customerId || '';
 
     const wapptCategory = resolveProblemGridWapptCategory(kind);
-    if (isWarmpawzAppointmentsHubEnabled(wapptCategory)) {
+    if (canLoadWapptSearchHub(wapptCategory)) {
       return (
         <div key={key} className="mx-auto w-full max-w-customer">
           <WarmpawzAppointmentsVendorList

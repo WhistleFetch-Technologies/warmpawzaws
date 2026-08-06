@@ -298,7 +298,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       onNavigate?.('grooming-vendor-profile', {
         vendorId: accountId,
         vendorType: 'vendor' as const,
-        serviceStyle: 'at_center',
+        serviceStyle: resolveBoardingListVendorProfileServiceStyle(v, 'grooming'),
         category: 'grooming',
         vendorName: v.name,
         vendorData: v.raw,

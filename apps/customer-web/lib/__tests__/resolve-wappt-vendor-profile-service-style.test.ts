@@ -1,6 +1,7 @@
 import {
   resolveBoardingListVendorProfileServiceStyle,
   resolveWalkInProviderProfileServiceStyle,
+  resolveWapptDiscoveryListProfileServiceStyle,
   resolveWapptVendorProfileServiceStyle,
 } from '../resolve-wappt-vendor-profile-service-style';
 
@@ -101,6 +102,41 @@ describe('resolveWapptVendorProfileServiceStyle', () => {
         },
         'training',
       ),
+    ).toBe('at_home');
+  });
+});
+
+describe('resolveWapptDiscoveryListProfileServiceStyle', () => {
+  it('infers at_home for solo groomer on default at_center tab', () => {
+    expect(
+      resolveWapptDiscoveryListProfileServiceStyle({
+        activeStyleFilter: 'at_center',
+        row: { roleDisplayName: 'Groomer (Solo)' },
+        category: 'grooming',
+      }),
+    ).toBe('at_home');
+  });
+
+  it('keeps at_center on default tab for center groomer', () => {
+    expect(
+      resolveWapptDiscoveryListProfileServiceStyle({
+        activeStyleFilter: 'at_center',
+        row: { roleDisplayName: 'Groomer (Center)', preferredServiceStyle: 'at_center' },
+        category: 'grooming',
+      }),
+    ).toBe('at_center');
+  });
+
+  it('honours explicit at_home tab for dual-style center-labelled vendor', () => {
+    expect(
+      resolveWapptDiscoveryListProfileServiceStyle({
+        activeStyleFilter: 'at_home',
+        row: {
+          roleDisplayName: 'Groomer (Center)',
+          preferredServiceStyle: 'at_center',
+        },
+        category: 'grooming',
+      }),
     ).toBe('at_home');
   });
 });

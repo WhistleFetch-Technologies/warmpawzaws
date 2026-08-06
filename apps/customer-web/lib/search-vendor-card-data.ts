@@ -10,6 +10,8 @@ export interface SearchVendorCardData {
   photo?: string;
   photoUrl?: string;
   roleDisplayName?: string;
+  preferredServiceStyle?: string;
+  serviceStyle?: string;
   isVerified?: boolean;
   nextAvailableSlot?: string;
   timing?: string;

@@ -91,6 +91,9 @@ export function mapDiscoveryRowBaseFields(row: DiscoveryListRow) {
     priceMin: row.priceMin != null ? Number(row.priceMin) : undefined,
     warmpawzAppointments: row.warmpawzAppointments === true,
     nextAvailableSlot,
+    preferredServiceStyle:
+      (row.preferredServiceStyle ?? row.preferred_service_style) as string | undefined,
+    serviceStyle: (row.serviceStyle ?? row.service_style) as string | undefined,
     services: Array.isArray(row.services) ? row.services : [],
     raw: row,
   };

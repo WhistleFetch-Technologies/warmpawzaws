@@ -10,6 +10,8 @@ describe('handleWapptShellScreenNavigate', () => {
       setWapptProfileData: jest.fn(),
       navigateToScreen: jest.fn(),
       routeKeyVendor: (id: string) => `vendor:${id}`,
+      routeKeyWapptProfile: (id: string, style?: string) =>
+        `vendor:${id}:style:${style || 'at_center'}`,
       handleVetNavigate: jest.fn(),
       mergeVetBookingState: jest.fn(),
       setWalkerBookingState: jest.fn(),
@@ -37,7 +39,7 @@ describe('handleWapptShellScreenNavigate', () => {
       );
       expect(actions.navigateToScreen).toHaveBeenCalledWith(
         'wappt-vendor-profile',
-        'vendor:v-1',
+        'vendor:v-1:style:at_center',
       );
     },
   );
@@ -79,7 +81,7 @@ describe('handleWapptShellScreenNavigate', () => {
     );
     expect(actions.navigateToScreen).toHaveBeenCalledWith(
       'wappt-vendor-profile',
-      'vendor:w-avail-1',
+      'vendor:w-avail-1:style:at_home',
     );
   });
 

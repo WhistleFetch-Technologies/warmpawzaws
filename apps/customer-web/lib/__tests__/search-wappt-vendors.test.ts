@@ -98,6 +98,28 @@ describe('fetchWapptSearchVendorResults', () => {
       city: 'Bengaluru',
     });
   });
+
+  it('maps preferredServiceStyle from discovery row', async () => {
+    (apiClient.get as jest.Mock).mockResolvedValue({
+      vendors: [
+        {
+          vendorId: 'g-1',
+          name: 'Bindu Grooming Service',
+          roleDisplayName: 'Groomer (Solo)',
+          preferredServiceStyle: 'at_home',
+          city: 'Bengaluru',
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const rows = await fetchWapptSearchVendorResults('grooming');
+    expect(rows[0]).toMatchObject({
+      id: 'g-1',
+      preferredServiceStyle: 'at_home',
+      roleDisplayName: 'Groomer (Solo)',
+    });
+  });
 });
 
 describe('mergeWapptSearchVendorRows', () => {
