@@ -3,18 +3,33 @@
 import { useState } from 'react';
 import { useWarmpawzPayDashboard } from '@/hooks/warmpawz-pay/useWarmpawzPayDashboard';
 import { useWarmpawzPayPayments } from '@/hooks/warmpawz-pay/useWarmpawzPayPayments';
+import { defaultWpayPaymentsFilters } from '@/lib/warmpawz-pay-payments-admin';
+import type { WpayPaymentsFilters } from '@/lib/warmpawz-pay-payments-admin';
 import { AnalyticsErrorState } from '@/components/admin/marketing/analytics/AnalyticsStateViews';
 import { EmptyState } from '@/components/admin/warmpawz-pay/catalogue/EmptyState';
 import { DashboardMetricsSkeleton } from './DashboardMetricsSkeleton';
 import { MetricsGrid } from './MetricsGrid';
+import { PaymentsFilterBar } from './PaymentsFilterBar';
 import { PaymentsTable } from './PaymentsTable';
 
 const PAYMENTS_PAGE_SIZE = 5;
 
 export function DashboardPage() {
   const [paymentsPage, setPaymentsPage] = useState(1);
+  const [paymentsFilters, setPaymentsFilters] = useState<WpayPaymentsFilters>(
+    defaultWpayPaymentsFilters,
+  );
   const { data, isLoading, error, refresh } = useWarmpawzPayDashboard();
-  const paymentsQuery = useWarmpawzPayPayments(paymentsPage, PAYMENTS_PAGE_SIZE);
+  const paymentsQuery = useWarmpawzPayPayments(
+    paymentsPage,
+    PAYMENTS_PAGE_SIZE,
+    paymentsFilters,
+  );
+
+  const handleFiltersChange = (next: WpayPaymentsFilters) => {
+    setPaymentsFilters(next);
+    setPaymentsPage(1);
+  };
 
   const isEmpty = data?.metrics.publishedMerchants.value === 0;
 
@@ -42,6 +57,12 @@ export function DashboardPage() {
           <h2 className="text-lg font-semibold text-gray-900">Warmpawz Pay Orders</h2>
           <p className="text-sm text-gray-500">Orders paid via Warmpawz Pay</p>
         </div>
+
+        <PaymentsFilterBar
+          filters={paymentsFilters}
+          onFiltersChange={handleFiltersChange}
+          disabled={paymentsQuery.isLoading}
+        />
 
         {paymentsQuery.isLoading ? (
           <p className="text-sm text-gray-500">Loading orders…</p>

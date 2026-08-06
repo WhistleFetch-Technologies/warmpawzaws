@@ -6,6 +6,7 @@ import {
 import { WPAY_DASHBOARD_VIEW } from '../../dashboard/authorization/permissions';
 import { requireDashboardAdminPermission } from '../../dashboard/middleware/require-dashboard-admin-permission.middleware';
 import { paymentsListHandler } from '../handlers/payments-list.handler';
+import { paymentsExportHandler } from '../handlers/payments-export.handler';
 import type { WarmpawzPayPaymentsService } from '../services/warmpawz-pay-payments.service';
 
 export interface PaymentsAdminRouteDeps {
@@ -19,5 +20,13 @@ export function registerPaymentsAdminRoutes(app: Hono, deps: PaymentsAdminRouteD
     requireWarmpawzPayAdminEnabled,
     requireDashboardAdminPermission(WPAY_DASHBOARD_VIEW),
     (c) => paymentsListHandler(c, deps),
+  );
+
+  app.get(
+    '/admin/warmpawz-pay/payments/export.xlsx',
+    requireWarmpawzPayEnabled,
+    requireWarmpawzPayAdminEnabled,
+    requireDashboardAdminPermission(WPAY_DASHBOARD_VIEW),
+    (c) => paymentsExportHandler(c, deps),
   );
 }

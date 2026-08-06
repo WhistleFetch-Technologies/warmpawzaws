@@ -1,4 +1,11 @@
 import { apiClient } from '@/lib/api-client';
+import {
+  appendWpayPaymentsDateParams,
+  type WpayPaymentsFilters,
+} from '@/lib/warmpawz-pay-payments-export';
+
+export type { WpayPaymentsFilters, WpayPaymentsFilterMode } from '@/lib/warmpawz-pay-payments-export';
+export { defaultWpayPaymentsFilters } from '@/lib/warmpawz-pay-payments-export';
 
 export const WPAY_PAYMENTS_API_BASE = '/admin/warmpawz-pay/payments';
 
@@ -16,6 +23,10 @@ export interface WpayAdminPaymentItem {
   readonly discountPercent: number;
   readonly discountAmount: number;
   readonly payableAmount: number;
+  readonly platformWithholdPercent: number;
+  readonly platformWithholdAmount: number;
+  readonly vendorSettlementAmount: number;
+  readonly settlementSource?: 'persisted' | 'computed';
   readonly paidAt: string;
 }
 
@@ -55,11 +66,13 @@ function assertSuccess<T>(response: SuccessEnvelope<T> | ErrorEnvelope | T): T {
 export async function fetchWarmpawzPayPayments(params: {
   page: number;
   pageSize: number;
+  filters: WpayPaymentsFilters;
 }): Promise<WpayAdminPaymentsListData> {
   const qs = new URLSearchParams({
     page: String(params.page),
     pageSize: String(params.pageSize),
   });
+  appendWpayPaymentsDateParams(qs, params.filters);
   const response = await apiClient.get<
     SuccessEnvelope<WpayAdminPaymentsListData> | WpayAdminPaymentsListData
   >(`${WPAY_PAYMENTS_API_BASE}?${qs.toString()}`);
@@ -68,6 +81,10 @@ export async function fetchWarmpawzPayPayments(params: {
 
 export function formatWpayInr(value: number): string {
   return `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+export function formatWpayPercent(value: number): string {
+  return `${value}%`;
 }
 
 export function formatWpayPaidAt(iso: string): string {

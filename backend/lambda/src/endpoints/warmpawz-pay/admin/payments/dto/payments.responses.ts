@@ -12,6 +12,10 @@ export interface WpayAdminPaymentItemDTO {
   readonly discountPercent: number;
   readonly discountAmount: number;
   readonly payableAmount: number;
+  readonly platformWithholdPercent: number;
+  readonly platformWithholdAmount: number;
+  readonly vendorSettlementAmount: number;
+  readonly settlementSource: 'persisted' | 'computed';
   readonly paidAt: string;
 }
 

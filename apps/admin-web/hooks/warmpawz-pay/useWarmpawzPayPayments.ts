@@ -2,19 +2,26 @@ import { useQuery } from '@tanstack/react-query';
 import {
   fetchWarmpawzPayPayments,
   type WpayAdminPaymentsListData,
+  type WpayPaymentsFilters,
 } from '@/lib/warmpawz-pay-payments-admin';
+import { areWpayPaymentsFiltersReady } from '@/lib/warmpawz-pay-payments-export';
 
 export const warmpawzPayPaymentsQueryKeys = {
   all: ['warmpawz-pay-payments'] as const,
-  list: (page: number, pageSize: number) =>
-    [...warmpawzPayPaymentsQueryKeys.all, page, pageSize] as const,
+  list: (page: number, pageSize: number, filters: WpayPaymentsFilters) =>
+    [...warmpawzPayPaymentsQueryKeys.all, page, pageSize, filters] as const,
 };
 
-export function useWarmpawzPayPayments(page: number, pageSize: number) {
+export function useWarmpawzPayPayments(
+  page: number,
+  pageSize: number,
+  filters: WpayPaymentsFilters,
+) {
   const query = useQuery({
-    queryKey: warmpawzPayPaymentsQueryKeys.list(page, pageSize),
-    queryFn: () => fetchWarmpawzPayPayments({ page, pageSize }),
+    queryKey: warmpawzPayPaymentsQueryKeys.list(page, pageSize, filters),
+    queryFn: () => fetchWarmpawzPayPayments({ page, pageSize, filters }),
     staleTime: 30_000,
+    enabled: areWpayPaymentsFiltersReady(filters),
   });
 
   return {

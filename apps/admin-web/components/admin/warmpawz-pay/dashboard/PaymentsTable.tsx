@@ -12,6 +12,7 @@ import {
   customerInitials,
   formatWpayInr,
   formatWpayPaidAt,
+  formatWpayPercent,
   formatWpayPhone,
   type WpayAdminPaymentItem,
 } from '@/lib/warmpawz-pay-payments-admin';
@@ -55,6 +56,9 @@ export function PaymentsTable({
               <TableHead className="text-right">Amount Quoted</TableHead>
               <TableHead className="text-right">Discount (%)</TableHead>
               <TableHead className="text-right">Discounted Amount Paid</TableHead>
+              <TableHead className="text-right">Platform Withhold (%)</TableHead>
+              <TableHead className="text-right">Platform Withhold (₹)</TableHead>
+              <TableHead className="text-right">Vendor Settlement</TableHead>
               <TableHead className="text-right">Paid At</TableHead>
             </TableRow>
           </TableHeader>
@@ -86,6 +90,17 @@ export function PaymentsTable({
                 </TableCell>
                 <TableCell className="text-right font-semibold text-green-700">
                   {formatWpayInr(item.payableAmount)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                    {formatWpayPercent(item.platformWithholdPercent)}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right text-gray-700">
+                  {formatWpayInr(item.platformWithholdAmount)}
+                </TableCell>
+                <TableCell className="text-right font-semibold text-blue-700">
+                  {formatWpayInr(item.vendorSettlementAmount)}
                 </TableCell>
                 <TableCell className="text-right text-sm text-gray-600">
                   {formatWpayPaidAt(item.paidAt)}
