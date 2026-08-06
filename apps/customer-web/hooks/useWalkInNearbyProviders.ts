@@ -15,7 +15,7 @@ import {
 import { readHomeSessionCache, writeHomeSessionCache } from '@/lib/home-session-cache';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
 
-export const WALK_IN_NEARBY_CACHE_SUFFIX = 'walk_in_nearby';
+export const WALK_IN_NEARBY_CACHE_SUFFIX = 'walk_in_nearby_v2';
 /** Home carousel cap — full nearby list uses {@link WALK_IN_NEARBY_MAX_LIMIT}. */
 export const WALK_IN_NEARBY_HOME_LIMIT = 8;
 /** Backend GET /customer/warmpawz-pay/vendors/nearby MAX_LIMIT. */
@@ -47,7 +47,8 @@ export function walkInProvidersEqual(a: WalkInProvider[], b: WalkInProvider[]): 
       left.id !== right.id ||
       left.distanceKm !== right.distanceKm ||
       left.displayName !== right.displayName ||
-      left.fromPrice !== right.fromPrice
+      left.fromPrice !== right.fromPrice ||
+      left.serviceStyle !== right.serviceStyle
     ) {
       return false;
     }

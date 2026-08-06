@@ -46,6 +46,7 @@ import {
   findBoardingListVendorByProfileKey,
   type BoardingListVendor,
 } from '@/lib/boarding-vendor-discovery-map';
+import { resolveBoardingListVendorProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
@@ -214,7 +215,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId,
           category: 'training',
-          serviceStyle: 'at_center',
+          serviceStyle: resolveBoardingListVendorProfileServiceStyle(v, 'training'),
           vendorName: v.name,
         }),
         profileBackScreen: 'training',
@@ -238,7 +239,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           ...buildWarmpawzAppointmentsProfileNav({
             vendorId,
             category: 'training',
-            serviceStyle: 'at_center',
+            serviceStyle: resolveBoardingListVendorProfileServiceStyle(v, 'training'),
             vendorName: v.name,
           }),
           profileBackScreen: 'training',

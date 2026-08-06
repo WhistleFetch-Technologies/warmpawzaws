@@ -28,6 +28,7 @@ export type WpayVendorListDbRow = {
   legacy_category: string | null;
   role_name: string | null;
   role_display_name: string | null;
+  preferred_service_style: string | null;
   pricing_discount_value: string | number | null;
   pricing_status: string | null;
   pricing_effective_from: Date | string | null;

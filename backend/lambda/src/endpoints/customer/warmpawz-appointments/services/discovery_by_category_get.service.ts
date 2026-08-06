@@ -20,6 +20,15 @@ function parseServiceStyle(raw: string | undefined): WapptDiscoveryServiceStyle 
   return 'all';
 }
 
+function normalizePreferredServiceStyle(raw: unknown): string | undefined {
+  const style = String(raw ?? '').trim().toLowerCase();
+  if (!style) return undefined;
+  if (style === 'at_home' || style === 'home_visit') return 'at_home';
+  if (style === 'at_center' || style === 'at_clinic' || style === 'at_vendor') return 'at_center';
+  if (style === 'tele' || style === 'online' || style === 'video_consultation') return 'tele';
+  return undefined;
+}
+
 function mapRowToCard(
   row: Awaited<ReturnType<typeof dbListWapptDiscoveryByCategory>>['rows'][number],
   serviceStyle: WapptDiscoveryServiceStyle,
@@ -28,19 +37,25 @@ function mapRowToCard(
     String(row.business_name || '').trim() ||
     String(row.owner_name || '').trim() ||
     'Provider';
+  const preferredServiceStyle = normalizePreferredServiceStyle(row.preferred_service_style);
+  const resolvedStyle =
+    serviceStyle === 'all' ? preferredServiceStyle : serviceStyle;
   return {
     vendorId: row.vendor_id,
     id: row.vendor_id,
     name,
     photoUrl: row.profile_image,
     roleDisplayName: row.role_display_name || row.role_name || '',
+    roleName: row.role_name || '',
+    vendorType: row.vendor_type || '',
     rating: Number(row.avg_rating) || 0,
     reviewCount: Number(row.review_count) || 0,
     isVerified: true,
     isOnline: row.is_online,
     city: row.city,
     address: row.address,
-    serviceStyle: serviceStyle === 'all' ? undefined : serviceStyle,
+    serviceStyle: resolvedStyle,
+    preferredServiceStyle,
   };
 }
 

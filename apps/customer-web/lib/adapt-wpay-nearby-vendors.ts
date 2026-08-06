@@ -1,5 +1,9 @@
 import type { FeaturedProviderCategory } from '@/lib/featured-provider';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
+import {
+  resolveWalkInProviderProfileServiceStyle,
+  resolveWapptVendorProfileServiceStyle,
+} from '@/lib/resolve-wappt-vendor-profile-service-style';
 
 /** Mirrors GET /customer/warmpawz-pay/vendors/nearby success payload (frontend-only). */
 export type WpayNearbyVendorDto = {
@@ -77,6 +81,17 @@ export function adaptWpayNearbyVendorToWalkInProvider(
     String(dto.priceLabel ?? '').trim() ||
     WALK_IN_PRICE_LABEL[category as keyof typeof WALK_IN_PRICE_LABEL];
 
+  const profileStyle = dto.profilePath?.serviceStyle;
+  const serviceStyle = resolveWalkInProviderProfileServiceStyle({
+    category,
+    subtitle: String(dto.categoryLabel ?? '').trim(),
+    displayName,
+    serviceStyle:
+      profileStyle === 'at_home' || profileStyle === 'at_center'
+        ? profileStyle
+        : undefined,
+  });
+
   return {
     id: vendorId,
     displayName,
@@ -89,6 +104,7 @@ export function adaptWpayNearbyVendorToWalkInProvider(
     fromPrice: fromPrice != null && fromPrice > 0 ? fromPrice : null,
     priceLabel,
     category,
+    serviceStyle: serviceStyle === 'tele' ? 'at_center' : serviceStyle,
   };
 }
 

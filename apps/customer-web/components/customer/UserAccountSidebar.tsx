@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
+import { isWarmpawzPayModuleCapable } from '@/lib/commerce-switch-routing';
 import { filterAccountMenuForReviewAccount } from '@/lib/app-review-demo-account';
 import { Button } from '@/components/ui/button';
 import { 
@@ -10,7 +12,7 @@ import {
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
   Trash2, Plus, Check, Wallet, ShoppingBag,
-  Gift, Users, Award, Smartphone, Building2, MessageSquare, X
+  Gift, Users, Award, Smartphone, Building2, MessageSquare, X, QrCode
 } from 'lucide-react';
 import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccountHero';
 import { ProfileMenuFloatingSheet } from '@/components/customer/profile/ProfileMenuFloatingSheet';
@@ -543,6 +545,9 @@ export function UserAccountSidebar({
   onNavigate,
   onRegisterOverlayBack,
 }: UserAccountSidebarProps) {
+  const commerce = useCommerceConfigOptional();
+  const showWarmpawzPayMenu =
+    commerce?.isWarmpawzPay === true && commerce.isLoaded && isWarmpawzPayModuleCapable();
   const [isOpen, setIsOpen] = useState(false);
   const [activeView, setActiveView] = useState<
     'menu' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'
@@ -1308,6 +1313,19 @@ export function UserAccountSidebar({
       action: 'wallet' as const,
       isExternal: true,
     },
+    ...(showWarmpawzPayMenu
+      ? [
+          {
+            icon: QrCode,
+            label: 'Warmpawz Pay',
+            subtitle: 'View pay-at-vendor transactions',
+            iconBg: 'bg-orange-100',
+            iconColor: 'text-orange-600',
+            action: 'warmpawz-pay' as const,
+            isExternal: true,
+          },
+        ]
+      : []),
     {
       icon: Award,
       label: 'Rewards & Points',
@@ -1389,7 +1407,7 @@ export function UserAccountSidebar({
       view: 'help' as const,
     },
   ],
-    [activeBookings.length, cartItems.length, savedBadgeCount]
+    [showWarmpawzPayMenu, activeBookings.length, cartItems.length, savedBadgeCount]
   );
 
   const visibleMenuItems = filterAccountMenuForReviewAccount(

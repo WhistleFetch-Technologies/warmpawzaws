@@ -3861,17 +3861,6 @@ export function CustomerHomeComplete({
           vendorName={chatFromNotification.vendorName}
           vendorPhoto={chatFromNotification.vendorPhoto}
           onClose={() => setChatFromNotification(null)}
-          onStartVideoCall={(bookingId) => {
-            handleNavigation('video-call', { bookingId });
-            if (!onNavigate) {
-              if (phone) {
-                localStorage.setItem('customerPhone', phone);
-                localStorage.setItem('phone', phone);
-              }
-              router.push(`/video/${bookingId}`);
-            }
-            setChatFromNotification(null);
-          }}
         />
       )}
 
