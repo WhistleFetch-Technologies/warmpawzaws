@@ -4595,7 +4595,7 @@ export function CustomerHomeWrapper({
     <ProductDetailPage 
       product={selectedProduct} 
       phone={phone}
-      onBack={() => goToShopFromParent()} 
+      onBack={handleBack}
       onNavigate={(screen, data) => {
         if (screen === 'product_detail' && data?.product) {
           setSelectedProduct(data.product);
