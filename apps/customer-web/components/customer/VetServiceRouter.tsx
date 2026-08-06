@@ -26,14 +26,12 @@ import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
   type BoardingListVendor,
   type BoardingPlanRow,
-  findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
-import { pickCustomerVendorAccountId, pickVetPractitionerProfileEntityId } from '@warmpawz/shared-types';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import {
-  buildWalkerServiceDataForVendorPackagePurchase,
-  isVendorServicePackageRow,
-} from '@/lib/vendor-package-purchase-nav';
+  buildVetHubBookPlanNav,
+  buildVetHubProviderProfileNav,
+} from '@/lib/vet-hub-vendor-nav';
 import {
   gateServiceStyleNavigation,
   isServiceStyleComingSoon,
@@ -354,120 +352,19 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   };
 
   const handleVetBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
-    const raw = (v.raw || {}) as Record<string, unknown>;
-    const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
-
-    const serviceObj: Record<string, unknown> = {
-      /** Prefer vendor_services UUID over composite row keys so package purchase resolves strict intent in prod. */
-      id: plan.vendorServiceId ?? plan.rowId,
-      vendorServiceId: plan.vendorServiceId,
-      serviceId: plan.serviceId,
-      serviceName: plan.name,
-      name: plan.name,
-      price: plan.price,
-      duration: plan.duration,
-      serviceStyle: plan.serviceStyle,
-      description: plan.description,
-      isPackage: plan.isPackage,
-      packageDetails: plan.packageDetails,
-      metadata: plan.metadata,
-    };
-
-    /** Solo / staff practitioner — doctor profile + booking */
-    if (providerType === 'staff' || providerType === 'individual') {
-      const doctorId =
-        pickVetPractitionerProfileEntityId(raw) ||
-        String(raw.providerId || raw.provider_id || v.id);
-      const vendorForPkg = String(raw.vendorId || raw.vendor_id || doctorId || '').trim();
-      if (isVendorServicePackageRow(serviceObj) && vendorForPkg) {
-        const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-          vendorId: vendorForPkg,
-          vendorName: v.name,
-          serviceRow: serviceObj,
-          serviceTypeCategory: 'vet',
-          serviceStyle: String(plan.serviceStyle || 'at_center'),
-        });
-        if (pkgNav) {
-          handleNavigate('purchase-package', pkgNav);
-          return;
-        }
-      }
-      handleNavigate('vet-doctor-details', {
-        doctorId,
-        serviceId: plan.rowId,
-        serviceName: plan.name,
-        price: plan.price,
-      });
-      return;
-    }
-
-    /** Facility / clinic vendor */
-    const vendorId = String(
-      pickCustomerVendorAccountId(raw) || raw.vendorId || raw.vendor_id || v.id || ''
-    ).trim();
-
-    if (vendorId && isVendorServicePackageRow(serviceObj)) {
-      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-        vendorId,
-        vendorName: v.name,
-        serviceRow: serviceObj,
-        serviceTypeCategory: 'vet',
-        serviceStyle: String(plan.serviceStyle || 'at_center'),
-      });
-      if (pkgNav) {
-        handleNavigate('purchase-package', pkgNav);
-        return;
-      }
-    }
-
-    handleNavigate('vet-booking', {
-      vendorId,
-      vendorName: v.name,
-      serviceId: plan.rowId,
-      serviceName: plan.name,
-      price: plan.price,
-      duration: plan.duration,
-      serviceStyle: plan.serviceStyle || 'at_center',
-      serviceType: 'at_center',
-      service: serviceObj,
-    });
+    const target = buildVetHubBookPlanNav(v, plan, 'vet');
+    if (!target) return;
+    handleNavigate(target.screen, target.data);
   };
 
-  /**
-   * Chevron + "Details" should open the real provider profile: doctor screen for staff/individual,
-   * clinic/center screen for facility vendors. Uses `raw.vendorId` when the card key is not the clinic id.
-   */
   const openVetProviderProfile = (e: MouseEvent, profileKey: string) => {
     e.stopPropagation();
-    const v = findBoardingListVendorByProfileKey(vendors, profileKey);
-    if (!v) {
+    const target = buildVetHubProviderProfileNav(vendors, profileKey, 'vet');
+    if (!target) {
       toast.error('Could not open this profile. Try View Services or refresh.');
       return;
     }
-    const raw = (v.raw || {}) as Record<string, unknown>;
-    const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
-    const rawVendorId = String(raw.vendorId || raw.vendor_id || '').trim();
-    const rawProviderId = String(raw.providerId || raw.provider_id || '').trim();
-
-    if (providerType === 'staff' || providerType === 'individual') {
-      const doctorId =
-        pickVetPractitionerProfileEntityId(raw) || rawProviderId || v.id;
-      handleNavigate('vet-doctor-details', {
-        doctorId,
-        doctorProfileBackScreen: 'vet',
-      });
-      return;
-    }
-
-    const clinicVendorId =
-      pickCustomerVendorAccountId(raw) || rawVendorId || v.id;
-    handleNavigate('vet-services-by-style', {
-      vendorId: clinicVendorId,
-      serviceStyle: 'at_center',
-      serviceTypeName: 'Vet Clinic',
-      category: 'vet',
-      returnScreen: 'vet',
-    });
+    handleNavigate(target.screen, target.data);
   };
 
   const openVetDetails = openVetProviderProfile;
@@ -825,7 +722,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       <StandardizedFooter
         currentTab="home"
         onTabChange={(tab) => {
-          if (tab === 'home') onBack();
+          if (tab === 'home') onNavigate('home');
           else if (tab === 'bookings') onNavigate('my-bookings');
           else if (tab === 'shop') onNavigate('shop');
           else if (tab === 'profile') onNavigate('profile');

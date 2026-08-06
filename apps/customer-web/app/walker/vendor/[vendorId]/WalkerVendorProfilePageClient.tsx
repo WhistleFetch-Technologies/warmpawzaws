@@ -74,11 +74,6 @@ function WalkerVendorProfileContent({ vendorId }: { vendorId: string }) {
       serviceType="walker"
       config={SERVICE_CONFIGS.walker}
       onBack={handleBack}
-      onOpenWalkServicesAndBundles={() => {
-        launchWalkerBooking({
-          walker: { id: vendorId, vendorId, name: 'Walker' },
-        });
-      }}
       onSelectService={(service, rawRow) => {
         if (rawRow && isVendorServicePackageRow(rawRow)) {
           const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({

@@ -63,14 +63,14 @@ describe('ios-shell-history', () => {
     expect(pushSpy).not.toHaveBeenCalled();
   });
 
-  it('syncIosShellStackDepth(2, 1) uses replaceState not history.back', () => {
+  it('syncIosShellStackDepth(2, 1) syncs browser history with one history.back', () => {
     const replaceSpy = jest.spyOn(window.history, 'replaceState');
     const backSpy = jest.spyOn(window.history, 'back');
 
     syncIosShellStackDepth(2, 1, 'home');
 
-    expect(replaceSpy).toHaveBeenCalledWith({ warmpawzShell: 'home' }, '', '/');
-    expect(backSpy).not.toHaveBeenCalled();
+    expect(backSpy).toHaveBeenCalledTimes(1);
+    expect(replaceSpy).not.toHaveBeenCalled();
   });
 
   it('syncIosShellScreenReplace updates history state without push or back', () => {
@@ -99,6 +99,26 @@ describe('ios-shell-history', () => {
     });
 
     syncIosShellStackDepth(3, 2, 'vet');
+
+    expect(handlerRuns).toBe(0);
+
+    cleanup();
+  });
+
+  it('multi-step programmatic sync suppresses ALL popstates (not just first)', () => {
+    let handlerRuns = 0;
+    registerBackHandler(() => {
+      handlerRuns += 1;
+      return true;
+    }, 100);
+
+    const cleanup = initIosShellHistoryBridge();
+
+    jest.spyOn(window.history, 'back').mockImplementation(() => {
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    syncIosShellStackDepth(4, 2, 'vet');
 
     expect(handlerRuns).toBe(0);
 

@@ -1,5 +1,6 @@
 import {
   getWebWalkerDiscoveryChevronNavTarget,
+  buildWalkerProviderProfileNavPayload,
 } from '@/lib/customer-vendor-profile-navigation';
 
 describe('getWebWalkerDiscoveryChevronNavTarget', () => {
@@ -45,5 +46,24 @@ describe('getWebWalkerDiscoveryChevronNavTarget', () => {
         serviceStyle: 'at_home',
       })
     ).toBeNull();
+  });
+});
+
+describe('buildWalkerProviderProfileNavPayload', () => {
+  it('builds walker-provider-profile redirect for UniversalServicesByStyle vendorId embed', () => {
+    const target = buildWalkerProviderProfileNavPayload({
+      vendorId: 'walker-vendor-1',
+      displayName: 'Rex Walker',
+      serviceStyle: 'at_home',
+      profileBackScreen: 'problem_grid_flow',
+    });
+    expect(target.screen).toBe('walker-provider-profile');
+    expect(target.data).toMatchObject({
+      vendorId: 'walker-vendor-1',
+      serviceType: 'walking',
+      serviceStyle: 'at_home',
+      walkerProfileBackScreen: 'problem_grid_flow',
+      walker: { name: 'Rex Walker', vendorId: 'walker-vendor-1' },
+    });
   });
 });

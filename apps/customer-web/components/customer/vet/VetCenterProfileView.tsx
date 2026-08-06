@@ -11,6 +11,10 @@ import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
+import {
+  mapFacilityRecentReviews,
+  normalizeFacilityRating,
+} from '@/lib/universal-provider-profile-enrichment';
 
 interface VetCenterProfileViewProps {
   phone: string;
@@ -66,8 +70,13 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
       if (facilityRes.success) {
         setCenter(facilityRes.vendor);
         setFacility(facilityRes.facility);
-        setRating(facilityRes.rating);
-        setReviews(facilityRes.recentReviews || []);
+        const recentReviews = mapFacilityRecentReviews(facilityRes.recentReviews);
+        setReviews(recentReviews);
+        setRating(
+          normalizeFacilityRating(facilityRes.rating, {
+            recentReviews,
+          })
+        );
       }
 
       if (servicesRes.success && servicesRes.services) {

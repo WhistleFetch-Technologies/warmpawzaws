@@ -1,6 +1,7 @@
 import {
   mapFacilityRecentReviews,
   mergeProviderAboutFromFacility,
+  normalizeFacilityRating,
 } from '../universal-provider-profile-enrichment';
 
 describe('universal-provider-profile-enrichment', () => {
@@ -35,5 +36,42 @@ describe('universal-provider-profile-enrichment', () => {
     expect(about.qualifications).toBe('MVSc');
     expect(about.address).toBe('MG Road');
     expect(about.city).toBe('Bengaluru');
+  });
+
+  it('uses facility.description when provider seed bio is empty', () => {
+    const about = mergeProviderAboutFromFacility(
+      { bio: '' },
+      {
+        facility: { description: 'Professional dog walker serving Koramangala' },
+        vendor: {},
+      }
+    );
+    expect(about.bio).toBe('Professional dog walker serving Koramangala');
+  });
+
+  it('normalizes facility API rating shape average + count', () => {
+    expect(normalizeFacilityRating({ average: '5.0', count: 1 })).toEqual({
+      averageRating: 5,
+      totalReviews: 1,
+    });
+  });
+
+  it('normalizes legacy averageRating + totalReviews shape', () => {
+    expect(normalizeFacilityRating({ averageRating: 4.2, totalReviews: 3 })).toEqual({
+      averageRating: 4.2,
+      totalReviews: 3,
+    });
+  });
+
+  it('falls back to recent reviews when aggregate rating is zero', () => {
+    expect(
+      normalizeFacilityRating(
+        { average: 0, count: 0 },
+        { recentReviews: [{ rating: 5 }] }
+      )
+    ).toEqual({
+      averageRating: 5,
+      totalReviews: 1,
+    });
   });
 });

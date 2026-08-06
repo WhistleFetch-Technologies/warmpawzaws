@@ -41,6 +41,11 @@ import {
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
 import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
+import { normalizeRatingCount } from '@/lib/rating-display';
+import {
+  mapFacilityRecentReviews,
+  normalizeFacilityRating,
+} from '@/lib/universal-provider-profile-enrichment';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -311,8 +316,18 @@ export function VetServicesByStyle({
 
       if (facilityRes?.success) {
         setFacility(facilityRes.facility);
-        setRating(facilityRes.rating);
-        setReviews(facilityRes.recentReviews || []);
+        const providerRow = providersRef.current.find(
+          (p) => p.providerId === vendorId || p.vendorId === vendorId
+        );
+        const recentReviews = mapFacilityRecentReviews(facilityRes.recentReviews);
+        setReviews(recentReviews);
+        setRating(
+          normalizeFacilityRating(facilityRes.rating, {
+            recentReviews,
+            fallbackReviewCount: providerRow?.reviewCount,
+            fallbackAverage: providerRow?.rating,
+          })
+        );
       }
     } catch (error) {
       console.error('Error loading vendor profile:', error);
@@ -677,8 +692,8 @@ export function VetServicesByStyle({
                 <VendorRatingDisplay
                   row={{
                     vendorId: profileVendorId,
-                    vendorRating: rating?.averageRating ?? profileProvider.rating,
-                    vendorReviewCount: rating?.totalReviews ?? profileProvider.reviewCount,
+                    vendorRating: rating?.averageRating,
+                    vendorReviewCount: rating?.totalReviews,
                   }}
                   vendorId={profileVendorId}
                   starsClassName="h-5 w-5"
@@ -829,7 +844,7 @@ export function VetServicesByStyle({
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-gray-900">
-                      {rating?.totalReviews || profileProvider.reviewCount || '10+'}
+                      {normalizeRatingCount(rating?.totalReviews ?? profileProvider.reviewCount) || '—'}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">Reviews</div>
                   </div>
@@ -1016,18 +1031,29 @@ export function VetServicesByStyle({
             {activeTab === 'reviews' && (
               <div className="space-y-4">
                 {/* Reviews Summary */}
-                {reviews.length > 0 && rating && (
+                {reviews.length > 0 && rating && (() => {
+                  const tabTotal = normalizeRatingCount(
+                    rating.totalReviews ?? profileProvider.reviewCount ?? reviews.length
+                  );
+                  let tabAvg = Number(rating.averageRating ?? profileProvider.rating ?? 0);
+                  if ((!Number.isFinite(tabAvg) || tabAvg <= 0) && reviews.length > 0) {
+                    tabAvg =
+                      reviews.reduce((sum: number, r: { rating?: number }) => sum + Number(r.rating || 0), 0) /
+                      reviews.length;
+                  }
+                  if (tabTotal <= 0 || !Number.isFinite(tabAvg) || tabAvg <= 0) return null;
+                  return (
                   <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-5 border border-amber-200 mb-6">
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <Star className="w-6 h-6 text-amber-500 fill-amber-500" />
                           <span className="text-3xl font-bold text-gray-900">
-                            {Number(rating?.averageRating || profileProvider.rating || 0).toFixed(1)}
+                            {tabAvg.toFixed(1)}
                           </span>
                         </div>
                         <p className="text-sm text-gray-600">
-                          Based on {rating.totalReviews || profileProvider.reviewCount || 0} reviews
+                          Based on {tabTotal} {tabTotal === 1 ? 'review' : 'reviews'}
                         </p>
                       </div>
                       <div className="text-right">
@@ -1038,7 +1064,8 @@ export function VetServicesByStyle({
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Reviews List */}
                 {reviews.length > 0 ? (
