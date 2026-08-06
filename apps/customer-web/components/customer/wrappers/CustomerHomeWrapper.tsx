@@ -1838,15 +1838,24 @@ export function CustomerHomeWrapper({
       openWapptDiscovery(String((data as any)?.category || 'vet'), data as Record<string, unknown>);
     }
     else if (screen === 'wappt-vendor-profile') {
+      const profileCategory = String(data?.category || 'vet');
       setWapptProfileData({
         vendorId: String(data?.vendorId || ''),
         vendorName: data?.vendorName,
-        category: String(data?.category || 'vet'),
-        serviceStyle: String(data?.serviceStyle || 'at_center'),
+        category: profileCategory,
+        serviceStyle: String(
+          data?.serviceStyle || getWapptDefaultDiscoveryStyle(profileCategory),
+        ),
         profileBackScreen:
           data?.profileBackScreen || data?.clinicProfileBackScreen || 'wappt-discovery',
       });
-      navigateToScreen('wappt-vendor-profile', routeKey.vendor(String(data?.vendorId || '')));
+      navigateToScreen(
+        'wappt-vendor-profile',
+        routeKey.wapptProfile(
+          String(data?.vendorId || ''),
+          String(data?.serviceStyle || getWapptDefaultDiscoveryStyle(profileCategory)),
+        ),
+      );
     }
     else if (screen === 'vet-clinic-booking') navigateToScreen('vet-clinic-booking');
     else if (screen === 'vet-tele-consultation') {
@@ -1965,6 +1974,7 @@ export function CustomerHomeWrapper({
         setWapptProfileData,
         navigateToScreen: (target, key) => navigateToScreen(target as ScreenType, key),
         routeKeyVendor: routeKey.vendor,
+        routeKeyWapptProfile: routeKey.wapptProfile,
         handleVetNavigate,
         mergeVetBookingState: (payload) => {
           setVetServiceData((prev: Record<string, unknown> | null) =>
@@ -3303,6 +3313,7 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'wappt-vendor-profile' && wapptProfileData?.vendorId) {
     return (
       <WarmpawzAppointmentsVendorProfile
+        key={`${wapptProfileData.vendorId}:${wapptProfileData.serviceStyle}`}
         phone={phone}
         vendorId={wapptProfileData.vendorId}
         vendorName={wapptProfileData.vendorName}

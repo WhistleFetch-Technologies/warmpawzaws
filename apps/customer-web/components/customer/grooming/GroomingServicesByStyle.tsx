@@ -53,8 +53,9 @@ import {
   resolveWarmpawzBookingScreen,
   WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
-import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
+import { resolveWapptDiscoveryListProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
+import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { WarmpawzAppointmentsVendorProfile } from '../warmpawz-appointments/WarmpawzAppointmentsVendorProfile';
 
 interface GroomingServicesByStyleProps {
@@ -85,6 +86,9 @@ interface Provider {
   address?: string;
   city?: string;
   role?: string;
+  roleDisplayName?: string;
+  preferredServiceStyle?: string;
+  serviceStyle?: string;
   specialisation?: string; // ✅ NEW: Specialisation
   amenities?: string[]; // ✅ NEW: Amenities
   experienceYears?: number;
@@ -186,6 +190,9 @@ export function GroomingServicesByStyle({
       address: base.address,
       city: base.city,
       role: base.role,
+      roleDisplayName: base.roleDisplayName,
+      preferredServiceStyle: base.preferredServiceStyle,
+      serviceStyle: base.serviceStyle,
       specialisation:
         (row.specialisation as string) ||
         (row.specialization as string) ||
@@ -539,8 +546,19 @@ export function GroomingServicesByStyle({
     e.stopPropagation();
     if (appointmentsMode) {
       const vid = String(provider.vendorId || provider.providerId || '');
-      const style =
+      const activeFilter =
         wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;
+      const style = resolveWapptDiscoveryListProfileServiceStyle({
+        activeStyleFilter: activeFilter as 'at_center' | 'at_home' | 'tele',
+        row: {
+          roleDisplayName: provider.roleDisplayName ?? provider.role,
+          role: provider.role,
+          preferredServiceStyle: provider.preferredServiceStyle,
+          serviceStyle: provider.serviceStyle,
+          services: provider.services,
+        },
+        category,
+      });
       onNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId: vid,
@@ -552,8 +570,19 @@ export function GroomingServicesByStyle({
       });
       return;
     }
+    const embedStyle = resolveWapptDiscoveryListProfileServiceStyle({
+      activeStyleFilter: serviceStyle as 'at_center' | 'at_home' | 'tele',
+      row: {
+        roleDisplayName: provider.roleDisplayName ?? provider.role,
+        role: provider.role,
+        preferredServiceStyle: provider.preferredServiceStyle,
+        serviceStyle: provider.serviceStyle,
+        services: provider.services,
+      },
+      category,
+    });
     const vid = getWebGroomingTrainingEmbedVendorId(provider as unknown as Record<string, unknown>);
-    onNavigate('grooming_embed_vendor_profile', { vendorId: vid, serviceStyle });
+    onNavigate('grooming_embed_vendor_profile', { vendorId: vid, serviceStyle: embedStyle });
   };
 
   const handleSelectService = (provider: Provider, service: any) => {

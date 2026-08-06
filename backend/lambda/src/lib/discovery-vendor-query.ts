@@ -212,6 +212,35 @@ export function appendWalkerDiscoveryCategoryAliasKeys(rawCategoryKeys: string[]
   }
 }
 
+/** Grooming hub: catalog / vendor_services.category labels beyond literal "grooming". */
+export const GROOMING_DISCOVERY_CATEGORY_ALIAS_KEYS: readonly string[] = [
+  'grooming & hygiene',
+  'pet_groomer',
+  'pet_grooming',
+  'pet grooming',
+];
+
+/** Roles allowed when vendor_services.category is empty or the placeholder "general". */
+export const GROOMING_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL = `(
+  'groomer', 'groomer_solo', 'groomer_center',
+  'pet_groomer', 'pet_groomer_solo', 'pet_groomer_business'
+)`;
+
+export function appendGroomingDiscoveryCategoryAliasKeys(rawCategoryKeys: string[], category?: string): void {
+  const c = String(category || '')
+    .toLowerCase()
+    .trim()
+    .replace(/-/g, '_');
+  if (c === 'grooming' || c === 'pet_groomer' || c === 'pet_grooming') {
+    rawCategoryKeys.push(...GROOMING_DISCOVERY_CATEGORY_ALIAS_KEYS);
+  }
+}
+
+export function isGroomingHubCategoryRequest(categoryRaw: string): boolean {
+  const c = String(categoryRaw).toLowerCase().trim().replace(/-/g, '_');
+  return c === 'grooming' || c === 'pet_groomer' || c === 'pet_grooming';
+}
+
 export function isVetHubCategoryRequest(categoryRaw: string): boolean {
   const c = String(categoryRaw).toLowerCase().trim().replace(/-/g, '_');
   return c === 'vet' || c === 'veterinary' || c === 'veterinarian' || c === 'vet_clinic';
@@ -268,6 +297,10 @@ export function vendorServicesHubCategoryBindParams(categoryRaw: string): {
   }
   if (isWalkerHubCategoryRequest(categoryRaw)) {
     const keys = resolveDiscoveryCategoryKeys({ category: 'walker' });
+    return { exact: keys.catTextExact, like: keys.catTextLike };
+  }
+  if (isGroomingHubCategoryRequest(categoryRaw)) {
+    const keys = resolveDiscoveryCategoryKeys({ category: 'grooming' });
     return { exact: keys.catTextExact, like: keys.catTextLike };
   }
   return null;
@@ -328,6 +361,25 @@ export function sqlVendorServicesHubCategoryFilter(
         )
       )`;
   }
+  if (isGroomingHubCategoryRequest(categoryRaw)) {
+    return `
+      AND (
+        LOWER(COALESCE(${vsAlias}.category,'')) = ANY($${exactParamIndex}::text[])
+        OR LOWER(COALESCE(${vsAlias}.category,'')) LIKE ANY($${likeParamIndex}::text[])
+        OR (
+          (
+            TRIM(COALESCE(${vsAlias}.category, '')) = ''
+            OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) = 'general'
+          )
+          AND EXISTS (
+            SELECT 1 FROM vendors v_hub
+            LEFT JOIN roles r_hub ON v_hub.role_id = r_hub.id
+            WHERE v_hub.id = ${vsAlias}.vendor_id
+              AND LOWER(TRIM(COALESCE(r_hub.name, ''))) IN ${GROOMING_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL}
+          )
+        )
+      )`;
+  }
   return null;
 }
 
@@ -343,6 +395,7 @@ export function resolveDiscoveryCategoryKeys(opts: {
   if (opts.roleId) rawCategoryKeys.push(String(opts.roleId));
   appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys, opts.category);
   appendWalkerDiscoveryCategoryAliasKeys(rawCategoryKeys, opts.category);
+  appendGroomingDiscoveryCategoryAliasKeys(rawCategoryKeys, opts.category);
   const catTextExact: string[] = rawCategoryKeys.filter((k) => !isUuid(k)).map((k) => k.toLowerCase());
   const catTextLike: string[] = catTextExact.map((k) => `%${k}%`);
   const catUUIDs: string[] = rawCategoryKeys.filter((k) => isUuid(k));

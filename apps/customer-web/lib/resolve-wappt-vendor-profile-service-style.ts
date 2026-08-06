@@ -193,6 +193,27 @@ export function resolveWalkInProviderProfileServiceStyle(
   );
 }
 
+/**
+ * WAPPT discovery list (At centre / At home tabs): honour an explicit non-default tab;
+ * on the category default tab infer per-vendor style so solo at_home vendors are not
+ * opened with at_center.
+ */
+export function resolveWapptDiscoveryListProfileServiceStyle(opts: {
+  activeStyleFilter: WapptProfileServiceStyle;
+  row: StyleRow | null | undefined;
+  category: string;
+}): WapptProfileServiceStyle {
+  const { activeStyleFilter, row, category } = opts;
+  if (activeStyleFilter === 'tele') return 'tele';
+
+  const defaultStyle = getWapptDefaultDiscoveryStyle(category);
+  if (activeStyleFilter !== defaultStyle) {
+    return clampToCategory(activeStyleFilter, category);
+  }
+
+  return resolveWapptVendorProfileServiceStyle(row, category);
+}
+
 /** BoardingListVendor helper — merges card raw + planRows for style resolution. */
 export function resolveBoardingListVendorProfileServiceStyle(
   vendor: { raw?: Record<string, unknown>; planRows?: Array<{ serviceStyle?: string }> },

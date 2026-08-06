@@ -18,6 +18,8 @@ export interface SearchVendorCardLike {
   distanceKm?: number | null;
   photo?: string;
   roleDisplayName?: string;
+  preferredServiceStyle?: string;
+  serviceStyle?: string;
   nextAvailableSlot?: string;
 }
 
@@ -40,24 +42,26 @@ export function searchCardToBoardingListVendor(
     photo: card.photo,
     roleDisplayName:
       effectiveCategory === 'training'
-        ? 'Training'
+        ? card.roleDisplayName || 'Training'
         : effectiveCategory === 'grooming'
-          ? 'Grooming'
+          ? card.roleDisplayName || 'Grooming'
           : effectiveCategory === 'boarding'
-            ? 'Boarding'
+            ? card.roleDisplayName || 'Boarding'
             : effectiveCategory === 'vet' || effectiveCategory === 'veterinary'
               ? card.roleDisplayName || 'Veterinary'
               : effectiveCategory === 'walker' || isWalkerCategory(effectiveCategory)
-              ? 'Walker'
-              : effectiveCategory === 'sitting' || isSittingCategory(effectiveCategory)
-                ? 'Sitting'
-                : effectiveCategory === 'cafe' || isCafeCategory(effectiveCategory)
-                  ? 'Pet Cafe'
-                  : effectiveCategory === 'resort' || isResortCategory(effectiveCategory)
-                    ? 'Resort'
-                    : effectiveCategory === 'pharmacy' || isPharmacyCategory(effectiveCategory)
-                      ? 'Pharmacy'
-                      : card.roleDisplayName || effectiveCategory,
+                ? card.roleDisplayName || 'Walker'
+                : effectiveCategory === 'sitting' || isSittingCategory(effectiveCategory)
+                  ? card.roleDisplayName || 'Sitting'
+                  : effectiveCategory === 'cafe' || isCafeCategory(effectiveCategory)
+                    ? 'Pet Cafe'
+                    : effectiveCategory === 'resort' || isResortCategory(effectiveCategory)
+                      ? 'Resort'
+                      : effectiveCategory === 'pharmacy' || isPharmacyCategory(effectiveCategory)
+                        ? 'Pharmacy'
+                        : card.roleDisplayName || effectiveCategory,
+    preferredServiceStyle: card.preferredServiceStyle,
+    serviceStyle: card.serviceStyle,
     category: effectiveCategory,
     timing: card.nextAvailableSlot ? `Next: ${card.nextAvailableSlot}` : '9 AM - 8 PM',
     nextAvailableSlot: card.nextAvailableSlot,

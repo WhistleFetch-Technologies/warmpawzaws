@@ -88,6 +88,7 @@ import {
 import { filterMarketplaceRowsWhenWapptPresent } from '@/lib/search-wappt-dedup';
 import { resolveSearchHubVendorCardMeta } from '@/lib/search-hub-vendor-card-config';
 import { searchCardToBoardingListVendor } from '@/lib/search-training-vendor-map';
+import { resolveBoardingListVendorProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
 
 interface SearchResult {
@@ -115,6 +116,8 @@ interface SearchResult {
   /** Product rows: seller/vendor name. */
   sellerName?: string;
   roleDisplayName?: string;
+  preferredServiceStyle?: string;
+  serviceStyle?: string;
   nextAvailableSlot?: string;
 }
 
@@ -252,6 +255,8 @@ function wapptRowToSearchResult(row: SearchWapptVendorRow): SearchResult {
     addressDisplay: row.addressDisplay,
     distanceKm: row.distanceKm,
     roleDisplayName: row.roleDisplayName,
+    preferredServiceStyle: row.preferredServiceStyle,
+    serviceStyle: row.serviceStyle,
     nextAvailableSlot: row.nextAvailableSlot,
   };
 }
@@ -447,6 +452,7 @@ function SearchContent() {
     const vendorId = vendor.id;
     const returnUrl = buildReturnSearchUrl();
     const vendorName = vendor.name;
+    const serviceStyle = resolveBoardingListVendorProfileServiceStyle(vendor, hubCategory);
     switch (hubCategory) {
       case 'vet':
         launchSearchVetCenterProfile({
@@ -454,6 +460,7 @@ function SearchContent() {
           vendorName,
           router,
           returnSearchUrl: returnUrl,
+          serviceStyle,
         });
         break;
       case 'grooming':
@@ -462,6 +469,7 @@ function SearchContent() {
           vendorName,
           router,
           returnSearchUrl: returnUrl,
+          serviceStyle,
         });
         break;
       case 'training':
@@ -470,6 +478,7 @@ function SearchContent() {
           vendorName,
           router,
           returnSearchUrl: returnUrl,
+          serviceStyle,
         });
         break;
       case 'boarding':
@@ -478,6 +487,7 @@ function SearchContent() {
           vendorName,
           router,
           returnSearchUrl: returnUrl,
+          serviceStyle,
         });
         break;
       case 'walker':
@@ -486,6 +496,7 @@ function SearchContent() {
           vendorName,
           router,
           returnSearchUrl: returnUrl,
+          serviceStyle,
         });
         break;
       case 'sitting':
@@ -494,6 +505,7 @@ function SearchContent() {
           vendorName,
           router,
           returnSearchUrl: returnUrl,
+          serviceStyle,
         });
         break;
       default:
@@ -718,6 +730,8 @@ function SearchContent() {
       roleDisplayName:
         result.roleDisplayName ||
         roleDisplayNameForCategory(effectiveCategory, result.category || effectiveCategory),
+      preferredServiceStyle: result.preferredServiceStyle,
+      serviceStyle: result.serviceStyle,
       nextAvailableSlot: result.nextAvailableSlot,
     };
   };

@@ -20,7 +20,12 @@ import {
   resolveWapptDiscoveryStyleFilters,
   type WapptDiscoveryListStyle,
 } from '@/lib/warmpawz-appointments/wappt-list-style-config';
-import { getWapptAllowedDiscoveryStyles, getWapptDiscoveryCategory } from '@/lib/wappt-hub-registry';
+import {
+  getWapptAllowedDiscoveryStyles,
+  getWapptDiscoveryCategory,
+} from '@/lib/wappt-hub-registry';
+import { resolveWapptDiscoveryListProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 
 type WarmpawzAppointmentsVendorListProps = {
@@ -111,9 +116,28 @@ export function WarmpawzAppointmentsVendorList({
   const openVendorProfile = useCallback(
     (e: MouseEvent, row: ReturnType<typeof mapDiscoveryRowBaseFields>) => {
       e.stopPropagation();
-      const vendorId = String(row.vendorId || row.providerId || '').trim();
+      const vendorId =
+        pickCustomerVendorAccountId({
+          ...(row.raw ?? {}),
+          vendorId: row.vendorId,
+          providerId: row.providerId,
+          id: row.id,
+        }) || String(row.vendorId || row.providerId || '').trim();
       if (!vendorId) return;
-      const style = styleFilter;
+      const style = resolveWapptDiscoveryListProfileServiceStyle({
+        activeStyleFilter: styleFilter,
+        row: {
+          ...(row.raw ?? {}),
+          roleDisplayName: row.roleDisplayName ?? row.role,
+          preferredServiceStyle:
+            row.preferredServiceStyle ??
+            (row.raw as Record<string, unknown> | undefined)?.preferredServiceStyle,
+          serviceStyle:
+            row.serviceStyle ?? (row.raw as Record<string, unknown> | undefined)?.serviceStyle,
+          services: row.services,
+        },
+        category: listConfig.category,
+      });
       onNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId,
