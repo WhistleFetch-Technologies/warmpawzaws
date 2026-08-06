@@ -40,6 +40,10 @@ import {
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { resolveVendorDashboardTimeframeRange } from '../../../utils/vendor-dashboard-timeframe';
 import { applyVendorBookingDisplayFields } from '../../warmpawz-appointments/shared/vendor-booking-display';
+import {
+  SQL_EXCLUDE_WAPPT_BOOKING_EARNINGS,
+  SQL_EXCLUDE_WAPPT_VENDOR_EARNINGS_VE,
+} from '../../warmpawz-appointments/shared/wappt-earnings-policy';
 import { mapWpaySettlementLedgerStatus } from '../../customer/warmpawz-pay/shared/accrue-wpay-settlement';
 
 const DASHBOARD_SERVICE_NAME_SQL = `CASE
@@ -445,7 +449,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
              COALESCE(SUM(amount), 0) as earnings,
              COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_settlement
            FROM vendor_earnings ve
-           WHERE ve.vendor_id = ANY($1::uuid[])${veSupSql}`,
+           WHERE ve.vendor_id = ANY($1::uuid[])
+             AND ${SQL_EXCLUDE_WAPPT_VENDOR_EARNINGS_VE}${veSupSql}`,
           [veIds, ...(temporarySuppressionMain ? [temporarySuppressionMain.vendorIds, temporarySuppressionMain.cutoffDateIst] : [])]
         ).catch(() => ({ rows: [{ earnings: '0', pending_settlement: '0' }] }));
         earningsFromTable = veRes.rows[0] || earningsFromTable;
@@ -812,11 +817,13 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         period === 'lifetime'
           ? `SELECT ${earningsBookingSelect}
            FROM vendor_earnings ve${earningsBookingJoins}
-           WHERE ve.vendor_id = ANY($1::uuid[])${earnVeFragLifetime}
+           WHERE ve.vendor_id = ANY($1::uuid[])
+             AND ${SQL_EXCLUDE_WAPPT_BOOKING_EARNINGS}${earnVeFragLifetime}
            ORDER BY ve.realized_at DESC NULLS LAST`
           : `SELECT ${earningsBookingSelect}
            FROM vendor_earnings ve${earningsBookingJoins}
-           WHERE ve.vendor_id = ANY($1::uuid[])${vePeriodSql}${earnVeFragRanged}
+           WHERE ve.vendor_id = ANY($1::uuid[])
+             AND ${SQL_EXCLUDE_WAPPT_BOOKING_EARNINGS}${vePeriodSql}${earnVeFragRanged}
            ORDER BY ve.realized_at DESC NULLS LAST`;
 
       const earningsResult = await query(
@@ -1167,7 +1174,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           LEFT JOIN services s ON b.service_id = s.id
           LEFT JOIN vendor_services vs ON b.service_id = vs.id
           LEFT JOIN customers c ON b.customer_id = c.id
-          WHERE ve.vendor_id = ANY($1::uuid[])`;
+          WHERE ve.vendor_id = ANY($1::uuid[])
+            AND ${SQL_EXCLUDE_WAPPT_BOOKING_EARNINGS}`;
         const veParamsDyn: unknown[] = [vendorIdsForTx];
         let veP = 2;
         if (txPeriodScoped) {
@@ -1578,7 +1586,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           summaryAggParams
         ).catch(() => ({ rows: [{}] })),
         query(
-          `SELECT COALESCE(SUM(ve.amount), 0) as pending FROM vendor_earnings ve WHERE ve.vendor_id = ${vendorIdArraySql} AND ve.status = 'pending'${earnPendExtra}`,
+          `SELECT COALESCE(SUM(ve.amount), 0) as pending FROM vendor_earnings ve WHERE ve.vendor_id = ${vendorIdArraySql} AND ve.status = 'pending' AND ${SQL_EXCLUDE_WAPPT_VENDOR_EARNINGS_VE}${earnPendExtra}`,
           earningsPendingParams
         ).catch(() => ({ rows: [{ pending: '0' }] })),
         query(

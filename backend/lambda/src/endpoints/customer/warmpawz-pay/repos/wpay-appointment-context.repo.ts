@@ -51,6 +51,9 @@ const WAPPT_FILTER = `
   )
 `;
 
+/** Financial fact: cover not consumed — OTP may set status=completed without blocking Pay Bill. */
+const WAPPT_PAY_CREDIT_STATUS_FILTER = `b.status NOT IN ('cancelled', 'refunded')`;
+
 export async function dbFindOpenWapptBookingForPay(
   customerId: string,
   vendorId: string,
@@ -58,7 +61,7 @@ export async function dbFindOpenWapptBookingForPay(
   const result = await query(
     `${BOOKING_SELECT}
      WHERE ${WAPPT_FILTER}
-       AND b.status NOT IN ('cancelled', 'completed', 'refunded')
+       AND ${WAPPT_PAY_CREDIT_STATUS_FILTER}
      ORDER BY COALESCE(b.booking_datetime, b.created_at) DESC
      LIMIT 1`,
     [customerId, vendorId, WAPPT_BOOKING_MODE],
@@ -75,7 +78,7 @@ export async function dbFindCreditEligibleWapptBookingForPay(
     `${BOOKING_SELECT}
      WHERE ${WAPPT_FILTER}
        AND b.booking_date = $4::date
-       AND b.status NOT IN ('cancelled', 'completed', 'refunded')
+       AND ${WAPPT_PAY_CREDIT_STATUS_FILTER}
      ORDER BY COALESCE(b.booking_datetime, b.created_at) DESC
      LIMIT 1`,
     [customerId, vendorId, WAPPT_BOOKING_MODE, today],
@@ -86,16 +89,36 @@ export async function dbFindCreditEligibleWapptBookingForPay(
 export async function dbCompleteWapptBookingAfterPayBill(bookingId: string): Promise<boolean> {
   const result = await query(
     `UPDATE bookings
-     SET status = 'completed',
+     SET status = CASE WHEN status NOT IN ('cancelled', 'refunded') THEN 'completed' ELSE status END,
          completed_at = COALESCE(completed_at, NOW()),
          updated_at = NOW()
      WHERE id = $1::uuid
        AND commerce_mode = $2
-       AND status NOT IN ('cancelled', 'completed', 'refunded')
+       AND status NOT IN ('cancelled', 'refunded')
      RETURNING id`,
     [bookingId, WAPPT_BOOKING_MODE],
   );
   return Boolean(result.rows?.length);
+}
+
+export type WpayWapptBookingSettlementFactsRow = {
+  id: string;
+  otp_verified: boolean | null;
+  commerce_mode: string | null;
+};
+
+export async function dbLoadWapptBookingSettlementFacts(
+  bookingId: string,
+): Promise<WpayWapptBookingSettlementFactsRow | null> {
+  const result = await query(
+    `SELECT id, otp_verified, commerce_mode
+     FROM bookings
+     WHERE id = $1::uuid
+       AND commerce_mode = $2
+     LIMIT 1`,
+    [bookingId, WAPPT_BOOKING_MODE],
+  );
+  return (result.rows[0] as WpayWapptBookingSettlementFactsRow | undefined) ?? null;
 }
 
 export async function dbLoadWapptBookingForPayCredit(

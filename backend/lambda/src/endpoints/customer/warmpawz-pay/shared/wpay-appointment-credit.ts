@@ -20,11 +20,17 @@ export function ymdFromBookingDateField(raw: string | Date | null | undefined): 
   return Number.isFinite(parsed.getTime()) ? ymdInIst(parsed) : '';
 }
 
-const INACTIVE_PAY_CREDIT_STATUSES = new Set(['cancelled', 'completed', 'refunded']);
+/** Terminal for cover adjustment — operational `completed` (OTP) is allowed. */
+const PAY_CREDIT_BLOCKING_STATUSES = new Set(['cancelled', 'refunded']);
 
-export function isWapptBookingActiveForPayCredit(status: string | null | undefined): boolean {
+export function isWapptBookingBlockedForPayCredit(status: string | null | undefined): boolean {
   const key = String(status ?? '').toLowerCase();
-  return key.length > 0 && !INACTIVE_PAY_CREDIT_STATUSES.has(key);
+  return key.length > 0 && PAY_CREDIT_BLOCKING_STATUSES.has(key);
+}
+
+/** @deprecated Use isWapptBookingBlockedForPayCredit — kept for callers expecting inverted boolean. */
+export function isWapptBookingActiveForPayCredit(status: string | null | undefined): boolean {
+  return !isWapptBookingBlockedForPayCredit(status);
 }
 
 export function assertBookingEligibleForPayCredit(
@@ -40,7 +46,7 @@ export function assertBookingEligibleForPayCredit(
     };
   }
 
-  if (!isWapptBookingActiveForPayCredit(booking.status)) {
+  if (isWapptBookingBlockedForPayCredit(booking.status)) {
     return {
       ok: false,
       error: 'This appointment is not eligible for Pay Bill credit',
@@ -66,7 +72,7 @@ export function mapWpayAppointmentContextBooking(row: WpayWapptBookingContextRow
   const creditEligible =
     appointmentFee > 0 &&
     bookingDate === today &&
-    isWapptBookingActiveForPayCredit(row.status);
+    !isWapptBookingBlockedForPayCredit(row.status);
 
   return {
     bookingId: String(row.id),

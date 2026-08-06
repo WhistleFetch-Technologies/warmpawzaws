@@ -43,7 +43,7 @@ Both:  S16 smoke → Bindu deploy lambda (S17) → Abhi deploy customer-web (S18
 ### Eligibility
 
 - `booking_date = ymdInIst()` (today IST)
-- Active booking: `status NOT IN ('cancelled', 'completed', 'refunded')`
+- Active booking: `status NOT IN ('cancelled', 'refunded')` plus credit-not-consumed fact (OTP/completed allowed)
 - Advance paid; credit not consumed
 - **Remove** `status = 'completed'` / OTP requirement
 

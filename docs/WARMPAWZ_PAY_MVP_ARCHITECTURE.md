@@ -119,12 +119,12 @@ booking.commerce_mode = 'warmpawz_appointments'
 AND booking.customer_id = :customerId
 AND booking.vendor_id = :vendorId
 AND booking.booking_date = CURRENT_DATE          -- Asia/Kolkata; no grace period
-AND booking.status NOT IN ('cancelled', 'completed', 'refunded')
+AND booking.status NOT IN ('cancelled', 'refunded')   -- OTP may set completed; does NOT block credit
 AND booking advance captured (hasCustomerPaidCapture)
 AND NOT EXISTS warmpawz_pay_appointment_credits WHERE booking_id = booking.id
 ```
 
-No OTP gate for Pay Bill credit. Visit date comes from **`bookings.booking_date`** — not stored on `payments`. Successful Pay Bill verify marks the booking `completed` via `dbCompleteWapptBookingAfterPayBill` (no marketplace OTP earnings).
+Pay Bill credit eligibility is **fact-based** — not `booking.status != completed`. OTP completion (`status = completed`, `otp_verified = true`) does not consume cover credit. Settlement requires **both** `otp_verified` and completed Pay Bill payment.
 
 ---
 
@@ -551,7 +551,7 @@ sequenceDiagram
 1. **One initiate service, inline branching** on `bookingId` — no policy classes, no client `payMode`.
 2. **No new columns** — journey = `payments.booking_id IS NULL` vs set; visit date = `bookings.booking_date`.
 3. **`payments` is the only Pay Bill source of truth** — no `bookings.metadata` payment copies.
-4. **Simple eligibility:** today + OTP-completed (`status = 'completed'`) + not cancelled + advance paid + credit not consumed.
+4. **Simple eligibility:** same visit day + cover captured + credit not consumed + not cancelled/refunded (`otp_verified` / `completed` allowed).
 5. **Three code fixes:** settlement `booking_id`, eligibility SQL, idempotency key.
 
 Sized for **~5.5 hours with 2 developers and Cursor agents**.

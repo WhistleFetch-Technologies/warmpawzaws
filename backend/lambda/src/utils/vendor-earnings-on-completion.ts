@@ -43,6 +43,10 @@ import { buildFundingAwareSettlementSnapshot } from '../finance/settlement/build
 import { parseBookingFinancialMeta } from '../discount-engine/settlement/settlement-hook-bridge';
 
 import { loadBookingServiceSnapshot } from './booking-service-snapshot';
+import {
+  shouldSkipVendorEarningsForWappt,
+  SQL_EXCLUDE_WAPPT_BOOKING_EARNINGS,
+} from '../endpoints/warmpawz-appointments/shared/wappt-earnings-policy';
 
 import { resolveVendorVisibleBookingAmount } from './entity-extractor';
 
@@ -253,6 +257,10 @@ export async function ensureVendorEarningsForCompletedBooking(
 ): Promise<boolean> {
 
   if (isCanonicalPackageParentBooking(booking)) return false;
+
+  if (shouldSkipVendorEarningsForWappt(booking)) {
+    return false;
+  }
 
 
 
@@ -492,6 +500,8 @@ export async function backfillMissingVendorEarningsForVendorIds(
 
            AND NOT EXISTS (SELECT 1 FROM vendor_earnings ve WHERE ve.booking_id = b.id)
 
+           AND ${SQL_EXCLUDE_WAPPT_BOOKING_EARNINGS}
+
          ORDER BY COALESCE(b.completed_at::timestamptz, b.updated_at::timestamptz) DESC NULLS LAST
 
          LIMIT $3`,
@@ -511,6 +521,8 @@ export async function backfillMissingVendorEarningsForVendorIds(
            AND b.vendor_id = ANY($1::uuid[])
 
            AND NOT EXISTS (SELECT 1 FROM vendor_earnings ve WHERE ve.booking_id = b.id)
+
+           AND ${SQL_EXCLUDE_WAPPT_BOOKING_EARNINGS}
 
          ORDER BY COALESCE(b.completed_at::timestamptz, b.updated_at::timestamptz) DESC NULLS LAST
 

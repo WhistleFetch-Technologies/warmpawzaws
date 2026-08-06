@@ -2,13 +2,15 @@ import type { Context } from 'hono';
 import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { getRazorpayConfig } from '../../../../utils/payments/razorpay-client';
 import { verifyWpayRazorpaySignature } from '../../../../utils/wpay-razorpay-order';
-import { dbWpayCompletePayment, dbWpayPaymentByIdForCustomer } from '../repos/wpay-payment.repo';
+import { dbWpayPaymentByIdForCustomer } from '../repos/wpay-payment.repo';
 import {
-  dbConsumeAppointmentCredit,
-  dbCompleteWapptBookingAfterPayBill,
   dbIsAppointmentCreditConsumed,
   dbLoadWapptBookingForPayCredit,
 } from '../repos/wpay-appointment-context.repo';
+import {
+  dbWpayAtomicCompleteVerify,
+  WpayCreditConsumeConflictError,
+} from '../repos/wpay-verify-transaction.repo';
 import { accrueWpaySettlement } from '../shared/accrue-wpay-settlement';
 import { resolveWapptAppointmentFeeCredit } from '../shared/wpay-appointment-credit';
 import { computeWpayDiscountQuote, resolveWpayDiscountPercent } from '../shared/wpay-discount';
@@ -173,32 +175,27 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
       return c.json({ success: false, error: creditCheck.error }, creditCheck.status);
     }
 
-    const completed = await dbWpayCompletePayment({
-      paymentId,
-      customerId,
-      razorpayPaymentId,
-      razorpaySignature,
-      originalAmount,
-      discountAmount,
-    });
-    if (!completed) {
-      return c.json({ success: false, error: 'Failed to complete payment' }, 500);
+    let completed;
+    try {
+      completed = await dbWpayAtomicCompleteVerify({
+        paymentId,
+        customerId,
+        razorpayPaymentId,
+        razorpaySignature,
+        originalAmount,
+        discountAmount,
+        bookingId: creditCheck.bookingId,
+        creditAmount: creditCheck.creditAmount,
+      });
+    } catch (error) {
+      if (error instanceof WpayCreditConsumeConflictError) {
+        return c.json({ success: false, error: error.message }, 409);
+      }
+      throw error;
     }
 
-    if (creditCheck.bookingId && creditCheck.creditAmount > 0) {
-      const inserted = await dbConsumeAppointmentCredit({
-        bookingId: creditCheck.bookingId,
-        paymentId,
-        amount: creditCheck.creditAmount,
-      });
-      if (!inserted) {
-        console.error('[customer/warmpawz-pay/verify] credit consume race after payment', {
-          paymentId,
-          bookingId: creditCheck.bookingId,
-        });
-      } else {
-        await dbCompleteWapptBookingAfterPayBill(creditCheck.bookingId);
-      }
+    if (!completed) {
+      return c.json({ success: false, error: 'Failed to complete payment' }, 500);
     }
 
     await tryAccrueWpaySettlement(completed);

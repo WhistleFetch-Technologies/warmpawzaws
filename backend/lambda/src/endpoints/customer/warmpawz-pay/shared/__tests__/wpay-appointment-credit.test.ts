@@ -87,6 +87,23 @@ describe('wpay-appointment-credit', () => {
     expect(result.status).toBe(409);
   });
 
+  it('allows credit when OTP already set booking status to completed', async () => {
+    const mapped = mapWpayAppointmentContextBooking({ ...baseRow, status: 'completed', otp_verified: true });
+    expect(mapped.creditEligible).toBe(true);
+
+    const result = await resolveWapptAppointmentFeeCredit({
+      booking: { ...baseRow, status: 'completed', otp_verified: true },
+      creditAlreadyConsumed: false,
+    });
+    expect(result).toEqual({ credit: 200 });
+  });
+
+  it('assertBookingEligibleForPayCredit passes for OTP-completed same-day booking', () => {
+    expect(assertBookingEligibleForPayCredit({ ...baseRow, status: 'completed', otp_verified: true })).toEqual({
+      ok: true,
+    });
+  });
+
   it('rejects credit when already consumed', async () => {
     const result = await resolveWapptAppointmentFeeCredit({
       booking: baseRow,

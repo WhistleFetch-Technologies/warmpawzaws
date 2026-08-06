@@ -21,13 +21,14 @@ import { isValidUUID } from '../types/entities';
 import { geocodeAddress } from '../lib/utils/geocode';
 import { resolveVendorId } from '../utils/vendor-resolve';
 import { bookingUsesDedicatedEndSessionOtp, ensureDedicatedEndSessionOtp } from '../lib/booking-dedicated-end-otp';
-import { isCanonicalPackageParentBooking } from '../utils/vendor-commission-rate';
 import {
   completeTeleConsultation,
   finalizeVideoCallSessionsForBooking,
   loadLatestSessionForBooking,
   validateTeleVendorCompleteEligibility,
 } from '../utils/tele-completion-service';
+import { finalizeBookingServiceCompleted } from './warmpawz-appointments/shared/finalize-booking-service-completed';
+import { isWapptAppointmentBooking } from './warmpawz-appointments/shared/wappt-earnings-policy';
 import type { NotificationEvent } from '../utils/sns-client';
 
 // Type-only ambient declaration: the LOCATION-UPDATE catch block references `bookingId`,
@@ -300,10 +301,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const refreshedRows = await select('bookings', { id: bookingId });
       const refreshedBooking = (refreshedRows[0] || { ...booking, status: 'completed', completed_at: new Date().toISOString() }) as Record<string, unknown>;
-      if (!isCanonicalPackageParentBooking(refreshedBooking)) {
-        const { ensureVendorEarningsForCompletedBooking } = await import('../utils/vendor-earnings-on-completion');
-        await ensureVendorEarningsForCompletedBooking(refreshedBooking, bookingId, '[COMPLETE-BOOKING]');
-      }
+      await finalizeBookingServiceCompleted({
+        bookingId,
+        booking: refreshedBooking,
+        logPrefix: '[COMPLETE-BOOKING]',
+      });
 
       return c.json({
         success: true,
@@ -1106,14 +1108,15 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       // Start session — started_at anchors vendor walk timer after refresh (GET /details)
       const nowIso = new Date().toISOString();
-      const updated = await update('bookings',
-        { id: bookingId },
-        {
-          status: 'in_progress',
-          otp_verified: true,
-          started_at: (booking as any).started_at || nowIso,
-        }
-      );
+      const startSessionUpdate: Record<string, unknown> = {
+        status: 'in_progress',
+        started_at: (booking as any).started_at || nowIso,
+      };
+      // WAPPT: start OTP is not service completion; settlement requires completion OTP.
+      if (!isWapptAppointmentBooking(booking)) {
+        startSessionUpdate.otp_verified = true;
+      }
+      const updated = await update('bookings', { id: bookingId }, startSessionUpdate);
 
       console.log(`✅ [START-SESSION] Session started successfully`);
 
@@ -1326,17 +1329,25 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: `Session cannot be ended. Current status: ${booking.status}` }, 400);
       }
 
-      // End session and mark as completed
+      // End session and mark as completed (home visit completion OTP path)
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: 'completed',
+          otp_verified: true,
           completed_at: new Date().toISOString(),
           notes: notes || booking.notes,
         }
       );
 
       console.log(`✅ [END-SESSION] Session ended successfully`);
+
+      const refreshedRows = await select('bookings', { id: bookingId });
+      await finalizeBookingServiceCompleted({
+        bookingId,
+        booking: (refreshedRows[0] || updated[0]) as Record<string, unknown>,
+        logPrefix: '[END-SESSION]',
+      });
 
       return c.json({
         success: true,
@@ -1409,9 +1420,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       let newStatus = booking.status;
       if (action === 'complete' || action === 'end') {
         newStatus = 'completed';
+        const completedAt = new Date().toISOString();
         await update('bookings', { id: bookingId }, {
           status: 'completed',
-          completed_at: new Date().toISOString()
+          otp_verified: true,
+          completed_at: completedAt,
         });
 
         // Mirror the COMPLETE-BOOKING handler: close any active GPS tracking
@@ -1429,12 +1442,28 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         } catch (gpsErr: any) {
           console.warn(`[OTP-VERIFY] GPS session close (non-fatal):`, gpsErr?.message);
         }
+
+        const refreshedRows = await select('bookings', { id: bookingId });
+        await finalizeBookingServiceCompleted({
+          bookingId,
+          booking: (refreshedRows[0] || {
+            ...booking,
+            status: 'completed',
+            otp_verified: true,
+            completed_at: completedAt,
+          }) as Record<string, unknown>,
+          logPrefix: '[OTP-VERIFY]',
+        });
       } else if (action === 'start') {
         newStatus = 'in_progress';
-        await update('bookings', { id: bookingId }, {
+        const startUpdate: Record<string, unknown> = {
           status: 'in_progress',
-          started_at: new Date().toISOString()
-        });
+          started_at: new Date().toISOString(),
+        };
+        if (!isWapptAppointmentBooking(booking)) {
+          startUpdate.otp_verified = true;
+        }
+        await update('bookings', { id: bookingId }, startUpdate);
       }
 
       return c.json({

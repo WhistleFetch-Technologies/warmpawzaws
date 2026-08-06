@@ -502,11 +502,14 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const refreshedRows = await select('bookings', { id: bookingId });
       const refreshedBooking = (refreshedRows[0] || updated[0] || booking) as Record<string, unknown>;
-      await ensureVendorEarningsForCompletedBooking(
-        refreshedBooking,
-        bookingId,
-        '[COMPLETE-BOOKING]'
+      const { finalizeBookingServiceCompleted } = await import(
+        '../../warmpawz-appointments/shared/finalize-booking-service-completed'
       );
+      await finalizeBookingServiceCompleted({
+        bookingId,
+        booking: refreshedBooking,
+        logPrefix: '[COMPLETE-BOOKING]',
+      });
       await syncPackageSessionEarningsAfterBookingComplete(bookingId, '[COMPLETE-BOOKING]');
 
       return c.json({
@@ -1700,23 +1703,40 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       let newStatus = booking.status;
       if (mappedAction === OtpAction.COMPLETE || mappedAction === OtpAction.END) {
         newStatus = 'completed';
+        const completedAt = new Date().toISOString();
         await update('bookings', { id: bookingId }, {
           status: 'completed',
-          completed_at: new Date().toISOString()
+          otp_verified: true,
+          completed_at: completedAt,
         });
         const refreshedRows = await select('bookings', { id: bookingId });
-        const refreshedBooking = (refreshedRows[0] || booking) as Record<string, unknown>;
-        await ensureVendorEarningsForCompletedBooking(
-          refreshedBooking,
-          bookingId,
-          '[OTP-VERIFY-COMPLETE]'
+        const refreshedBooking = (refreshedRows[0] || {
+          ...booking,
+          status: 'completed',
+          otp_verified: true,
+          completed_at: completedAt,
+        }) as Record<string, unknown>;
+        const { finalizeBookingServiceCompleted } = await import(
+          '../../warmpawz-appointments/shared/finalize-booking-service-completed'
         );
+        await finalizeBookingServiceCompleted({
+          bookingId,
+          booking: refreshedBooking,
+          logPrefix: '[OTP-VERIFY-COMPLETE]',
+        });
       } else if (mappedAction === OtpAction.START) {
         newStatus = 'in_progress';
-        await update('bookings', { id: bookingId }, {
+        const startUpdate: Record<string, unknown> = {
           status: 'in_progress',
-          started_at: new Date().toISOString()
-        });
+          started_at: new Date().toISOString(),
+        };
+        const { isWapptAppointmentBooking } = await import(
+          '../../warmpawz-appointments/shared/wappt-earnings-policy'
+        );
+        if (!isWapptAppointmentBooking(booking)) {
+          startUpdate.otp_verified = true;
+        }
+        await update('bookings', { id: bookingId }, startUpdate);
       }
 
       try {

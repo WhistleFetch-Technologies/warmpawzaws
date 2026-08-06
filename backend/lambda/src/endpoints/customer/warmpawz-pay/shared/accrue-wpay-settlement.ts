@@ -1,7 +1,7 @@
 import { query } from '../../../../database/rds-connection';
 import type { WpayPaymentRow } from '../repos/wpay-payment.repo';
-
-export type WpaySettlementAccrualResult = {
+import { dbLoadWapptBookingSettlementFacts } from '../repos/wpay-appointment-context.repo';
+import { assertWapptSettlementEligible, resolveWapptSettlementBookingId } from './wpay-settlement-policy';export type WpaySettlementAccrualResult = {
   inserted: boolean;
   settlementId: string | null;
   skippedReason?: string;
@@ -50,6 +50,14 @@ export async function accrueWpaySettlement(
     return { inserted: false, settlementId: null, skippedReason: 'payment_not_completed' };
   }
 
+  const settlementGate = await (async () => {
+    const bookingId = resolveWapptSettlementBookingId(payment);
+    const bookingFacts = bookingId ? await dbLoadWapptBookingSettlementFacts(bookingId) : null;
+    return assertWapptSettlementEligible(payment, bookingFacts);
+  })();
+  if (!settlementGate.ok) {    return { inserted: false, settlementId: null, skippedReason: settlementGate.skippedReason };
+  }
+
   const existing = await query(
     `SELECT id::text AS id
      FROM settlements
@@ -85,7 +93,7 @@ export async function accrueWpaySettlement(
     ? new Date(payment.completed_at).toISOString().split('T')[0]
     : new Date().toISOString().split('T')[0];
 
-  const bookingId = payment.booking_id ? String(payment.booking_id) : null;
+  const bookingId = resolveWapptSettlementBookingId(payment);
 
   const settlementBreakup = {
     flowType: 'pay_bill',
@@ -160,4 +168,37 @@ export async function accrueWpaySettlement(
     inserted: false,
     settlementId: raced.rows[0]?.id ? String(raced.rows[0].id) : null,
   };
+}
+
+/** After WAPPT service attestation (OTP), accrue Pay Bill settlements that were held pending OTP. */
+export async function accruePendingWpaySettlementsForWapptBooking(
+  bookingId: string,
+  logPrefix = '[WAPPT-SETTLEMENT]',
+): Promise<void> {
+  const payments = await query(
+    `SELECT id, customer_id, vendor_id, booking_id, amount, original_amount, discount_amount,
+            payment_status, razorpay_order_id, razorpay_payment_id, razorpay_signature,
+            metadata, completed_at, created_at
+     FROM payments
+     WHERE payment_source = 'warmpawz_pay'
+       AND payment_status = 'completed'
+       AND (
+         booking_id = $1::uuid
+         OR metadata->>'appointmentFeeBookingId' = $1::text
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM settlements s
+         WHERE s.payment_id = payments.id
+           AND s.order_type = 'warmpawz_pay'
+       )`,
+    [bookingId],
+  );
+
+  for (const row of payments.rows as WpayPaymentRow[]) {
+    try {
+      await accrueWpaySettlement(row);
+    } catch (error) {
+      console.error(`${logPrefix} pending accrual failed`, { bookingId, paymentId: row.id, error });
+    }
+  }
 }

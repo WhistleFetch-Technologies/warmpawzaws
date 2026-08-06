@@ -10,6 +10,12 @@ jest.mock('../../../../../database/rds-connection', () => ({
   query: jest.fn(),
 }));
 
+jest.mock('../../repos/wpay-appointment-context.repo', () => ({
+  dbLoadWapptBookingSettlementFacts: jest.fn(),
+}));
+
+const { dbLoadWapptBookingSettlementFacts } = jest.requireMock('../../repos/wpay-appointment-context.repo');
+
 const mockedQuery = query as jest.MockedFunction<typeof query>;
 
 const basePayment: WpayPaymentRow = {
@@ -37,6 +43,7 @@ const basePayment: WpayPaymentRow = {
 describe('accrue-wpay-settlement', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    dbLoadWapptBookingSettlementFacts.mockResolvedValue(null);
   });
 
   it('maps settlement statuses for vendor earnings UI', () => {
@@ -68,14 +75,46 @@ describe('accrue-wpay-settlement', () => {
       .mockResolvedValueOnce({ rows: [{ platform_withhold_percent: '5' }] } as never)
       .mockResolvedValueOnce({ rows: [{ id: 'settlement-2' }] } as never);
 
+    dbLoadWapptBookingSettlementFacts.mockResolvedValue({
+      id: 'booking-1',
+      otp_verified: true,
+      commerce_mode: 'warmpawz_appointments',
+    });
+
     const result = await accrueWpaySettlement({
       ...basePayment,
       booking_id: 'booking-1',
+      metadata: {
+        ...basePayment.metadata,
+        appointmentFeeBookingId: 'booking-1',
+        appointmentFeeCredit: 200,
+      },
     });
 
     expect(result.inserted).toBe(true);
     const insertArgs = mockedQuery.mock.calls[2]?.[1];
     expect(insertArgs?.[2]).toBe('booking-1');
+  });
+
+  it('skips appointment-linked settlement until OTP verified', async () => {
+    dbLoadWapptBookingSettlementFacts.mockResolvedValue({
+      id: 'booking-1',
+      otp_verified: false,
+      commerce_mode: 'warmpawz_appointments',
+    });
+
+    const result = await accrueWpaySettlement({
+      ...basePayment,
+      booking_id: 'booking-1',
+      metadata: {
+        appointmentFeeBookingId: 'booking-1',
+        appointmentFeeCredit: 200,
+      },
+    });
+
+    expect(result.inserted).toBe(false);
+    expect(result.skippedReason).toBe('service_not_attested');
+    expect(mockedQuery).not.toHaveBeenCalled();
   });
 
   it('is idempotent when settlement already exists', async () => {
