@@ -19,6 +19,11 @@ import {
 import { getAmenityById } from '@/lib/master-amenities';
 import { getVendorPersonalization } from '@/lib/vendor-personalization';
 import { formatOperatingHours } from '@/lib/format-utils';
+import { hasRatings } from '@/lib/rating-display';
+import {
+  mapFacilityRecentReviews,
+  normalizeFacilityRating,
+} from '@/lib/universal-provider-profile-enrichment';
 
 interface FacilityViewProps {
   vendorId: string;
@@ -51,8 +56,13 @@ export function FacilityView({ vendorId, onBack, onClose, onBookNow }: FacilityV
           setVendor(data.vendor);
           setFacility(data.facility);
           setServices(data.services || []);
-          setRating(data.rating);
-          setReviews(data.recentReviews || []);
+          const recentReviews = mapFacilityRecentReviews(data.recentReviews);
+          setReviews(recentReviews);
+          setRating(
+            normalizeFacilityRating(data.rating, {
+              recentReviews,
+            })
+          );
         }
       } catch (error) {
         console.error('Error loading facility data:', error);
@@ -152,11 +162,13 @@ export function FacilityView({ vendorId, onBack, onClose, onBookNow }: FacilityV
               <div className="flex items-center gap-1">
                 <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                 <span className="font-semibold text-gray-900">
-                  {rating.average > 0 ? rating.average.toFixed(1) : 'New'}
+                  {rating && hasRatings(rating.totalReviews)
+                    ? Number(rating.averageRating).toFixed(1)
+                    : 'New'}
                 </span>
               </div>
-              {rating.total > 0 && (
-                <span className="text-sm text-gray-500">({rating.total} reviews)</span>
+              {rating && hasRatings(rating.totalReviews) && (
+                <span className="text-sm text-gray-500">({rating.totalReviews} reviews)</span>
               )}
               <Badge variant="outline" className="ml-auto text-xs">
                 {vendor.roleId}

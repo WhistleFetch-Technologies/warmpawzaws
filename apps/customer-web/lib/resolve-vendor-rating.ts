@@ -24,6 +24,7 @@ const AVERAGE_FIELD_KEYS = [
   'vendor_rating',
   'averageRating',
   'average_rating',
+  'average',
   'avg_rating',
   'avgRating',
   'rating',
@@ -48,7 +49,8 @@ function pickReviewCount(row: VendorRatingSource): number {
       row.reviewsCount ??
       row.reviews_count ??
       row.totalReviews ??
-      row.total_reviews
+      row.total_reviews ??
+      row.count
   );
 }
 
