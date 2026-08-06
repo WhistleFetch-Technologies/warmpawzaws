@@ -54,7 +54,7 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     allowedDiscoveryStyles: ['at_center', 'at_home'],
     defaultDiscoveryStyle: 'at_center',
     wapptTileId: 'wappt_training',
-    tileImage: '/images/home/Training/training-center.webp',
+    tileImage: '/images/home/Training/training-center.jpg',
   },
   behaviorist: {
     wapptCategory: 'behaviorist',
@@ -74,7 +74,7 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     allowedDiscoveryStyles: ['at_home'],
     defaultDiscoveryStyle: 'at_home',
     wapptTileId: 'wappt_walker',
-    tileImage: '/images/home/Walking/walking-banner.webp',
+    tileImage: '/images/home/walker.webp',
   },
   boarding: {
     wapptCategory: 'boarding',
@@ -94,7 +94,7 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     allowedDiscoveryStyles: ['at_home'],
     defaultDiscoveryStyle: 'at_home',
     wapptTileId: 'wappt_sitting',
-    tileImage: '/images/home/Sitting/day-sitting.webp',
+    tileImage: '/images/home/Sitting/day-visit.webp',
   },
   nutrition: {
     wapptCategory: 'nutrition',

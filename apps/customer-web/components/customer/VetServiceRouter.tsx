@@ -25,6 +25,7 @@ import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
+import { resolveBoardingListVendorProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import {
   type BoardingListVendor,
   findBoardingListVendorByProfileKey,
@@ -391,7 +392,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId,
           category: 'vet',
-          serviceStyle: 'at_center',
+          serviceStyle: resolveBoardingListVendorProfileServiceStyle(v, 'vet'),
           vendorName: v.name,
         }),
         profileBackScreen: 'vet',
@@ -432,7 +433,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId,
           category: 'vet',
-          serviceStyle: 'at_center',
+          serviceStyle: resolveBoardingListVendorProfileServiceStyle(v, 'vet'),
           vendorName: v.name,
         }),
         profileBackScreen: 'vet',

@@ -75,6 +75,51 @@ describe('bookWalkInAppointment', () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
+  it('home path: solo at_home groomer uses resolved at_home style', () => {
+    const onNavigate = jest.fn();
+    const router = makeRouter();
+
+    bookWalkInAppointment(
+      makeProvider({
+        subtitle: 'Groomer (Solo)',
+        serviceStyle: 'at_home',
+      }),
+      router,
+      onNavigate,
+    );
+
+    expect(onNavigate).toHaveBeenCalledWith(
+      WAPPT_VENDOR_PROFILE_SCREEN,
+      expect.objectContaining({
+        serviceStyle: 'at_home',
+      }),
+    );
+  });
+
+  it('home path: solo vet subtitle overrides stale at_center serviceStyle', () => {
+    const onNavigate = jest.fn();
+    const router = makeRouter();
+
+    bookWalkInAppointment(
+      makeProvider({
+        id: 'vendor-bindu-vet',
+        displayName: 'Bindu Vet Clinic',
+        category: 'vet',
+        subtitle: 'Vet · Veterinarian (Solo)',
+        serviceStyle: 'at_center',
+      }),
+      router,
+      onNavigate,
+    );
+
+    expect(onNavigate).toHaveBeenCalledWith(
+      WAPPT_VENDOR_PROFILE_SCREEN,
+      expect.objectContaining({
+        serviceStyle: 'at_home',
+      }),
+    );
+  });
+
   it('home path: vet category also opens wappt-vendor-profile with at_center', () => {
     const onNavigate = jest.fn();
     const router = makeRouter();

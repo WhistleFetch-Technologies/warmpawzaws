@@ -131,6 +131,16 @@ export async function dbWpayVendorsNearbyList(
       n.role_name,
       n.role_display_name,
       n.distance_km,
+      (
+        SELECT vs.service_style
+        FROM vendor_services vs
+        WHERE vs.vendor_id = n.vendor_id
+          AND vs.is_enabled = true
+          AND vs.service_style = ANY(ARRAY['at_center','at_vendor','at_clinic','at_home','home_visit']::text[])
+        GROUP BY vs.service_style
+        ORDER BY COUNT(*) DESC, vs.service_style ASC
+        LIMIT 1
+      ) AS preferred_service_style,
       p.discount_value AS pricing_discount_value,
       p.status AS pricing_status,
       p.effective_from AS pricing_effective_from,

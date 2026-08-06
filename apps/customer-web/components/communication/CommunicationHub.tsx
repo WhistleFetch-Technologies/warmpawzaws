@@ -114,7 +114,6 @@ export function CommunicationHub({
   onContactSupport,
   onNavigate, // ✅ NEW
   meetingId, // ✅ NEW
-  onStartVideoCall, // Rule 2: Customer starts video from chat → create + notify vendor then navigate
   onBookingChatMarkedRead,
 }: CommunicationHubProps) {
   // State
@@ -511,25 +510,6 @@ export function CommunicationHub({
               </div>
             </div>
           <div className="flex items-center gap-2">
-            {/* Rule 2: Video from chat - when onStartVideoCall provided, create + notify vendor (WhatsApp-like) then navigate */}
-            {(onNavigate || onStartVideoCall) && booking && ['confirmed', 'in_progress', 'active', 'scheduled'].includes(booking.status || '') && (
-              <button
-                onClick={async () => {
-                  let resolvedMeetingId = meetingId;
-                  if (onStartVideoCall) {
-                    const returned = await onStartVideoCall(bookingId, meetingId);
-                    if (typeof returned === 'string') resolvedMeetingId = returned;
-                  }
-                  if (onNavigate) onNavigate('video-call', { bookingId, meetingId: resolvedMeetingId, vendorName: otherUserName });
-                  onClose();
-                }}
-                className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors flex items-center gap-1.5 text-white text-sm"
-                title="Start Video Call"
-              >
-                <Video className="w-4 h-4" />
-                <span className="hidden sm:inline">Video</span>
-              </button>
-            )}
             <button
               type="button"
               onClick={onClose}

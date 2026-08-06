@@ -1677,7 +1677,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         />
       )}
 
-      {/* Communication Hub (Unified Chat/Video) - Rule 2: Video from chat; customer start = create + notify vendor then navigate */}
+      {/* Communication Hub — chat from booking; tele join uses mode="video" via Join Tele-Consultation */}
       {communicationMode && booking && (
         <CommunicationHub
           mode={communicationMode}
@@ -1690,36 +1690,6 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           onBookFollowUp={() => setShowFollowUp(true)}
           onNavigate={onNavigate}
           meetingId={booking.meetingId}
-          onStartVideoCall={async (bid, existingMeetingId): Promise<string | undefined> => {
-            try {
-              if (existingMeetingId) {
-                await apiClient.post('/video-call/notify-ready', {
-                  bookingId: bid,
-                  participantType: 'customer',
-                  participantId: booking.customerId || phone,
-                }).catch(() => {});
-                return existingMeetingId;
-              }
-              const createRes = await apiClient.post('/video-call/create-meeting', {
-                bookingId: bid,
-                customerId: booking.customerId || phone,
-                vendorId: booking.vendorId,
-              }) as any;
-              if (createRes?.success || createRes?.meetingId) {
-                await apiClient.post('/video-call/notify-ready', {
-                  bookingId: bid,
-                  participantType: 'customer',
-                  participantId: booking.customerId || phone,
-                }).catch(() => {});
-                return createRes?.meetingId;
-              }
-              const msg = createRes?.error || 'Could not start video call.';
-              toast.error(msg);
-            } catch (err: any) {
-              const msg = err?.response?.error || err?.responseData?.error || err?.message || 'Video call is not available for this appointment right now.';
-              toast.error(typeof msg === 'string' ? msg : 'Could not start video call.');
-            }
-          }}
         />
       )}
 

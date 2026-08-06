@@ -19,6 +19,8 @@ export type WapptDiscoveryVendorRow = {
   is_online: boolean;
   role_display_name: string | null;
   role_name: string | null;
+  vendor_type: string | null;
+  preferred_service_style: string | null;
   avg_rating: number | null;
   review_count: number | null;
 };
@@ -132,6 +134,17 @@ export async function dbListWapptDiscoveryByCategory(opts: {
       COALESCE(v.is_online, false) AS is_online,
       r.display_name AS role_display_name,
       r.name AS role_name,
+      v.vendor_type,
+      (
+        SELECT vs.service_style
+        FROM vendor_services vs
+        WHERE vs.vendor_id = v.id
+          AND vs.is_enabled = true
+          AND vs.service_style = ANY(ARRAY['at_center','at_vendor','at_clinic','at_home','home_visit']::text[])
+        GROUP BY vs.service_style
+        ORDER BY COUNT(*) DESC, vs.service_style ASC
+        LIMIT 1
+      ) AS preferred_service_style,
       COALESCE(rv.avg_rating, 0) AS avg_rating,
       COALESCE(rv.review_count, 0) AS review_count
     FROM warmpawz_appointments_vendor_catalog c

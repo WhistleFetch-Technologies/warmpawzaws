@@ -10,6 +10,7 @@ import {
 } from '@/lib/warmpawz-appointments-customer';
 import { buildSearchVendorDetailsUrl } from '@/lib/search-booking-launch';
 import { withBannerNavigationOrigin } from '@/lib/banner-navigation-origin';
+import { resolveWalkInProviderProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
 import type { HomeNavigateFn } from '@/components/customer/home/hooks/useHomeNavigation';
 import { WALK_IN_VENDORS_PATH } from '@/lib/walk-in-constants';
@@ -82,7 +83,7 @@ export function bookWalkInAppointment(
     ...buildWarmpawzAppointmentsProfileNav({
       vendorId,
       vendorName: provider.displayName,
-      serviceStyle: 'at_center',
+      serviceStyle: resolveWalkInProviderProfileServiceStyle(provider),
       category: provider.category,
       profileBackScreen: 'home',
     }),

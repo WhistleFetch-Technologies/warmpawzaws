@@ -36,6 +36,7 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { HUB_DISCOVERY_GROOMING } from '@/lib/service-hub-discovery-config';
+import { resolveBoardingListVendorProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import {
   type BoardingListVendor,
   findBoardingListVendorByProfileKey,
@@ -257,7 +258,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId,
           category: 'grooming',
-          serviceStyle: 'at_center',
+          serviceStyle: resolveBoardingListVendorProfileServiceStyle(v, 'grooming'),
           vendorName: v.name,
         }),
         profileBackScreen: 'grooming',
@@ -287,7 +288,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           ...buildWarmpawzAppointmentsProfileNav({
             vendorId: accountId,
             category: 'grooming',
-            serviceStyle: 'at_center',
+            serviceStyle: resolveBoardingListVendorProfileServiceStyle(v, 'grooming'),
             vendorName: v.name,
           }),
           profileBackScreen: 'grooming',

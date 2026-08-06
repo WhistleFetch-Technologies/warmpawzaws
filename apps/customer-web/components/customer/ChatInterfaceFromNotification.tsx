@@ -7,7 +7,6 @@
  * 
  * Modal overlay chat window opened from notification
  * - Real-time message updates
- * - Video call button integration
  * - Coordinate before consultation
  * 
  * Phase: Phase 2 - Customer Engagement & Notifications
@@ -17,7 +16,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useVisualViewport } from '@/hooks/useVisualViewport';
-import { X, Send, Video, Loader2, MessageSquare } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -28,7 +27,6 @@ interface ChatInterfaceFromNotificationProps {
   vendorName: string;
   vendorPhoto?: string;
   onClose: () => void;
-  onStartVideoCall?: (bookingId: string) => void;
 }
 
 interface Message {
@@ -44,7 +42,6 @@ export function ChatInterfaceFromNotification({
   vendorName,
   vendorPhoto,
   onClose,
-  onStartVideoCall,
 }: ChatInterfaceFromNotificationProps) {
   useVisualViewport();
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -184,16 +181,6 @@ export function ChatInterfaceFromNotification({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {onStartVideoCall && (
-              <Button
-                onClick={() => onStartVideoCall(bookingId)}
-                size="sm"
-                className="bg-white/20 hover:bg-white/30 text-white border-0 h-8 px-3"
-              >
-                <Video className="w-4 h-4 mr-1" />
-                Video
-              </Button>
-            )}
             <button
               onClick={onClose}
               className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30"

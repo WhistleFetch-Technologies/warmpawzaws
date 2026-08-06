@@ -5,6 +5,8 @@ import type {
 
 export type WalkInProvider = FeaturedProvider & {
   category: FeaturedProviderCategory;
+  /** Resolved WAPPT profile style — from nearby API or category default. */
+  serviceStyle?: 'at_center' | 'at_home';
 };
 
 export type WalkInDiscoveryBatch = {
