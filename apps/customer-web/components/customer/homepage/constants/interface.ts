@@ -10,6 +10,7 @@ export interface Pet {
     image?: string;
     color?: string;
     photo?: string;
+  profile_photo_url?: string;
 }
 
 export interface UserData {

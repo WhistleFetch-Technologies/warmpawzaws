@@ -20,3 +20,7 @@ export {
 export { mapWithConcurrency } from './image-concurrency';
 export { urlForImageKey, attachUrlsToImageDto } from './image-url-builder';
 export { detectImageMime, validateImageBuffer } from './image-validator';
+export {
+  resolveCustomerPhotoForDisplay,
+  resolvePetPhotoForDisplay,
+} from './resolve-entity-profile-photo';
