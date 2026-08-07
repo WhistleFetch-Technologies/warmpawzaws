@@ -36,6 +36,12 @@ import {
   getWapptBookingStepIndex,
   getWapptBookingSteps,
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
+import {
+  fetchNutritionAppointmentFee,
+  fetchNutritionTeleVendorServices,
+  minPriceFromServiceRows,
+  priceFromVendorServiceRow,
+} from '@/lib/nutrition-vendor-price';
 
 /** Real catalog service UUID (not role/category slugs like pet_nutritionist). */
 function looksLikeCatalogServiceId(id: string | undefined | null): id is string {
@@ -130,6 +136,7 @@ export function NutritionistBookingRouter({
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
+  const [fallbackAppointmentFee, setFallbackAppointmentFee] = useState<number | null>(null);
   const [showPaymentPage, setShowPaymentPage] = useState(false);
   const [selectedVendorService, setSelectedVendorService] = useState<any>(
     catalogServiceId
@@ -157,14 +164,15 @@ export function NutritionistBookingRouter({
 
   // Map vendor services to display format (API already filters by style via query param)
   const mapVendorServices = () => {
-    // Services are already filtered by serviceStyle on the backend
-    return vendorServices.map(s => {
+    return vendorServices.map((s) => {
       const style = s.serviceStyle || s.service_style || selectedServiceType;
+      const resolvedPrice =
+        priceFromVendorServiceRow(s as Record<string, unknown>) ?? fallbackAppointmentFee ?? 0;
       return {
         id: s.id || s.serviceId,
         serviceId: s.serviceId || s.service_id,
         name: s.serviceName || s.service_name || s.name,
-        price: s.price || 0,
+        price: resolvedPrice,
         duration: s.duration || s.durationMinutes || 30,
         desc: s.description || s.shortDescription || '',
         serviceStyle: style,
@@ -302,7 +310,11 @@ export function NutritionistBookingRouter({
   });
 
   const wapptReviewTotal =
-    wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0;
+    wapptBooking.appointmentFee ??
+    selectedVendorService?.price ??
+    fallbackAppointmentFee ??
+    price ??
+    0;
 
   useEffect(() => {
     loadCustomerData();
@@ -316,20 +328,48 @@ export function NutritionistBookingRouter({
 
     try {
       setLoading(true);
-      // Fetch vendor services filtered by serviceStyle only (no category filter — vendor was
-      // already resolved from the nutritionist listing, so all their tele services are relevant)
       const serviceStyleParam = selectedServiceType ? `?serviceStyle=${selectedServiceType}` : '';
-      const servicesResponse = await apiClient.get(`/customer/vendor/${effectiveVendorId}/services${serviceStyleParam}`) as any;
-      console.log('servicesResponse--------------------->', servicesResponse);
+      const servicesResponse = (await apiClient.get(
+        `/customer/vendor/${effectiveVendorId}/services${serviceStyleParam}`
+      )) as {
+        success?: boolean;
+        services?: unknown[];
+        packages?: unknown[];
+        warmpawzAppointments?: boolean;
+      };
+
       if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(mergeCustomerVendorServicesPayload(servicesResponse));
-        console.log('✅ Loaded vendor services:', servicesResponse.services.length);
+        let merged = mergeCustomerVendorServicesPayload(servicesResponse);
+        let activeStyle = selectedServiceType;
+        let listedMin = minPriceFromServiceRows(merged);
+
+        if (
+          activeStyle !== 'tele' &&
+          (servicesResponse.warmpawzAppointments === true || listedMin == null)
+        ) {
+          const teleMerged = await fetchNutritionTeleVendorServices(effectiveVendorId);
+          const teleMin = minPriceFromServiceRows(teleMerged);
+          if (teleMin != null) {
+            merged = teleMerged;
+            activeStyle = 'tele';
+            setSelectedServiceType('tele');
+            listedMin = teleMin;
+          }
+        }
+
+        let fee: number | null = null;
+        if (listedMin == null) {
+          fee = await fetchNutritionAppointmentFee(effectiveVendorId, activeStyle);
+        }
+        setFallbackAppointmentFee(fee);
+        setVendorServices(merged);
       } else {
+        setFallbackAppointmentFee(null);
         console.warn('⚠️ No services found or invalid response');
       }
     } catch (error) {
       console.error('❌ Error loading vendor services:', error);
-      // Don't set vendorServices to empty - keep existing or fall back to defaults
+      setFallbackAppointmentFee(null);
     } finally {
       setLoading(false);
     }
@@ -779,8 +819,15 @@ export function NutritionistBookingRouter({
                 }
                 baseAmount={
                   appointmentsMode
-                    ? wapptBooking.appointmentFee ?? selectedVendorService.price ?? price ?? 0
-                    : selectedVendorService.price || selectedServiceOption?.price || 0
+                    ? wapptBooking.appointmentFee ??
+                      selectedVendorService.price ??
+                      fallbackAppointmentFee ??
+                      price ??
+                      0
+                    : selectedVendorService.price ||
+                      selectedServiceOption?.price ||
+                      fallbackAppointmentFee ||
+                      0
                 }
                 priceIncludesTax={
                   catalogPriceIncludesTax(selectedVendorService) || catalogPriceIncludesTax(selectedServiceOption)

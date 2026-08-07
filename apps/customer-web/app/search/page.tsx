@@ -54,6 +54,7 @@ import {
   resolveEffectiveSearchCategory,
 } from '@/lib/search-category-detect';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
+import { enrichNutritionVendorPrices } from '@/lib/nutrition-vendor-price';
 import {
   nutritionVendorFromDiscoveryRow,
   type NutritionVendorCardModel,
@@ -631,6 +632,7 @@ function SearchContent() {
           mergedNutrition = rawProviders.map((row) =>
             nutritionVendorFromDiscoveryRow(row as Record<string, unknown>)
           );
+          mergedNutrition = await enrichNutritionVendorPrices(mergedNutrition);
           const qLower = (queryRef.current || '').trim().toLowerCase();
           if (qLower) {
             mergedNutrition = mergedNutrition.filter((v) => {

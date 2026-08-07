@@ -21,6 +21,7 @@ import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
+import { enrichNutritionVendorPrices } from '@/lib/nutrition-vendor-price';
 import { toast } from 'sonner';
 import { useProblemGridByRole } from '../useProblemGridByRole';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
@@ -122,25 +123,49 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   };
 
   const featuredNutritionists = useMemo(() => {
-    if (!wapptHubEnabled) return nutritionists;
-    if (wapptDiscovery.vendors.length === 0) return nutritionists;
-    return wapptDiscovery.vendors.map((v) => {
-      const raw = (v.raw ?? {}) as Record<string, unknown>;
-      const vendorId = pickCustomerVendorAccountId(raw) || v.id;
-      return nutritionVendorFromDiscoveryRow({
-        ...raw,
-        id: vendorId,
-        vendorId,
-        name: v.name,
-        businessName: v.name,
-        photo: v.photo,
-        profile_image: v.photo,
-        rating: v.rating,
-        review_count: v.review_count,
-        address: v.address,
+    const mapRow = (row: Record<string, unknown>) => nutritionVendorFromDiscoveryRow(row);
+    if (wapptHubEnabled && wapptDiscovery.vendors.length > 0) {
+      return wapptDiscovery.vendors.map((v) => {
+        const raw = (v.raw ?? {}) as Record<string, unknown>;
+        const vendorId = pickCustomerVendorAccountId(raw) || v.id;
+        return mapRow({
+          ...raw,
+          id: vendorId,
+          vendorId,
+          name: v.name,
+          businessName: v.name,
+          photo: v.photo,
+          profile_image: v.photo,
+          rating: v.rating,
+          review_count: v.review_count,
+          address: v.address,
+        });
       });
-    });
+    }
+    return (nutritionists as Record<string, unknown>[]).map((n) => mapRow(n));
   }, [wapptHubEnabled, nutritionists, wapptDiscovery.vendors]);
+
+  const [pricedNutritionists, setPricedNutritionists] = useState<
+    ReturnType<typeof nutritionVendorFromDiscoveryRow>[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!featuredNutritionists.length) {
+        setPricedNutritionists([]);
+        return;
+      }
+      const enriched = await enrichNutritionVendorPrices(featuredNutritionists);
+      if (!cancelled) setPricedNutritionists(enriched);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [featuredNutritionists]);
+
+  const expertNutritionistsToShow =
+    pricedNutritionists.length > 0 ? pricedNutritionists : featuredNutritionists;
 
   const openNutritionistProfile = (nutritionist: ReturnType<typeof nutritionVendorFromDiscoveryRow>) => {
     const vendorId = String(nutritionist.vendorId ?? nutritionist.id ?? '').trim();
@@ -371,14 +396,14 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
             <h2 className="text-lg font-bold text-slate-900 mb-4">Expert Nutritionists</h2>
 
             <div className="space-y-3">
-              {featuredNutritionists.length === 0 ? (
+              {expertNutritionistsToShow.length === 0 ? (
                 <Card className="p-8 text-center">
                   <div className="text-4xl mb-3">🥗</div>
                   <p className="text-gray-600 mb-2">No nutritionists available yet</p>
                   <p className="text-gray-500 text-sm">Check back soon for expert pet nutrition consultants!</p>
                 </Card>
               ) : (
-                featuredNutritionists.slice(0, 3).map((nutritionist, index) => {
+                expertNutritionistsToShow.slice(0, 3).map((nutritionist, index) => {
                   const vendorId = String(nutritionist.id ?? nutritionist.vendorId ?? '').trim();
                   const snapshot = nutritionist;
                   return (
