@@ -947,6 +947,16 @@ export class LoyaltyPointsService {
             return count < rule.frequency_limit;
           }
         }
+        // Lifetime cap: recurring + frequency_limit with no period (e.g. vaccination health record max 3).
+        if (rule.frequency_limit && !rule.frequency_period) {
+          const count = await getFrequencyCount();
+          if (count >= rule.frequency_limit) {
+            console.log(
+              `[Frequency] recurring lifetime: user ${userId} reached limit ${rule.frequency_limit} for action ${params.actionName}`
+            );
+          }
+          return count < rule.frequency_limit;
+        }
         // Backward-compatible default recurring behavior: allow.
         return true;
       }
