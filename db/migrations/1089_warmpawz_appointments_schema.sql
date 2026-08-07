@@ -1,5 +1,5 @@
--- ============================================================================
--- Migration 1083: Warmpawz Appointments vendor catalogue (Phase A)
+﻿-- ============================================================================
+-- Migration 1089: Warmpawz Appointments vendor catalogue (Phase A)
 -- ============================================================================
 -- Purpose: Admin-curated appointment vendors with flat appointment_fee per row.
 -- Idempotent, additive only.
@@ -62,7 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_wappt_catalog_published
   WHERE publish_status = 'published';
 
 COMMENT ON TABLE warmpawz_appointments_vendor_catalog IS
-  'Warmpawz Appointments admin catalogue — one row per vendor with flat appointment_fee. Customer visibility requires publish_status = published and vendor approved/active.';
+  'Warmpawz Appointments admin catalogue ΓÇö one row per vendor with flat appointment_fee. Customer visibility requires publish_status = published and vendor approved/active.';
 
 COMMENT ON COLUMN warmpawz_appointments_vendor_catalog.appointment_fee IS
   'Flat appointment booking fee (INR). Server authority at checkout.';

@@ -12,14 +12,14 @@ const MIGRATION_FILE = path.join(
   '..',
   'db',
   'migrations',
-  '1080_warmpawz_pay_phase1_schema.sql'
+  '1083_warmpawz_pay_phase1_schema.sql'
 );
 
 async function main() {
   const sql = fs.readFileSync(MIGRATION_FILE, 'utf8');
   const stmts = splitPostgresStatements(sql);
   console.log(
-    `Migration 1080 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`
+    `Migration 1083 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`
   );
 
   for (let i = 0; i < stmts.length; i++) {
@@ -70,7 +70,7 @@ async function main() {
   `);
   console.log('Verified wpay indexes:', indexes);
 
-  console.log('\nMigration 1080 complete.');
+  console.log('\nMigration 1083 complete.');
 }
 
 main().catch((e) => {

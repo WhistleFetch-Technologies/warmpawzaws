@@ -12,14 +12,14 @@ const MIGRATION_FILE = path.join(
   '..',
   'db',
   'migrations',
-  '1092_wappt_default_1h_cancellation_policy.sql',
+  '1094_wappt_default_1h_cancellation_policy.sql',
 );
 
 async function main() {
   const sql = fs.readFileSync(MIGRATION_FILE, 'utf8');
   const stmts = splitPostgresStatements(sql);
   console.log(
-    `Migration 1092 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`,
+    `Migration 1094 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`,
   );
 
   for (let i = 0; i < stmts.length; i++) {
@@ -38,7 +38,7 @@ async function main() {
   `);
   console.log('\nVerified WAPPT platform tiers:');
   console.log(JSON.stringify(tiers, null, 2));
-  console.log('\nMigration 1092 complete.');
+  console.log('\nMigration 1094 complete.');
 }
 
 main().catch((e) => {

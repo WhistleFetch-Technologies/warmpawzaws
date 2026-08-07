@@ -1,5 +1,5 @@
 ﻿-- ============================================================================
--- Migration 1087: Warmpawz Appointments admin RBAC permissions
+-- Migration 1090: Warmpawz Appointments admin RBAC permissions
 -- ============================================================================
 -- Grants admin.warmpawz_appointments (+ catalogue granular permissions) to
 -- admin_master and roles with admin.full_access. Idempotent.

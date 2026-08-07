@@ -1,4 +1,4 @@
--- Migration 1095: Cancel WAPPT appointment-fee vendor_earnings (platform-retained fees)
+-- Migration 1097: Cancel WAPPT appointment-fee vendor_earnings (platform-retained fees)
 -- WAPPT appointment fees stay with platform; vendor payout is Pay Bill settlement only.
 
 DO $$

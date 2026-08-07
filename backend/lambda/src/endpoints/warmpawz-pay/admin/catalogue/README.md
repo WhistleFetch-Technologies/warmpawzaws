@@ -105,7 +105,7 @@ Non-UUID admin actors (UAT) store `NULL` in UUID columns (`actor_id`, `created_b
 
 ### Prerequisites
 
-1. Migration `1080_warmpawz_pay_phase1_schema.sql` applied on target RDS
+1. Migration `1083_warmpawz_pay_phase1_schema.sql` applied on target RDS
 2. `entity_audit_log` table present (migration 043+)
 
 ### Order

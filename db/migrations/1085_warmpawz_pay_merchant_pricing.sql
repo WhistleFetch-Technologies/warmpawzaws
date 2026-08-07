@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 1082: Warmpawz Pay merchant pricing (Phase D)
+-- Migration 1085: Warmpawz Pay merchant pricing (Phase D)
 -- ============================================================================
 -- Admin-configured commercial terms per merchant for future Quote Engine.
 -- Idempotent, additive only.

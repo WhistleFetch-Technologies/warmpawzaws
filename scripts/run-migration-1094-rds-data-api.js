@@ -12,14 +12,14 @@ const MIGRATION_FILE = path.join(
   '..',
   'db',
   'migrations',
-  '1094_warmpawz_pay_appointment_credits.sql',
+  '1096_warmpawz_pay_appointment_credits.sql',
 );
 
 async function main() {
   const sql = fs.readFileSync(MIGRATION_FILE, 'utf8');
   const stmts = splitPostgresStatements(sql);
   console.log(
-    `Migration 1094 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`,
+    `Migration 1096 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`,
   );
 
   for (let i = 0; i < stmts.length; i++) {
@@ -49,7 +49,7 @@ async function main() {
   console.log('\nVerified index:');
   console.log(JSON.stringify(index, null, 2));
 
-  console.log('\nMigration 1094 complete.');
+  console.log('\nMigration 1096 complete.');
 }
 
 main().catch((e) => {

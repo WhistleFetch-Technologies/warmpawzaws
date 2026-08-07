@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 1091: WAPPT cancellation/refund policy scope on vendor_refund_tiers
+-- Migration 1093: WAPPT cancellation/refund policy scope on vendor_refund_tiers
 -- ============================================================================
 -- Book Appointment (warmpawz_appointments) uses dedicated policy tiers configured
 -- from Admin → Warmpawz Appointments → Policies. Marketplace + tele unchanged.

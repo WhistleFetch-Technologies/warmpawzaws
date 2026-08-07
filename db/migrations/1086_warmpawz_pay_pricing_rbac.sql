@@ -1,8 +1,5 @@
 -- ============================================================================
--- Migration 1081: Warmpawz Pay admin RBAC permissions
--- ============================================================================
--- Grants admin.warmpawz_pay (+ catalogue granular permissions) to admin_master
--- and any role that already has admin.full_access. Idempotent.
+-- Migration 1086: Warmpawz Pay pricing admin RBAC permissions
 -- ============================================================================
 
 DO $$
@@ -10,13 +7,10 @@ DECLARE
   rid UUID;
   perm TEXT;
   perms TEXT[] := ARRAY[
-    'admin.warmpawz_pay',
-    'admin.warmpawz_pay.catalogue.view',
-    'admin.warmpawz_pay.catalogue.create',
-    'admin.warmpawz_pay.catalogue.delete',
-    'admin.warmpawz_pay.catalogue.publish',
-    'admin.warmpawz_pay.catalogue.unpublish',
-    'admin.warmpawz_pay.catalogue.bulk'
+    'admin.warmpawz_pay.pricing.view',
+    'admin.warmpawz_pay.pricing.write',
+    'admin.warmpawz_pay.merchants.view',
+    'admin.warmpawz_pay.dashboard.view'
   ];
 BEGIN
   FOR rid IN

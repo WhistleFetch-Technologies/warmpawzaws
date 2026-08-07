@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 1092: WAPPT platform default — 1h full refund, under 1h no refund
+-- Migration 1094: WAPPT platform default — 1h full refund, under 1h no refund
 -- ============================================================================
 -- Customer cancels Book Appointment booking:
 --   >= 1 hour before slot → 100% refund
