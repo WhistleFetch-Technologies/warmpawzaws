@@ -215,7 +215,11 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       const city = (c.req.query('city') || '').trim().toLowerCase();
       const limit = Math.min(parseInt(c.req.query('limit') || '500', 10), 1000);
 
-      const customers = await select('customers', {});
+      // Newest onboardings first so Active Customers shows fresh signups at the top.
+      const customers = await select('customers', {}, {
+        orderBy: 'created_at',
+        orderDirection: 'DESC',
+      });
       let list = (customers || []).filter((cust: any) => normalizeIsActive(cust.is_active));
       if (search) {
         list = list.filter((cust: any) => {
@@ -230,6 +234,12 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       if (city && city !== 'all') {
         list = list.filter((cust: any) => String(cust.city || '').toLowerCase() === city);
       }
+
+      list.sort((a: any, b: any) => {
+        const aTs = a?.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTs = b?.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTs - aTs;
+      });
 
       list = list.slice(0, limit);
 
