@@ -298,7 +298,7 @@ export function BoardingVendorExpandableCard({
                         <div className="shrink-0 text-right">
                           {usePromoQuote && promoVendorId ? (
                             <ServiceListingPrice
-                              basePrice={plan.price}
+                              basePrice={Number(plan.price ?? 0)}
                               vendorId={promoVendorId}
                               serviceId={String(plan.vendorServiceId ?? plan.serviceId ?? plan.rowId)}
                               customerId={customerId}
