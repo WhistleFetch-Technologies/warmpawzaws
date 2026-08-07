@@ -65,8 +65,6 @@ export function resolveWapptAppointmentFeeFromBooking(row: WpayWapptBookingConte
 export function mapWpayAppointmentContextBooking(row: WpayWapptBookingContextRow) {
   const vendorName = String(row.business_name || row.owner_name || 'Vendor').trim();
   const appointmentFee = resolveWapptAppointmentFeeFromBooking(row);
-  const otpCode = String(row.otp_code ?? '').trim() || null;
-  const completionOtp = otpCode;
   const today = ymdInIst();
   const bookingDate = ymdFromBookingDateField(row.booking_date);
   const creditEligible =
@@ -83,10 +81,18 @@ export function mapWpayAppointmentContextBooking(row: WpayWapptBookingContextRow
     bookingTime: row.booking_time ?? null,
     bookingDatetime: row.booking_datetime ?? null,
     appointmentFee,
-    otpCode,
-    completionOtp,
     otpVerified: Boolean(row.otp_verified),
     creditEligible,
+  };
+}
+
+/** Phone/query appointment-context — never expose OTP via unauthenticated lookup. */
+export function mapWpayAppointmentContextBookingPublic(row: WpayWapptBookingContextRow) {
+  const mapped = mapWpayAppointmentContextBooking(row);
+  return {
+    ...mapped,
+    otpCode: null,
+    completionOtp: null,
   };
 }
 

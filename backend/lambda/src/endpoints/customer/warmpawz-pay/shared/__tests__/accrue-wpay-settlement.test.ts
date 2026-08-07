@@ -52,6 +52,26 @@ describe('accrue-wpay-settlement', () => {
     expect(mapWpaySettlementLedgerStatus('failed')).toBe('cancelled');
   });
 
+  it('uses platformWithholdPercent snapshot from payment metadata', async () => {
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [] } as never)
+      .mockResolvedValueOnce({ rows: [{ id: 'settlement-snap' }] } as never);
+
+    const result = await accrueWpaySettlement({
+      ...basePayment,
+      metadata: {
+        ...basePayment.metadata,
+        platformWithholdPercent: 8,
+      },
+    });
+
+    expect(result.inserted).toBe(true);
+    expect(mockedQuery).toHaveBeenCalledTimes(2);
+    const insertArgs = mockedQuery.mock.calls[1]?.[1];
+    expect(insertArgs?.[4]).toBe(72);
+    expect(insertArgs?.[5]).toBe(828);
+  });
+
   it('computes withhold and inserts settlement row', async () => {
     mockedQuery
       .mockResolvedValueOnce({ rows: [] } as never)

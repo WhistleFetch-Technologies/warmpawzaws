@@ -2,7 +2,6 @@
 
 import { cn } from '@/components/ui/utils';
 import type { WarmpawzPayVendorCardAction } from './types';
-import { logWpayVendorCardCtaActions } from './debug-log-cta-actions';
 import {
   PREMIUM_VENDOR_CARD_CTA_CARD_BASE_CLASS,
   PREMIUM_VENDOR_CARD_CTA_CONTENT_ROW_CLASS,
@@ -92,11 +91,6 @@ export function PremiumVendorCardCtaSection({
   const actionCount = (primaryAction ? 1 : 0) + (secondaryAction ? 1 : 0);
 
   if (!hint && !showActions) return null;
-
-  logWpayVendorCardCtaActions('PremiumVendorCardCtaSection.render', {
-    primaryAction,
-    secondaryAction,
-  });
 
   return (
     <div className={cn(PREMIUM_VENDOR_CARD_CTA_SECTION_CLASS, className)}>

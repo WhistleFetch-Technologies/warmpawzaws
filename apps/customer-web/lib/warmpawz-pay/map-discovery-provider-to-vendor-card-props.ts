@@ -10,7 +10,6 @@ import {
   normalizeWpayVendorCardAddress,
   resolveWpayVendorCardRating,
 } from '@/lib/warmpawz-pay/wpay-vendor-card-map-utils';
-import { logWpayVendorCardCtaActions } from '@/components/warmpawz-pay/vendor-card/debug-log-cta-actions';
 import {
   extractImageFieldsFromRow,
   logDiscoveryImageStage,
@@ -116,12 +115,6 @@ export function mapDiscoveryProviderToVendorCardProps(
       imageLostAt: imageUrl ? null : 'provider.photo was null/undefined → imageUrl set to null at map-discovery-provider-to-vendor-card-props.ts imageUrl assignment',
     });
   }
-
-  logWpayVendorCardCtaActions('mapDiscoveryProviderToVendorCardProps', {
-    vendorName: provider.name,
-    primaryAction: actions.primaryAction,
-    secondaryAction: actions.secondaryAction,
-  });
 
   return {
     variant: 'rich',

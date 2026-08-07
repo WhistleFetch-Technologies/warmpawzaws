@@ -1,9 +1,8 @@
 -- ============================================================================
--- MIGRATION 1084: Drop unused vendors.pay_bill_enabled column
+-- Migration 1087: Deprecate vendors.pay_bill_enabled (additive — no DROP)
 -- ============================================================================
--- Purpose: Warmpawz Pay eligibility no longer uses pay_bill_enabled.
---          Admin catalogue publish_status is the Pay Bill enablement switch.
--- Idempotent: safe to re-run (checks column existence before DROP)
+-- Warmpawz Pay eligibility uses admin catalogue publish_status, not this column.
+-- Column may remain on older RDS; application code must not read it.
 -- ============================================================================
 
 DO $$
@@ -15,9 +14,10 @@ BEGIN
       AND table_name = 'vendors'
       AND column_name = 'pay_bill_enabled'
   ) THEN
-    ALTER TABLE public.vendors DROP COLUMN pay_bill_enabled;
-    RAISE NOTICE '1084: dropped vendors.pay_bill_enabled';
+    COMMENT ON COLUMN public.vendors.pay_bill_enabled IS
+      'DEPRECATED — unused. Warmpawz Pay enablement is warmpawz_pay_vendor_catalog.publish_status.';
+    RAISE NOTICE '1087: documented vendors.pay_bill_enabled as deprecated (no drop)';
   ELSE
-    RAISE NOTICE '1084: vendors.pay_bill_enabled already absent — skipping';
+    RAISE NOTICE '1087: vendors.pay_bill_enabled absent — nothing to document';
   END IF;
 END $$;

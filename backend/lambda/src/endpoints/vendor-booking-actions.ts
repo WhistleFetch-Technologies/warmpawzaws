@@ -29,6 +29,10 @@ import {
 } from '../utils/tele-completion-service';
 import { finalizeBookingServiceCompleted } from './warmpawz-appointments/shared/finalize-booking-service-completed';
 import { isWapptAppointmentBooking } from './warmpawz-appointments/shared/wappt-earnings-policy';
+import {
+  isVendorCompleteBlockedAsAlreadyDone,
+  isWapptPendingVendorOtpAttestation,
+} from './warmpawz-appointments/shared/wappt-vendor-complete-policy';
 import type { NotificationEvent } from '../utils/sns-client';
 
 // Type-only ambient declaration: the LOCATION-UPDATE catch block references `bookingId`,
@@ -176,9 +180,12 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
       }
 
-      // Check if booking is already completed
-      if (booking.status === 'completed') {
+      if (isVendorCompleteBlockedAsAlreadyDone(booking)) {
         return c.json({ error: 'Booking is already completed' }, 400);
+      }
+
+      if (isWapptPendingVendorOtpAttestation(booking)) {
+        console.log(`📋 [COMPLETE-BOOKING] WAPPT Pay Bill first — attesting service via OTP for ${bookingId}`);
       }
 
       // ✅ FIXED: For tele/video consultations, no OTP required - completed via prescription upload or video call end
@@ -263,13 +270,17 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }
       }
 
-      // Mark booking as completed
+      const completedAt =
+        booking.completed_at != null && String(booking.completed_at).trim()
+          ? String(booking.completed_at)
+          : new Date().toISOString();
+
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: 'completed',
           otp_verified: true,
-          completed_at: new Date().toISOString(),
+          completed_at: completedAt,
         }
       );
 

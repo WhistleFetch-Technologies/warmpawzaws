@@ -1,5 +1,5 @@
 import { createHmac, createHash } from 'crypto';
-import { insert } from '../database/rds-connection';
+import { insert, query } from '../database/rds-connection';
 import { getRazorpayConfig, razorpayRequest } from './payments/razorpay-client';
 import { ymdInIst } from './ist-scheduling';
 
@@ -26,6 +26,7 @@ export async function createWpayRazorpayOrder(params: {
     billBase?: number;
     appointmentFeeCredit?: number;
     appointmentFeeBookingId?: string | null;
+    platformWithholdPercent?: number;
   };
 }): Promise<{
   orderId: string;
@@ -72,6 +73,32 @@ export async function createWpayRazorpayOrder(params: {
     )
     .digest('hex');
 
+  const pendingReuse = await query(
+    `SELECT id::text AS id, razorpay_order_id, amount, currency
+     FROM payments
+     WHERE idempotency_key = $1
+       AND payment_source = 'warmpawz_pay'
+       AND payment_status = 'pending'
+       AND vendor_id = $2::uuid
+       AND customer_id = $3::uuid
+     LIMIT 1`,
+    [idempotencyKey, vendorId, customerId],
+  );
+  const pendingRow = pendingReuse.rows[0] as
+    | { id?: string; razorpay_order_id?: string; amount?: number; currency?: string }
+    | undefined;
+  if (pendingRow?.id && pendingRow.razorpay_order_id) {
+    const pendingAmt = Number(pendingRow.amount ?? amt);
+    return {
+      orderId: String(pendingRow.razorpay_order_id),
+      amount: pendingAmt,
+      amountPaise: Math.round(pendingAmt * 100),
+      currency: pendingRow.currency || 'INR',
+      keyId: config.keyId,
+      paymentId: String(pendingRow.id),
+    };
+  }
+
   const payRows = await insert('payments', {
     booking_id: bookingId ?? null,
     customer_id: customerId,
@@ -91,6 +118,9 @@ export async function createWpayRazorpayOrder(params: {
       appointmentFeeCredit: quote.appointmentFeeCredit ?? 0,
       ...(quote.appointmentFeeBookingId
         ? { appointmentFeeBookingId: quote.appointmentFeeBookingId }
+        : {}),
+      ...(Number.isFinite(quote.platformWithholdPercent) && (quote.platformWithholdPercent ?? 0) >= 0
+        ? { platformWithholdPercent: quote.platformWithholdPercent }
         : {}),
     },
   });

@@ -1,6 +1,7 @@
 import {
   assertBookingEligibleForPayCredit,
   mapWpayAppointmentContextBooking,
+  mapWpayAppointmentContextBookingPublic,
   resolveWapptAppointmentFeeCredit,
   resolveWapptAppointmentFeeFromBooking,
 } from '../wpay-appointment-credit';
@@ -45,8 +46,15 @@ describe('wpay-appointment-credit', () => {
     const mapped = mapWpayAppointmentContextBooking(baseRow);
     expect(mapped.bookingId).toBe('booking-1');
     expect(mapped.serviceName).toBe('Appointment');
-    expect(mapped.otpCode).toBe('123456');
+    expect(mapped.otpVerified).toBe(false);
     expect(mapped.creditEligible).toBe(true);
+  });
+
+  it('public mapper never exposes OTP fields', () => {
+    const mapped = mapWpayAppointmentContextBookingPublic(baseRow);
+    expect(mapped.bookingId).toBe('booking-1');
+    expect(mapped.otpCode).toBeNull();
+    expect(mapped.completionOtp).toBeNull();
   });
 
   it('maps creditEligible when booking_date is a Date object from Postgres', () => {

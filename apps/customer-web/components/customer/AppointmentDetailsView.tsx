@@ -2,17 +2,19 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon, Video, MessageSquare, HelpCircle } from 'lucide-react';
+import { MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon, Video, MessageSquare, HelpCircle, Copy, Key, Check } from 'lucide-react';
 import { navigateToBookingSupport } from '@/lib/support-contact';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { copyTextToClipboard } from '@/lib/shareUtils';
+import { isWarmpawzPayEnabled } from '@/lib/warmpawz-pay/wpay-feature-flag';
 import {
   getResolvedCustomerId,
   isCustomerDatabaseUuid,
   persistCustomerDatabaseId,
 } from '@/lib/customer-id-storage';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { formatPriceWithSymbol, customerBookingShowsServiceOtp } from '@/lib/booking-display-utils';
 import {
   derivePaymentSourcesFromBooking,
   bookingSourcesHasGatewayPayment,
@@ -65,6 +67,9 @@ export function normalizeAppointmentDetailPayload(raw: Record<string, unknown> |
     vendorName: raw.vendor_name ?? raw.vendorName,
     staffId: raw.staff_id ?? raw.staffId,
     bookingId: raw.booking_id ?? raw.bookingId,
+    otpCode: raw.otp_code ?? raw.otpCode ?? raw.completion_otp ?? raw.completionOTP,
+    otpVerified: Boolean(raw.otp_verified ?? raw.otpVerified),
+    commerceMode: raw.commerce_mode ?? raw.commerceMode,
   };
 
   const vendorName = String(raw.vendor_name ?? '');
@@ -123,6 +128,7 @@ export function AppointmentDetailsView({
   const [cancelling, setCancelling] = useState(false);
   const [estimatedRefund, setEstimatedRefund] = useState<AppointmentRefundEstimate | null>(null);
   const [refundPreviewLoading, setRefundPreviewLoading] = useState(false);
+  const [copiedOtp, setCopiedOtp] = useState(false);
 
   const loadAppointmentDetails = useCallback(async () => {
     if (!appointmentId || appointmentId === 'undefined') return;
@@ -378,6 +384,18 @@ export function AppointmentDetailsView({
     appointment.date &&
     formatDate(typeof appointment.date === 'string' ? appointment.date : String(appointment.date));
   const statStatus = (appointment.status || '').replace(/_/g, ' ') || '—';
+  const isWapptAppointment = isWarmpawzAppointmentsBookingRow(appointment);
+  const showServiceOtp = customerBookingShowsServiceOtp({
+    status: appointment.status,
+    otpVerified: appointment.otpVerified,
+    otpCode: appointment.otpCode,
+    isWappt: isWapptAppointment,
+  });
+  const showPayBillCta =
+    isWapptAppointment &&
+    isWarmpawzPayEnabled() &&
+    appointment.status !== 'cancelled' &&
+    Boolean(String(appointment.vendorId ?? '').trim());
 
   return (
     <>
@@ -447,6 +465,61 @@ export function AppointmentDetailsView({
             </div>
           </div>
         </div>
+
+        {showServiceOtp && (
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <Key className="w-5 h-5 text-orange-700" />
+              <div>
+                <h3 className="font-semibold text-orange-900">
+                  {appointment.status === 'completed' ? 'Service completion OTP' : 'Check-in OTP'}
+                </h3>
+                <p className="text-xs text-orange-700">
+                  Share this code with your provider to confirm the visit
+                </p>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-4 mb-3 text-center">
+              <span className="text-3xl font-bold text-orange-600 tracking-[0.4em] font-mono">
+                {String(appointment.otpCode)}
+              </span>
+            </div>
+            <Button
+              type="button"
+              className="w-full bg-orange-500 hover:bg-orange-600"
+              onClick={() => {
+                copyTextToClipboard(String(appointment.otpCode));
+                setCopiedOtp(true);
+                setTimeout(() => setCopiedOtp(false), 2000);
+              }}
+            >
+              {copiedOtp ? (
+                <>
+                  <Check className="w-4 h-4 mr-2" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 mr-2" />
+                  Copy OTP
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {showPayBillCta && (
+          <Button
+            type="button"
+            className="w-full bg-[#FF8C42] hover:bg-[#e67d35] text-white"
+            onClick={() => {
+              const vendorId = String(appointment.vendorId).trim();
+              router.push(`/warmpawz-pay/vendors/${encodeURIComponent(vendorId)}`);
+            }}
+          >
+            Pay Bill by Warmpawz
+          </Button>
+        )}
 
         {/* Staff Details */}
         {staff && (

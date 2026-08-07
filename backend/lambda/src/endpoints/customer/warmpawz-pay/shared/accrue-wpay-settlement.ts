@@ -1,7 +1,9 @@
 import { query } from '../../../../database/rds-connection';
 import type { WpayPaymentRow } from '../repos/wpay-payment.repo';
 import { dbLoadWapptBookingSettlementFacts } from '../repos/wpay-appointment-context.repo';
-import { assertWapptSettlementEligible, resolveWapptSettlementBookingId } from './wpay-settlement-policy';export type WpaySettlementAccrualResult = {
+import { assertWapptSettlementEligible, resolveWapptSettlementBookingId } from './wpay-settlement-policy';
+
+export type WpaySettlementAccrualResult = {
   inserted: boolean;
   settlementId: string | null;
   skippedReason?: string;
@@ -55,7 +57,8 @@ export async function accrueWpaySettlement(
     const bookingFacts = bookingId ? await dbLoadWapptBookingSettlementFacts(bookingId) : null;
     return assertWapptSettlementEligible(payment, bookingFacts);
   })();
-  if (!settlementGate.ok) {    return { inserted: false, settlementId: null, skippedReason: settlementGate.skippedReason };
+  if (!settlementGate.ok) {
+    return { inserted: false, settlementId: null, skippedReason: settlementGate.skippedReason };
   }
 
   const existing = await query(
@@ -85,7 +88,11 @@ export async function accrueWpaySettlement(
   const appointmentFeeCredit = round2(readMetadataNumber(meta, 'appointmentFeeCredit'));
   const discountPercent = round2(readMetadataNumber(meta, 'quotedDiscountPercent'));
 
-  const platformWithholdPercent = await resolveWpayPlatformWithholdPercent(vendorId);
+  const snapRaw = meta.platformWithholdPercent;
+  const platformWithholdPercent =
+    snapRaw != null && Number.isFinite(Number(snapRaw))
+      ? round2(Math.min(100, Number(snapRaw)))
+      : await resolveWpayPlatformWithholdPercent(vendorId);
   const platformWithholdAmount = round2((payableAmount * platformWithholdPercent) / 100);
   const vendorNetAmount = round2(Math.max(0, payableAmount - platformWithholdAmount));
 

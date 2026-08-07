@@ -67,3 +67,21 @@ export function customerBookingStatusShowsCheckInOtp(status: string | null | und
   if (!s) return true;
   return !TERMINAL_BOOKING_STATUSES_FOR_START_OTP.has(s);
 }
+
+/**
+ * Whether to show the customer service/check-in OTP on detail views.
+ * WAPPT Pay Bill may set status=completed before vendor OTP attestation — still show OTP.
+ */
+export function customerBookingShowsServiceOtp(opts: {
+  status?: string | null;
+  otpVerified?: boolean | null;
+  otpCode?: string | null;
+  isWappt?: boolean;
+}): boolean {
+  const otp = String(opts.otpCode ?? '').trim();
+  if (!otp || opts.otpVerified) return false;
+  if (opts.isWappt && String(opts.status ?? '').toLowerCase() === 'completed') {
+    return true;
+  }
+  return customerBookingStatusShowsCheckInOtp(opts.status);
+}

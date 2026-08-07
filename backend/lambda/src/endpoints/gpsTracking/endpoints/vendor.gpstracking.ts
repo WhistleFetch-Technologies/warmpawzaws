@@ -49,6 +49,10 @@ import {
   repairVendorEarningsIfCompletedBookingMissing,
   syncPackageSessionEarningsAfterBookingComplete,
 } from '../../../utils/vendor-earnings-on-completion';
+import {
+  isVendorCompleteBlockedAsAlreadyDone,
+  isWapptPendingVendorOtpAttestation,
+} from '../../warmpawz-appointments/shared/wappt-vendor-complete-policy';
 
 /**
  * Helper function to get the correct OTP for a booking based on action and service type
@@ -383,7 +387,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'Booking is cancelled' }, 400);
       }
 
-      if (booking.status === BookingStatus.COMPLETED) {
+      if (isVendorCompleteBlockedAsAlreadyDone(booking as Record<string, unknown>)) {
         const repaired = await repairVendorEarningsIfCompletedBookingMissing(
           bookingId,
           '[COMPLETE-BOOKING-REPAIR]'
@@ -396,6 +400,10 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             ? 'Earnings recorded for this completed booking.'
             : 'Booking is already completed.',
         });
+      }
+
+      if (isWapptPendingVendorOtpAttestation(booking as Record<string, unknown>)) {
+        console.log(`[COMPLETE-BOOKING] WAPPT Pay Bill first — attesting service via OTP for ${bookingId}`);
       }
 
       // For tele/video consultations, no OTP required - completed via prescription upload or video call end
@@ -460,13 +468,17 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }
       }
 
-      // Mark booking as completed
+      const completedAt =
+        booking.completed_at != null && String(booking.completed_at).trim()
+          ? String(booking.completed_at)
+          : new Date().toISOString();
+
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: BookingStatus.COMPLETED,
           otp_verified: true,
-          completed_at: new Date().toISOString(),
+          completed_at: completedAt,
         }
       );
       console.log(`[COMPLETE-BOOKING] Updated booking: ${JSON.stringify(updated)}`);

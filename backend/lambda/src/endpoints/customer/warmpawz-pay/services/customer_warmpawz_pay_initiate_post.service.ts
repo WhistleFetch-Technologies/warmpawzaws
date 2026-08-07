@@ -8,6 +8,7 @@ import {
 } from '../repos/wpay-appointment-context.repo';
 import { resolveWapptAppointmentFeeCredit } from '../shared/wpay-appointment-credit';
 import { computeWpayDiscountQuote, resolveWpayDiscountPercent } from '../shared/wpay-discount';
+import { resolveWpayPlatformWithholdPercent } from '../shared/accrue-wpay-settlement';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -73,6 +74,8 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       appointmentFeeCredit,
     });
 
+    const platformWithholdPercent = await resolveWpayPlatformWithholdPercent(vendorId);
+
     const order = await createWpayRazorpayOrder({
       customerId,
       vendorId,
@@ -85,6 +88,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         billBase: quote.billBase,
         appointmentFeeCredit: quote.appointmentFeeCredit,
         appointmentFeeBookingId,
+        platformWithholdPercent,
       },
     });
 
