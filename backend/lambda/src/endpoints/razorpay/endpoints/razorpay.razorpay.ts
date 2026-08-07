@@ -65,6 +65,11 @@ import { ACTIVE_REFUND_STATUS_FILTER, mapRazorpayRefundEventStatus } from '../..
 import { markShopOrderPaymentRefundedIfFull } from '../../../utils/payments/shop-order-refund';
 import { reconcileRazorpayRefundWebhook } from '../../../utils/payments/razorpay-refund-webhook-reconcile';
 import { ensureBookingStartOtpIfNeeded, scheduleBookingStartOtpIfNeeded } from '../../../utils/booking-start-otp';
+import {
+  hasBookingSlotOverlap,
+  overlapParamsFromBookingRow,
+  SLOT_TAKEN_AT_VERIFY_REASON,
+} from '../../../utils/booking-slot-overlap';
 
 // Razorpay configuration is imported from utils
 
@@ -1458,6 +1463,43 @@ class VerifyPaymentHandler extends BaseHandler {
         const previousPaymentStatus = bookingRow?.payment_status || null;
         const shouldNotify = previousPaymentStatus !== 'paid' || previousStatus === 'pending_payment';
 
+        const overlapParams = overlapParamsFromBookingRow(
+          bookingRow as Record<string, unknown>,
+          String(bookingId)
+        );
+        if (overlapParams) {
+          const slotTaken = await hasBookingSlotOverlap(overlapParams, (sql, params) =>
+            client.query(sql, params)
+          );
+          if (slotTaken) {
+            await client.query(
+              `UPDATE bookings SET
+                payment_status = 'paid',
+                status = 'cancelled',
+                cancellation_reason = $2,
+                cancelled_at = COALESCE(cancelled_at, NOW()),
+                updated_at = NOW()
+              WHERE id = $1`,
+              [bookingId, SLOT_TAKEN_AT_VERIFY_REASON]
+            );
+            console.warn(
+              '[PAYMENT-VERIFY] Slot conflict at verify — payment captured, booking not confirmed:',
+              bookingId
+            );
+            return {
+              success: false,
+              code: 'SLOT_CONFLICT_AT_VERIFY',
+              message:
+                'This time slot was taken while you were paying. Your payment was received — please contact support for a refund.',
+              paymentId: razorpay_payment_id,
+              orderId: razorpay_order_id,
+              bookingId,
+              customerId: payment.customer_id ?? null,
+              totalAmount: Number(payment.amount ?? 0),
+            };
+          }
+        }
+
         // Split-pay gate: if financial meta reserved a wallet slice, debit it before marking paid.
         // Razorpay amount alone (often GST) must not complete the booking without the wallet leg.
         const lockedAtVerify = resolveLockedBookingGrossFromNotes(bookingRow.notes);
@@ -1704,6 +1746,14 @@ class VerifyPaymentHandler extends BaseHandler {
         };
       });
 
+      if (result && (result as { code?: string }).code === 'SLOT_CONFLICT_AT_VERIFY') {
+        return this.error(
+          (result as { message?: string }).message ||
+            'This time slot was taken while you were paying. Your payment was received — please contact support for a refund.',
+          409
+        );
+      }
+
       if (bookingStatusChange) {
         await logBookingStatusChange(
           (bookingStatusChange as BookingStatusChange).bookingId,
@@ -1886,7 +1936,9 @@ class VerifyPaymentHandler extends BaseHandler {
                   ELSE cancelled_at
                 END,
                 updated_at = NOW()
-              WHERE id = $1 AND payment_status != 'paid'`,
+              WHERE id = $1
+                AND payment_status != 'paid'
+                AND COALESCE(cancellation_reason, '') NOT IN ('slot_taken_at_verify')`,
               [paymentRows[0].booking_id]
             );
             console.log('[PAYMENT-VERIFY] ⚠️ Main transaction failed but best-effort update succeeded for booking:', paymentRows[0].booking_id);
@@ -1998,7 +2050,7 @@ class RazorpayWebhookHandler extends BaseHandler {
         // Update booking if linked
         if (paymentRecord.booking_id) {
           const { rows: bookingRows } = await client.query(
-            `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
+            `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
             [paymentRecord.booking_id]
           );
 
@@ -2007,20 +2059,52 @@ class RazorpayWebhookHandler extends BaseHandler {
             const previousStatus = booking.status || null;
             const shouldNotify = booking.payment_status !== 'paid' || previousStatus === 'pending_payment';
 
-            await client.query(
-              `UPDATE bookings SET 
-                payment_status = 'paid',
-                status = 'confirmed',
-                updated_at = NOW()
-              WHERE id = $1`,
-              [paymentRecord.booking_id]
+            const overlapParams = overlapParamsFromBookingRow(
+              booking as Record<string, unknown>,
+              String(paymentRecord.booking_id)
             );
-
-            if (previousStatus !== 'confirmed') {
-              bookingStatusChange = { bookingId: paymentRecord.booking_id, from: previousStatus, to: 'confirmed' };
+            let slotTakenAtWebhook = false;
+            if (overlapParams) {
+              slotTakenAtWebhook = await hasBookingSlotOverlap(overlapParams, (sql, params) =>
+                client.query(sql, params)
+              );
             }
-            if (shouldNotify) {
-              bookingToNotify = paymentRecord.booking_id;
+
+            if (slotTakenAtWebhook) {
+              await client.query(
+                `UPDATE bookings SET
+                  payment_status = 'paid',
+                  status = 'cancelled',
+                  cancellation_reason = $2,
+                  cancelled_at = COALESCE(cancelled_at, NOW()),
+                  updated_at = NOW()
+                WHERE id = $1`,
+                [paymentRecord.booking_id, SLOT_TAKEN_AT_VERIFY_REASON]
+              );
+              console.warn(
+                '[RAZORPAY-WEBHOOK] Slot conflict — payment captured, booking not confirmed:',
+                paymentRecord.booking_id
+              );
+            } else {
+              await client.query(
+                `UPDATE bookings SET 
+                  payment_status = 'paid',
+                  status = 'confirmed',
+                  updated_at = NOW()
+                WHERE id = $1`,
+                [paymentRecord.booking_id]
+              );
+
+              if (previousStatus !== 'confirmed') {
+                bookingStatusChange = {
+                  bookingId: paymentRecord.booking_id,
+                  from: previousStatus,
+                  to: 'confirmed',
+                };
+              }
+              if (shouldNotify) {
+                bookingToNotify = paymentRecord.booking_id;
+              }
             }
           }
         }

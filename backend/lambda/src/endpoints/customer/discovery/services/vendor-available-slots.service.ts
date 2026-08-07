@@ -857,7 +857,12 @@ export async function executevendorAvailableSlots(c: Context) {
       try {
         // ✅ CRITICAL: Use total_duration_minutes if available (for multi-service bookings), otherwise duration_minutes
         // This ensures we use the actual booking duration, not just the base service duration
-        const bookResult = await vendor_available_slotsRepo.dbVendorAvailableSlots28(duration_minutes).catch(() => ({ rows: [] }));
+        const bookResult = await vendor_available_slotsRepo
+          .dbVendorAvailableSlots28(resolvedVendorId, date, duration_minutes)
+          .catch((err: { message?: string }) => {
+            console.warn('[SLOTS] existing bookings query failed:', err?.message);
+            return { rows: [] };
+          });
         existingBookings = bookResult.rows.map((b: any) => ({
           booking_time: normalizeBookingTime(b.booking_time),
           duration_minutes: Number(b.duration_minutes) || 30,

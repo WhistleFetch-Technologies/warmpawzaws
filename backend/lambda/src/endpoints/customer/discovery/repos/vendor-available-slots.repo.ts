@@ -1,4 +1,5 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
+import { SQL_BOOKING_BLOCKS_SLOT } from '../../../../utils/payment-hold';
 
 export async function dbVendorAvailableSlots0(vendorId) {
   return await query(
@@ -138,7 +139,8 @@ export async function dbVendorAvailableSlots16(resolvedVendorId, date) {
             `SELECT booking_time, staff_id FROM bookings 
              WHERE vendor_id = $1 
              AND booking_date = $2 
-             AND status NOT IN ('cancelled', 'rejected')`,
+             AND status != 'rejected'
+             AND ${SQL_BOOKING_BLOCKS_SLOT}`,
             [resolvedVendorId, date]
           );
 }
@@ -362,7 +364,8 @@ export async function dbVendorAvailableSlots28(resolvedVendorId, date, duration_
                   COALESCE(total_duration_minutes, duration_minutes, 30) as duration_minutes
            FROM bookings
            WHERE vendor_id = $1 AND booking_date = $2
-             AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
+             AND status != 'rejected'
+             AND ${SQL_BOOKING_BLOCKS_SLOT}`,
           [resolvedVendorId, date]
         );
 }
