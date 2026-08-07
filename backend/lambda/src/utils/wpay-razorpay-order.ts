@@ -46,27 +46,6 @@ export async function createWpayRazorpayOrder(params: {
     throw new Error('Invalid payable amount');
   }
 
-  const receipt = `wpay_${String(Date.now())}`.slice(0, 40);
-  const orderData = {
-    amount: Math.round(amt * 100),
-    currency: 'INR',
-    receipt,
-    notes: {
-      type: 'warmpawz_pay',
-      customerId: String(customerId),
-      vendorId: String(vendorId),
-    },
-  };
-
-  const razorpayOrder = (await razorpayRequest('/orders', 'POST', orderData, 20000)) as {
-    id?: string;
-    amount?: number;
-    currency?: string;
-  };
-  if (!razorpayOrder?.id) {
-    throw new Error('Failed to create Razorpay order');
-  }
-
   const idempotencyKey = createHash('sha256')
     .update(
       `${customerId}|${vendorId}|${bookingId ?? 'walkin'}|${quote.originalAmount}|${ymdInIst()}`,
@@ -97,6 +76,27 @@ export async function createWpayRazorpayOrder(params: {
       keyId: config.keyId,
       paymentId: String(pendingRow.id),
     };
+  }
+
+  const receipt = `wpay_${String(Date.now())}`.slice(0, 40);
+  const orderData = {
+    amount: Math.round(amt * 100),
+    currency: 'INR',
+    receipt,
+    notes: {
+      type: 'warmpawz_pay',
+      customerId: String(customerId),
+      vendorId: String(vendorId),
+    },
+  };
+
+  const razorpayOrder = (await razorpayRequest('/orders', 'POST', orderData, 20000)) as {
+    id?: string;
+    amount?: number;
+    currency?: string;
+  };
+  if (!razorpayOrder?.id) {
+    throw new Error('Failed to create Razorpay order');
   }
 
   const payRows = await insert('payments', {

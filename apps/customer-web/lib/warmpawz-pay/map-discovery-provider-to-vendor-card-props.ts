@@ -10,10 +10,6 @@ import {
   normalizeWpayVendorCardAddress,
   resolveWpayVendorCardRating,
 } from '@/lib/warmpawz-pay/wpay-vendor-card-map-utils';
-import {
-  extractImageFieldsFromRow,
-  logDiscoveryImageStage,
-} from '@/lib/warmpawz-pay/debug-log-discovery-image';
 
 export type { DiscoveryProviderCardSource } from '@/lib/warmpawz-pay/discovery-provider-card-source';
 
@@ -102,19 +98,6 @@ export function mapDiscoveryProviderToVendorCardProps(
   const actions = buildRichDiscoveryActions(opts);
 
   const imageUrl = provider.photo ?? null;
-
-  if (/bindu vet clinic/i.test(provider.name || '')) {
-    logDiscoveryImageStage('mapDiscoveryProviderToVendorCardProps.input', {
-      vendorName: provider.name,
-      providerPhoto: provider.photo ?? null,
-      providerRawImageFields: extractImageFieldsFromRow(provider as unknown as Record<string, unknown>),
-    });
-    logDiscoveryImageStage('mapDiscoveryProviderToVendorCardProps.output', {
-      vendorName: provider.name,
-      imageUrl,
-      imageLostAt: imageUrl ? null : 'provider.photo was null/undefined → imageUrl set to null at map-discovery-provider-to-vendor-card-props.ts imageUrl assignment',
-    });
-  }
 
   return {
     variant: 'rich',

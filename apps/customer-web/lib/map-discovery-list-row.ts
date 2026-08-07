@@ -3,10 +3,6 @@
  */
 import { normalizeProviderListPhoto } from './resolve-display-image-url';
 import { resolveNextAvailableLabel } from './available-slots-response';
-import {
-  extractImageFieldsFromRow,
-  logDiscoveryImageStage,
-} from '@/lib/warmpawz-pay/debug-log-discovery-image';
 
 export type DiscoveryListRow = Record<string, unknown>;
 
@@ -37,15 +33,6 @@ export function mapDiscoveryRowBaseFields(row: DiscoveryListRow) {
   const nextAvailableSlot = resolveNextAvailableLabel(row) ?? undefined;
 
   const photo = normalizeProviderListPhoto(row);
-
-  if (/bindu vet clinic/i.test(name)) {
-    logDiscoveryImageStage('mapDiscoveryRowBaseFields', {
-      vendorName: name,
-      rawImageFields: extractImageFieldsFromRow(row),
-      normalizedPhoto: photo ?? null,
-      photoLostAt: photo ? null : 'normalizeProviderListPhoto returned undefined',
-    });
-  }
 
   return {
     id,
