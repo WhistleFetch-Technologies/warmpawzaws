@@ -1,9 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MapPin, AlertCircle, Loader } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  geolocationErrorMessage,
+  resolveCurrentGeolocationCoords,
+} from '@/lib/address-from-geolocation';
 
 interface LocationPermissionProps {
   onLocationGranted: (location: { latitude: number; longitude: number; address?: string }) => void;
@@ -22,78 +26,37 @@ export function LocationPermission({
   const [error, setError] = useState<string | null>(null);
   const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied'>('prompt');
 
-  useEffect(() => {
-    // Check current permission state
-    if ('permissions' in navigator) {
-      navigator.permissions.query({ name: 'geolocation' as PermissionName }).then((result) => {
-        setPermissionState(result.state as 'prompt' | 'granted' | 'denied');
-        
-        // Auto-request if already granted
-        if (result.state === 'granted') {
-          requestLocation();
-        }
-      });
-    }
-  }, []);
-
-  const requestLocation = async () => {
+  const requestLocation = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      console.log('📍 Requesting location permission...');
-      
-      if (!('geolocation' in navigator)) {
-        throw new Error('Geolocation is not supported by your browser');
+      const { latitude, longitude } = await resolveCurrentGeolocationCoords();
+      try {
+        const address = await reverseGeocode(latitude, longitude);
+        onLocationGranted({ latitude, longitude, address });
+      } catch {
+        onLocationGranted({ latitude, longitude });
       }
-
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          
-          console.log('✅ Location obtained:', { latitude, longitude });
-          
-          // Optionally reverse geocode to get address
-          try {
-            const address = await reverseGeocode(latitude, longitude);
-            onLocationGranted({ latitude, longitude, address });
-          } catch (geocodeError) {
-            // Even if geocoding fails, still provide the coordinates
-            onLocationGranted({ latitude, longitude });
-          }
-        },
-        (error) => {
-          console.error('❌ Location error:', error);
-          setPermissionState('denied');
-          
-          let errorMessage = 'Unable to access your location';
-          switch (error.code) {
-            case error.PERMISSION_DENIED:
-              errorMessage = 'Location permission denied. Please enable location access in your browser settings.';
-              break;
-            case error.POSITION_UNAVAILABLE:
-              errorMessage = 'Location information is unavailable';
-              break;
-            case error.TIMEOUT:
-              errorMessage = 'Location request timed out';
-              break;
-          }
-          
-          setError(errorMessage);
-          setLoading(false);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        }
-      );
+      setPermissionState('granted');
     } catch (err) {
-      console.error('❌ Error requesting location:', err);
-      setError(err instanceof Error ? err.message : 'Failed to get location');
+      setPermissionState('denied');
+      setError(geolocationErrorMessage(err));
+    } finally {
       setLoading(false);
     }
-  };
+  }, [onLocationGranted]);
+
+  useEffect(() => {
+    if ('permissions' in navigator) {
+      navigator.permissions.query({ name: 'geolocation' as PermissionName }).then((result) => {
+        setPermissionState(result.state as 'prompt' | 'granted' | 'denied');
+        if (result.state === 'granted') {
+          void requestLocation();
+        }
+      });
+    }
+  }, [requestLocation]);
 
   const reverseGeocode = async (latitude: number, longitude: number): Promise<string> => {
     // Using a simple reverse geocoding service

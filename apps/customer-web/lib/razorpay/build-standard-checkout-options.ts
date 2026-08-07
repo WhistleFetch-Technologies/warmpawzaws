@@ -15,6 +15,15 @@ import {
   sanitizeRazorpayInstanceOptions,
 } from '@/lib/razorpay/razorpay-utils';
 
+/**
+ * Default Razorpay checkout theme. `hide_topbar` removes the cross-origin merchant
+ * toolbar that overlaps the iOS status bar in Capacitor WKWebView.
+ */
+export const WARMPAWZ_RAZORPAY_CHECKOUT_THEME = {
+  color: '#FF8C42',
+  hide_topbar: true,
+} as const;
+
 /** Best-effort profile email for Razorpay `prefill.email` (non-fatal if profile missing). */
 export async function fetchCheckoutEmailForPrefill(customerPhone: string): Promise<string | undefined> {
   try {
@@ -47,7 +56,7 @@ export interface BuildStandardRazorpayCheckoutOptionsInput {
   customerPhone?: string | null;
   customerEmail?: string | null;
   prefillName?: string | null;
-  theme?: { color?: string; backdrop_color?: string };
+  theme?: { color?: string; backdrop_color?: string; hide_topbar?: boolean };
   modal?: Record<string, unknown>;
   offers?: string[];
   notes?: Record<string, unknown>;
@@ -156,7 +165,11 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
 
   const raw: Record<string, any> = {
     ...checkoutPayload,
-    ...(theme ? { theme } : {}),
+    theme: {
+      ...WARMPAWZ_RAZORPAY_CHECKOUT_THEME,
+      ...theme,
+      hide_topbar: true,
+    },
     ...(modal ? { modal } : {}),
     ...(offerIds.length > 0 ? { offers: offerIds } : {}),
     ...(notes && Object.keys(notes).length > 0 ? { notes } : {}),

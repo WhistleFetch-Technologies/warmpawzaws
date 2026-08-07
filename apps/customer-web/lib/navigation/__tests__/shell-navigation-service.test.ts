@@ -8,6 +8,8 @@ import type { ShellEntry } from '../types';
 type Screen =
   | 'home'
   | 'vet'
+  | 'vet-all-doctors'
+  | 'vet-doctor-details'
   | 'vet-clinic-list'
   | 'vet-clinic-profile'
   | 'my-bookings'
@@ -80,6 +82,10 @@ describe('shell-route-policies', () => {
     expect(getShellForwardPolicy('vet').forward).toBe('focus-root');
   });
 
+  it('vet-all-doctors list uses focus-root', () => {
+    expect(getShellForwardPolicy('vet-all-doctors').forward).toBe('focus-root');
+  });
+
   it('clinic profile uses push with key requirement', () => {
     const p = getShellForwardPolicy('vet-clinic-profile');
     expect(p.forward).toBe('push');
@@ -125,6 +131,31 @@ describe('forwardShellHistory', () => {
     const next = forwardShellHistory(start, 'rewards-loyalty', { policyOverride: 'push' });
     expect(next.map((e) => e.screen)).toEqual(['home', 'wallet', 'rewards-loyalty']);
   });
+
+  it('vet View All pushes vet-all-doctors on first visit', () => {
+    const start: ShellEntry<Screen>[] = [{ screen: 'home' }, { screen: 'vet' }];
+    const next = forwardShellHistory(start, 'vet-all-doctors');
+    expect(next.map((e) => e.screen)).toEqual(['home', 'vet', 'vet-all-doctors']);
+  });
+
+  it('vet-all-doctors doctor drill-down pushes entity with key', () => {
+    const start: ShellEntry<Screen>[] = [
+      { screen: 'home' },
+      { screen: 'vet' },
+      { screen: 'vet-all-doctors' },
+    ];
+    const next = forwardShellHistory(start, 'vet-doctor-details', {
+      key: 'doctor:doc-1',
+      policyOverride: 'push',
+    });
+    expect(next.map((e) => e.screen)).toEqual([
+      'home',
+      'vet',
+      'vet-all-doctors',
+      'vet-doctor-details',
+    ]);
+    expect(next[3].key).toBe('doctor:doc-1');
+  });
 });
 
 describe('createShellNavigationService', () => {
@@ -159,6 +190,29 @@ describe('createShellNavigationService', () => {
     const nav = createShellNavigationService(deps);
     nav.back();
     expect(getHistory()).toHaveLength(1);
+  });
+
+  it('vet-all-doctors back pops to vet hub', () => {
+    const { deps, getHistory } = makeDeps([
+      { screen: 'home' },
+      { screen: 'vet' },
+      { screen: 'vet-all-doctors' },
+    ]);
+    const nav = createShellNavigationService(deps);
+    nav.back();
+    expect(getHistory().map((e) => e.screen)).toEqual(['home', 'vet']);
+  });
+
+  it('doctor profile back from vet-all-doctors pops to list', () => {
+    const { deps, getHistory } = makeDeps([
+      { screen: 'home' },
+      { screen: 'vet' },
+      { screen: 'vet-all-doctors' },
+      { screen: 'vet-doctor-details', key: 'doctor:doc-1' },
+    ]);
+    const nav = createShellNavigationService(deps);
+    nav.back();
+    expect(getHistory().map((e) => e.screen)).toEqual(['home', 'vet', 'vet-all-doctors']);
   });
 
   it('focusTabRoot bookings uses focus-root not push duplicate', () => {

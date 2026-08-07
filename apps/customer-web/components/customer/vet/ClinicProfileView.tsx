@@ -435,7 +435,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       <StandardizedFooter
         currentTab="bookings"
         onTabChange={(tab) => {
-          if (tab === 'home') onBack();
+          if (tab === 'home') onNavigate('home');
           else if (tab === 'bookings') onNavigate('my-bookings');
           else if (tab === 'shop') onNavigate('shop');
           else if (tab === 'profile') onNavigate('profile');

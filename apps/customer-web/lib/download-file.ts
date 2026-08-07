@@ -146,6 +146,7 @@ export async function downloadBlob(options: {
   shareText?: string;
   shareDialogTitle?: string;
   previewHtmlInBrowser?: boolean;
+  shareUrl?: string | null;
 }): Promise<{
   fileName: string;
   saveResult: DownloadSaveResult;
@@ -158,6 +159,7 @@ export async function downloadBlob(options: {
     shareText,
     shareDialogTitle,
     previewHtmlInBrowser = false,
+    shareUrl,
   } = options;
 
   const isHtml =
@@ -172,6 +174,7 @@ export async function downloadBlob(options: {
       title: title ?? fileName,
       shareText: shareText ?? 'Save to Files, Drive, or another app.',
       shareDialogTitle: shareDialogTitle ?? 'Save file',
+      shareUrl,
     });
     return { fileName, saveResult, openedInBrowser: false };
   }
@@ -207,6 +210,7 @@ export async function downloadFromUrl(options: {
   shareText?: string;
   shareDialogTitle?: string;
   previewHtmlInBrowser?: boolean;
+  shareUrl?: string | null;
 }): Promise<{
   fileName: string;
   saveResult: DownloadSaveResult;
@@ -226,6 +230,7 @@ export async function downloadFromUrl(options: {
     shareText: options.shareText,
     shareDialogTitle: options.shareDialogTitle,
     previewHtmlInBrowser: options.previewHtmlInBrowser ?? isHtml,
+    shareUrl: options.shareUrl ?? resolvedUrl,
   });
 }
 
@@ -240,6 +245,7 @@ export async function downloadFromApi(options: {
   shareText?: string;
   shareDialogTitle?: string;
   previewHtmlInBrowser?: boolean;
+  shareUrl?: string | null;
 }): Promise<{
   fileName: string;
   saveResult: DownloadSaveResult;
@@ -271,6 +277,7 @@ export async function downloadFromApi(options: {
       shareText: options.shareText,
       shareDialogTitle: options.shareDialogTitle,
       previewHtmlInBrowser: options.previewHtmlInBrowser,
+      shareUrl: options.shareUrl,
     });
   }
 
@@ -284,5 +291,6 @@ export async function downloadFromApi(options: {
     shareText: options.shareText,
     shareDialogTitle: options.shareDialogTitle,
     previewHtmlInBrowser: options.previewHtmlInBrowser ?? isHtml,
+    shareUrl: options.shareUrl,
   });
 }

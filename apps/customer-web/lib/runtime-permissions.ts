@@ -38,7 +38,7 @@ export async function requestLocationPermission(): Promise<RuntimePermissionStat
   } catch (error) {
     if (
       error instanceof GeolocationAddressError &&
-      error.code === 'permission_denied'
+      (error.code === 'permission_denied' || error.code === 'plugin_unavailable')
     ) {
       return 'denied';
     }

@@ -1,14 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { useShopProductId } from '@/lib/use-shop-product-id';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { useDeepLinkBackStack } from '@/lib/navigation/use-deep-link-back-stack';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { CUSTOMER_ROUTES } from '@/lib/navigation/route-registry';
 import {
   mergeLineIntoWarmpawzCartStorage,
   setLineQuantityInWarmpawzCartStorage,
@@ -177,7 +176,6 @@ const DESCRIPTION_TOGGLE_MIN_LEN = 120;
 // ============================================================================
 
 export default function ProductDetailClient() {
-  const router = useRouter();
   const nav = useCustomerNavigation();
   useDeepLinkBackStack();
   const { cart, addToCart: addRecommendationToCart, updateQuantity } = useCart();
@@ -212,6 +210,10 @@ export default function ProductDetailClient() {
   }, [product, productId]);
 
   const wishlistCount = useWishlistCount();
+
+  const handleBack = () => {
+    nav.backOr(CUSTOMER_ROUTES.shop.path);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -773,7 +775,7 @@ export default function ProductDetailClient() {
           <h2 className="text-xl font-bold text-slate-900 mb-2">Shop coming soon</h2>
           <p className="text-slate-500 mb-6">We&apos;re preparing the Warmpawz marketplace for customers.</p>
           <button
-            onClick={() => goBackOrHome(router)}
+            onClick={handleBack}
             className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg"
           >
             Go Back
@@ -816,11 +818,13 @@ export default function ProductDetailClient() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50/30 overflow-x-hidden">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-orange-100/50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="max-w-7xl mx-auto px-4 pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-3">
           <div className="flex items-center justify-between">
             <button
-              onClick={() => goBackOrHome(router)}
+              type="button"
+              onClick={handleBack}
               className="p-2 hover:bg-slate-100 rounded-xl"
+              aria-label="Go back"
             >
               <ArrowLeft className="w-5 h-5 text-slate-600" />
             </button>
@@ -874,21 +878,11 @@ export default function ProductDetailClient() {
               onSelectedIndexChange={setSelectedImage}
               fallbackEmoji={product.emoji || '📦'}
               overlayTopLeft={
-                <>
-                  <button
-                    type="button"
-                    onClick={() => goBackOrHome(router)}
-                    className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white lg:hidden"
-                    aria-label="Go back"
-                  >
-                    <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
-                  </button>
-                  {discount > 0 ? (
-                    <div className="px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg lg:mt-0">
-                      {discount}% OFF
-                    </div>
-                  ) : null}
-                </>
+                discount > 0 ? (
+                  <div className="px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg">
+                    {discount}% OFF
+                  </div>
+                ) : undefined
               }
               overlayCenter={
                 displayStock === 0 ? (

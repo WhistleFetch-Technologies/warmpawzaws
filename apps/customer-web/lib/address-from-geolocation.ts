@@ -1,35 +1,13 @@
 import { Capacitor } from '@capacitor/core';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 
-// #region agent log
-function geoDebugLog(
-  location: string,
-  message: string,
-  data: Record<string, unknown>,
-  hypothesisId: string
-): void {
-  fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '17312f' },
-    body: JSON.stringify({
-      sessionId: '17312f',
-      runId: 'pre-fix',
-      hypothesisId,
-      location,
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-}
-// #endregion
-
 export type GeolocationAddressErrorCode =
   | 'unsupported'
   | 'permission_denied'
   | 'position_unavailable'
   | 'timeout'
-  | 'unknown';
+  | 'unknown'
+  | 'plugin_unavailable';
 
 export class GeolocationAddressError extends Error {
   code: GeolocationAddressErrorCode;
@@ -66,6 +44,33 @@ type GeocodeComponent = {
   long_name: string;
   types: string[];
 };
+
+type CapacitorGeolocationPlugin = {
+  checkPermissions: () => Promise<{ location: string }>;
+  requestPermissions: () => Promise<{ location: string }>;
+  getCurrentPosition: (options?: {
+    enableHighAccuracy?: boolean;
+    timeout?: number;
+    maximumAge?: number;
+  }) => Promise<{
+    timestamp: number;
+    coords: {
+      latitude: number;
+      longitude: number;
+      accuracy: number;
+      altitude: number | null;
+      altitudeAccuracy: number | null | undefined;
+      heading: number | null;
+      speed: number | null;
+    };
+  }>;
+};
+
+const PERMISSION_DENIED_MESSAGE =
+  'Location access is required. Open Settings → Warmpawz → Permissions → Location → Allow.';
+
+const PLUGIN_UNAVAILABLE_MESSAGE =
+  'Update the Warmpawz app to use location features.';
 
 function parseGeocodeResult(
   latitude: number,
@@ -118,14 +123,53 @@ function parseGeocodeResult(
 
 const GEO_OPTIONS = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } as const;
 
+function isCapacitorGeolocationPlugin(value: unknown): value is CapacitorGeolocationPlugin {
+  if (!value || typeof value !== 'object') return false;
+  const plugin = value as CapacitorGeolocationPlugin;
+  return (
+    typeof plugin.checkPermissions === 'function' &&
+    typeof plugin.requestPermissions === 'function' &&
+    typeof plugin.getCurrentPosition === 'function'
+  );
+}
+
+function readBridgedGeolocationPlugin(): CapacitorGeolocationPlugin | null {
+  if (typeof window === 'undefined') return null;
+  const bridged = (window as Window & { Capacitor?: { Plugins?: { Geolocation?: unknown } } })
+    .Capacitor?.Plugins?.Geolocation;
+  return isCapacitorGeolocationPlugin(bridged) ? bridged : null;
+}
+
+/** Prefer native bridge over dynamic import (reliable on Android remote-URL WebView). */
+async function importCapacitorGeolocationModule(): Promise<CapacitorGeolocationPlugin | null> {
+  const bridged = readBridgedGeolocationPlugin();
+  if (bridged) return bridged;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const mod = await import(/* webpackIgnore: true */ '@capacitor/geolocation');
+      if (isCapacitorGeolocationPlugin(mod?.Geolocation)) {
+        return mod.Geolocation;
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[geolocation] import attempt failed:', attempt + 1, err);
+      }
+    }
+    if (attempt < 3) {
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+
+  return readBridgedGeolocationPlugin();
+}
+
 function rejectFromGeolocationErrorCode(
   code: number,
   reject: (reason: GeolocationAddressError) => void
 ): void {
   if (code === 1) {
-    reject(
-      new GeolocationAddressError('permission_denied', 'Please allow location access')
-    );
+    reject(new GeolocationAddressError('permission_denied', PERMISSION_DENIED_MESSAGE));
     return;
   }
   if (code === 2) {
@@ -146,7 +190,7 @@ function rejectFromGeolocationErrorCode(
 
 function shouldUseCapacitorGeolocation(): boolean {
   if (typeof window === 'undefined') return false;
-  return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('Geolocation');
+  return Capacitor.isNativePlatform();
 }
 
 function capacitorPositionToGeolocationPosition(position: {
@@ -176,14 +220,18 @@ function capacitorPositionToGeolocationPosition(position: {
 }
 
 function mapCapacitorGeolocationError(error: unknown): never {
+  if (error instanceof GeolocationAddressError) {
+    throw error;
+  }
+
   const message =
     error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
 
-  if (message.includes('permission') || message.includes('denied')) {
-    throw new GeolocationAddressError(
-      'permission_denied',
-      'Please allow location access'
-    );
+  if (
+    message.includes('permission') &&
+    (message.includes('denied') || message.includes('not granted'))
+  ) {
+    throw new GeolocationAddressError('permission_denied', PERMISSION_DENIED_MESSAGE);
   }
   if (message.includes('timeout')) {
     throw new GeolocationAddressError('timeout', 'Location request timed out');
@@ -198,99 +246,27 @@ function mapCapacitorGeolocationError(error: unknown): never {
 }
 
 async function getCapacitorCurrentPosition(): Promise<GeolocationPosition> {
-  // #region agent log
-  geoDebugLog(
-    'address-from-geolocation.ts:getCapacitorCurrentPosition',
-    'capacitor path enter',
-    { platform: Capacitor.getPlatform() },
-    'H2'
-  );
-  // #endregion
-  let Geolocation: typeof import('@capacitor/geolocation').Geolocation;
-  try {
-    ({ Geolocation } = await import(
-      /* webpackIgnore: true */ '@capacitor/geolocation'
-    ));
-  } catch (importError) {
-    // #region agent log
-    geoDebugLog(
-      'address-from-geolocation.ts:getCapacitorCurrentPosition',
-      'geolocation import failed',
-      {
-        err:
-          importError instanceof Error ? importError.message : String(importError),
-      },
-      'H6'
-    );
-    // #endregion
-    throw importError;
+  const Geolocation = await importCapacitorGeolocationModule();
+  if (!Geolocation) {
+    throw new GeolocationAddressError('plugin_unavailable', PLUGIN_UNAVAILABLE_MESSAGE);
   }
 
   let permissions = await Geolocation.checkPermissions();
-  // #region agent log
-  geoDebugLog(
-    'address-from-geolocation.ts:getCapacitorCurrentPosition',
-    'checkPermissions',
-    { location: permissions.location },
-    'H5'
-  );
-  // #endregion
   if (
     permissions.location === 'prompt' ||
     permissions.location === 'prompt-with-rationale'
   ) {
     permissions = await Geolocation.requestPermissions();
-    // #region agent log
-    geoDebugLog(
-      'address-from-geolocation.ts:getCapacitorCurrentPosition',
-      'requestPermissions result',
-      { location: permissions.location },
-      'H5'
-    );
-    // #endregion
   }
 
   if (permissions.location === 'denied') {
-    // #region agent log
-    geoDebugLog(
-      'address-from-geolocation.ts:getCapacitorCurrentPosition',
-      'permission denied after request',
-      {},
-      'H5'
-    );
-    // #endregion
-    throw new GeolocationAddressError(
-      'permission_denied',
-      'Please allow location access'
-    );
+    throw new GeolocationAddressError('permission_denied', PERMISSION_DENIED_MESSAGE);
   }
 
   try {
     const position = await Geolocation.getCurrentPosition(GEO_OPTIONS);
-    // #region agent log
-    geoDebugLog(
-      'address-from-geolocation.ts:getCapacitorCurrentPosition',
-      'getCurrentPosition ok',
-      {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        accuracy: position.coords.accuracy,
-      },
-      'H2'
-    );
-    // #endregion
     return capacitorPositionToGeolocationPosition(position);
   } catch (error) {
-    // #region agent log
-    geoDebugLog(
-      'address-from-geolocation.ts:getCapacitorCurrentPosition',
-      'getCurrentPosition error',
-      {
-        err: error instanceof Error ? error.message : String(error),
-      },
-      'H2'
-    );
-    // #endregion
     mapCapacitorGeolocationError(error);
   }
 }
@@ -308,66 +284,16 @@ function getBrowserCurrentPosition(): Promise<GeolocationPosition> {
     }
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        // #region agent log
-        geoDebugLog(
-          'address-from-geolocation.ts:getBrowserCurrentPosition',
-          'navigator success',
-          { lat: pos.coords.latitude, lng: pos.coords.longitude },
-          'H1'
-        );
-        // #endregion
-        resolve(pos);
-      },
-      (error) => {
-        // #region agent log
-        geoDebugLog(
-          'address-from-geolocation.ts:getBrowserCurrentPosition',
-          'navigator error',
-          { code: error.code, message: error.message },
-          'H1'
-        );
-        // #endregion
-        rejectFromGeolocationErrorCode(error.code, reject);
-      },
+      resolve,
+      (error) => rejectFromGeolocationErrorCode(error.code, reject),
       GEO_OPTIONS
     );
   });
 }
 
 async function getCurrentPosition(): Promise<GeolocationPosition> {
-  const useCap = shouldUseCapacitorGeolocation();
-  // #region agent log
-  geoDebugLog(
-    'address-from-geolocation.ts:getCurrentPosition',
-    'branch',
-    {
-      useCapacitor: useCap,
-      isNative: Capacitor.isNativePlatform(),
-      pluginAvailable: Capacitor.isPluginAvailable('Geolocation'),
-      platform: Capacitor.getPlatform(),
-      host: typeof window !== 'undefined' ? window.location.hostname : 'ssr',
-    },
-    'H3'
-  );
-  // #endregion
-  if (useCap) {
-    try {
-      return await getCapacitorCurrentPosition();
-    } catch (error) {
-      // #region agent log
-      geoDebugLog(
-        'address-from-geolocation.ts:getCurrentPosition',
-        'capacitor failed, fallback navigator',
-        {
-          code: error instanceof GeolocationAddressError ? error.code : 'unknown',
-          message: error instanceof Error ? error.message : String(error),
-        },
-        'H6'
-      );
-      // #endregion
-      return getBrowserCurrentPosition();
-    }
+  if (shouldUseCapacitorGeolocation()) {
+    return getCapacitorCurrentPosition();
   }
   return getBrowserCurrentPosition();
 }
@@ -411,14 +337,6 @@ async function reverseGeocodeLatLng(
   };
 
   const result = geocodeData.results?.[0];
-  // #region agent log
-  geoDebugLog(
-    'address-from-geolocation.ts:reverseGeocodeLatLng',
-    'geocode response',
-    { resultsCount: geocodeData.results?.length ?? 0, hasFirst: Boolean(result) },
-    'H7'
-  );
-  // #endregion
   if (!result) {
     return {
       latitude,
@@ -441,43 +359,11 @@ async function fetchCustomerGoogleMapsKey(): Promise<string | null> {
  * Never sets houseNo / flatNo / floor — caller must keep those user-entered.
  */
 export async function fillAddressFromCurrentLocation(): Promise<AddressFromGeolocationResult> {
-  // #region agent log
-  geoDebugLog(
-    'address-from-geolocation.ts:fillAddressFromCurrentLocation',
-    'start',
-    { host: typeof window !== 'undefined' ? window.location.hostname : 'ssr' },
-    'H4'
-  );
-  // #endregion
-  let position: GeolocationPosition;
-  try {
-    position = await getCurrentPosition();
-  } catch (error) {
-    // #region agent log
-    geoDebugLog(
-      'address-from-geolocation.ts:fillAddressFromCurrentLocation',
-      'getCurrentPosition failed',
-      {
-        code: error instanceof GeolocationAddressError ? error.code : 'unknown',
-        message: error instanceof Error ? error.message : String(error),
-      },
-      'H1'
-    );
-    // #endregion
-    throw error;
-  }
+  const position = await getCurrentPosition();
   const { latitude, longitude } = position.coords;
 
   try {
     const apiKey = await fetchCustomerGoogleMapsKey();
-    // #region agent log
-    geoDebugLog(
-      'address-from-geolocation.ts:fillAddressFromCurrentLocation',
-      'reverse geocode prep',
-      { hasApiKey: Boolean(apiKey) },
-      'H7'
-    );
-    // #endregion
     return await reverseGeocodeLatLng(latitude, longitude, async () => apiKey);
   } catch (error) {
     console.error('Error reverse geocoding:', error);

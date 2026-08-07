@@ -11,7 +11,20 @@ export function isCapacitorIosPlatform(): boolean {
 }
 
 let popstateFromGesture = false;
+/** Remaining popstate events to suppress after programmatic history.back sync. */
+let programmaticPopstatesToSuppress = 0;
 let installed = false;
+
+/** Reset module state between unit tests. */
+export function resetIosShellHistoryForTests(): void {
+  popstateFromGesture = false;
+  programmaticPopstatesToSuppress = 0;
+  installed = false;
+}
+
+function replaceIosShellHistoryState(screen: string): void {
+  window.history.replaceState({ [SHELL_STATE_KEY]: screen }, '', '/');
+}
 
 /** Push a history entry so iOS edge-swipe maps to shell back on `/`. */
 export function pushIosShellHistoryEntry(screen: string): void {
@@ -19,6 +32,14 @@ export function pushIosShellHistoryEntry(screen: string): void {
   const path = window.location.pathname || '/';
   if (path !== '/' && path !== '') return;
   window.history.pushState({ [SHELL_STATE_KEY]: screen }, '', '/');
+}
+
+/** After replaceTop / overlay swap — same depth, new screen on `/`. */
+export function syncIosShellScreenReplace(currentScreen: string): void {
+  if (!isCapacitorIosPlatform()) return;
+  const path = window.location.pathname || '/';
+  if (path !== '/' && path !== '') return;
+  replaceIosShellHistoryState(currentScreen);
 }
 
 /**
@@ -31,6 +52,7 @@ export function syncIosHistoryAfterShellPop(steps = 1): void {
     popstateFromGesture = false;
     return;
   }
+  programmaticPopstatesToSuppress += steps;
   for (let i = 0; i < steps; i++) {
     window.history.back();
   }
@@ -57,11 +79,6 @@ export function syncIosShellStackDepth(
 
   if (consumeIosPopstateGestureFlag()) return;
 
-  if (nextDepth === 1) {
-    window.history.replaceState({ [SHELL_STATE_KEY]: currentScreen }, '', '/');
-    return;
-  }
-
   syncIosHistoryAfterShellPop(prevDepth - nextDepth);
 }
 
@@ -83,12 +100,16 @@ export function initIosShellHistoryBridge(): () => void {
   installed = true;
 
   if (!window.history.state?.[SHELL_STATE_KEY]) {
-    window.history.replaceState({ [SHELL_STATE_KEY]: 'home' }, '', window.location.pathname || '/');
+    replaceIosShellHistoryState('home');
   }
 
   const onPopState = () => {
     const path = window.location.pathname || '/';
     if (path !== '/' && path !== '') return;
+    if (programmaticPopstatesToSuppress > 0) {
+      programmaticPopstatesToSuppress -= 1;
+      return;
+    }
     popstateFromGesture = true;
     runBackHandlers();
   };
@@ -98,5 +119,7 @@ export function initIosShellHistoryBridge(): () => void {
   return () => {
     window.removeEventListener('popstate', onPopState);
     installed = false;
+    programmaticPopstatesToSuppress = 0;
+    popstateFromGesture = false;
   };
 }
