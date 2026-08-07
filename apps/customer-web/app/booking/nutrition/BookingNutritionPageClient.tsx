@@ -113,7 +113,7 @@ function BookingNutritionContent() {
       vendorId={vendorId}
       nutritionist={nutritionist}
       serviceType={intent.category || 'pet_nutritionist'}
-      serviceStyle={intent.serviceStyle || 'at_center'}
+      serviceStyle={intent.serviceStyle || 'tele'}
       onBack={handleBack}
       onNavigate={handleNavigate}
       onViewBooking={handleViewBooking}

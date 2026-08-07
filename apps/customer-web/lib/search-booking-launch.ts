@@ -539,7 +539,7 @@ export function launchSearchNutritionBooking({
   nutritionist,
   router,
   returnSearchUrl,
-  serviceStyle = 'at_center',
+  serviceStyle = 'tele',
 }: {
   vendorId: string;
   vendorName?: string;
@@ -1003,7 +1003,7 @@ export function launchSearchServiceBooking({
       },
       router,
       returnSearchUrl,
-      serviceStyle: serviceStyleOpt || 'at_center',
+      serviceStyle: serviceStyleOpt || 'tele',
     });
     return;
   }

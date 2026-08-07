@@ -11,6 +11,8 @@ import {
 } from '@/components/customer/nutrition/MealKitchenStatusBanner';
 import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
 import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { priceRangeFromDiscoveryRow } from '@/lib/nutrition-vendor-price';
 
 /** Vendor shape from discovery, meal search rows, or navigation snapshot */
 export type NutritionVendorCardModel = {
@@ -31,6 +33,8 @@ export type NutritionVendorCardModel = {
   acceptingMealOrders?: boolean;
   kitchenClosedMessage?: string | null;
   nextAvailableSlot?: string;
+  priceMin?: number;
+  priceMax?: number;
 };
 
 function displayName(v: NutritionVendorCardModel): string {
@@ -77,6 +81,8 @@ export function nutritionVendorFromDiscoveryRow(
       ? rawNextAvailable
       : undefined;
 
+  const { priceMin, priceMax } = priceRangeFromDiscoveryRow(row);
+
   return {
     id: vendorId || undefined,
     vendorId: vendorId || undefined,
@@ -96,7 +102,19 @@ export function nutritionVendorFromDiscoveryRow(
     photo: normalizeProviderListPhoto(row),
     profile_photo_url: row.profile_photo_url as string | undefined,
     nextAvailableSlot,
+    ...(priceMin != null ? { priceMin } : {}),
+    ...(priceMax != null ? { priceMax } : {}),
   };
+}
+
+function formatNutritionPriceRange(v: NutritionVendorCardModel): string | null {
+  const min = v.priceMin;
+  const max = v.priceMax;
+  if (min == null && max == null) return null;
+  if (min != null && max != null && min !== max) {
+    return `${formatPriceWithSymbol(min)} - ${formatPriceWithSymbol(max)}`;
+  }
+  return formatPriceWithSymbol(min ?? max ?? 0);
 }
 
 export interface NutritionVendorDetailsCardProps {
@@ -135,6 +153,7 @@ export function NutritionVendorDetailsCard({
   const photo = vendor.photo || vendor.profile_photo_url;
   const kitchenClosed = isMealKitchenClosed(vendor);
   const kitchenMsg = mealKitchenClosedMessage(vendor);
+  const priceLabel = formatNutritionPriceRange(vendor);
 
   return (
     <Card
@@ -205,6 +224,11 @@ export function NutritionVendorDetailsCard({
               <Clock className="h-3 w-3" />
               <span>Next: {vendor.nextAvailableSlot}</span>
             </div>
+          ) : null}
+          {priceLabel ? (
+            <p className="mt-1.5 text-xs text-slate-600">
+              <span className="font-semibold text-slate-900">{priceLabel}</span>
+            </p>
           ) : null}
 
           {(showViewMealPlans || showBookConsultation) && (
