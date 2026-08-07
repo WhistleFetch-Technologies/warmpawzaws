@@ -4,6 +4,7 @@
  */
 
 import { query } from '../database/rds-connection';
+import { columnExists } from '../utils/schema-probes';
 import { acceptableStylesForService, normalizeServiceStyle } from './search-discovery-parity';
 
 /** `roles.name` values for the customer Training hub (trainers + behaviorists). */
@@ -109,28 +110,6 @@ export function sqlVendorAvailabilityOrNotConfigured(vAlias = 'v'): string {
          OR va0.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = ${vAlias}.id OR phone = ${vAlias}.phone)
     )
   )`;
-}
-
-const columnExistsCache = new Map<string, boolean>();
-
-async function columnExists(tableName: string, columnName: string): Promise<boolean> {
-  const key = `${tableName}.${columnName}`;
-  if (columnExistsCache.has(key)) return columnExistsCache.get(key) as boolean;
-  try {
-    const res = await query(
-      `SELECT EXISTS (
-         SELECT 1 FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
-       ) as exists`,
-      [tableName, columnName]
-    );
-    const exists = res.rows?.[0]?.exists === true || res.rows?.[0]?.exists === 't';
-    columnExistsCache.set(key, exists);
-    return exists;
-  } catch {
-    columnExistsCache.set(key, false);
-    return false;
-  }
 }
 
 export type DiscoveryCategoryKeys = {

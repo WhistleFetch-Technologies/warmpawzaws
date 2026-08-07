@@ -912,26 +912,8 @@ export async function presignCustomerFacilityGalleryUrls(vendorId: string, rawIn
   return photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
 }
 
-const columnExistsCache = new Map<string, boolean>();
-export async function columnExists(tableName: string, columnName: string): Promise<boolean> {
-  const key = `${tableName}.${columnName}`;
-  if (columnExistsCache.has(key)) return columnExistsCache.get(key) as boolean;
-  try {
-    const res = await query(
-      `SELECT EXISTS (
-         SELECT 1 FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
-       ) as exists`,
-      [tableName, columnName]
-    );
-    const exists = res.rows?.[0]?.exists === true || res.rows?.[0]?.exists === 't';
-    columnExistsCache.set(key, exists);
-    return exists;
-  } catch {
-    columnExistsCache.set(key, false);
-    return false;
-  }
-}
+import { columnExists } from '../../../../utils/schema-probes';
+export { columnExists };
 
 /**
  * Migration 737 adds vendors.service_distance_km. Many environments (dev / not-yet-migrated)

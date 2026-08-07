@@ -98,6 +98,7 @@ interface ChatMessage {
   messageType?: 'text' | 'file' | 'image';
   fileName?: string;
   fileUrl?: string;
+  fileId?: string;
   timestamp: Date;
   persisted?: boolean; // Whether this message has been saved to backend
 }
@@ -112,6 +113,7 @@ interface ChatDataMessage {
   messageType?: 'text' | 'file' | 'image';
   fileName?: string;
   fileUrl?: string;
+  fileId?: string;
   timestamp: string;
 }
 
@@ -982,6 +984,7 @@ export function ChimeVideoCall({
       messageType,
       fileName: data.fileName,
       fileUrl: data.fileUrl,
+      fileId: data.fileId,
       timestamp: new Date(data.timestamp),
     };
 
@@ -1389,7 +1392,8 @@ export function ChimeVideoCall({
     id?: string,
     messageType: 'text' | 'file' | 'image' = 'text',
     fileName?: string,
-    fileUrl?: string
+    fileUrl?: string,
+    fileId?: string
   ) => {
     const newMsg: ChatMessage = {
       id: id || Date.now().toString(),
@@ -1399,6 +1403,7 @@ export function ChimeVideoCall({
       messageType,
       fileName,
       fileUrl,
+      fileId,
       timestamp: new Date(),
     };
 
@@ -1483,7 +1488,13 @@ export function ChimeVideoCall({
   };
 
   const distributeChatFileAfterUpload = useCallback(
-    (fileUrl: string, displayName: string, messageType: 'image' | 'file', messageId: string) => {
+    (
+      fileUrl: string,
+      displayName: string,
+      messageType: 'image' | 'file',
+      messageId: string,
+      fileId?: string
+    ) => {
       if (!meetingSessionRef.current) return;
       const senderName = participantType === 'customer' ? effectiveCustomerName : effectiveVendorName;
       addChatMessage(
@@ -1493,7 +1504,8 @@ export function ChimeVideoCall({
         messageId,
         messageType,
         displayName,
-        fileUrl
+        fileUrl,
+        fileId
       );
       const audioVideo = meetingSessionRef.current.audioVideo;
       const chatData: ChatDataMessage = {
@@ -1505,6 +1517,7 @@ export function ChimeVideoCall({
         messageType,
         fileName: displayName,
         fileUrl,
+        fileId,
         timestamp: new Date().toISOString(),
       };
       const payload = new TextEncoder().encode(JSON.stringify(chatData));
@@ -1555,10 +1568,11 @@ export function ChimeVideoCall({
 
       const result = await response.json();
       const fileUrl = result.fileUrl || result.file_url;
+      const fileId = result.fileId || result.file_id || result.message?.file_id;
       const messageId = result.message?.id || `file-${Date.now()}`;
       const messageType = file.type.startsWith('image/') ? 'image' : 'file';
 
-      distributeChatFileAfterUpload(fileUrl, file.name, messageType, messageId);
+      distributeChatFileAfterUpload(fileUrl, file.name, messageType, messageId, fileId);
     } catch (err) {
       console.error('Error uploading file:', err);
       toast.error('Failed to send file');
@@ -1575,13 +1589,20 @@ export function ChimeVideoCall({
         fileName: string;
         messageType?: 'image' | 'file';
         messageId?: string;
+        fileId?: string;
       }) => void;
     };
     w.__warmpawzDeliverChatUpload = (payload) => {
       if (!payload?.fileUrl) return;
       const messageId = payload.messageId || `file-${Date.now()}`;
       const messageType = payload.messageType || 'image';
-      distributeChatFileAfterUpload(payload.fileUrl, payload.fileName || 'Photo', messageType, messageId);
+      distributeChatFileAfterUpload(
+        payload.fileUrl,
+        payload.fileName || 'Photo',
+        messageType,
+        messageId,
+        payload.fileId
+      );
     };
     return () => {
       delete w.__warmpawzDeliverChatUpload;
@@ -2278,9 +2299,10 @@ export function ChimeVideoCall({
                             <FileText className="w-4 h-4 opacity-80" />
                             <div className="flex flex-col">
                               <span className="text-sm">{msg.fileName || msg.message}</span>
-                              {msg.fileUrl && (
+                              {(msg.fileUrl || msg.fileId) && (
                                 <ChatAttachmentActions
                                   fileUrl={msg.fileUrl}
+                                  fileId={msg.fileId}
                                   fileName={msg.fileName || 'document'}
                                   compact
                                 />

@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProgressTrackingDashboard } from '@/components/vendor/ProgressTrackingDashboard';
-import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
+import { requireVendorSessionOrRedirect } from '@/lib/session-utils';
 import {
   getVendorProgressRoleType,
   isVendorWalkerProgramProgress,
@@ -22,35 +22,32 @@ export default function TrainingProgressPage() {
   const [roleType, setRoleType] = useState<VendorProgressRoleType>('trainer');
 
   useEffect(() => {
-    const token = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
-    const phone = localStorage.getItem('vendorPhone');
-    if (!token || !phone || isTokenExpired(token)) {
-      clearVendorSession();
-      window.location.replace('/auth');
-      return;
-    }
+    void (async () => {
+      const ok = await requireVendorSessionOrRedirect();
+      if (!ok) return;
 
-    const id = localStorage.getItem('vendorId') || '';
-    if (!id) {
-      router.replace('/onboarding');
-      return;
-    }
+      const id = localStorage.getItem('vendorId') || '';
+      if (!id) {
+        router.replace('/onboarding');
+        return;
+      }
 
-    let vendorData: Record<string, unknown> = {};
-    try {
-      vendorData = JSON.parse(localStorage.getItem('vendorData') || '{}') as Record<string, unknown>;
-    } catch {
-      vendorData = {};
-    }
+      let vendorData: Record<string, unknown> = {};
+      try {
+        vendorData = JSON.parse(localStorage.getItem('vendorData') || '{}') as Record<string, unknown>;
+      } catch {
+        vendorData = {};
+      }
 
-    setVendorId(id);
-    const progressRole = getVendorProgressRoleType(vendorData);
-    if (isVendorWalkerProgramProgress(vendorData)) {
-      router.replace('/bookings?walkSessions=1');
-      return;
-    }
-    setRoleType(progressRole);
-    setReady(true);
+      setVendorId(id);
+      const progressRole = getVendorProgressRoleType(vendorData);
+      if (isVendorWalkerProgramProgress(vendorData)) {
+        router.replace('/bookings?walkSessions=1');
+        return;
+      }
+      setRoleType(progressRole);
+      setReady(true);
+    })();
   }, [router]);
 
   if (!ready || !vendorId) {

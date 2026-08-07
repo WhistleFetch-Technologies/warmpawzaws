@@ -29,8 +29,13 @@ import { resolveBoardingListVendorProfileServiceStyle } from '@/lib/resolve-wapp
 import {
   type BoardingListVendor,
   findBoardingListVendorByProfileKey,
+  type BoardingPlanRow,
 } from '@/lib/boarding-vendor-discovery-map';
-import { pickCustomerVendorAccountId, pickVetPractitionerProfileEntityId } from '@warmpawz/shared-types';
+import {
+  buildVetHubBookPlanNav,
+  buildVetHubProviderProfileNav,
+} from '@/lib/vet-hub-vendor-nav';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import {
   gateServiceStyleNavigation,
   isServiceStyleComingSoon,
@@ -370,10 +375,12 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
   };
 
-  /**
-   * Chevron + "Details" should open the real provider profile: doctor screen for staff/individual,
-   * clinic/center screen for facility vendors. Uses `raw.vendorId` when the card key is not the clinic id.
-   */
+  const handleVetBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    const target = buildVetHubBookPlanNav(v, plan, 'vet');
+    if (!target) return;
+    handleNavigate(target.screen, target.data);
+  };
+
   const openVetProviderProfile = (e: MouseEvent, profileKey: string) => {
     e.stopPropagation();
     const v = findBoardingListVendorByProfileKey(vendors, profileKey);
@@ -382,12 +389,9 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       return;
     }
     const raw = (v.raw || {}) as Record<string, unknown>;
-    const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
-    const rawVendorId = String(raw.vendorId || raw.vendor_id || '').trim();
-    const rawProviderId = String(raw.providerId || raw.provider_id || '').trim();
 
     if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(raw)) {
-      const vendorId = pickCustomerVendorAccountId(raw) || rawVendorId || v.id;
+      const vendorId = pickCustomerVendorAccountId(raw) || String(raw.vendorId || raw.vendor_id || v.id);
       handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId,
@@ -400,25 +404,12 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       return;
     }
 
-    if (providerType === 'staff' || providerType === 'individual') {
-      const doctorId =
-        pickVetPractitionerProfileEntityId(raw) || rawProviderId || v.id;
-      handleNavigate('vet-doctor-details', {
-        doctorId,
-        doctorProfileBackScreen: 'vet',
-      });
+    const target = buildVetHubProviderProfileNav(vendors, profileKey, 'vet');
+    if (!target) {
+      toast.error('Could not open this profile. Try View Services or refresh.');
       return;
     }
-
-    const clinicVendorId =
-      pickCustomerVendorAccountId(raw) || rawVendorId || v.id;
-    handleNavigate('vet-services-by-style', {
-      vendorId: clinicVendorId,
-      serviceStyle: 'at_center',
-      serviceTypeName: 'Vet Clinic',
-      category: 'vet',
-      returnScreen: 'vet',
-    });
+    handleNavigate(target.screen, target.data);
   };
 
   const openVetDetails = openVetProviderProfile;
@@ -788,7 +779,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       <StandardizedFooter
         currentTab="home"
         onTabChange={(tab) => {
-          if (tab === 'home') onBack();
+          if (tab === 'home') onNavigate('home');
           else if (tab === 'bookings') onNavigate('my-bookings');
           else if (tab === 'shop') onNavigate('shop');
           else if (tab === 'profile') onNavigate('profile');

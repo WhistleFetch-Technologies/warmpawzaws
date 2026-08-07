@@ -58,6 +58,12 @@ import {
 } from '@/lib/vendor-display-media';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 import { homeServiceTypeToPersona, shareVendorProfile } from '@/lib/vendor-profile-share';
+import { mergeProviderAboutFromFacility } from '@/lib/universal-provider-profile-enrichment';
+import {
+  WalkerWalkServicePicker,
+  type WalkerWalkPickerSelection,
+} from '../walker/WalkerWalkServicePicker';
+import type { WalkerServiceOption } from '@/lib/walker-vendor-offerings';
 
 /** Second identity-chip line derived only from vertical (not vendor-specific catalog copy). */
 const HOME_SERVICE_CONTEXT_LABEL: Record<HomeServiceType, string> = {
@@ -165,7 +171,7 @@ interface HomeServiceProviderProfileProps {
   config: ServiceConfig;
   onBack: () => void;
   onSelectService: (service: HomeServiceProfileService, rawRow?: Record<string, unknown>) => void;
-  /** Walker: open booking flow “Choose a walk or bundle” (not embedded on profile). */
+  /** @deprecated Walker profile embeds WalkerWalkServicePicker; prop kept for backward compat. */
   onOpenWalkServicesAndBundles?: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   /**
@@ -182,7 +188,6 @@ export function HomeServiceProviderProfile({
   config,
   onBack,
   onSelectService,
-  onOpenWalkServicesAndBundles,
   onNavigate,
   fixedFooterAboveBottomNav = false,
 }: HomeServiceProviderProfileProps) {
@@ -196,6 +201,9 @@ export function HomeServiceProviderProfile({
   const tabsSectionRef = useRef<HTMLDivElement>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const rawServiceRowsRef = useRef<Map<string, Record<string, unknown>>>(new Map());
+  const walkerSelectedOptionRef = useRef<WalkerServiceOption | null>(null);
+  const [walkerOfferingsLoading, setWalkerOfferingsLoading] = useState(false);
+  const [walkerOfferingsCount, setWalkerOfferingsCount] = useState(0);
   const vendorServicesQuery = homeServiceProfileVendorServicesQuery(serviceType);
 
   const mapServiceRows = useCallback(
@@ -224,7 +232,7 @@ export function HomeServiceProviderProfile({
     category: vendorServicesQuery.category,
     phone,
     mapRows: mapServiceRows,
-    enabled: Boolean(vendorId),
+    enabled: Boolean(vendorId) && serviceType !== 'walker',
   });
 
   useEffect(() => {
@@ -234,28 +242,29 @@ export function HomeServiceProviderProfile({
   useEffect(() => {
     setSelectedServiceId(null);
     rawServiceRowsRef.current = new Map();
+    walkerSelectedOptionRef.current = null;
+    setWalkerOfferingsCount(0);
+    setWalkerOfferingsLoading(false);
   }, [vendorId]);
 
   useEffect(() => {
-    if (profileServices.length === 1) {
+    if (serviceType !== 'walker' && profileServices.length === 1) {
       setSelectedServiceId(profileServices[0]!.id);
     }
-  }, [profileServices]);
+  }, [profileServices, serviceType]);
 
-  const openWalkServicesAndBundles = useCallback(() => {
-    onOpenWalkServicesAndBundles?.();
-  }, [onOpenWalkServicesAndBundles]);
+  const handleWalkerPickerSelect = useCallback((selection: WalkerWalkPickerSelection) => {
+    const { option, rawRow } = selection;
+    setSelectedServiceId(option.id);
+    walkerSelectedOptionRef.current = option;
+    if (rawRow) {
+      rawServiceRowsRef.current.set(option.id, rawRow);
+    }
+  }, []);
 
-  const handleTabSelect = useCallback(
-    (tabId: TabType) => {
-      if (serviceType === 'walker' && tabId === 'services') {
-        openWalkServicesAndBundles();
-        return;
-      }
-      setActiveTab(tabId);
-    },
-    [serviceType, openWalkServicesAndBundles]
-  );
+  const handleTabSelect = useCallback((tabId: TabType) => {
+    setActiveTab(tabId);
+  }, []);
 
   const loadProviderDetails = async () => {
     try {
@@ -304,6 +313,22 @@ export function HomeServiceProviderProfile({
       }
 
       merged = mergeVendorPhotoFieldsForHero(merged, customerVendorRow);
+
+      const aboutMerged = mergeProviderAboutFromFacility(
+        {
+          bio: String(merged.bio ?? merged.description ?? ''),
+          address: String(merged.address ?? ''),
+          city: String(merged.city ?? ''),
+        },
+        facilityRoot
+      );
+      const customerVendorBio = String(
+        customerVendorRow?.description ?? customerVendorRow?.bio ?? ''
+      ).trim();
+      const bioText = (aboutMerged.bio || customerVendorBio || '').trim();
+      const descriptionText =
+        bioText ||
+        String(merged.description ?? merged.bio ?? customerVendorRow?.description ?? '').trim();
 
       const profilePhotoUrl = resolveVendorProfilePhotoUrl(merged);
       const coverUrl = resolveVendorCoverImageUrl(merged);
@@ -395,8 +420,8 @@ export function HomeServiceProviderProfile({
         phone: (merged.phone as string) || '',
         email: (merged.email as string) || '',
         website: (merged.website as string) || '',
-        bio: (merged.bio as string) || (merged.description as string) || '',
-        description: (merged.description as string) || (merged.bio as string) || '',
+        bio: bioText,
+        description: descriptionText,
         rating:
           ratingAvg != null && Number.isFinite(Number(ratingAvg)) ? Number(ratingAvg) : 0,
         reviewCount,
@@ -460,21 +485,45 @@ export function HomeServiceProviderProfile({
 
   const revealServicesAndScroll = useCallback(() => {
     if (!provider) return;
-    if (serviceType === 'walker') {
-      openWalkServicesAndBundles();
-      return;
-    }
     setActiveTab('services');
-    if (profileServices.length === 1) {
+    if (serviceType !== 'walker' && profileServices.length === 1) {
       setSelectedServiceId(profileServices[0]!.id);
     }
     requestAnimationFrame(() => {
       tabsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, [provider, profileServices, serviceType, openWalkServicesAndBundles]);
+  }, [provider, profileServices, serviceType]);
+
+  const walkerContinueToBook = useCallback(() => {
+    if (!selectedServiceId || !provider) return;
+    const option = walkerSelectedOptionRef.current;
+    const service: HomeServiceProfileService = option
+      ? {
+          id: option.id,
+          name: option.name,
+          price: option.price,
+          duration: option.duration,
+          description: option.desc ?? '',
+          category: 'walking',
+        }
+      : {
+          id: selectedServiceId,
+          name: '',
+          price: 0,
+          duration: 0,
+          description: '',
+          category: 'walking',
+        };
+    onSelectService(service, rawServiceRowsRef.current.get(selectedServiceId));
+  }, [onSelectService, provider, selectedServiceId]);
 
   const continueBookingDisabled = useMemo(() => {
-    if (!provider || activeTab !== 'services' || serviceType === 'walker') return false;
+    if (!provider || activeTab !== 'services') return false;
+    if (serviceType === 'walker') {
+      if (walkerOfferingsLoading) return true;
+      if (walkerOfferingsCount === 0) return true;
+      return !selectedServiceId;
+    }
     if (servicesLoading) return true;
     const n = profileServices.length;
     if (n === 0) return true;
@@ -487,6 +536,8 @@ export function HomeServiceProviderProfile({
     activeTab,
     selectedServiceId,
     serviceType,
+    walkerOfferingsLoading,
+    walkerOfferingsCount,
   ]);
 
   const heroPhotos = useMemo(
@@ -713,10 +764,15 @@ export function HomeServiceProviderProfile({
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Bio */}
-            {provider.bio && (
+            {(provider.bio || provider.description) && (
               <div>
                 <h3 className="font-semibold text-gray-800 mb-2">About</h3>
-                <p className="text-sm text-gray-600 leading-relaxed">{provider.bio}</p>
+                <ServiceDescriptionInline
+                  description={provider.bio || provider.description}
+                  title={provider.businessName}
+                  className="m-0 text-sm leading-relaxed text-gray-600"
+                  dialogHint="Full description (vendor-provided)"
+                />
               </div>
             )}
 
@@ -769,7 +825,20 @@ export function HomeServiceProviderProfile({
           </div>
         )}
 
-        {/* Services Tab */}
+        {/* Services Tab — walker: walk/bundle picker; other home services: catalog list */}
+        {activeTab === 'services' && serviceType === 'walker' && (
+          <WalkerWalkServicePicker
+            vendorId={vendorId}
+            phone={phone}
+            bookingServiceStyle="at_home"
+            requireStyleMatch={false}
+            selectedId={selectedServiceId ?? ''}
+            onSelect={handleWalkerPickerSelect}
+            onOfferingsCountChange={setWalkerOfferingsCount}
+            onLoadingChange={setWalkerOfferingsLoading}
+          />
+        )}
+
         {activeTab === 'services' && serviceType !== 'walker' && (
           <div className="space-y-3">
             {profileServices.length > 1 ? (
@@ -813,12 +882,14 @@ export function HomeServiceProviderProfile({
                           {service.name}
                         </h4>
                         {service.description ? (
-                          <ServiceDescriptionInline
-                            description={service.description}
-                            title={service.name}
-                            expandInDialog={false}
-                            className="m-0 mt-1 text-sm leading-5 text-gray-500"
-                          />
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <ServiceDescriptionInline
+                              description={service.description}
+                              title={service.name}
+                              className="m-0 mt-1 text-sm leading-5 text-gray-500"
+                              dialogHint="Full description (vendor-provided)"
+                            />
+                          </div>
                         ) : null}
                       </div>
                       <div className="shrink-0 text-right">
@@ -980,13 +1051,39 @@ export function HomeServiceProviderProfile({
               Loading…
             </Button>
           ) : serviceType === 'walker' ? (
-            <Button
-              type="button"
-              onClick={openWalkServicesAndBundles}
-              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600"
-            >
-              Book a walk or bundle
-            </Button>
+            walkerOfferingsLoading ? (
+              <Button
+                type="button"
+                disabled
+                className="h-12 min-h-12 w-full cursor-not-allowed rounded-full bg-gray-300 px-4 text-center text-base font-semibold text-white shadow-md"
+              >
+                Loading walks…
+              </Button>
+            ) : walkerOfferingsCount === 0 ? (
+              <Button
+                type="button"
+                disabled
+                className="h-12 min-h-12 w-full cursor-not-allowed rounded-full bg-gray-300 px-4 text-center text-base font-semibold text-white shadow-md"
+              >
+                No walks available
+              </Button>
+            ) : activeTab !== 'services' || !selectedServiceId ? (
+              <Button
+                type="button"
+                onClick={revealServicesAndScroll}
+                className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600"
+              >
+                Choose a walk or bundle
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={walkerContinueToBook}
+                className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600"
+              >
+                Continue to book
+              </Button>
+            )
           ) : servicesLoading ? (
             <Button
               type="button"

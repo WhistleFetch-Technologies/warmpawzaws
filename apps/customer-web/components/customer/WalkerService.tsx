@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
+import { discoveryVendorList } from '@/lib/discovery-list';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
@@ -59,6 +60,7 @@ import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, 
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
 const WALKING_IMG = '/images/home/Walking';
 
@@ -440,11 +442,17 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           services?: any[];
           staff?: any[];
         }>(endpoint);
-        walkerList = data.vendors || data.providers || data.services || data.staff || [];
+        walkerList = discoveryVendorList(data);
+        if (walkerList.length === 0 && Array.isArray(data.services)) {
+          walkerList = data.services;
+        }
+        if (walkerList.length === 0 && Array.isArray(data.staff)) {
+          walkerList = data.staff;
+        }
         if (walkerList.length === 0) {
           const fallbackUrl = `/customer/discover-services?category=walker&serviceStyle=at_home${locationParams}`;
-          const fallback = await apiClient.get<{ vendors?: any[]; providers?: any[] }>(fallbackUrl);
-          walkerList = fallback.vendors || fallback.providers || [];
+          const fallback = await apiClient.get<{ vendors?: any[]; providers?: any[]; services?: any[] }>(fallbackUrl);
+          walkerList = discoveryVendorList(fallback);
         }
       } catch (_) {
         try {
@@ -1239,7 +1247,14 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                             {isPackage ? 'Package' : 'Service'}
                           </span>
                         </div>
-                        {desc ? <p className="text-sm text-gray-600 mt-1 line-clamp-3">{desc}</p> : null}
+                        {desc ? (
+                          <ServiceDescriptionInline
+                            description={String(desc)}
+                            title={name}
+                            className="m-0 text-sm leading-5 text-gray-600 mt-1"
+                            dialogHint="Full description from the walker (vendor-provided)"
+                          />
+                        ) : null}
                         <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
                           {price != null && price !== '' ? (
                             <span className="font-semibold text-orange-600">₹{Number(price).toLocaleString()}</span>

@@ -34,6 +34,11 @@ import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { SERVICE_CONFIGS, type HomeServiceType } from '@/lib/home/service-configs';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import type { HomeServiceProfileService } from '@/lib/customer-vendor-services-merge';
 
 export type { HomeServiceType };
 export { SERVICE_CONFIGS };
@@ -394,7 +399,38 @@ export function UniversalHomeServiceRouter({
         serviceType={serviceType}
         config={config}
         onBack={handleBack}
-        onSelectService={() => {
+        onSelectService={(service: HomeServiceProfileService, rawRow?: Record<string, unknown>) => {
+          if (serviceType === 'walker') {
+            const vid = bookingFlow.vendorId;
+            if (rawRow && isVendorServicePackageRow(rawRow) && vid) {
+              const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+                vendorId: vid,
+                vendorName: bookingFlow.vendorName ?? undefined,
+                serviceRow: rawRow,
+                serviceTypeCategory: 'walking',
+                serviceStyle: 'at_home',
+              });
+              if (pkgNav) {
+                onNavigate?.('purchase-package', pkgNav);
+                return;
+              }
+            }
+            onNavigate?.('walker-booking', {
+              vendorId: vid,
+              walker: {
+                id: vid,
+                vendorId: vid,
+                name: bookingFlow.vendorName,
+              },
+              serviceId: service.id,
+              serviceName: service.name,
+              price: service.price,
+              duration: service.duration,
+              serviceType: 'walking',
+              serviceStyle: 'at_home',
+            });
+            return;
+          }
           setCurrentStep('select_service');
         }}
         onNavigate={onNavigate}

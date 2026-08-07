@@ -53,6 +53,10 @@ function BookingVetContent() {
         router.push('/bookings');
         return;
       }
+      if (screen === 'home') {
+        router.push('/');
+        return;
+      }
       if (screen === 'shop') {
         router.push('/shop');
         return;

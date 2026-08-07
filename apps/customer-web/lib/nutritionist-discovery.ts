@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { discoveryVendorList } from '@/lib/discovery-list';
 
 /** Inclusive merge: clinic + tele + home so experts appear even when not published as at_center only. */
 const NUTRITION_DISCOVERY_STYLES = ['at_center', 'tele', 'at_home'] as const;
@@ -21,7 +22,7 @@ export async function fetchMergedNutritionProviders(options: { customerPhone: st
 
   const byId = new Map<string, any>();
   for (const res of results) {
-    const list = res.vendors || res.providers || [];
+    const list = discoveryVendorList(res);
     for (const p of list) {
       const id = p?.id ?? p?.vendorId;
       if (id && !byId.has(String(id))) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -8,6 +8,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { buildServiceDescriptionPreview } from '@/lib/service-description-preview';
+
+const PREVIEW_LINE_COUNT = 2;
 
 type ServiceDescriptionInlineProps = {
   description: string;
@@ -25,6 +27,11 @@ type ServiceDescriptionInlineProps = {
   expandInDialog?: boolean;
 };
 
+/** Strip caller-supplied line-clamp utilities; this component owns truncation. */
+function stripLineClampClasses(className: string): string {
+  return className.replace(/\bline-clamp-\d+\b/g, '').replace(/\s+/g, ' ').trim();
+}
+
 export function ServiceDescriptionInline({
   description,
   title,
@@ -36,7 +43,41 @@ export function ServiceDescriptionInline({
 }: ServiceDescriptionInlineProps) {
   const descTrim = description?.trim() ?? '';
   const [open, setOpen] = useState(false);
-  const { preview, showViewMore, modalText } = buildServiceDescriptionPreview(descTrim);
+  const [measuredOverflow, setMeasuredOverflow] = useState(false);
+  const measureRef = useRef<HTMLSpanElement>(null);
+
+  const { preview, showViewMore: heuristicShowViewMore, modalText } =
+    buildServiceDescriptionPreview(descTrim);
+
+  const displayClassName = stripLineClampClasses(className);
+
+  useLayoutEffect(() => {
+    if (!expandInDialog || !descTrim) {
+      setMeasuredOverflow(false);
+      return;
+    }
+
+    const measureOverflow = () => {
+      const el = measureRef.current;
+      if (!el) return;
+      const style = window.getComputedStyle(el);
+      const lineHeight = Number.parseFloat(style.lineHeight);
+      if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
+      setMeasuredOverflow(el.scrollHeight > lineHeight * PREVIEW_LINE_COUNT + 1);
+    };
+
+    measureOverflow();
+
+    const el = measureRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(measureOverflow);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [descTrim, displayClassName, expandInDialog]);
+
+  const showViewMore =
+    expandInDialog && (heuristicShowViewMore || measuredOverflow);
 
   const openModal = useCallback((e: React.MouseEvent | React.KeyboardEvent) => {
     e.preventDefault();
@@ -45,31 +86,42 @@ export function ServiceDescriptionInline({
   }, []);
 
   if (!descTrim) {
-    return hideWhenEmpty ? null : <p className={className} />;
+    return hideWhenEmpty ? null : <p className={displayClassName} />;
   }
 
   return (
     <>
-      <p className={className}>
-        {showViewMore && expandInDialog ? (
-          <>
-            <span className="break-words">{preview}</span>
-            <span
-              role="button"
-              tabIndex={0}
-              className={linkClassName}
-              onClick={openModal}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') openModal(e);
-              }}
-            >
-              {' View more'}
-            </span>
-          </>
-        ) : (
-          <span className="line-clamp-2 break-words whitespace-pre-line">{preview}</span>
-        )}
-      </p>
+      <div className="relative min-w-0">
+        {expandInDialog ? (
+          <span
+            ref={measureRef}
+            aria-hidden
+            className={`${displayClassName} pointer-events-none invisible absolute inset-x-0 top-0 -z-10 block break-words whitespace-pre-line`}
+          >
+            {modalText}
+          </span>
+        ) : null}
+        <p className={displayClassName}>
+          {showViewMore ? (
+            <>
+              <span className="break-words">{preview}</span>
+              <span
+                role="button"
+                tabIndex={0}
+                className={linkClassName}
+                onClick={openModal}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') openModal(e);
+                }}
+              >
+                {' View more'}
+              </span>
+            </>
+          ) : (
+            <span className="line-clamp-2 break-words whitespace-pre-line">{preview}</span>
+          )}
+        </p>
+      </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[min(90vh,40rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
           <DialogHeader className="shrink-0 border-b border-gray-100 px-5 pt-5 pb-3 pr-12 text-left">

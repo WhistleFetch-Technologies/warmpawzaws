@@ -57,6 +57,11 @@ import { resolveWapptDiscoveryListProfileServiceStyle } from '@/lib/resolve-wapp
 import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { WarmpawzAppointmentsVendorProfile } from '../warmpawz-appointments/WarmpawzAppointmentsVendorProfile';
+import { normalizeRatingCount } from '@/lib/rating-display';
+import {
+  mapFacilityRecentReviews,
+  normalizeFacilityRating,
+} from '@/lib/universal-provider-profile-enrichment';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -474,8 +479,18 @@ export function GroomingServicesByStyle({
       if (facilityRes?.success) {
         const facilityData = facilityRes.facility;
         setFacility(facilityData);
-        setRating(facilityRes.rating);
-        setReviews(facilityRes.recentReviews || []);
+        const providerRow = providersRef.current.find(
+          (p) => p.providerId === vendorId || p.vendorId === vendorId
+        );
+        const recentReviews = mapFacilityRecentReviews(facilityRes.recentReviews);
+        setReviews(recentReviews);
+        setRating(
+          normalizeFacilityRating(facilityRes.rating, {
+            recentReviews,
+            fallbackReviewCount: providerRow?.reviewCount,
+            fallbackAverage: providerRow?.rating,
+          })
+        );
         
         // ✅ ENHANCED: Update provider with facility amenities if not already set
         setProviders(prevProviders => {
@@ -590,6 +605,7 @@ export function GroomingServicesByStyle({
     const bookingData: any = {
       serviceId: service.id,
       serviceName: service.name,
+      serviceType: 'grooming',
       serviceStyle,
       price: service.price,
       duration: service.duration,
@@ -626,7 +642,7 @@ export function GroomingServicesByStyle({
       bookingData.isIndividualProvider = provider.isIndividualProvider;
     }
 
-    onNavigate('create-booking', bookingData);
+    onNavigate('grooming-booking', bookingData);
   };
 
   // ✅ NEW: Filter and sort providers for listing view
@@ -758,6 +774,7 @@ export function GroomingServicesByStyle({
       const bookingData: any = {
         vendorId: profileProvider!.providerId || profileProvider!.vendorId,
         vendorName: profileProvider!.name,
+        serviceType: 'grooming',
         serviceStyle,
         selectedServices: selectedServicesData, // ✅ Pass array of selected services
         // Also include first service for backward compatibility
@@ -779,7 +796,7 @@ export function GroomingServicesByStyle({
         bookingData.isIndividualProvider = profileProvider!.isIndividualProvider;
       }
 
-      onNavigate('create-booking', bookingData);
+      onNavigate('grooming-booking', bookingData);
     }
   };
 
@@ -915,8 +932,8 @@ export function GroomingServicesByStyle({
                 <VendorRatingDisplay
                   row={{
                     vendorId: profileVendorId,
-                    vendorRating: rating?.averageRating ?? profileProvider.rating,
-                    vendorReviewCount: rating?.totalReviews ?? profileProvider.reviewCount,
+                    vendorRating: rating?.averageRating,
+                    vendorReviewCount: rating?.totalReviews,
                   }}
                   vendorId={profileVendorId}
                   starsClassName="h-5 w-5"
@@ -1053,7 +1070,7 @@ export function GroomingServicesByStyle({
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-gray-900">
-                      {rating?.totalReviews || profileProvider.reviewCount || '10+'}
+                      {normalizeRatingCount(rating?.totalReviews ?? profileProvider.reviewCount) || '—'}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">Reviews</div>
                   </div>
@@ -1231,18 +1248,29 @@ export function GroomingServicesByStyle({
             {activeTab === 'reviews' && (
               <div className="space-y-4">
                 {/* Reviews Summary */}
-                {reviews.length > 0 && rating && (
+                {reviews.length > 0 && rating && (() => {
+                  const tabTotal = normalizeRatingCount(
+                    rating.totalReviews ?? profileProvider.reviewCount ?? reviews.length
+                  );
+                  let tabAvg = Number(rating.averageRating ?? profileProvider.rating ?? 0);
+                  if ((!Number.isFinite(tabAvg) || tabAvg <= 0) && reviews.length > 0) {
+                    tabAvg =
+                      reviews.reduce((sum: number, r: { rating?: number }) => sum + Number(r.rating || 0), 0) /
+                      reviews.length;
+                  }
+                  if (tabTotal <= 0 || !Number.isFinite(tabAvg) || tabAvg <= 0) return null;
+                  return (
                   <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-5 border border-amber-200 mb-6">
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <Star className="w-6 h-6 text-amber-500 fill-amber-500" />
                           <span className="text-3xl font-bold text-gray-900">
-                            {Number(rating?.averageRating || profileProvider.rating || 0).toFixed(1)}
+                            {tabAvg.toFixed(1)}
                           </span>
                         </div>
                         <p className="text-sm text-gray-600">
-                          Based on {rating.totalReviews || profileProvider.reviewCount || 0} reviews
+                          Based on {tabTotal} {tabTotal === 1 ? 'review' : 'reviews'}
                         </p>
                       </div>
                       <div className="text-right">
@@ -1253,7 +1281,8 @@ export function GroomingServicesByStyle({
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Reviews List */}
                 {reviews.length > 0 ? (

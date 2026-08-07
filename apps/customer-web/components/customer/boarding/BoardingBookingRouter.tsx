@@ -35,6 +35,7 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { serviceOptionColorChipClass } from '@/lib/hub-service-option-styles';
 import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
@@ -1959,7 +1960,16 @@ export function BoardingBookingRouter({
                           </div>
                           <div className="flex-1 text-left">
                             <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                            <p className="text-sm text-gray-500">{service.desc}</p>
+                            {(service.desc ?? '').trim() ? (
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <ServiceDescriptionInline
+                                  description={service.desc}
+                                  title={service.name}
+                                  className="m-0 text-sm leading-5 text-gray-500"
+                                  dialogHint="Full description (vendor-provided)"
+                                />
+                              </div>
+                            ) : null}
                           </div>
                           <div className="text-right">
                             <p className="font-bold text-lg text-gray-900">₹{service.price}</p>

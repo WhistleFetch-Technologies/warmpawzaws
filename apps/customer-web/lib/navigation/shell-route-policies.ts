@@ -63,6 +63,7 @@ const HUB_SCREENS = new Set<string>([
   'vet-tele-consultation',
   'vet-home-visit',
   'vet-clinic-list',
+  'vet-all-doctors',
   'vet-services-by-style',
   'wappt-discovery',
 ]);
