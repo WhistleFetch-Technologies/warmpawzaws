@@ -171,7 +171,8 @@ export function HomeServiceProviderListView({
     phone,
     category,
     serviceStyle: 'at_home',
-    roleId: config.roleId || category,
+    // Walker hub: omit roleId so trainer_solo vendors with Dog Walker services still appear.
+    roleId: serviceType === 'walker' ? undefined : config.roleId || category,
     enabled: feedEnabled,
     pageSize: 3,
   });

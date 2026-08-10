@@ -1230,7 +1230,7 @@ function SearchContent() {
     try {
       setFetchingTrainingPlansFor(vendorId);
       const servicesResponse = await apiClient
-        .get<any>(`/customer/vendor/${vendorId}/services?category=training`)
+        .get<any>(`/customer/vendor/${encodeURIComponent(vendorId)}/services?category=training`)
         .catch(() =>
           apiClient.get<any>(`/customer/vendor/${vendorId}/services?serviceStyle=at_center`)
         );

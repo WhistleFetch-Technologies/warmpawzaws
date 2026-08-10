@@ -113,10 +113,61 @@ export async function executevendorsSearch(c: Context) {
       const params: any[] = [];
       let paramIndex = 1;
 
-      // Filter by roleId (primary filter) - expand to category roles when roleId is a category key
+      // Filter by roleId — expand to category roles when roleId is a category key.
+      // Walker hub: also include non-walker roles (e.g. trainer_solo) that publish
+      // Dog Walker / walking custom services so walk packages are customer-visible.
+      const roleKeyNorm = String(roleId || '')
+        .toLowerCase()
+        .trim()
+        .replace(/-/g, '_');
+      const walkerRoleSearch = ['walker', 'walking', 'dog_walker', 'pet_walker', 'walker_solo'].includes(
+        roleKeyNorm
+      );
+
       if (roleId) {
         const targetRoles = await resolveTargetRolesForDiscovery(null, roleId);
-        if (targetRoles.length > 0) {
+        if (walkerRoleSearch) {
+          const acceptableStylesForWalker = acceptableStylesForService(serviceStyle || 'at_home');
+          vendorQuery += ` AND (
+            ${
+              targetRoles.length > 0
+                ? `r.name = ANY($${paramIndex}::text[])`
+                : `(LOWER(r.name) = LOWER($${paramIndex}) OR LOWER(r.display_name) = LOWER($${paramIndex}))`
+            }
+            OR EXISTS (
+              SELECT 1 FROM vendor_services vs_walk
+              WHERE vs_walk.vendor_id = v.id
+                AND vs_walk.is_enabled = true
+                AND (vs_walk.publish_status IN ('published','auto_published') OR vs_walk.publish_status IS NULL)
+                AND vs_walk.service_style = ANY($${paramIndex + 1}::text[])
+                AND (
+                  LOWER(TRIM(COALESCE(vs_walk.category, ''))) IN (
+                    'walking', 'walker', 'dog walker', 'pet walker', 'dog_walker', 'pet_walker', 'walking & exercise'
+                  )
+                  OR (
+                    LOWER(TRIM(COALESCE(vs_walk.category, ''))) LIKE '%walker%'
+                    AND LOWER(TRIM(COALESCE(vs_walk.category, ''))) NOT LIKE '%vet%'
+                  )
+                  OR (
+                    COALESCE(vs_walk.is_custom_service, false) = true
+                    AND vs_walk.category_id IS NOT NULL
+                    AND EXISTS (
+                      SELECT 1 FROM service_categories sc_w
+                      WHERE sc_w.id = vs_walk.category_id
+                        AND COALESCE(sc_w.is_active, true) = true
+                        AND (
+                          LOWER(TRIM(sc_w.category_id)) IN ('walking', 'walker', 'dog_walker', 'pet_walker')
+                          OR LOWER(TRIM(sc_w.name)) IN ('dog walker', 'pet walker', 'walking', 'walker')
+                        )
+                    )
+                  )
+                )
+            )
+          )`;
+          params.push(targetRoles.length > 0 ? targetRoles : roleId);
+          params.push(acceptableStylesForWalker);
+          paramIndex += 2;
+        } else if (targetRoles.length > 0) {
           vendorQuery += ` AND r.name = ANY($${paramIndex}::text[])`;
           params.push(targetRoles);
           paramIndex++;
@@ -129,13 +180,26 @@ export async function executevendorsSearch(c: Context) {
       }
 
       // ✅ Vendor discovery rules: filter by service style; enforce publish_status = 'published' (align with discover-services)
-      if (serviceStyle) {
+      // Skip for walkerRoleSearch — style already applied inside the walker OR EXISTS above (and again would be redundant).
+      if (serviceStyle && !walkerRoleSearch) {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         vendorQuery += ` AND EXISTS (
           SELECT 1 FROM vendor_services vs 
           WHERE vs.vendor_id = v.id 
             AND vs.service_style = ANY($${paramIndex}::text[]) 
             AND vs.is_enabled = true 
+            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+        )`;
+        params.push(acceptableStyles);
+        paramIndex++;
+      } else if (serviceStyle && walkerRoleSearch) {
+        // Still require at least one discoverable service in the requested style (role-matched vendors too).
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        vendorQuery += ` AND EXISTS (
+          SELECT 1 FROM vendor_services vs
+          WHERE vs.vendor_id = v.id
+            AND vs.service_style = ANY($${paramIndex}::text[])
+            AND vs.is_enabled = true
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
         )`;
         params.push(acceptableStyles);

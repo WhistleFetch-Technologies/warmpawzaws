@@ -34,6 +34,7 @@ export function buildDiscoverServiceFetchSql(
     walkerCategoryDiscoveryOr,
     boardingCustomCategoryIdOrSql,
     trainingCustomCategoryIdOrSql,
+    walkerCustomCategoryIdOrSql,
   } = categoryCtx;
 
   const sitterRoleBypass = sittingDiscoveryRelaxed;
@@ -109,6 +110,7 @@ export function buildDiscoverServiceFetchSql(
             ${vetCategoryEmptyForFetch}
             ${boardingCustomCategoryIdOrSql}
             ${trainingCustomCategoryIdOrSql}
+            ${walkerCustomCategoryIdOrSql || ''}
           )
         `
       : '';

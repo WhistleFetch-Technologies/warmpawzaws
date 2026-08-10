@@ -386,7 +386,9 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     async (locationParams: string): Promise<any[]> => {
       let walkerList: any[] = [];
       try {
-        const endpoint = `/customer/discover-services?category=walker&serviceStyle=at_home&roleId=walker${locationParams}`;
+        // Prefer category=walker discover (includes non-walker roles with Dog Walker services).
+        // roleId is omitted so trainer_solo vendors offering walk packages are not dropped.
+        const endpoint = `/customer/discover-services?category=walker&serviceStyle=at_home${locationParams}`;
         const data = await apiClient.get<{
           success?: boolean;
           vendors?: any[];
@@ -402,12 +404,13 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           walkerList = data.staff;
         }
         if (walkerList.length === 0) {
-          const fallbackUrl = `/customer/discover-services?category=walker&serviceStyle=at_home${locationParams}`;
+          const fallbackUrl = `/customer/discover-services?category=walker&serviceStyle=at_home&roleId=walker${locationParams}`;
           const fallback = await apiClient.get<{ vendors?: any[]; providers?: any[]; services?: any[] }>(fallbackUrl);
           walkerList = discoveryVendorList(fallback);
         }
       } catch (_) {
         try {
+          // vendors/search now also matches Dog Walker category services for walker roleIds
           const params = new URLSearchParams({ roleId: 'pet_walker', serviceStyle: 'at_home', limit: '50' });
           const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(
             `/customer/vendors/search?${params.toString()}${locationParams}`

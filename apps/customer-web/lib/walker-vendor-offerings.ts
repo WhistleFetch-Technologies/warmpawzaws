@@ -135,7 +135,9 @@ function nameLooksLikeWalk(name: string): boolean {
 export function rowQualifiesForWalkingModal(s: Record<string, any> | null | undefined): boolean {
   if (!s) return false;
   const meta = s.metadata && typeof s.metadata === 'object' ? (s.metadata as Record<string, unknown>) : {};
-  const c = String(s.category ?? s.categorySlug ?? (meta.category as string) ?? '')
+  const c = String(
+    s.category ?? s.categoryName ?? s.category_name ?? s.categorySlug ?? (meta.category as string) ?? ''
+  )
     .trim()
     .toLowerCase();
   const n = String(s.name ?? s.service_name ?? s.serviceName ?? '').trim().toLowerCase();
@@ -144,19 +146,38 @@ export function rowQualifiesForWalkingModal(s: Record<string, any> | null | unde
   )
     .trim()
     .toLowerCase();
+  const specIds = Array.isArray(s.specializationIds)
+    ? s.specializationIds
+    : Array.isArray(s.specialization_ids)
+      ? s.specialization_ids
+      : Array.isArray(meta.specialization_ids)
+        ? (meta.specialization_ids as unknown[])
+        : [];
+  const specsLookLikeWalk = specIds.some((id) => {
+    const k = String(id || '')
+      .toLowerCase()
+      .replace(/-/g, '_');
+    return k.includes('walk') || k === 'daily_walk' || k === 'puppy_walk' || k === 'long_walk' || k === 'senior_walk';
+  });
 
   if (c && NON_WALKER_CATEGORY_HINTS.some((h) => c.includes(h)) && !categoryLooksLikeWalking(c)) {
     return false;
   }
-  if (NON_WALKER_NAME_HINTS.some((h) => n.includes(h)) && !nameLooksLikeWalk(n)) {
+  if (NON_WALKER_NAME_HINTS.some((h) => n.includes(h)) && !nameLooksLikeWalk(n) && !specsLookLikeWalk) {
     return false;
   }
   if (categoryLooksLikeWalking(c)) return true;
   if (metaHub.includes('walk')) return true;
   if (nameLooksLikeWalk(n)) return true;
+  if (specsLookLikeWalk) return true;
 
   if (isWalkerVendorServicePackageRow(s)) {
-    return categoryLooksLikeWalking(c) || nameLooksLikeWalk(n) || metaHub.includes('walk');
+    return (
+      categoryLooksLikeWalking(c) ||
+      nameLooksLikeWalk(n) ||
+      metaHub.includes('walk') ||
+      specsLookLikeWalk
+    );
   }
 
   return false;

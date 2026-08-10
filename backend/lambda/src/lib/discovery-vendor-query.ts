@@ -551,6 +551,37 @@ export async function buildDiscoveryVendorExistsSql(
     }
   }
 
+  // Walker hub: custom services store category_id = walking UUID (display name "Dog Walker").
+  // Match by UUID so trainer_solo (and other) vendors with walk packages appear in walker lists.
+  let walkerCustomCategoryIdOrSql = '';
+  const walkerHubSearch = catTextExact.some((c) =>
+    ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c)
+  );
+  if (!sittingDiscoveryRelaxed && walkerHubSearch && hasVsCategoryId) {
+    const slugResWalk = await query(
+      `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+      [['walking', 'walker', 'dog walker', 'pet walker', 'dog_walker', 'pet_walker']]
+    ).catch(() => ({ rows: [] as { id: string }[] }));
+    const idsW = (slugResWalk.rows || []).map((r: { id?: string }) => r?.id).filter(Boolean);
+    const UUID_RE_W =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const cleanW = idsW.filter((id): id is string => !!id && UUID_RE_W.test(String(id).trim()));
+    if (cleanW.length > 0) {
+      const uuidListW = cleanW.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+      walkerCustomCategoryIdOrSql = `
+                OR (
+                  COALESCE(${vsAlias}.is_custom_service, false) = true
+                  AND ${vsAlias}.category_id IS NOT NULL
+                  AND ${vsAlias}.category_id = ANY(ARRAY[${uuidListW}]::uuid[])
+                )`;
+    }
+  }
+
   const sittingCatalogBoardingNonCustomOr = sittingDiscoveryRelaxed
     ? `OR (
                 LOWER(TRIM(COALESCE(${vsAlias}.category,''))) = 'boarding'
@@ -653,6 +684,7 @@ export async function buildDiscoveryVendorExistsSql(
                 ${vetCategoryEmptyOr}
                 ${boardingCustomCategoryIdOrSql}
                 ${trainingCustomCategoryIdOrSql}
+                ${walkerCustomCategoryIdOrSql}
               )`
       : '';
 
