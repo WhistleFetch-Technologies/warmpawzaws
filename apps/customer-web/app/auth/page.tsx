@@ -113,12 +113,19 @@ function AuthPageContent() {
   useEffect(() => {
     // Get redirect + referral (?ref=) from URL after mount (client-side only)
     if (typeof window !== 'undefined') {
-      setGuestBrowseEnabled(isGuestBrowsingEnabled());
+      const guestOn = isGuestBrowsingEnabled();
+      setGuestBrowseEnabled(guestOn);
       const params = new URLSearchParams(window.location.search);
       // Accept both `redirect` (canonical) and legacy `next` for guest/share return URLs.
       const safeReturn = resolveSafeAuthReturnPath(params);
       if (safeReturn) {
         setRedirectAfterLogin(safeReturn);
+      }
+      // Guest-first: bare /auth (no return URL, no force login) → home. Use ?login=1 to stay.
+      const forceLogin = params.get('login') === '1' || params.get('forceLogin') === '1';
+      if (guestOn && !safeReturn && !forceLogin && !params.get('ref') && !params.get('referral')) {
+        router.replace('/');
+        return;
       }
       const refCode = params.get('ref') || params.get('referral') || params.get('referralCode');
       if (refCode && refCode.trim()) {
@@ -130,7 +137,7 @@ function AuthPageContent() {
         setAuthMode('signup');
       }
     }
-  }, []);
+  }, [router]);
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+91'); // Default to India
   const [otp, setOtp] = useState('');

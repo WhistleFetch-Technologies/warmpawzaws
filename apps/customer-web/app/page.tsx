@@ -35,14 +35,31 @@ const GUEST_SESSION: CustomerSession = {
   hasPets: false,
 };
 
+function hasStoredAuthCredentials(): boolean {
+  if (typeof window === 'undefined') return false;
+  const phone = localStorage.getItem('customerPhone');
+  const token = getStoredCustomerJwtForSession();
+  return !!(phone && token);
+}
+
 export default function HomePage() {
   const router = useRouter();
-  const [session, setSession] = useState<CustomerSession | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Guest-first: if browsing is on and there is no JWT session, start on guest home (avoids auth flash).
+  const [session, setSession] = useState<CustomerSession | null>(() => {
+    if (typeof window === 'undefined') return null;
+    if (hasStoredAuthCredentials()) return null;
+    return isGuestBrowsingEnabled() ? GUEST_SESSION : null;
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    if (hasStoredAuthCredentials()) return true;
+    return !isGuestBrowsingEnabled();
+  });
   const [homeGateReady, setHomeGateReady] = useState(() => {
     if (typeof window === 'undefined') return false;
     const sp = new URLSearchParams(window.location.search);
     if (sp.get('service')) return true;
+    if (!hasStoredAuthCredentials() && isGuestBrowsingEnabled()) return true;
     return readProfileCompleted() && readOnboardingCompleted();
   });
   const hasRedirected = useRef(false);

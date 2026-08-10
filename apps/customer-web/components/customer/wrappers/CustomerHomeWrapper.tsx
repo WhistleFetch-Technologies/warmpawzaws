@@ -499,6 +499,8 @@ export function CustomerHomeWrapper({
   useEffect(() => {
     if (pathname !== '/') return;
     if (searchParams.get('service')) return;
+    // Guest / unauthenticated shell: do not force profile or onboarding (that looped guests to /auth).
+    if (!phone) return;
     if (!readProfileCompleted()) {
       router.replace('/profile');
       return;
@@ -506,7 +508,7 @@ export function CustomerHomeWrapper({
     if (!readOnboardingCompleted()) {
       router.replace('/onboarding');
     }
-  }, [pathname, searchParams, router]);
+  }, [pathname, searchParams, router, phone]);
 
   const {
     currentScreen,
