@@ -2,7 +2,8 @@ import { accruePendingWpaySettlementsForWapptBooking } from '../../customer/warm
 import { isWapptAppointmentBooking } from './wappt-earnings-policy';
 
 /**
- * Release held Warmpawz Pay settlements after service attestation (OTP at completion).
+ * Safety net: release any Warmpawz Pay settlements still pending for this booking
+ * (e.g. payments completed under the old OTP-hold policy). New Pay Bills accrue on verify.
  * Independent of marketplace vendor_earnings.
  */
 export async function onWapptServiceCompleted(

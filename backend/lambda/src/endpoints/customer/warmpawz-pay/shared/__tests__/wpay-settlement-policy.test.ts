@@ -48,16 +48,16 @@ describe('wpay-settlement-policy', () => {
     ).toBe(false);
   });
 
-  it('blocks settlement when service not attested', () => {
+  it('allows appointment-linked settlement before OTP attestation', () => {
     const result = assertWapptSettlementEligible(basePayment, {
       id: 'booking-1',
       otp_verified: false,
       commerce_mode: 'warmpawz_appointments',
     });
-    expect(result).toEqual({ ok: false, skippedReason: 'service_not_attested' });
+    expect(result).toEqual({ ok: true });
   });
 
-  it('allows settlement when OTP verified for appointment-linked payment', () => {
+  it('allows settlement when OTP already verified for appointment-linked payment', () => {
     const result = assertWapptSettlementEligible(basePayment, {
       id: 'booking-1',
       otp_verified: true,

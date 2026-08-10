@@ -110,7 +110,8 @@ Evolve the **existing** `warmpawz-pay` customer module. Do **not** split into mi
 | 6 | Customer | Enters gross amount; client passes `bookingId` from appointment-context |
 | 7 | System | Validates booking; deducts advance (once) + discount → payable |
 | 8 | Customer | Pays via Razorpay |
-| 9 | System | Completes Pay Bill lifecycle: credit consumed, booking `completed`, settlement accrued |
+| 9 | System | Completes Pay Bill lifecycle: credit consumed, settlement accrued (vendor earnings visible) |
+| 10 | Vendor | Complete OTP → appointment `completed` + `otp_verified` |
 
 **Appointment eligibility (MVP — all conditions required):**
 
@@ -124,7 +125,7 @@ AND booking advance captured (hasCustomerPaidCapture)
 AND NOT EXISTS warmpawz_pay_appointment_credits WHERE booking_id = booking.id
 ```
 
-Pay Bill credit eligibility is **fact-based** — not `booking.status != completed`. OTP completion (`status = completed`, `otp_verified = true`) does not consume cover credit. Settlement requires **both** `otp_verified` and completed Pay Bill payment.
+Pay Bill credit eligibility is **fact-based** — not `booking.status != completed`. OTP completion (`status = completed`, `otp_verified = true`) does not consume cover credit. Settlement accrues on completed Pay Bill payment; appointment completion is owned by vendor complete OTP only.
 
 ---
 
@@ -150,7 +151,7 @@ Pay Bill credit eligibility is **fact-based** — not `booking.status != complet
 | Advance credit | `0` | `resolveWapptAppointmentFeeCredit` |
 | `payments.booking_id` | `NULL` | booking UUID |
 | `settlements.booking_id` | `NULL` | same UUID |
-| Post-verify | complete payment + settlement | + insert credit row + booking `completed` |
+| Post-verify | complete payment + settlement | + insert credit row + settlement (booking stays open until OTP) |
 | Appointment context API | ignored | UX: discover `bookingId` |
 
 ### 5.3 Not in MVP
@@ -332,7 +333,7 @@ payableAmount          = max(0.01, billBase - discountAmount)
 
 ## 8. Pay Bill payment lifecycle (appointment journey — after successful verify)
 
-**Goal:** Record Pay Bill payment, advance consumption, and mark appointment **completed**. Vendor revenue accrues via wpay settlement — **not** `ensureVendorEarningsForCompletedBooking`.
+**Goal:** Record Pay Bill payment, advance consumption, and accrue vendor settlement. Appointment completion is **not** set here — vendor complete OTP owns `status=completed` + `otp_verified`. Vendor revenue accrues via wpay settlement — **not** `ensureVendorEarningsForCompletedBooking`.
 
 **Source of truth:**
 
@@ -341,13 +342,14 @@ payableAmount          = max(0.01, billBase - discountAmount)
 | Pay Bill paid | `payments` (`completed`, `payment_source = 'warmpawz_pay'`, `booking_id` set) |
 | Advance consumed | `warmpawz_pay_appointment_credits` row |
 | Visit date | `bookings.booking_date` |
-| Appointment completed | `bookings.status = 'completed'` (set by Pay Bill verify) |
+| Vendor earnings (Pay Bill) | `settlements` row (`order_type = 'warmpawz_pay'`) on verify |
+| Appointment completed | `bookings.status = 'completed'` + `otp_verified` (set by vendor complete OTP) |
 
 **On verify success when `payments.booking_id` is set:**
 
 1. Insert `warmpawz_pay_appointment_credits` (idempotent PK on `booking_id`).
-2. `dbCompleteWapptBookingAfterPayBill` → `bookings.status = 'completed'`.
-3. **Do not** update `bookings.metadata` or call marketplace earnings helpers.
+2. Complete payment + `accrueWpaySettlement` (earnings visible immediately).
+3. **Do not** set `bookings.status = 'completed'`, update `bookings.metadata`, or call marketplace earnings helpers.
 
 **Payment lifecycle complete when:**
 

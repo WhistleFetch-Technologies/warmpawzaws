@@ -23,7 +23,8 @@ export function isWapptAppointmentLinkedPayBill(payment: WpayPaymentRow): boolea
 }
 
 /**
- * WAPPT settlement requires service attestation (OTP) AND customer payment completed.
+ * Appointment-linked Pay Bill accrues settlement when payment is completed
+ * (vendor earnings visible before complete OTP). OTP only closes the visit.
  * Walk-in Pay Bill (no appointment link) accrues on payment alone.
  */
 export function assertWapptSettlementEligible(
@@ -41,10 +42,6 @@ export function assertWapptSettlementEligible(
 
   if (!bookingFacts) {
     return { ok: false, skippedReason: 'booking_not_found' };
-  }
-
-  if (!bookingFacts.otp_verified) {
-    return { ok: false, skippedReason: 'service_not_attested' };
   }
 
   return { ok: true };

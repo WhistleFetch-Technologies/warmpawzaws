@@ -61,15 +61,15 @@ const appointmentPayment: WpayPaymentRow = {
   created_at: '2026-08-04T09:00:00.000Z',
 };
 
-describe('WAPPT OTP → Pay Bill → Settlement flow (policy integration)', () => {
+describe('WAPPT Pay Bill → Settlement → OTP completion (policy integration)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('OTP first: settlement accrues after Pay Bill when service attested', async () => {
+  it('Pay Bill first: settlement accrues immediately before OTP', async () => {
     const gate = assertWapptSettlementEligible(appointmentPayment, {
       id: 'booking-1',
-      otp_verified: true,
+      otp_verified: false,
       commerce_mode: 'warmpawz_appointments',
     });
     expect(gate).toEqual({ ok: true });
@@ -84,13 +84,13 @@ describe('WAPPT OTP → Pay Bill → Settlement flow (policy integration)', () =
     expect(result.settlementId).toBe('settlement-1');
   });
 
-  it('Pay Bill first: settlement held until OTP, then released via onWapptServiceCompleted', async () => {
-    const held = assertWapptSettlementEligible(appointmentPayment, {
+  it('OTP after Pay Bill: completion hook still runs as settlement safety net', async () => {
+    const gate = assertWapptSettlementEligible(appointmentPayment, {
       id: 'booking-1',
       otp_verified: false,
       commerce_mode: 'warmpawz_appointments',
     });
-    expect(held).toEqual({ ok: false, skippedReason: 'service_not_attested' });
+    expect(gate).toEqual({ ok: true });
 
     await finalizeBookingServiceCompleted({
       bookingId: 'booking-1',

@@ -86,21 +86,6 @@ export async function dbFindCreditEligibleWapptBookingForPay(
   return (result.rows[0] as WpayWapptBookingContextRow | undefined) ?? null;
 }
 
-export async function dbCompleteWapptBookingAfterPayBill(bookingId: string): Promise<boolean> {
-  const result = await query(
-    `UPDATE bookings
-     SET status = CASE WHEN status NOT IN ('cancelled', 'refunded') THEN 'completed' ELSE status END,
-         completed_at = COALESCE(completed_at, NOW()),
-         updated_at = NOW()
-     WHERE id = $1::uuid
-       AND commerce_mode = $2
-       AND status NOT IN ('cancelled', 'refunded')
-     RETURNING id`,
-    [bookingId, WAPPT_BOOKING_MODE],
-  );
-  return Boolean(result.rows?.length);
-}
-
 export type WpayWapptBookingSettlementFactsRow = {
   id: string;
   otp_verified: boolean | null;

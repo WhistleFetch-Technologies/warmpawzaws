@@ -49,11 +49,11 @@ Both:  S16 smoke → Bindu deploy lambda (S17) → Abhi deploy customer-web (S18
 
 **Files:** `wpay-appointment-context.repo.ts`, `wpay-appointment-credit.ts`, `customer_warmpawz_pay_appointment_context_get.service.ts`
 
-### Verify — complete booking
+### Verify — credit + settlement (booking stays open)
 
-After credit consume: `dbCompleteWapptBookingAfterPayBill` → `status = 'completed'`. No `ensureVendorEarningsForCompletedBooking`.
+After credit consume: complete payment + `accrueWpaySettlement` (earnings visible). Do **not** set `bookings.status = 'completed'` on Pay Bill verify — vendor complete OTP owns appointment completion. No `ensureVendorEarningsForCompletedBooking`.
 
-**Files:** `wpay-appointment-context.repo.ts`, `customer_warmpawz_pay_verify_post.service.ts`
+**Files:** `wpay-verify-transaction.repo.ts`, `customer_warmpawz_pay_verify_post.service.ts`
 
 ### Payment plumbing (original gaps)
 

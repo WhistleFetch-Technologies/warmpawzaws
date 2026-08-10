@@ -1,6 +1,5 @@
 import type { PoolClient } from 'pg';
 import { withTransaction } from '../../../../database/rds-connection';
-import { WAPPT_BOOKING_MODE } from '../../../warmpawz-appointments/shared/wappt-booking-preflight';
 import type { WpayPaymentRow } from './wpay-payment.repo';
 
 export class WpayCreditConsumeConflictError extends Error {
@@ -78,22 +77,6 @@ async function completePaymentInTransaction(
   return (result.rows[0] as WpayPaymentRow | undefined) ?? null;
 }
 
-async function completeWapptBookingAfterPayBillInTransaction(
-  client: PoolClient,
-  bookingId: string,
-): Promise<void> {
-  await client.query(
-    `UPDATE bookings
-     SET status = CASE WHEN status NOT IN ('cancelled', 'refunded') THEN 'completed' ELSE status END,
-         completed_at = COALESCE(completed_at, NOW()),
-         updated_at = NOW()
-     WHERE id = $1::uuid
-       AND commerce_mode = $2
-       AND status NOT IN ('cancelled', 'refunded')`,
-    [bookingId, WAPPT_BOOKING_MODE],
-  );
-}
-
 export async function dbWpayAtomicCompleteVerify(params: {
   paymentId: string;
   customerId: string;
@@ -108,13 +91,13 @@ export async function dbWpayAtomicCompleteVerify(params: {
     const creditAmount = params.creditAmount ?? 0;
     const bookingId = params.bookingId ? String(params.bookingId) : '';
 
+    // Consume cover credit only — appointment completion is owned by vendor complete OTP.
     if (bookingId && creditAmount > 0) {
       await consumeCreditInTransaction(client, {
         bookingId,
         paymentId: params.paymentId,
         amount: creditAmount,
       });
-      await completeWapptBookingAfterPayBillInTransaction(client, bookingId);
     }
 
     return completePaymentInTransaction(client, params);

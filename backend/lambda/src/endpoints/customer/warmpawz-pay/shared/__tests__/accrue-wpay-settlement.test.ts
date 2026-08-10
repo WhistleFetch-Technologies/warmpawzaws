@@ -116,7 +116,12 @@ describe('accrue-wpay-settlement', () => {
     expect(insertArgs?.[2]).toBe('booking-1');
   });
 
-  it('skips appointment-linked settlement until OTP verified', async () => {
+  it('accrues appointment-linked settlement before OTP verified', async () => {
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [] } as never)
+      .mockResolvedValueOnce({ rows: [{ platform_withhold_percent: '5' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ id: 'settlement-pre-otp' }] } as never);
+
     dbLoadWapptBookingSettlementFacts.mockResolvedValue({
       id: 'booking-1',
       otp_verified: false,
@@ -132,9 +137,8 @@ describe('accrue-wpay-settlement', () => {
       },
     });
 
-    expect(result.inserted).toBe(false);
-    expect(result.skippedReason).toBe('service_not_attested');
-    expect(mockedQuery).not.toHaveBeenCalled();
+    expect(result.inserted).toBe(true);
+    expect(result.settlementId).toBe('settlement-pre-otp');
   });
 
   it('is idempotent when settlement already exists', async () => {
