@@ -15,7 +15,43 @@ import {
   ERROR_CASE_STATUSES,
   ERROR_CASE_PRIORITIES,
 } from './schemas';
-import { ingestProductAnalyticsBatch } from './service-ingest';
+import { ingestProductAnalyticsBatch, type IngestActorOverride } from './service-ingest';
+import { extractAndVerifyAuthToken } from '../../utils/jwt-verification';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Derive analytics actor from validated JWT only.
+ * Guests (no/invalid Bearer) → null. Client body actor_id is never used.
+ */
+async function resolveIngestActorFromRequest(c: { req: { header: (name: string) => string | undefined } }): Promise<IngestActorOverride> {
+  const authHeader = c.req.header('authorization') || c.req.header('Authorization');
+  if (!authHeader) {
+    return { actorId: null, actorType: null };
+  }
+  try {
+    const result = await extractAndVerifyAuthToken({ authorization: authHeader });
+    if (!result.valid || !result.payload) {
+      return { actorId: null, actorType: null };
+    }
+    const sub = String(result.payload.sub || '');
+    if (!UUID_RE.test(sub)) {
+      return { actorId: null, actorType: null };
+    }
+    const ut = result.payload['custom:user_type'];
+    const groups = (result.payload['cognito:groups'] as string[] | undefined) || [];
+    if (ut === 'vendor' || groups.includes('vendor')) {
+      return { actorId: sub, actorType: 'vendor' };
+    }
+    if (ut === 'customer' || groups.includes('customer')) {
+      return { actorId: sub, actorType: 'customer' };
+    }
+    // warmpawz-api / warmpawz-uat customer tokens use UUID sub; default customer for UUID subs
+    return { actorId: sub, actorType: 'customer' };
+  } catch {
+    return { actorId: null, actorType: null };
+  }
+}
 
 function adminBadDate(c: any, message: string) {
   return c.json({ success: false, error: message }, 400);
@@ -77,7 +113,8 @@ export function registerProductAnalyticsEndpoints(app: Hono) {
           );
         }
 
-        const result = await ingestProductAnalyticsBatch(parsed.data);
+        const serverActor = await resolveIngestActorFromRequest(c);
+        const result = await ingestProductAnalyticsBatch(parsed.data, serverActor);
         return c.json({ success: true, sessionId: result.sessionId, inserted: result.inserted });
       } catch (e: any) {
         console.error('[product-analytics ingest]', e);

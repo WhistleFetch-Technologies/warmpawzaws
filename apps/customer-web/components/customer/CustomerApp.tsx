@@ -21,6 +21,7 @@ interface CustomerSession {
   isNewUser?: boolean;
   hasCompletedOnboarding?: boolean;
   hasPets?: boolean;
+  isGuest?: boolean;
 }
 
 type CustomerInitialScreen =

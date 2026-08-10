@@ -12,6 +12,7 @@ import {
   ensureCustomerProfileAndPets,
   resetHomeBootstrapForPhone,
 } from '@/lib/customer-home-bootstrap';
+import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
 
 interface CustomerSession {
   phone: string;
@@ -22,7 +23,17 @@ interface CustomerSession {
   isNewUser?: boolean;
   hasCompletedOnboarding?: boolean;
   hasPets?: boolean;
+  /** Unauthenticated browse session (GUEST_BROWSING_ENABLED). */
+  isGuest?: boolean;
 }
+
+const GUEST_SESSION: CustomerSession = {
+  phone: '',
+  verified: false,
+  isGuest: true,
+  hasCompletedOnboarding: true,
+  hasPets: false,
+};
 
 export default function HomePage() {
   const router = useRouter();
@@ -97,14 +108,22 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (!isLoading && !session && !hasRedirected.current) {
-      hasRedirected.current = true;
-      router.replace('/auth');
+    if (isLoading || session || hasRedirected.current) return;
+    if (isGuestBrowsingEnabled()) {
+      setSession(GUEST_SESSION);
+      setHomeGateReady(true);
+      return;
     }
+    hasRedirected.current = true;
+    router.replace('/auth');
   }, [isLoading, session, router]);
 
   useEffect(() => {
     if (isLoading || !session) return;
+    if (session.isGuest) {
+      setHomeGateReady(true);
+      return;
+    }
     if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
       router.replace('/auth/set-password?next=/');
       return;
@@ -140,7 +159,15 @@ export default function HomePage() {
   }
 
   if (!session) {
-    return null; 
+    // Guest flag resolution / auth redirect in flight
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   const skipGateSpinner =

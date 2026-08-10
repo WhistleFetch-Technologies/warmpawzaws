@@ -47,6 +47,8 @@ const PUBLIC_PATTERNS = [
   /^\/webhooks\//,
   /^\/health/,
   /^\/public\//,
+  // Allyticas ingest: allow guests; handler optionally parses JWT for server actor_id
+  /^\/analytics\/v1\/events$/,
 ];
 
 /**

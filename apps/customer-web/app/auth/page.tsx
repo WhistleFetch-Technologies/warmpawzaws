@@ -35,6 +35,7 @@ import {
   readRetryAfterSecondsFromError,
   readRetryAfterSecondsFromSuccess,
 } from '@/lib/forgot-password-cooldown';
+import { resolveSafeAuthReturnPath } from '@/lib/auth-redirect';
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -111,9 +112,10 @@ function AuthPageContent() {
     // Get redirect + referral (?ref=) from URL after mount (client-side only)
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const redirect = params.get('redirect');
-      if (redirect) {
-        setRedirectAfterLogin(redirect);
+      // Accept both `redirect` (canonical) and legacy `next` for guest/share return URLs.
+      const safeReturn = resolveSafeAuthReturnPath(params);
+      if (safeReturn) {
+        setRedirectAfterLogin(safeReturn);
       }
       const refCode = params.get('ref') || params.get('referral') || params.get('referralCode');
       if (refCode && refCode.trim()) {

@@ -30,7 +30,10 @@
     mergeRuntimeConfig({
       uatMode: true,
       environment: 'development',
-      customerEcommerceEnabled: true
+      customerEcommerceEnabled: true,
+      // Phase 1 guest foundation — local/dev defaults on; prod remains off unless deploy sets flags
+      guestBrowsingEnabled: true,
+      guestLocationEnabled: true
     });
     console.log('🔧 Runtime config loaded (localhost - using env var for API URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     return;
@@ -49,7 +52,9 @@
       apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
       uatMode: true,
       environment: 'development',
-      customerEcommerceEnabled: true
+      customerEcommerceEnabled: true,
+      guestBrowsingEnabled: true,
+      guestLocationEnabled: true
     },
   };
 
@@ -59,15 +64,19 @@
       apiBaseUrl: normalizeLegacyDevApiUrl(mapped.apiBaseUrl),
       uatMode: mapped.uatMode,
       environment: mapped.environment,
-      customerEcommerceEnabled: mapped.customerEcommerceEnabled !== false
+      customerEcommerceEnabled: mapped.customerEcommerceEnabled !== false,
+      guestBrowsingEnabled: mapped.guestBrowsingEnabled === true,
+      guestLocationEnabled: mapped.guestLocationEnabled === true
     });
   } else {
-    // Production customer web
+    // Production customer web — guest browsing off until explicitly enabled at deploy
     mergeRuntimeConfig({
       apiBaseUrl: normalizeLegacyDevApiUrl('https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'),
       uatMode: false,
       environment: 'production',
-      customerEcommerceEnabled: true
+      customerEcommerceEnabled: true,
+      guestBrowsingEnabled: false,
+      guestLocationEnabled: false
     });
   }
   console.log('🔧 Runtime config loaded (deployed):', window.__WARMPAWZ_RUNTIME_CONFIG__);

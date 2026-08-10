@@ -39,17 +39,30 @@ function screenNameForIngest(
   return null;
 }
 
+export type IngestActorOverride = {
+  /** Server-derived from validated JWT only. Client body actor_id is ignored. */
+  actorId: string | null;
+  actorType: 'customer' | 'vendor' | null;
+};
+
 /**
  * Single transaction: upsert session + bulk insert events (one round-trip for INSERT VALUES).
+ *
+ * `actorOverride` is required for identity: when provided, its values win and
+ * client-supplied `body.actor_id` / per-event `actor_id` are ignored.
  */
-export async function ingestProductAnalyticsBatch(body: IngestBody): Promise<{ sessionId: string; inserted: number }> {
+export async function ingestProductAnalyticsBatch(
+  body: IngestBody,
+  actorOverride?: IngestActorOverride
+): Promise<{ sessionId: string; inserted: number }> {
   const device = toJsonb(body.session_patch?.device as Record<string, unknown> | undefined);
   const context = toJsonb(body.session_patch?.context as Record<string, unknown> | undefined);
   assertPropertiesSize('session_patch.device', body.session_patch?.device as Record<string, unknown> | undefined);
   assertPropertiesSize('session_patch.context', body.session_patch?.context as Record<string, unknown> | undefined);
 
-  const batchActorType = body.actor_type ?? null;
-  const batchActorId = body.actor_id ?? null;
+  // CRITICAL: never trust client actor_id / actor_type for identity.
+  const batchActorType = actorOverride ? actorOverride.actorType : null;
+  const batchActorId = actorOverride ? actorOverride.actorId : null;
 
   for (const ev of body.events) {
     assertPropertiesSize(`event.${ev.event_name}`, ev.properties as Record<string, unknown> | undefined);
@@ -91,8 +104,9 @@ export async function ingestProductAnalyticsBatch(body: IngestBody): Promise<{ s
     const params: unknown[] = [];
     let p = 1;
     for (const ev of events) {
-      const actorType = ev.actor_type ?? batchActorType;
-      const actorId = ev.actor_id ?? batchActorId;
+      // Per-event client actor fields are ignored; batch uses server override only.
+      const actorType = batchActorType;
+      const actorId = batchActorId;
       placeholders.push(
         `($${p++}::uuid, $${p++}::analytics_actor_type_enum, $${p++}::uuid, $${p++}::analytics_app_enum, $${p++}::analytics_event_type_enum, $${p++}::text, $${p++}::text, $${p++}::int, $${p++}::text, $${p++}::text, $${p++}::analytics_environment_enum, $${p++}::smallint, $${p++}::timestamptz, $${p++}::jsonb)`
       );

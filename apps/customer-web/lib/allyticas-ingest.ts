@@ -4,6 +4,8 @@
 
 import { getApiBaseUrl } from './api-client';
 import { humanizeCustomerRouteScreen } from './route-screen-label';
+import { getOrCreateAnonymousId } from './anonymous-id';
+import { getStoredCustomerJwtForSession } from './session-utils';
 
 export type AllyticasApp = 'customer_web' | 'vendor_web';
 export type AllyticasEnv = 'dev' | 'staging' | 'prod';
@@ -271,15 +273,18 @@ export async function flushAllyticas(useBeacon: boolean): Promise<void> {
     `session_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   sessionStorage.setItem('warmpawz_session_id', sessionKey);
 
-  const customerId = localStorage.getItem('warmpawz_customer_id');
-  const actorId = customerId && /^[0-9a-f-]{36}$/i.test(customerId) ? customerId : null;
+  /**
+   * actor_id is server-derived from JWT only. Client must not send actor_id
+   * (localStorage customer id is not authoritative and must not impersonate).
+   */
+  const anonymousId = getOrCreateAnonymousId();
 
   const body = JSON.stringify({
     session_key: sessionKey,
     app: 'customer_web' satisfies AllyticasApp,
     environment: resolveEnv(),
-    actor_type: actorId ? 'customer' : null,
-    actor_id: actorId,
+    actor_type: null,
+    actor_id: null,
     session_patch: {
       device: {
         ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
@@ -287,15 +292,37 @@ export async function flushAllyticas(useBeacon: boolean): Promise<void> {
       },
       context: {
         href: typeof window !== 'undefined' ? window.location.href : '',
+        anonymous_id: anonymousId,
+        session_id: sessionKey,
       },
     },
     events: batch.map((e) => ({
       ...e,
-      properties: e.properties ?? {},
+      // Strip any client-supplied actor fields if present on the row
+      actor_id: undefined,
+      actor_type: undefined,
+      properties: {
+        ...(e.properties ?? {}),
+        anonymous_id:
+          typeof (e.properties as { anonymous_id?: unknown } | undefined)?.anonymous_id === 'string'
+            ? (e.properties as { anonymous_id: string }).anonymous_id
+            : anonymousId,
+        session_id:
+          typeof (e.properties as { session_id?: unknown } | undefined)?.session_id === 'string'
+            ? (e.properties as { session_id: string }).session_id
+            : sessionKey,
+      },
     })),
   });
 
-  if (useBeacon && navigator.sendBeacon) {
+  const jwt = getStoredCustomerJwtForSession();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (jwt) {
+    headers.Authorization = `Bearer ${jwt}`;
+  }
+
+  if (useBeacon && navigator.sendBeacon && !jwt) {
+    // sendBeacon cannot set Authorization reliably — guests OK; authed use fetch
     navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }));
     return;
   }
@@ -303,7 +330,7 @@ export async function flushAllyticas(useBeacon: boolean): Promise<void> {
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body,
       keepalive: true,
     });
