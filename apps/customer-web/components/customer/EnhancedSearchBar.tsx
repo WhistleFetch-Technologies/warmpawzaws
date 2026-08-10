@@ -7,7 +7,6 @@ import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { pickProfileImageUrl, type SearchApiVendorRow } from '@/lib/search-vendor-display';
 import {
-  appendDiscoverRoleParams,
   buildSearchDiscoveryQueryParams,
 } from '@/lib/search-discovery-params';
 import {
@@ -314,10 +313,6 @@ export function EnhancedSearchBar({
       });
 
       const inferredHub = inferHubSlugFromSearchQuery(searchQuery);
-      if (inferredHub) {
-        params.set('category', inferredHub);
-        appendDiscoverRoleParams(params, inferredHub);
-      }
 
       const discoveryParams = await buildSearchDiscoveryQueryParams();
       discoveryParams.forEach((value, key) => params.set(key, value));

@@ -144,12 +144,22 @@ export async function createLaunchGeoFilter(opts: {
     const svcKey = normalizeServiceKey(serviceId);
     const styleKey = normalizeServiceStyleLaunchKey(serviceStyle);
     if (!svcKey) return true;
-    const slice = config[svcKey] as ServiceLaunchSlice | undefined;
+    // platform:service-launch-config keys are dashboard ids (e.g. pet-sitter);
+    // normalizeServiceKey uses underscores — try both so Search hub launch checks resolve.
+    const hyphenKey = svcKey.replace(/_/g, '-');
+    const slice = (config[svcKey] ||
+      config[hyphenKey] ||
+      config[String(serviceId).trim().toLowerCase()]) as ServiceLaunchSlice | undefined;
+    const launchIdForStyles = config[svcKey]
+      ? svcKey
+      : config[hyphenKey]
+        ? hyphenKey
+        : svcKey;
     if (!styleKey) {
       const parent = effectiveStatusForGeography(slice, stateCode, city, 'hidden');
       return isLaunched(parent.status);
     }
-    const supported = supportedStylesForLaunchServiceId(svcKey);
+    const supported = supportedStylesForLaunchServiceId(launchIdForStyles);
     if (!supported.includes(styleKey)) {
       const parent = effectiveStatusForGeography(slice, stateCode, city, 'hidden');
       return isLaunched(parent.status);

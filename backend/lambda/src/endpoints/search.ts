@@ -687,12 +687,20 @@ class UniversalSearchHandler extends BaseHandler {
 
     const launchFilter = await resolveLaunchGeoFromQuery(qs);
     const hubCategory = category || (hubContext ? hubContext.discoverCategory : undefined);
+    // Hub-only browse: vendor.category is often roles.name (vet_clinic, pet_groomer, …).
+    // Those slugs historically did not map to platform:service-launch-config keys, so
+    // shouldIncludeSearchResult zeroed the list while /customer/services/by-style
+    // (Home) never applied this filter. Use hub slug for launch checks on hub browse.
     finalVendors = finalVendors.filter((v) =>
       shouldIncludeSearchResult(
         launchFilter,
         {
-          category: (v as { category?: string }).category,
-          serviceType: (v as { category?: string }).category,
+          category: hubBrowseOnly
+            ? hubCategory
+            : (v as { category?: string }).category,
+          serviceType: hubBrowseOnly
+            ? hubCategory
+            : (v as { category?: string }).category,
         },
         hubCategory
       )
@@ -701,8 +709,12 @@ class UniversalSearchHandler extends BaseHandler {
       shouldIncludeSearchResult(
         launchFilter,
         {
-          category: (s as { category?: string }).category,
-          serviceType: (s as { serviceType?: string }).serviceType,
+          category: hubBrowseOnly
+            ? hubCategory
+            : (s as { category?: string }).category,
+          serviceType: hubBrowseOnly
+            ? hubCategory
+            : (s as { serviceType?: string }).serviceType,
           serviceStyle: (s as { serviceStyle?: string }).serviceStyle,
         },
         hubCategory
