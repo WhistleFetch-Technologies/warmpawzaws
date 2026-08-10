@@ -302,7 +302,12 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       const productWhere = await storefrontProductWhereSql();
       const products = await query(
-        `SELECT p.*, v.business_name as vendor_name, v.city as vendor_city
+        `SELECT p.*,
+                v.business_name as vendor_name,
+                v.city as vendor_city,
+                v.state as vendor_state,
+                v.pincode as vendor_pincode,
+                v.shipping_origin_pincode as vendor_shipping_origin_pincode
          FROM products p
          LEFT JOIN vendors v ON p.vendor_id = v.id
          WHERE p.id = $1 AND ${productWhere}${STOREFRONT_ACTIVE_CATEGORY_SQL}`,
