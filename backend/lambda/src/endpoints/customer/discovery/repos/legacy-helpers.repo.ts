@@ -1789,6 +1789,11 @@ export async function fetchCustomerVendorProfileBundle(vendorId: string): Promis
       totalReviews: reviews.rows.length,
       operatingHours: safeParseOperatingHours(vendor.operating_hours),
       description: vendor.description || '',
+      qualifications: vendor.qualifications || null,
+      experienceYears:
+        vendor.experience_years != null && vendor.experience_years !== ''
+          ? Number(vendor.experience_years)
+          : null,
       photoUrl: await getVendorListingPhotoUrl(vendor),
       vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
       specializations: specializationsForProfile,
