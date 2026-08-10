@@ -65,14 +65,28 @@ const REFUND_PROCESSING_COPY = {
 function cancellationBandsFromApi(policyData: { refundPercentages?: unknown }): CancellationBand[] {
   const raw = policyData.refundPercentages;
   if (!Array.isArray(raw) || raw.length === 0) return [];
-  return [...raw]
-    .map((r: any) => ({
-      withinHours: Number(r?.withinHours),
-      percentage: Math.min(100, Math.max(0, Number(r?.percentage))),
-      cancellationFee: r?.cancellationFee != null && Number.isFinite(Number(r.cancellationFee)) ? Number(r.cancellationFee) : 0,
-    }))
-    .filter((r) => Number.isFinite(r.withinHours) && r.withinHours >= 0)
-    .sort((a, b) => b.withinHours - a.withinHours);
+
+  const byKey = new Map<string, CancellationBand>();
+  for (const r of raw) {
+    const withinHours = Number(r?.withinHours);
+    const percentage = Math.min(100, Math.max(0, Number(r?.percentage)));
+    if (!Number.isFinite(withinHours) || withinHours < 0) continue;
+
+    const cancellationFee =
+      r?.cancellationFee != null && Number.isFinite(Number(r.cancellationFee)) ? Number(r.cancellationFee) : 0;
+    const key = `${withinHours}:${percentage}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { withinHours, percentage, cancellationFee });
+    } else {
+      byKey.set(key, {
+        ...existing,
+        cancellationFee: Math.max(existing.cancellationFee ?? 0, cancellationFee),
+      });
+    }
+  }
+
+  return [...byKey.values()].sort((a, b) => b.withinHours - a.withinHours);
 }
 
 export function PolicyAcceptanceModal({
