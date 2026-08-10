@@ -43,6 +43,16 @@ export default function RootLayout({
   ).toLowerCase();
   const customerEcommerceEnabled =
     customerEcommerceEnabledRaw === 'true' || customerEcommerceEnabledRaw === '1';
+  const guestBrowsingEnabledRaw = (
+    process.env.NEXT_PUBLIC_GUEST_BROWSING_ENABLED ?? 'false'
+  ).toLowerCase();
+  const guestBrowsingEnabled =
+    guestBrowsingEnabledRaw === 'true' || guestBrowsingEnabledRaw === '1';
+  const guestLocationEnabledRaw = (
+    process.env.NEXT_PUBLIC_GUEST_LOCATION_ENABLED ?? 'false'
+  ).toLowerCase();
+  const guestLocationEnabled =
+    guestLocationEnabledRaw === 'true' || guestLocationEnabledRaw === '1';
 
   return (
     <html lang="en">
@@ -116,7 +126,9 @@ export default function RootLayout({
                   environment: ${JSON.stringify(isProd ? 'production' : 'development')},
                   uatMode: ${JSON.stringify(!isProd)},
                   customerMealPlansEnabled: ${JSON.stringify(customerMealPlansEnabled)},
-                  customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)}
+                  customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)},
+                  guestBrowsingEnabled: ${JSON.stringify(guestBrowsingEnabled)},
+                  guestLocationEnabled: ${JSON.stringify(guestLocationEnabled)}
                 };
               `,
           }}

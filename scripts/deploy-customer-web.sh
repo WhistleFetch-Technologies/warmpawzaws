@@ -109,6 +109,17 @@ else
   CMP_JS="false"
 fi
 
+# Phase 1 guest foundation — enable on DEV by default; keep PROD off unless explicitly enabled.
+if [ "$PROD" = true ]; then
+  GB_RAW="${GUEST_BROWSING_ENABLED:-false}"
+  GL_RAW="${GUEST_LOCATION_ENABLED:-false}"
+else
+  GB_RAW="${GUEST_BROWSING_ENABLED:-true}"
+  GL_RAW="${GUEST_LOCATION_ENABLED:-true}"
+fi
+if [ "$GB_RAW" = "true" ] || [ "$GB_RAW" = "1" ]; then GB_JS="true"; else GB_JS="false"; fi
+if [ "$GL_RAW" = "true" ] || [ "$GL_RAW" = "1" ]; then GL_JS="true"; else GL_JS="false"; fi
+
 if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
   echo -e "${GREEN}✅ Skipping build (--deploy-only, dist exists)${NC}"
 else
@@ -129,6 +140,8 @@ else
       "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
       "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
       "NEXT_PUBLIC_DISCOUNT_ENGINE_V2_ENABLED=true"
+      "NEXT_PUBLIC_GUEST_BROWSING_ENABLED=${GB_JS}"
+      "NEXT_PUBLIC_GUEST_LOCATION_ENABLED=${GL_JS}"
     )
   else
     BUILD_ENV=(
@@ -137,6 +150,8 @@ else
       "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
       "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
       "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
+      "NEXT_PUBLIC_GUEST_BROWSING_ENABLED=${GB_JS}"
+      "NEXT_PUBLIC_GUEST_LOCATION_ENABLED=${GL_JS}"
     )
   fi
 
@@ -190,7 +205,9 @@ if [ "$PROD" = true ]; then
       firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
       firebaseMeasurementId:     "G-PYF54Y34BP",
       customerEcommerceEnabled: ${CEE_JS},
-      customerMealPlansEnabled: ${CMP_JS}
+      customerMealPlansEnabled: ${CMP_JS},
+      guestBrowsingEnabled: ${GB_JS},
+      guestLocationEnabled: ${GL_JS}
     }
   );
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
@@ -216,7 +233,9 @@ else
       firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
       firebaseMeasurementId:     "G-PYF54Y34BP",
       customerEcommerceEnabled: ${CEE_JS},
-      customerMealPlansEnabled: ${CMP_JS}
+      customerMealPlansEnabled: ${CMP_JS},
+      guestBrowsingEnabled: ${GB_JS},
+      guestLocationEnabled: ${GL_JS}
     }
   );
   if (existing.customerMealPlansEnabled !== undefined) {
