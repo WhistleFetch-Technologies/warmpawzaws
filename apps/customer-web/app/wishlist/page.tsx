@@ -165,21 +165,26 @@ function WishlistPageContent() {
 
   if (!shopEnabled) {
     return (
-      <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
-        <button
-          type="button"
-          onClick={() => goBackOrHome(router)}
-          className="absolute left-4 top-4 rounded-lg bg-white/90 p-2 shadow-sm"
-          aria-label="Back"
-        >
-          <ArrowLeft className="h-5 w-5 text-gray-700" />
-        </button>
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-customer flex-col bg-gradient-to-br from-orange-50 via-white to-amber-50">
+        <header className="sticky top-0 z-20 flex shrink-0 items-center gap-2 border-b border-orange-100/80 bg-white/95 px-4 py-3 backdrop-blur cw-header-safe-top cw-header-safe-x">
+          <button
+            type="button"
+            onClick={() => goBackOrHome(router)}
+            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl px-2 text-gray-800 hover:bg-orange-50 active:opacity-90"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-5 w-5" strokeWidth={2.5} />
+          </button>
+          <h1 className="truncate text-lg font-bold text-gray-900">Saved items</h1>
+        </header>
+        <div className="flex flex-1 flex-col items-center justify-center px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
           <Heart className="mx-auto mb-4 h-16 w-16 text-red-200" />
           <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
           <p className="text-gray-500">
             Saved items and wishlist will be available when the marketplace launches.
           </p>
+        </div>
         </div>
       </div>
     );
@@ -196,14 +201,14 @@ function WishlistPageContent() {
 
   return (
     <div className="mx-auto min-h-screen w-full max-w-customer bg-gradient-to-br from-orange-50 via-white to-amber-50 pb-24">
-      <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-orange-100/80 bg-white/95 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-20 flex shrink-0 items-center gap-3 border-b border-orange-100/80 bg-white/95 px-4 py-3 backdrop-blur cw-header-safe-top cw-header-safe-x">
         <button
           type="button"
           onClick={() => goBackOrHome(router)}
-          className="rounded-lg p-2 hover:bg-orange-50"
+          className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl hover:bg-orange-50 active:opacity-90"
           aria-label="Back"
         >
-          <ArrowLeft className="h-5 w-5 text-gray-800" />
+          <ArrowLeft className="h-5 w-5 text-gray-800" strokeWidth={2.5} />
         </button>
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <div className="relative shrink-0">

@@ -37,6 +37,8 @@ const PUBLIC_ENDPOINTS = [
   '/config/commerce-switch/health',
   '/regions',
   '/webhooks',
+  /** Allyticas product telemetry ingest — POST only; rate-limited in product-analytics/routes.ts */
+  '/analytics/v1/events',
 ];
 
 // Patterns for public endpoints (regex)
@@ -52,7 +54,7 @@ const PUBLIC_PATTERNS = [
 /**
  * Check if an endpoint is public (doesn't require auth)
  */
-function isPublicEndpoint(path: string): boolean {
+export function isPublicEndpoint(path: string): boolean {
   // Check exact matches
   if (PUBLIC_ENDPOINTS.some(ep => path === ep || path.startsWith(ep + '/'))) {
     return true;

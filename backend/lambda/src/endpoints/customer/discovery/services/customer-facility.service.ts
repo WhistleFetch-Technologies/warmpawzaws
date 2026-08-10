@@ -133,6 +133,11 @@ export async function executecustomerFacility(c: Context) {
           latitude: vendor.latitude,
           longitude: vendor.longitude,
           description: metadata.description || vendor.description || '', // ✅ FIX: Get description from metadata
+          qualifications: vendor.qualifications || metadata.qualifications || '',
+          experienceYears:
+            vendor.experience_years != null && vendor.experience_years !== ''
+              ? Number(vendor.experience_years)
+              : null,
           logoUrl: vendor.logo_url,
           coverImageUrl: vendor.cover_image_url,
           role: vendor.role_name,
