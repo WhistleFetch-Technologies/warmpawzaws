@@ -1,6 +1,7 @@
 import { DistanceResolver } from '../../../../../lib/utils/vendor-customer-distance';
 import {
   appendVetDiscoveryCategoryAliasKeys,
+  appendWalkerDiscoveryCategoryAliasKeys,
   catTextRequestsBehaviorHub,
 } from '../../../../../lib/discovery-vendor-query';
 import { getDiscoveryVendorListSchemaFlags } from '../../../../../utils/discovery-vendor-list-setup';
@@ -21,6 +22,8 @@ export async function buildDiscoverCategoryContext(
   if (category) rawCategoryKeys.push(String(category));
   if (roleId) rawCategoryKeys.push(String(roleId));
   appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys, category);
+  appendWalkerDiscoveryCategoryAliasKeys(rawCategoryKeys, category);
+  appendWalkerDiscoveryCategoryAliasKeys(rawCategoryKeys, roleId);
   const catTextExact: string[] = rawCategoryKeys.filter(k => !isUuid(k)).map(k => k.toLowerCase());
   const catTextLike: string[] = catTextExact.map(k => `%${k}%`);
   const catUUIDs: string[] = rawCategoryKeys.filter(k => isUuid(k));
@@ -140,6 +143,29 @@ export async function buildDiscoverCategoryContext(
     }
   }
 
+  let walkerCustomCategoryIdOrSql = '';
+  const walkerHubFetch =
+    !sittingDiscoveryRelaxed &&
+    catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c));
+  if (walkerHubFetch && hasVsCategoryIdDiscover) {
+    const slugResWalk = await discover_servicesRepo
+      .dbDiscoverServicesWalkingCategories()
+      .catch(() => ({ rows: [] as { id: string }[] }));
+    const idsW = (slugResWalk.rows || []).map((r: any) => r?.id).filter(Boolean);
+    const UUID_RE_W =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const cleanW = idsW.filter((id: string) => UUID_RE_W.test(String(id).trim()));
+    if (cleanW.length > 0) {
+      const uuidListW = cleanW.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+      walkerCustomCategoryIdOrSql = `
+                OR (
+                  COALESCE(vs.is_custom_service, false) = true
+                  AND vs.category_id IS NOT NULL
+                  AND vs.category_id = ANY(ARRAY[${uuidListW}]::uuid[])
+                )`;
+    }
+  }
+
   const { hasLogoUrl, hasVendorSpecializationsCol } = await getDiscoveryVendorListSchemaFlags();
   const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
   const vendorSpecsJsonbSql = hasVendorSpecializationsCol ? 'v.specializations' : 'NULL::jsonb';
@@ -159,6 +185,7 @@ export async function buildDiscoverCategoryContext(
     walkerCategoryDiscoveryOr,
     boardingCustomCategoryIdOrSql,
     trainingCustomCategoryIdOrSql,
+    walkerCustomCategoryIdOrSql,
     hasLogoUrl,
     hasVendorSpecializationsCol,
     logoCol,

@@ -31,6 +31,7 @@ export function buildByStyleServiceFetchSql(
     strictCustomDiscoverySql,
     boardingCustomCategoryIdOrByStyleSql,
     walkerCategoryDiscoveryOrByStyle,
+    walkerCustomCategoryIdOrByStyleSql,
   } = categoryCtx;
 
   const boardingUncatSqlByStyle =
@@ -92,6 +93,7 @@ export function buildByStyleServiceFetchSql(
             ${behaviorCategoryAliasFetchOrByStyle}
             ${behaviorTrainingCategoryFetchOrByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
+            ${walkerCustomCategoryIdOrByStyleSql || ''}
             ${vetCategoryEmptyForFetchByStyle}
             ${boardingCustomCategoryIdOrByStyleSql}
           )

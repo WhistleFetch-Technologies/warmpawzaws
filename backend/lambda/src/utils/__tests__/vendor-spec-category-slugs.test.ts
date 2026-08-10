@@ -103,4 +103,13 @@ describe('vendor-spec-category-slugs', () => {
     ];
     expect(areSpecializationRowsValidForCatalogSlug(rows, 'pet-sitter', ['bath_brush'])).toBe(false);
   });
+
+  it('maps dog walker / Training & Walking aliases to walking specs', () => {
+    expect(normalizeCatalogCategoryKey('Training & Walking')).toBe('training_and_walking');
+    expect(expandSpecCategorySlugs('Training & Walking')).toEqual(
+      expect.arrayContaining(['walking', 'training'])
+    );
+    expect(expandSpecCategorySlugs('dog_walker')).toContain('walking');
+    expect(expandSpecCategorySlugs('walker')).toContain('walking');
+  });
 });

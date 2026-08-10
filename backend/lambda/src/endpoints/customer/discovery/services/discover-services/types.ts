@@ -39,6 +39,7 @@ export type DiscoverCategoryContext = {
   walkerCategoryDiscoveryOr: string;
   boardingCustomCategoryIdOrSql: string;
   trainingCustomCategoryIdOrSql: string;
+  walkerCustomCategoryIdOrSql: string;
   hasLogoUrl: boolean;
   hasVendorSpecializationsCol: boolean;
   logoCol: string;

@@ -32,6 +32,18 @@ export async function dbDiscoverServices1() {
         )
 }
 
+export async function dbDiscoverServicesWalkingCategories() {
+  return await query(
+    `SELECT id::text FROM service_categories
+     WHERE COALESCE(is_active, true) = true
+       AND (
+         LOWER(TRIM(category_id)) = ANY($1::text[])
+         OR LOWER(TRIM(name)) = ANY($1::text[])
+       )`,
+    [['walking', 'walker', 'dog walker', 'pet walker', 'dog_walker', 'pet_walker']]
+  );
+}
+
 export async function dbDiscoverServices2(sql, params) {
   return await query(sql, params)
 }
