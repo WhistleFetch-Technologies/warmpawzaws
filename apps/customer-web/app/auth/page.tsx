@@ -36,6 +36,7 @@ import {
   readRetryAfterSecondsFromSuccess,
 } from '@/lib/forgot-password-cooldown';
 import { resolveSafeAuthReturnPath } from '@/lib/auth-redirect';
+import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -107,10 +108,12 @@ function AuthPageContent() {
   // For static export compatibility, use window.location.search directly instead of useSearchParams
   // This avoids hydration issues and works even if JavaScript loads slowly
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
+  const [guestBrowseEnabled, setGuestBrowseEnabled] = useState(false);
 
   useEffect(() => {
     // Get redirect + referral (?ref=) from URL after mount (client-side only)
     if (typeof window !== 'undefined') {
+      setGuestBrowseEnabled(isGuestBrowsingEnabled());
       const params = new URLSearchParams(window.location.search);
       // Accept both `redirect` (canonical) and legacy `next` for guest/share return URLs.
       const safeReturn = resolveSafeAuthReturnPath(params);
@@ -1050,6 +1053,22 @@ function AuthPageContent() {
                 </>
               )}
             </p>
+
+            {/* Guest browsing is home `/`, not `/auth` — offer escape when flag is on */}
+            {guestBrowseEnabled && authMode === 'login' && !forgotOpen && (
+              <div className="mb-6 text-center">
+                <button
+                  type="button"
+                  onClick={() => router.replace('/')}
+                  className="w-full rounded-xl border-2 border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-700 hover:bg-orange-100"
+                >
+                  Continue browsing without login
+                </button>
+                <p className="mt-2 text-xs text-gray-500">
+                  Guest mode opens the home screen. Login is only needed for bookings and account.
+                </p>
+              </div>
+            )}
 
             {/* UAT Mode Message */}
             {UAT_MODE && authMode === 'signup' && (
