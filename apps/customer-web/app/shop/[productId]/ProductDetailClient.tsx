@@ -64,6 +64,7 @@ import {
   isProductDeliverableToCity,
   normalizeDeliveryRegionsList,
 } from '@/lib/ecommerce/product-delivery-guard';
+import { computeDeliverySlaEstimate } from '@warmpawz/shared-types';
 import {
   ECOMMERCE_RECOMMENDATIONS_LIMIT,
   loadProductRecommendations,
@@ -98,6 +99,9 @@ interface Product {
   stock: number;
   vendor_id: string;
   vendor_name: string;
+  vendor_state?: string;
+  vendor_pincode?: string;
+  vendor_shipping_origin_pincode?: string;
   brand?: string;
   material?: string;
   dimensions?: { length: number; width: number; height: number; weight: number };
@@ -198,6 +202,10 @@ export default function ProductDetailClient() {
   const [addingToCart, setAddingToCart] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [customerCity, setCustomerCity] = useState<string | null>(null);
+  const [customerPincode, setCustomerPincode] = useState<string | null>(null);
+  const [customerState, setCustomerState] = useState<string | null>(null);
+  const [guestPincode, setGuestPincode] = useState('');
+  const [guestPincodeApplied, setGuestPincodeApplied] = useState('');
   const userTouchedVariationsRef = useRef(false);
   const defaultVariationsAppliedRef = useRef(false);
 
@@ -229,8 +237,16 @@ export default function ProductDetailClient() {
         const storedId = readCheckoutAddressId();
         let picked = storedId ? list.find((a) => a.id === storedId) : null;
         if (!picked) picked = pickDefaultDeliveryAddress(list);
-        if (!cancelled && picked?.city) {
-          setCustomerCity(String(picked.city).trim());
+        if (!cancelled) {
+          if (picked?.city) {
+            setCustomerCity(String(picked.city).trim());
+          }
+          if (picked?.pincode) {
+            setCustomerPincode(String(picked.pincode).trim());
+          }
+          if (picked?.state) {
+            setCustomerState(String(picked.state).trim());
+          }
         }
       } catch {
         /* ignore address load errors on PDP */
@@ -264,6 +280,32 @@ export default function ProductDetailClient() {
     return deliveryRegionsLabel(deliveryRegions);
   }, [deliveryRegions, customerCity, canDeliverToCustomer, product?.name]);
 
+  const activeCustomerPincode = customerPincode || guestPincodeApplied || null;
+
+  const deliveryEstimate = useMemo(() => {
+    if (!product || !activeCustomerPincode) return null;
+    return computeDeliverySlaEstimate(
+      {
+        state: product.vendor_state,
+        city: undefined,
+        pincode: product.vendor_pincode,
+        shippingOriginPincode: product.vendor_shipping_origin_pincode,
+      },
+      {
+        pincode: activeCustomerPincode,
+        state: customerState,
+        city: customerCity,
+      },
+    );
+  }, [product, activeCustomerPincode, customerState, customerCity]);
+
+  const handleApplyGuestPincode = () => {
+    const trimmed = guestPincode.replace(/\D/g, '').slice(0, 6);
+    if (trimmed.length === 6) {
+      setGuestPincodeApplied(trimmed);
+    }
+  };
+
   // ============================================================================
   // DATA LOADING
   // ============================================================================
@@ -276,6 +318,8 @@ export default function ProductDetailClient() {
     setDescriptionExpanded(false);
     userTouchedVariationsRef.current = false;
     defaultVariationsAppliedRef.current = false;
+    setGuestPincode('');
+    setGuestPincodeApplied('');
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'instant' });
     }
@@ -1154,11 +1198,49 @@ export default function ProductDetailClient() {
 
             {/* Delivery & Trust Badges */}
             <div className="bg-slate-50 rounded-xl p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <Truck className="w-5 h-5 text-emerald-500" />
-                <div>
+              <div className="flex items-start gap-3">
+                <Truck className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
                   <p className="font-medium text-slate-900">Standard Delivery</p>
-                  <p className="text-sm text-slate-500">
+                  {deliveryEstimate ? (
+                    <>
+                      <p className="text-sm font-medium text-emerald-700 mt-0.5">
+                        {deliveryEstimate.deliverByLabel}
+                      </p>
+                      <p className="text-sm text-slate-500">{deliveryEstimate.label}</p>
+                    </>
+                  ) : activeCustomerPincode ? null : (
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      Enter pincode to see delivery date
+                    </p>
+                  )}
+                  {!activeCustomerPincode && (
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="6-digit pincode"
+                        value={guestPincode}
+                        onChange={(e) =>
+                          setGuestPincode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleApplyGuestPincode();
+                        }}
+                        className="flex-1 min-w-0 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyGuestPincode}
+                        disabled={guestPincode.replace(/\D/g, '').length !== 6}
+                        className="shrink-0 rounded-lg bg-orange-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        Check
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-sm text-slate-500 mt-1">
                     ₹{ECOMMERCE_DEFAULT_DELIVERY_FEE.toLocaleString('en-IN')} on all orders
                   </p>
                 </div>

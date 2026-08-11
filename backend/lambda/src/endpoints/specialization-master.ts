@@ -114,19 +114,34 @@ async function resolveVendorCatalogCategorySlug(categoryIdInput: string): Promis
 
   const looksLikeUuid =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
-  let slug = raw;
+  const normalized = normalizeCatalogCategoryKey(raw);
 
-  if (looksLikeUuid || !CATEGORY_TO_SPEC[normalizeCatalogCategoryKey(raw)]) {
-    const resolved = await query(
-      `SELECT category_id FROM service_categories
-       WHERE (id::text = $1 OR LOWER(TRIM(category_id)) = LOWER(TRIM($1)))
-         AND COALESCE(is_active, true) = true
-       LIMIT 1`,
-      [raw]
-    );
-    if (resolved.rows?.[0]?.category_id) {
-      slug = String(resolved.rows[0].category_id).trim();
-    }
+  // Ambiguous legacy label — keep as normalized key so expandSpecCategorySlugs adds walking+training
+  if (!looksLikeUuid && (normalized === 'training_and_walking' || normalized === 'training_walking')) {
+    return normalized;
+  }
+
+  // Known role/display aliases (e.g. dog_walker) → specialization family slug
+  if (!looksLikeUuid && CATEGORY_TO_SPEC[normalized]) {
+    return CATEGORY_TO_SPEC[normalized];
+  }
+
+  let slug = raw;
+  const resolved = await query(
+    `SELECT category_id FROM service_categories
+     WHERE (
+         id::text = $1
+         OR LOWER(REPLACE(REPLACE(TRIM(category_id), '-', '_'), ' ', '_')) = $2
+         OR LOWER(REPLACE(REPLACE(REPLACE(TRIM(name), '&', 'and'), '-', '_'), ' ', '_')) = $2
+       )
+       AND COALESCE(is_active, true) = true
+     LIMIT 1`,
+    [raw, normalized]
+  );
+  if (resolved.rows?.[0]?.category_id) {
+    slug = String(resolved.rows[0].category_id).trim();
+  } else if (!looksLikeUuid && normalized) {
+    slug = normalized;
   }
 
   return slug;
@@ -1249,7 +1264,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
   app.get('/vendor/specializations/by-category', async (c) => {
     try {
       const categoryId = (c.req.query('categoryId') || '').trim();
-      const roleId = (c.req.query('roleId') || '').trim();
+      // roleId query param is ignored for filtering (kept for client compat).
       if (!categoryId) {
         return c.json({ success: false, error: 'categoryId is required', specializations: [] }, 400);
       }
@@ -1266,40 +1281,18 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         normalizeCatalogCategoryKey(s)
       );
 
-      let roleNames: string[] = [];
-      if (roleId) {
-        let actualRoleId = roleId;
-        if (roleId.includes('-')) {
-          const roleResult = await query(
-            'SELECT name FROM roles WHERE id::text = $1 AND is_active = true',
-            [roleId]
-          );
-          if (roleResult.rows.length > 0) {
-            actualRoleId = String(roleResult.rows[0].name || actualRoleId)
-              .toLowerCase()
-              .replace(/\s+/g, '_');
-          }
-        } else {
-          actualRoleId = actualRoleId.toLowerCase().replace(/\s+/g, '_');
-        }
-        roleNames = expandRoleIdsForOverlap(getRoleNamesForCatalog(actualRoleId));
-      }
+      // Custom-service by-category: catalogue category is authoritative.
+      // Hard role filtering emptied walking specs when vendors selected "Dog Walker" but
+      // roles.id was trainer_solo (applicable_roles on walking rows are walker/pet_walker only).
 
-      const roleFilter = roleNamesForSpecCategoryQuery(vendorPickSlugs, roleNames);
       const smResult = await query(
         `SELECT sm.*
          FROM specialization_master sm
          WHERE sm.is_active = true
            AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
            AND LOWER(REPLACE(REPLACE(TRIM(COALESCE(sm.category_id, '')), '-', '_'), ' ', '_')) = ANY($1::text[])
-           AND (
-             $2::text[] IS NULL
-             OR cardinality($2::text[]) = 0
-             OR sm.applicable_roles = '{}'
-             OR sm.applicable_roles && $2::text[]
-           )
          ORDER BY sm.display_order, sm.name`,
-        [dbQuerySlugs, roleFilter]
+        [dbQuerySlugs]
       );
       const rows = filterSpecializationMasterRowsForVendorCategory(
         smResult.rows || [],

@@ -1,4 +1,8 @@
-import { resolveVendorCustomServiceSpecCategoryId } from '../vendor-custom-service-spec-category';
+import {
+  findPreferredCatalogCategoryForRole,
+  preferredSpecCategorySlugForRole,
+  resolveVendorCustomServiceSpecCategoryId,
+} from '../vendor-custom-service-spec-category';
 
 describe('resolveVendorCustomServiceSpecCategoryId', () => {
   it('uses platform category UUID when set', () => {
@@ -37,5 +41,64 @@ describe('resolveVendorCustomServiceSpecCategoryId', () => {
         catalogCategories: [],
       })
     ).toBe('pet_boarding');
+  });
+
+  it('maps legacy Training & Walking default to walking for dog walkers', () => {
+    expect(
+      resolveVendorCustomServiceSpecCategoryId({
+        categoryName: 'Training & Walking',
+        catalogCategories: [],
+        vendorRoleName: 'dog_walker',
+      })
+    ).toBe('walking');
+  });
+
+  it('maps legacy Training & Walking default to training for trainers', () => {
+    expect(
+      resolveVendorCustomServiceSpecCategoryId({
+        categoryName: 'Training & Walking',
+        catalogCategories: [],
+        vendorRoleName: 'pet_trainer',
+      })
+    ).toBe('training');
+  });
+
+  it('resolves Dog Walker catalogue display name via catalog row', () => {
+    expect(
+      resolveVendorCustomServiceSpecCategoryId({
+        categoryName: 'Dog Walker',
+        catalogCategories: [
+          { id: 'effeec22-c4b6-44c3-bfee-1962f66110d5', category_id: 'walking', name: 'Dog Walker' },
+        ],
+      })
+    ).toBe('walking');
+  });
+});
+
+describe('preferredSpecCategorySlugForRole', () => {
+  it('prefers walking for walker roles', () => {
+    expect(preferredSpecCategorySlugForRole('dog_walker')).toBe('walking');
+    expect(preferredSpecCategorySlugForRole('pet_walker')).toBe('walking');
+    expect(preferredSpecCategorySlugForRole('walker_solo')).toBe('walking');
+  });
+
+  it('prefers training for trainer roles', () => {
+    expect(preferredSpecCategorySlugForRole('pet_trainer')).toBe('training');
+    expect(preferredSpecCategorySlugForRole('trainer_solo')).toBe('training');
+  });
+});
+
+describe('findPreferredCatalogCategoryForRole', () => {
+  const cats = [
+    { id: 'walk-uuid', category_id: 'walking', name: 'Dog Walker' },
+    { id: 'train-uuid', category_id: 'training', name: 'Training & Behaviorist' },
+  ];
+
+  it('picks walking row for dog walker', () => {
+    expect(findPreferredCatalogCategoryForRole(cats, 'dog_walker')?.id).toBe('walk-uuid');
+  });
+
+  it('picks training row for trainer', () => {
+    expect(findPreferredCatalogCategoryForRole(cats, 'trainer_solo')?.id).toBe('train-uuid');
   });
 });

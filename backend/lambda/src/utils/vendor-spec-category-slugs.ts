@@ -4,6 +4,20 @@ export const CATEGORY_TO_SPEC: Record<string, string> = {
   grooming: 'grooming',
   training: 'training',
   walking: 'walking',
+  // Vendor role / display aliases → walking specs (prod catalogue name is "Dog Walker")
+  walker: 'walking',
+  dog_walker: 'walking',
+  pet_walker: 'walking',
+  walker_solo: 'walking',
+  dog_walking: 'walking',
+  pet_walking: 'walking',
+  // Trainer display aliases
+  trainer: 'training',
+  pet_trainer: 'training',
+  training_behaviorist: 'training',
+  training_and_behaviorist: 'training',
+  // NOTE: "training_and_walking" / "Training & Walking" are handled in expandSpecCategorySlugs
+  // (adds both walking + training). Do not map them to a single family here.
   diagnostic: 'veterinary',
   diagnostics: 'veterinary',
   pharmacy: 'veterinary',
@@ -82,8 +96,12 @@ export function normalizeCatalogCategoryKey(raw: string): string {
   return String(raw || '')
     .trim()
     .toLowerCase()
+    .replace(/&/g, 'and')
     .replace(/\s+/g, '_')
-    .replace(/-/g, '_');
+    .replace(/-/g, '_')
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
 }
 
 function normalizeSpecId(raw: unknown): string {
@@ -129,6 +147,12 @@ export function expandSpecCategorySlugs(rawSlug: string): string[] {
     CATEGORY_TO_SPEC[String(rawSlug || '').trim().toLowerCase()] ||
     key;
   const slugs = new Set<string>([key, mapped, String(rawSlug || '').trim().toLowerCase()]);
+
+  // Legacy combined label — include both families; role filter narrows for trainers vs walkers
+  if (key === 'training_and_walking' || key === 'training_walking') {
+    slugs.add('walking');
+    slugs.add('training');
+  }
 
   if (
     SITTER_FAMILY_SPEC_CATEGORY_KEYS.has(key) ||

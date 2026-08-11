@@ -311,12 +311,11 @@ export function specializationDiscoveryIlikePatterns(keys: string[]): string[] {
 }
 
 /**
- * Restrict vendors to those who EXPLICITLY declared the specialization
- * (vendor_specializations row, vendors.specializations JSON, or metadata.specializations).
- * Strict mode: vendors without any matching declaration are filtered OUT — the previous
- * "default-open" branch leaked unrelated vendors into a specialization tile (e.g. lab test
- * tile showed clinics that never listed lab test). Per requirement: only show vendors who
- * added this specialization in their profile.
+ * Restrict vendors to those who offer the specialization via:
+ * - profile declarations (vendor_specializations / vendors.specializations / metadata), OR
+ * - a published vendor_service that tags the specialization (custom packages store
+ *   metadata.specialization_ids — e.g. Puppy Monthly Package → puppy_walk).
+ * Strict mode: vendors without any matching declaration/offering are filtered OUT.
  * Appends two params: text[] exact (lower trim), text[] ILIKE patterns.
  */
 export function sqlVendorMatchesDeclaredSpecialization(paramBase: number): string {
@@ -396,6 +395,65 @@ export function sqlVendorMatchesDeclaredSpecialization(paramBase: number): strin
               AND v.metadata->'specializations' IS NOT NULL
               AND (v.metadata->'specializations')::text NOT IN ('null', '[]', '')
               AND (v.metadata->'specializations')::text ILIKE ANY($${b}::text[])
+            )
+            /* ── 5. Published vendor_services tag the specialization (custom packages) ── */
+            OR EXISTS (
+              SELECT 1 FROM vendor_services vs_spec
+              WHERE vs_spec.vendor_id = v.id
+                AND (vs_spec.is_enabled = true OR vs_spec.is_enabled IS NULL)
+                AND (vs_spec.publish_status IN ('published','auto_published') OR vs_spec.publish_status IS NULL)
+                AND (
+                  (
+                    vs_spec.metadata IS NOT NULL
+                    AND (
+                      (
+                        jsonb_typeof(vs_spec.metadata->'specialization_ids') = 'array'
+                        AND EXISTS (
+                          SELECT 1
+                          FROM jsonb_array_elements_text(vs_spec.metadata->'specialization_ids') sid(val)
+                          WHERE LOWER(TRIM(sid.val)) = ANY($${a}::text[])
+                             OR sid.val ILIKE ANY($${b}::text[])
+                             OR EXISTS (
+                               SELECT 1 FROM specialization_master sm_vs
+                               WHERE sm_vs.is_active = true
+                                 AND (
+                                   sm_vs.id::text = sid.val
+                                   OR LOWER(TRIM(sm_vs.specialization_id)) = LOWER(TRIM(sid.val))
+                                 )
+                                 AND (
+                                   sm_vs.id::text = ANY($${a}::text[])
+                                   OR LOWER(TRIM(sm_vs.specialization_id)) = ANY($${a}::text[])
+                                   OR regexp_replace(LOWER(TRIM(sm_vs.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${a}::text[])
+                                   OR regexp_replace(LOWER(TRIM(sm_vs.display_name)), '[^a-z0-9]+', '_', 'g') = ANY($${a}::text[])
+                                 )
+                             )
+                        )
+                      )
+                      OR (
+                        jsonb_typeof(vs_spec.metadata->'specializations') = 'array'
+                        AND EXISTS (
+                          SELECT 1
+                          FROM jsonb_array_elements_text(vs_spec.metadata->'specializations') sid2(val)
+                          WHERE LOWER(TRIM(sid2.val)) = ANY($${a}::text[])
+                             OR sid2.val ILIKE ANY($${b}::text[])
+                        )
+                      )
+                      OR (vs_spec.metadata->'specialization_ids')::text ILIKE ANY($${b}::text[])
+                      OR (vs_spec.metadata->'specializations')::text ILIKE ANY($${b}::text[])
+                    )
+                  )
+                  OR EXISTS (
+                    SELECT 1 FROM service_catalog sc_spec
+                    WHERE sc_spec.id = vs_spec.service_id
+                      AND sc_spec.specialization_ids IS NOT NULL
+                      AND EXISTS (
+                        SELECT 1
+                        FROM unnest(sc_spec.specialization_ids) AS cat_sid(val)
+                        WHERE LOWER(TRIM(cat_sid.val)) = ANY($${a}::text[])
+                           OR cat_sid.val ILIKE ANY($${b}::text[])
+                      )
+                  )
+                )
             )
           )`;
 }
@@ -1789,6 +1847,11 @@ export async function fetchCustomerVendorProfileBundle(vendorId: string): Promis
       totalReviews: reviews.rows.length,
       operatingHours: safeParseOperatingHours(vendor.operating_hours),
       description: vendor.description || '',
+      qualifications: vendor.qualifications || null,
+      experienceYears:
+        vendor.experience_years != null && vendor.experience_years !== ''
+          ? Number(vendor.experience_years)
+          : null,
       photoUrl: await getVendorListingPhotoUrl(vendor),
       vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
       specializations: specializationsForProfile,
