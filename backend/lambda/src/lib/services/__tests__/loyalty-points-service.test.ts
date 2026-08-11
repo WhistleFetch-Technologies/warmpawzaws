@@ -4,7 +4,7 @@
  * Tests for loyalty points earning, auto-conversion to wallet, and action-based rules
  */
 
-import { loyaltyPointsService } from '../loyalty-points-service';
+import { loyaltyPointsService } from '../loyalty&reward/loyalty-points-service';
 import { query, select, insert, withTransaction } from '../../../database/rds-connection';
 
 // Mock database functions
@@ -134,9 +134,8 @@ describe('LoyaltyPointsService', () => {
         priority: 100,
       };
 
-      (select as jest.Mock)
-        .mockResolvedValueOnce([mockRule])
-        .mockResolvedValueOnce([{ count: '3' }]); // Already 3 reviews this month
+      (select as jest.Mock).mockResolvedValueOnce([mockRule]);
+      (query as jest.Mock).mockResolvedValueOnce({ rows: [{ count: '3' }] });
 
       const result = await loyaltyPointsService.awardPoints({
         customerId: 'customer-1',
@@ -147,6 +146,79 @@ describe('LoyaltyPointsService', () => {
 
       expect(result.points).toBe(0);
       expect(result.walletCredited).toBe(0);
+    });
+
+    it('should enforce lifetime_limit with forward-only cap_effective_from', async () => {
+      const capFrom = '2026-08-11T00:00:00.000Z';
+      const mockRule = {
+        id: 'rule-pet',
+        action_name: 'complete_pet_profile',
+        action_category: 'loyalty',
+        user_type: 'customer',
+        points_type: 'fixed',
+        points_value: 100,
+        frequency_type: 'lifetime_limit',
+        frequency_limit: 3,
+        conditions: { cap_effective_from: capFrom },
+        is_active: true,
+        priority: 100,
+      };
+
+      (select as jest.Mock).mockResolvedValueOnce([mockRule]);
+      (query as jest.Mock).mockResolvedValueOnce({ rows: [{ count: '3' }] });
+
+      const result = await loyaltyPointsService.awardPoints({
+        customerId: 'customer-1',
+        actionName: 'complete_pet_profile',
+        referenceType: 'pet',
+        referenceId: 'pet-9',
+      });
+
+      expect(result.points).toBe(0);
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining('created_at >='),
+        expect.arrayContaining(['customer-1', '% complete_pet_profile', capFrom])
+      );
+    });
+
+    it('should allow lifetime_limit award when under cap', async () => {
+      const mockRule = {
+        id: 'rule-pet-2',
+        action_name: 'complete_pet_profile',
+        action_category: 'loyalty',
+        user_type: 'customer',
+        points_type: 'fixed',
+        points_value: 100,
+        frequency_type: 'lifetime_limit',
+        frequency_limit: 3,
+        conditions: { cap_effective_from: '2026-08-11T00:00:00.000Z' },
+        is_active: true,
+        priority: 100,
+      };
+
+      (select as jest.Mock)
+        .mockResolvedValueOnce([mockRule]);
+      (query as jest.Mock)
+        .mockResolvedValueOnce({ rows: [{ count: '2' }] })
+        .mockResolvedValueOnce({
+          rows: [{ rule_name: 'basic', auto_convert_to_wallet: false, redemption_rate: '1' }],
+        });
+
+      (withTransaction as jest.Mock).mockImplementation(async (callback) => {
+        const mockClient = {
+          query: jest.fn().mockResolvedValue({ rows: [{ total_points: 100 }] }),
+        };
+        return callback(mockClient);
+      });
+
+      const result = await loyaltyPointsService.awardPoints({
+        customerId: 'customer-1',
+        actionName: 'complete_pet_profile',
+        referenceType: 'pet',
+        referenceId: 'pet-10',
+      });
+
+      expect(result.points).toBe(100);
     });
 
     it('should apply birthday month multiplier', async () => {
