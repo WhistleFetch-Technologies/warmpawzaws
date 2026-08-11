@@ -40,7 +40,6 @@ import {
 import { RecommendationProductScroller } from '@/components/ecommerce/shared/RecommendationProductScroller';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
-import { ECOMMERCE_DEFAULT_DELIVERY_FEE } from '@/lib/ecommerce/cart-pricing';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import { ProductImageGallery } from '@/components/ecommerce/ProductImageGallery';
 import {
@@ -534,9 +533,6 @@ export function ProductDetailPage({
                 <Truck className="w-5 h-5 text-blue-600 mt-0.5" />
                 <div className="flex-1">
                   <p className="font-semibold text-gray-900 text-sm">Standard Delivery</p>
-                  <p className="text-xs text-gray-600">
-                    ₹{ECOMMERCE_DEFAULT_DELIVERY_FEE.toLocaleString('en-IN')} on all orders
-                  </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {product.vendor?.deliveryTime || '2-3 days'} delivery
                   </p>

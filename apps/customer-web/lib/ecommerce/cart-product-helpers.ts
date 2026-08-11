@@ -18,6 +18,11 @@ export function shopProductToCartItem(product: ShopProduct, quantity = 1): CartI
       images: product.images,
       vendor_id: product.vendor_id,
       vendor_name: product.vendor_name,
+      ...(product.vendor_state ? { vendor_state: product.vendor_state } : {}),
+      ...(product.vendor_pincode ? { vendor_pincode: product.vendor_pincode } : {}),
+      ...(product.vendor_shipping_origin_pincode
+        ? { vendor_shipping_origin_pincode: product.vendor_shipping_origin_pincode }
+        : {}),
       category_id: product.category_id,
       stock: product.stock ?? 99,
       ...(product.delivery_regions?.length

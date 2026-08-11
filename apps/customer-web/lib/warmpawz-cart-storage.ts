@@ -17,6 +17,10 @@ export type WarmpawzCartProductSnapshot = {
   images?: string[];
   vendor_id?: string;
   vendor_name?: string;
+  /** Vendor geo for delivery SLA (persisted at add-to-cart). */
+  vendor_state?: string;
+  vendor_pincode?: string;
+  vendor_shipping_origin_pincode?: string;
   category_id?: string;
   stock: number;
   /** City names; empty/undefined = ships everywhere */

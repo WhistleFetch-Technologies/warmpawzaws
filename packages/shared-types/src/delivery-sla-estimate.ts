@@ -117,3 +117,35 @@ export function computeDeliverySlaEstimate(
     confidence,
   };
 }
+
+function isSlowerSlaEstimate(
+  candidate: DeliverySlaEstimate,
+  current: DeliverySlaEstimate,
+): boolean {
+  if (candidate.maxDays !== current.maxDays) {
+    return candidate.maxDays > current.maxDays;
+  }
+  return candidate.minDays > current.minDays;
+}
+
+/**
+ * Cart-wide delivery SLA: returns the slowest estimate across all vendor lines.
+ * Returns null when customer pincode is missing/invalid or no line is computable.
+ */
+export function computeCartDeliverySlaEstimate(
+  vendors: DeliverySlaVendorInput[],
+  customer: DeliverySlaCustomerInput,
+  now: Date = new Date(),
+): DeliverySlaEstimate | null {
+  if (!vendors.length) return null;
+
+  let best: DeliverySlaEstimate | null = null;
+  for (const vendor of vendors) {
+    const estimate = computeDeliverySlaEstimate(vendor, customer, now);
+    if (!estimate) continue;
+    if (!best || isSlowerSlaEstimate(estimate, best)) {
+      best = estimate;
+    }
+  }
+  return best;
+}
