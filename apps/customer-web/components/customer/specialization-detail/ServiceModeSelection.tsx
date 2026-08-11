@@ -4,6 +4,7 @@ import { ArrowRight, Building2, Clock, Home, Video } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import type { VetServiceModeInformation } from '@/lib/specialization-detail';
 import { SpecializationDetailSection } from './SpecializationDetailSection';
 
 export type ServiceStyle = 'at_home' | 'at_center' | 'tele';
@@ -47,6 +48,8 @@ type ServiceModeSelectionProps = {
   loading?: boolean;
   hasTeleOption?: boolean;
   instantTeleEnabled?: boolean;
+  /** When set (vet detail), enriches cards with specialization-specific mode copy. */
+  serviceModeInformation?: VetServiceModeInformation;
   onSelect: (style: ServiceStyle) => void;
   onClose?: () => void;
 };
@@ -57,8 +60,11 @@ export function ServiceModeSelection({
   loading = false,
   hasTeleOption = false,
   instantTeleEnabled = false,
+  serviceModeInformation,
   onSelect,
 }: ServiceModeSelectionProps) {
+  const enrichedCards = Boolean(serviceModeInformation);
+
   return (
     <SpecializationDetailSection delay={0.28} className="space-y-4">
       <div>
@@ -69,7 +75,10 @@ export function ServiceModeSelection({
       {loading ? (
         <div className="grid gap-4">
           {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="h-[88px] animate-pulse rounded-2xl bg-slate-100" />
+            <div
+              key={i}
+              className={`animate-pulse rounded-2xl bg-slate-100 ${enrichedCards ? 'h-[132px]' : 'h-[88px]'}`}
+            />
           ))}
         </div>
       ) : (
@@ -77,6 +86,8 @@ export function ServiceModeSelection({
           {availableStyles.map((style, index) => {
             const config = SERVICE_STYLE_CONFIG[style];
             if (!config) return null;
+
+            const modeInfo = serviceModeInformation?.[style];
 
             return (
               <motion.div
@@ -89,17 +100,36 @@ export function ServiceModeSelection({
                   onClick={() => onSelect(style)}
                   className="cursor-pointer border-gray-200 p-4 transition hover:border-[#FF8C42] hover:shadow-md"
                 >
-                  <div className="flex items-center gap-4">
+                  <div className={`flex gap-4 ${modeInfo ? 'items-start' : 'items-center'}`}>
                     <div
-                      className={`flex h-14 w-14 items-center justify-center rounded-2xl ${config.bgColor} ${config.color}`}
+                      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${config.bgColor} ${config.color}`}
                     >
                       {config.icon}
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">{config.label}</h3>
-                      <p className="text-sm text-gray-500">{config.description}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-semibold text-gray-900">{config.label}</h3>
+                        <ArrowRight className="h-5 w-5 shrink-0 text-gray-400" />
+                      </div>
+                      {modeInfo ? (
+                        <>
+                          <p className="mt-1 text-sm font-medium text-slate-800">{modeInfo.title}</p>
+                          <p className="mt-1 text-sm leading-relaxed text-gray-500">{modeInfo.description}</p>
+                          {modeInfo.details?.length ? (
+                            <ul className="mt-2 space-y-1">
+                              {modeInfo.details.map((detail) => (
+                                <li key={detail} className="flex items-start gap-2 text-xs leading-relaxed text-gray-500">
+                                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-400" />
+                                  <span>{detail}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="text-sm text-gray-500">{config.description}</p>
+                      )}
                     </div>
-                    <ArrowRight className="h-5 w-5 text-gray-400" />
                   </div>
                 </Card>
               </motion.div>

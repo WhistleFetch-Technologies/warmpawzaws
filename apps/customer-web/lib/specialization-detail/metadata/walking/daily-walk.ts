@@ -1,32 +1,45 @@
 import { defineSpecialization } from '../../define';
+import { walkingFeatures } from './walking-content-helpers';
 
 export const dailyWalkMetadata = defineSpecialization({
   id: 'daily_walk',
   category: 'walking',
-  title: 'Daily Walk',
+  title: 'Daily Walking',
   description:
-    'Reliable daily exercise with verified walkers who keep your pet active, engaged, and safely returned with walk updates you can trust.',
-  highlightChips: ['Verified Walkers', 'GPS Tracked', 'Flexible Slots'],
-  whatsIncluded: [
-    { label: 'Scheduled Walks', icon: 'calendar' },
-    { label: 'Exercise & Stretch', icon: 'activity' },
-    { label: 'Hydration Breaks', icon: 'heart' },
-    { label: 'Walk Updates', icon: 'check' },
-    { label: 'Safe Routes', icon: 'mapPin' },
-    { label: 'Post-walk Notes', icon: 'star' },
+    'Regular, supervised walks designed to provide healthy exercise, outdoor enrichment and a consistent walking routine for your dog.',
+  heroImage: '/images/home/Walking/daily-walking-detail.webp',
+  heroImagePosition: 'center top',
+  highlightChips: ['Regular Exercise', 'Daily Routine', 'Outdoor Enrichment'],
+  overviewTitle: 'What is Daily Walking?',
+  overviewBody:
+    'A regular supervised walk where the walker takes the dog outdoors at a comfortable pace, allowing exercise, sniffing and exploration while maintaining safe leash control.',
+  whatsIncludedTitle: 'What is included',
+  whatsIncluded: walkingFeatures([
+    'Leash-based walking',
+    'Comfortable walking pace',
+    'Regular sniffing and exploration',
+    'Basic supervision',
+    'Safe route selection',
+    'Water/rest break when required',
+    'Basic cleanup after the walk',
+  ]),
+  benefits: [],
+  whoIsThisFor: [
+    'Healthy adult dogs',
+    'Dogs needing regular exercise',
+    'Dogs whose parents have busy schedules',
+    'Dogs that enjoy regular outdoor walks',
   ],
-  benefits: [
-    { title: 'Healthy Routine', description: 'Regular movement supports weight and mood.', icon: 'activity' },
-    { title: 'Less Boredom', description: 'Burns energy that might otherwise become mischief.', icon: 'zap' },
-    { title: 'Peace of Mind', description: 'Trusted walkers when your schedule is packed.', icon: 'shield' },
-    { title: 'Happy Dog', description: 'Sniffing and exploring reduce daily stress.', icon: 'dog' },
+  audienceTitle: 'Best suited for',
+  timeline: [],
+  tips: [],
+  notIncludedTitle: 'Not included',
+  notIncluded: [
+    'Running or strenuous exercise',
+    'Off-leash activity',
+    'Behaviour modification',
+    'Medical or rehabilitation exercises',
   ],
-  whoIsThisFor: ['Busy pet parents', 'High-energy breeds', 'Apartment dogs needing regular outings'],
-  timeline: [
-    { period: 'Session 1', title: 'Meet-and-greet with your walker' },
-    { period: 'Session 2', title: 'Route planning and safety check' },
-    { period: 'Session 3', title: 'Comfortable routine established' },
-    { period: 'Ongoing', title: 'Regular daily walks with updates' },
-  ],
-  tips: ['Share gate and access instructions', 'Keep collar ID tags current', 'Note any medical alerts', 'Leave a water bowl ready after walks'],
+  notIncludedFooter:
+    'The focus is regular exercise, routine, enrichment and safe supervised walking.',
 });

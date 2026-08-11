@@ -6,15 +6,21 @@ import { specializationDetailIcon } from '@/lib/specialization-detail-icons';
 
 type SpecializationWhatsIncludedProps = {
   items: SpecializationFeatureItem[];
+  title?: string;
 };
 
-export function SpecializationWhatsIncluded({ items }: SpecializationWhatsIncludedProps) {
+export function SpecializationWhatsIncluded({
+  items,
+  title = "What's Included",
+}: SpecializationWhatsIncludedProps) {
+  if (!items.length) return null;
+
   return (
     <SpecializationDetailSection
       delay={0.08}
       className="rounded-[24px] border border-slate-100 bg-gradient-to-br from-orange-50/40 to-white p-5 shadow-sm"
     >
-      <h2 className="mb-4 text-lg font-bold text-slate-900">What&apos;s Included</h2>
+      <h2 className="mb-4 text-lg font-bold text-slate-900">{title}</h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {items.map((item) => {
           const Icon = specializationDetailIcon(item.icon);

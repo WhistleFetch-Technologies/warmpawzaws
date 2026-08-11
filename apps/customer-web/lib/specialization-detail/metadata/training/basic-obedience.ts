@@ -1,32 +1,90 @@
 import { defineSpecialization } from '../../define';
+import { trainingBenefits, trainingFeatures } from './training-content-helpers';
+import { trainingServiceModes } from './training-service-mode-defaults';
 
 export const basicObedienceMetadata = defineSpecialization({
   id: 'basic_obedience',
   category: 'training',
   title: 'Basic Obedience',
   description:
-    'Build a reliable foundation with sit, stay, recall, and polite manners that work at home, on walks, and when guests visit.',
-  highlightChips: ['Foundation Skills', 'Positive Methods', 'All Breeds Welcome'],
-  whatsIncluded: [
-    { label: 'Sit & Stay', icon: 'check' },
-    { label: 'Recall Basics', icon: 'target' },
-    { label: 'Leash Manners', icon: 'footprints' },
-    { label: 'Impulse Control', icon: 'brain' },
-    { label: 'Home Practice Plan', icon: 'home' },
-    { label: 'Progress Reviews', icon: 'calendar' },
+    'Positive, reward-based training that teaches dogs essential commands and everyday manners while improving communication between the pet and pet parent.',
+  heroImage: '/images/home/Training/basic-obedience-training.webp',
+  heroImagePosition: 'center top',
+  highlightChips: ['Basic Commands', 'Impulse Control', 'Everyday Manners'],
+  whatYouLearn: [
+    'Name Recognition',
+    'Attention',
+    'Sit',
+    'Down',
+    'Stay',
+    'Come / Recall',
+    'Wait',
+    'Leave It',
+    'Basic Impulse Control',
+    'Polite Greetings',
+    'Basic Leash Manners',
   ],
-  benefits: [
-    { title: 'Safer Outings', description: 'Better control in parks and on busy streets.', icon: 'shield' },
-    { title: 'Less Stress', description: 'Clear cues reduce confusion for your pet.', icon: 'heart' },
-    { title: 'Family Friendly', description: 'Everyone in the household can use the same commands.', icon: 'users' },
-    { title: 'Ready to Grow', description: 'A solid base for advanced training later.', icon: 'graduation' },
+  whatsIncluded: [],
+  trainerDelivers: [
+    'Demonstrates each command',
+    'Works directly with the pet',
+    'Explains the correct training technique',
+    'Guides the pet parent',
+    'Uses reward-based learning',
+    'Provides practice exercises for home',
   ],
-  whoIsThisFor: ['Puppies and adolescents', 'First-time pet parents', 'Dogs needing a manners refresh'],
-  timeline: [
-    { period: 'Week 1', title: 'Assessment and core command introduction' },
-    { period: 'Week 2', title: 'Consistency drills and distraction basics' },
-    { period: 'Week 3', title: 'Real-world practice in controlled settings' },
-    { period: 'Week 4', title: 'Obedience skills integrated into daily life' },
+  benefits: trainingBenefits([
+    { title: 'Better communication', icon: 'heart' },
+    { title: 'Improved responsiveness', icon: 'check' },
+    { title: 'Better impulse control', icon: 'brain' },
+    { title: 'Better everyday manners', icon: 'star' },
+    { title: 'Improved ability to follow basic commands', icon: 'graduation' },
+  ]),
+  whoIsThisFor: [
+    'Puppies starting obedience training',
+    'Adult dogs starting obedience training',
+    'Dogs needing better everyday responsiveness',
   ],
-  tips: ['Practice in short daily sessions', 'Use high-value treats', 'Keep training fun and upbeat', 'Share household rules with family'],
+  audienceTitle: 'Who Is This Training For?',
+  timeline: [],
+  tips: [],
+  notIncluded: [
+    'Aggression',
+    'Severe anxiety or fear',
+    'Separation anxiety',
+    'Excessive barking',
+    'Complex behavioural concerns',
+  ],
+  notIncludedFooter:
+    'Complex behavioural concerns should be addressed through Behaviour Modification rather than Basic Obedience.',
+  serviceModeInformation: trainingServiceModes({
+    at_home: {
+      title: 'Basic Obedience Training – At Home',
+      description:
+        "The trainer visits the pet's home and works with the dog in its familiar environment.",
+      details: [
+        'Essential commands',
+        'Basic impulse control',
+        'Polite greetings',
+        'Basic leash manners',
+        'Reward-based learning',
+        'Pet-parent guidance',
+        'Home practice exercises',
+      ],
+    },
+    at_center: {
+      title: 'Basic Obedience Training – At Centre',
+      description: 'Structured training in a professional environment.',
+      details: [
+        'Essential commands',
+        'Focus and attention',
+        'Impulse control',
+        'Polite greetings',
+        'Basic leash manners',
+        'Appropriate distractions',
+        'Reward-based learning',
+        'Exercises for the pet parent to continue at home',
+      ],
+    },
+  }),
 });

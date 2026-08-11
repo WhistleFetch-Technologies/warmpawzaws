@@ -1,33 +1,34 @@
 import { defineSpecialization } from '../../define';
+import { nutritionFeatures } from './nutrition-content-helpers';
 
 export const dietPlanMetadata = defineSpecialization({
   id: 'diet_plan',
-  aliases: ['custom_diet', 'diet_planning'],
   category: 'nutrition',
-  title: 'Custom Diet Plan',
+  title: 'Custom Diet Plans',
   description:
-    'Personalized nutrition plans aligned to your pet\'s age, breed, activity level, and health goals—designed by certified pet nutritionists.',
-  highlightChips: ['Expert Nutritionists', 'Custom Plans', 'Science-Backed'],
-  whatsIncluded: [
-    { label: 'Diet Assessment', icon: 'stethoscope' },
-    { label: 'Meal Plan Design', icon: 'calendar' },
-    { label: 'Portion Guidance', icon: 'check' },
-    { label: 'Ingredient Advice', icon: 'leaf' },
-    { label: 'Weight Tracking', icon: 'activity' },
-    { label: 'Plan Adjustments', icon: 'heart' },
+    "Personalised nutrition planning based on your pet's age, breed, lifestyle, health needs, body condition and dietary preferences.",
+  heroImage: '/images/home/Nutrition/custom-diet-plans-detail.webp',
+  heroImagePosition: 'center top',
+  highlightChips: ['Personalised Diet', 'Lifestyle Based', 'Nutrition Planning'],
+  overviewTitle: 'What are Custom Diet Plans?',
+  overviewBody:
+    'Personalised nutrition planning tailored to your pet’s age, breed, lifestyle, health needs, body condition and dietary preferences.',
+  whatsIncludedTitle: 'What is included',
+  whatsIncluded: nutritionFeatures([
+    'Diet assessment and review',
+    'Personalised meal planning guidance',
+    'Portion and feeding routine recommendations',
+    'Ingredient and food choice guidance',
+    'Body condition and lifestyle considerations',
+    'Plan adjustments as needs change',
+  ]),
+  benefits: [],
+  whoIsThisFor: [
+    'Pet parents seeking a structured, personalised feeding plan',
+    'Pets with specific lifestyle or body condition goals',
+    'Households transitioning to a new diet or routine',
   ],
-  benefits: [
-    { title: 'Balanced Nutrition', description: 'Right macros for your pet\'s life stage and lifestyle.', icon: 'heart' },
-    { title: 'Healthy Weight', description: 'Structured portions prevent excess gain or loss.', icon: 'activity' },
-    { title: 'Shinier Coat', description: 'Quality diet shows in skin and fur health.', icon: 'sparkles' },
-    { title: 'Informed Choices', description: 'Understand labels, ingredients, and portions.', icon: 'graduation' },
-  ],
-  whoIsThisFor: ['Picky eaters needing structure', 'Owners switching from puppy to adult food', 'Pets with general wellness goals'],
-  timeline: [
-    { period: 'Week 1', title: 'Assessment and baseline metrics' },
-    { period: 'Week 2', title: 'Custom meal plan delivery' },
-    { period: 'Week 3', title: 'Adjust portions and preferences' },
-    { period: 'Week 4', title: 'Review progress and next steps' },
-  ],
-  tips: ['Log current food brand and daily intake', 'Weigh your pet if possible', 'Note any known allergies', 'Transition to new foods gradually over 7–10 days'],
+  audienceTitle: 'Best suited for',
+  timeline: [],
+  tips: [],
 });

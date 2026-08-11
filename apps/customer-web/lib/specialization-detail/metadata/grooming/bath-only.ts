@@ -1,32 +1,56 @@
 import { defineSpecialization } from '../../define';
+import { groomingServiceModes } from './grooming-service-mode-defaults';
 
 export const bathOnlyMetadata = defineSpecialization({
   id: 'bath_only',
   category: 'grooming',
-  title: 'Bath Only',
+  title: 'Bath Service',
   description:
-    'A refreshing bath and brush using pet-safe products to remove dirt, reduce odour, and keep your pet\'s coat clean between full grooms.',
-  highlightChips: ['Gentle Products', 'Coat Care', 'Stress-Free Bath'],
+    'Professional bathing and coat-care service designed to keep your pet clean, fresh, comfortable, and well-groomed.',
+  heroImage: '/images/home/Grooming/bath-service.webp',
+  heroImagePosition: 'center top',
+  highlightChips: ['Clean Coat', 'Fresh & Comfortable', 'Gentle Care'],
   whatsIncluded: [
-    { label: 'Warm Bath', icon: 'sparkles' },
-    { label: 'Coat Brushing', icon: 'check' },
-    { label: 'Ear Check', icon: 'heart' },
-    { label: 'Towel Dry', icon: 'home' },
-    { label: 'Nail Buff (if needed)', icon: 'star' },
-    { label: 'Finishing Spritz', icon: 'leaf' },
+    { label: 'Pre-Bath Brushing', icon: 'check' },
+    { label: 'Coat Assessment', icon: 'check' },
+    { label: 'Warm-Water Bath', icon: 'sparkles' },
+    { label: 'Pet-Appropriate Shampoo', icon: 'leaf' },
+    { label: 'Conditioner', icon: 'leaf' },
+    { label: 'Thorough Rinsing', icon: 'check' },
+    { label: 'Towel Drying / Blow Drying', icon: 'home' },
+    { label: 'Basic Post-Bath Brushing', icon: 'check' },
   ],
   benefits: [
-    { title: 'Cleaner Coat', description: 'Removes dirt, mud, and everyday odour.', icon: 'sparkles' },
-    { title: 'Healthier Skin', description: 'Suited shampoo reduces irritation and dryness.', icon: 'heart' },
-    { title: 'Less Shedding', description: 'Brush-out removes loose fur before it spreads.', icon: 'check' },
-    { title: 'Fresh Home', description: 'Cuddles feel nicer for everyone after a bath.', icon: 'home' },
+    { title: 'Cleaner Coat', description: 'Removes dirt and everyday buildup from the coat.', icon: 'sparkles' },
+    { title: 'Fresher Pet', description: 'Leaves your pet feeling clean and refreshed.', icon: 'heart' },
+    { title: 'Reduced Everyday Odour', description: 'Helps manage coat odour between grooming visits.', icon: 'check' },
+    { title: 'Better Coat Maintenance', description: 'Supports routine coat care and comfort.', icon: 'star' },
   ],
-  whoIsThisFor: ['Regular coat maintenance', 'Between full grooming appointments', 'Pets with sensitive skin'],
-  timeline: [
-    { period: 'Step 1', title: 'Coat assessment and brush-out' },
-    { period: 'Step 2', title: 'Gentle bath with suited shampoo' },
-    { period: 'Step 3', title: 'Dry and final brush' },
-    { period: 'After', title: 'Home care tips for maintenance' },
+  whoIsThisFor: [
+    'Dogs needing routine bathing',
+    'Cats needing regular hygiene',
+    'Pets uncomfortable travelling to a grooming centre',
   ],
-  tips: ['Brush before the appointment if heavily matted', 'Share any skin allergies or sensitivities', 'Allow drying time at home', 'Book before heavy shedding season'],
+  timeline: [],
+  tips: [],
+  notIncluded: [
+    'Haircuts or styling',
+    'Breed-specific clipping',
+    'Nail trimming',
+    'Anal gland expression',
+    'Medicated bathing',
+    'Treatment of skin conditions unless specifically booked',
+  ],
+  serviceModeInformation: groomingServiceModes({
+    at_home: {
+      title: 'Grooming at your doorstep',
+      description:
+        'Professional groomer brings the required bathing equipment to the customer\'s home, prepares a safe bathing area, handles the pet gently and cleans the bathing area after completion.',
+    },
+    at_center: {
+      title: 'Visit a professional grooming centre',
+      description:
+        'Professional bathing and drying equipment is used at the grooming centre. The pet is safely handled and returned clean, dry and comfortable.',
+    },
+  }),
 });

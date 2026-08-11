@@ -1,5 +1,11 @@
 import { resolveSpecializationHeroImage } from '@/lib/specialization-hub-image-registry';
-import type { SpecializationCategory, SpecializationDetailContent, SpecializationResolveContext } from './types';
+import { defineVetSpecialization } from './define-vet';
+import type {
+  SpecializationCategory,
+  SpecializationDetailContent,
+  SpecializationResolveContext,
+  VetSection,
+} from './types';
 
 function humanizeId(id: string): string {
   return id
@@ -20,7 +26,50 @@ export function resolveUnknownSpecializationFallback(
     context?.apiDescription?.trim() ||
     `Learn about ${title} and choose how you'd like to receive trusted care from verified providers.`;
 
+  if (category === 'vet') {
+    const sections: VetSection[] = [
+      {
+        type: 'overview',
+        title: `About ${title}`,
+        body: description,
+      },
+      {
+        type: 'when_to_consider',
+        title: 'When You May Consider This Care',
+        items: [
+          'When your pet needs veterinary guidance related to this concern',
+          'For assessment, monitoring, or follow-up as advised by a veterinarian',
+          'When you want to understand options before booking a service mode',
+        ],
+      },
+      {
+        type: 'what_to_expect',
+        title: 'What To Expect',
+        steps: [
+          { title: 'Choose a service mode', description: 'Select home, centre, or tele based on availability.' },
+          { title: 'Pick a provider', description: 'Browse verified veterinarians filtered for this specialization.' },
+          { title: 'Attend the consultation', description: 'Care plans depend on your pet and the veterinarian’s assessment.' },
+        ],
+      },
+      {
+        type: 'important',
+        title: 'Important Information',
+        body: 'Medical decisions depend on your pet’s history, examination findings, and the veterinarian’s professional judgment. Availability of specific tests or procedures may vary by provider.',
+        tone: 'info',
+      },
+    ];
+
+    return defineVetSpecialization({
+      id: specializationId,
+      title,
+      description,
+      highlightChips: ['Vet Guided', 'Verified Providers', 'Flexible Modes'],
+      sections,
+    });
+  }
+
   return {
+    layout: 'standard',
     id: specializationId,
     title,
     description,

@@ -6,6 +6,8 @@ export const hairTrimMetadata = defineSpecialization({
   title: 'Hair Trim',
   description:
     'Targeted trimming for face, feet, sanitary areas, and touch-ups between full grooms—keeping your pet neat without a complete restyle.',
+  heroImage: '/images/home/Grooming/hair-trim-service.webp',
+  heroImagePosition: 'center top',
   highlightChips: ['Quick Touch-Up', 'Hygiene Focus', 'Between-Groom Care'],
   whatsIncluded: [
     { label: 'Face Trim', icon: 'check' },

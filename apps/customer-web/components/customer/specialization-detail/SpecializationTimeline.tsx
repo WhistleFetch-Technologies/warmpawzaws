@@ -5,9 +5,10 @@ import type { SpecializationTimelineItem } from '@/lib/specialization-detail';
 
 type SpecializationTimelineProps = {
   items: SpecializationTimelineItem[];
+  title?: string;
 };
 
-export function SpecializationTimeline({ items }: SpecializationTimelineProps) {
+export function SpecializationTimeline({ items, title = "Things You'll Learn" }: SpecializationTimelineProps) {
   if (!items.length) return null;
 
   return (
@@ -15,7 +16,7 @@ export function SpecializationTimeline({ items }: SpecializationTimelineProps) {
       delay={0.2}
       className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-sm"
     >
-      <h2 className="mb-5 text-lg font-bold text-slate-900">Things You&apos;ll Learn</h2>
+      <h2 className="mb-5 text-lg font-bold text-slate-900">{title}</h2>
       <div className="relative space-y-0">
         {items.map((item, index) => (
           <div key={`${item.period}-${item.title}`} className="relative flex gap-4 pb-6 last:pb-0">

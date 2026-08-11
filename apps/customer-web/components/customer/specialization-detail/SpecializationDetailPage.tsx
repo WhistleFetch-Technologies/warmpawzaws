@@ -3,14 +3,22 @@
 import { useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { resolveSpecializationDetail } from '@/lib/specialization-detail';
+import {
+  resolveSpecializationDetail,
+  isVetSpecializationDetail,
+  type SpecializationResolveContext,
+} from '@/lib/specialization-detail';
 import { SpecializationHeroCard } from './SpecializationHeroCard';
+import { SpecializationOverview } from './SpecializationOverview';
 import { SpecializationHighlightChips } from './SpecializationHighlightChips';
 import { SpecializationWhatsIncluded } from './SpecializationWhatsIncluded';
 import { SpecializationBenefits } from './SpecializationBenefits';
 import { SpecializationAudience } from './SpecializationAudience';
 import { SpecializationTimeline } from './SpecializationTimeline';
 import { SpecializationTipsBanner } from './SpecializationTipsBanner';
+import { SpecializationNotIncluded } from './SpecializationNotIncluded';
+import { SpecializationBulletList } from './SpecializationBulletList';
+import { SpecializationImportantNotes } from './SpecializationImportantNotes';
 import { ServiceModeSelection, type ServiceStyle } from './ServiceModeSelection';
 import { SpecializationDetailSkeleton } from './SpecializationDetailSkeleton';
 
@@ -43,10 +51,19 @@ export function SpecializationDetailPage({
   onBack,
   onServiceStyleSelect,
 }: SpecializationDetailPageProps) {
-  const content = useMemo(
-    () => resolveSpecializationDetail(problem.id),
-    [problem.id],
-  );
+  const content = useMemo(() => {
+    const resolved = resolveSpecializationDetail(problem.id, {
+      category:
+        problem.category === 'pet_nutritionist' || problem.category === 'nutritionist'
+          ? 'nutrition'
+          : (problem.category as SpecializationResolveContext['category'] | undefined),
+      displayName: problem.name,
+    });
+    if (isVetSpecializationDetail(resolved)) {
+      return null;
+    }
+    return resolved;
+  }, [problem.id, problem.category, problem.name]);
 
   const iconNode =
     typeof problem.icon === 'string' ? (
@@ -54,6 +71,8 @@ export function SpecializationDetailPage({
     ) : (
       problem.icon
     );
+
+  if (!content) return null;
 
   if (loadingProblemDetails && availableStyles.length === 0) {
     return (
@@ -70,10 +89,49 @@ export function SpecializationDetailPage({
 
       <SpecializationHeroCard content={content} icon={iconNode} />
       <SpecializationHighlightChips chips={content.highlightChips} />
-      <SpecializationWhatsIncluded items={content.whatsIncluded} />
+      {content.overviewBody ? (
+        <SpecializationOverview
+          title={content.overviewTitle ?? 'Overview'}
+          body={content.overviewBody}
+        />
+      ) : null}
+      {content.whatYouLearn?.length ? (
+        <SpecializationBulletList
+          title={content.whatYouLearnTitle ?? "What You'll Learn"}
+          items={content.whatYouLearn}
+          delay={0.06}
+        />
+      ) : null}
+      {content.behavioursAddressed?.length ? (
+        <SpecializationBulletList
+          title={content.behavioursAddressedTitle ?? 'Behaviours That Can Be Addressed'}
+          items={content.behavioursAddressed}
+          delay={0.07}
+        />
+      ) : null}
+      <SpecializationWhatsIncluded
+        items={content.whatsIncluded}
+        title={content.whatsIncludedTitle}
+      />
+      {content.trainerDelivers?.length ? (
+        <SpecializationBulletList
+          title={content.trainerDeliversTitle ?? 'What the Trainer Delivers'}
+          items={content.trainerDelivers}
+          delay={0.1}
+        />
+      ) : null}
       <SpecializationBenefits items={content.benefits} />
-      <SpecializationAudience items={content.whoIsThisFor} />
-      <SpecializationTimeline items={content.timeline} />
+      <SpecializationAudience items={content.whoIsThisFor} title={content.audienceTitle} />
+      <SpecializationNotIncluded
+        items={content.notIncluded ?? []}
+        title={content.notIncludedTitle}
+        footer={content.notIncludedFooter}
+      />
+      <SpecializationImportantNotes
+        title={content.importantNotesTitle}
+        items={content.importantNotes ?? []}
+      />
+      <SpecializationTimeline items={content.timeline} title={content.timelineTitle} />
       <SpecializationTipsBanner tips={content.tips} />
 
       <ServiceModeSelection
@@ -82,6 +140,7 @@ export function SpecializationDetailPage({
         loading={loadingProblemDetails}
         hasTeleOption={hasTeleOption}
         instantTeleEnabled={instantTeleEnabled}
+        serviceModeInformation={content.serviceModeInformation}
         onSelect={onServiceStyleSelect}
       />
 

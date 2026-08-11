@@ -1,3 +1,6 @@
+export { labDiagnosticsNutritionMetadata } from './lab-diagnostics';
+export { palliativeNutritionMetadata } from './palliative-end-of-life';
+export { reproductiveNutritionMetadata } from './reproductive-breeding';
 export { dietPlanMetadata } from './diet-plan';
 export { puppyNutritionMetadata } from './puppy-nutrition';
 export { seniorNutritionMetadata } from './senior-nutrition';

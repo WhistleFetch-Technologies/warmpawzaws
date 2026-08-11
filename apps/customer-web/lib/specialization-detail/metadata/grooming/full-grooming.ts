@@ -1,32 +1,56 @@
 import { defineSpecialization } from '../../define';
+import { groomingServiceModes } from './grooming-service-mode-defaults';
 
 export const fullGroomingMetadata = defineSpecialization({
   id: 'full_grooming',
   category: 'grooming',
-  title: 'Full Grooming',
+  title: 'Complete Grooming',
   description:
-    'Complete grooming service covering bath, haircut, nails, ears, and finishing touches for a polished, comfortable, and hygienic look.',
-  highlightChips: ['Full Service', 'Styling Options', 'Premium Finish'],
+    'A comprehensive grooming session combining essential bathing, coat care, brushing and hygiene services to keep your pet clean and well-maintained.',
+  heroImage: '/images/home/Grooming/complete-grooming.webp',
+  heroImagePosition: 'center 45%',
+  highlightChips: ['Full Grooming', 'Coat Care', 'Pet Hygiene'],
   whatsIncluded: [
-    { label: 'Bath & Blow Dry', icon: 'sparkles' },
-    { label: 'Haircut & Style', icon: 'check' },
-    { label: 'Nail Trim', icon: 'star' },
-    { label: 'Ear Cleaning', icon: 'heart' },
-    { label: 'Sanitary Trim', icon: 'shield' },
-    { label: 'Finishing Spray', icon: 'leaf' },
+    { label: 'Coat Assessment', icon: 'check' },
+    { label: 'Pre-Grooming Brushing', icon: 'check' },
+    { label: 'Bath', icon: 'sparkles' },
+    { label: 'Shampoo & Conditioning', icon: 'leaf' },
+    { label: 'Blow Dry', icon: 'home' },
+    { label: 'Full Coat Brushing', icon: 'check' },
+    { label: 'Basic Hair/Fur Trimming', icon: 'star' },
+    { label: 'Nail Care', icon: 'star' },
+    { label: 'Final Grooming', icon: 'award' },
   ],
   benefits: [
-    { title: 'Show-Ready Look', description: 'Neat coat and balanced silhouette.', icon: 'award' },
-    { title: 'Full Hygiene', description: 'Ears, nails, and coat all cared for in one visit.', icon: 'shield' },
-    { title: 'Lasting Comfort', description: 'Less matting, overheating, and skin irritation.', icon: 'heart' },
-    { title: 'Professional Finish', description: 'Breed-appropriate styling by skilled groomers.', icon: 'sparkles' },
+    { title: 'Cleaner overall coat', description: 'Combines bathing and coat care in one session.', icon: 'sparkles' },
+    { title: 'Better grooming maintenance', description: 'Keeps your pet well-maintained between visits.', icon: 'check' },
+    { title: 'Reduced loose fur', description: 'Brush-out and finishing help manage shedding.', icon: 'star' },
+    { title: 'Improved overall appearance', description: 'Your pet looks neat, clean, and comfortable.', icon: 'award' },
   ],
-  whoIsThisFor: ['All coat types and sizes', 'Breeds needing regular clips', 'Special occasions and events'],
+  whoIsThisFor: [
+    'Pets needing complete routine grooming',
+    'Pets between regular grooming appointments',
+    'Pets requiring combined coat and hygiene care',
+  ],
+  timelineTitle: 'Process',
   timeline: [
-    { period: 'Arrival', title: 'Consultation and coat check' },
-    { period: 'Prep', title: 'Bath, dry, and thorough brush-out' },
-    { period: 'Groom', title: 'Cut, nails, ears, and sanitary trim' },
-    { period: 'Finish', title: 'Style review and home care tips' },
+    { period: 'Step 1', title: 'Coat assessment' },
+    { period: 'Step 2', title: 'Brushing and preparation' },
+    { period: 'Step 3', title: 'Bath and cleansing' },
+    { period: 'Step 4', title: 'Drying and coat finishing' },
+    { period: 'Step 5', title: 'Final grooming and hygiene check' },
   ],
-  tips: ['Arrive with a relatively dry coat if possible', 'Share photos of your desired style', 'Note any skin sensitivities upfront', 'Maintain a schedule every 4–8 weeks'],
+  tips: [
+    'Tell the groomer about sensitive areas',
+    'Mention previous grooming reactions',
+    'Keep the pet comfortable before the appointment',
+    'Inform the groomer about special coat requirements',
+  ],
+  serviceModeInformation: groomingServiceModes({
+    at_center: {
+      title: 'Visit a professional grooming centre',
+      description:
+        'Complete grooming is performed at the centre using professional bathing, drying, and finishing equipment.',
+    },
+  }),
 });

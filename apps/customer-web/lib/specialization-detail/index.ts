@@ -8,4 +8,13 @@ export type {
   SpecializationFeatureItem,
   SpecializationResolveContext,
   SpecializationTimelineItem,
+  StandardSpecializationDetailContent,
+  VetSection,
+  VetSectionType,
+  VetServiceModeInformation,
+  VetSpecializationDetailContent,
+  VetSpecializationDetailDefinition,
+  VetVisualVariant,
 } from './types';
+export { isVetSpecializationDetail } from './types';
+export { defineVetSpecialization } from './define-vet';

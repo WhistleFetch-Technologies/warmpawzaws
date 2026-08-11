@@ -1,33 +1,49 @@
 import { defineSpecialization } from '../../define';
+import { walkingFeatures } from './walking-content-helpers';
 
 export const longWalkMetadata = defineSpecialization({
   id: 'long_walk',
-  aliases: ['adventure_walk'],
   category: 'walking',
-  title: 'Long Walk',
+  title: 'Adventure Walks',
   description:
-    'Extended adventure walks in parks and trails for dogs who need extra exercise, mental enrichment, and exploration beyond a standard outing.',
-  highlightChips: ['Trail Routes', 'Extra Exercise', 'Adventure Ready'],
-  whatsIncluded: [
-    { label: 'Extended Duration', icon: 'clock' },
-    { label: 'Park & Trail Routes', icon: 'mapPin' },
-    { label: 'Fitness Focus', icon: 'activity' },
-    { label: 'Hydration Stops', icon: 'heart' },
-    { label: 'Photo Updates', icon: 'star' },
-    { label: 'Safety Gear Check', icon: 'shield' },
+    'Enrichment-focused outdoor walks through suitable parks and trails, giving dogs more opportunities to explore, sniff and stay active.',
+  heroImage: '/images/home/Walking/adventure-walking-detail.webp',
+  heroImagePosition: 'center top',
+  highlightChips: ['Parks & Trails', 'Exploration', 'Active Exercise'],
+  overviewTitle: 'What are Adventure Walks?',
+  overviewBody:
+    'Longer or more exploration-focused outdoor walks designed for dogs that enjoy discovering new environments and can comfortably handle the activity.',
+  whatsIncludedTitle: 'What is included',
+  whatsIncluded: walkingFeatures([
+    'Park/trail exploration',
+    'Leash-based walking',
+    'Sniffing and environmental enrichment',
+    'Varied but suitable terrain',
+    'Exercise and exploration',
+    'Rest and water breaks',
+    'Supervised outdoor activity',
+  ]),
+  benefits: [],
+  whoIsThisFor: [
+    'Healthy adult dogs',
+    'Active dogs',
+    'Dogs comfortable in outdoor environments',
+    'Dogs with appropriate leash manners',
+    'Dogs physically capable of longer walks',
   ],
-  benefits: [
-    { title: 'Deep Exercise', description: 'Ideal for high-energy and working breeds.', icon: 'zap' },
-    { title: 'Rich Enrichment', description: 'New scents and terrain engage body and mind.', icon: 'brain' },
-    { title: 'Better Rest', description: 'A well-exercised dog sleeps more peacefully.', icon: 'clock' },
-    { title: 'Adventure Bond', description: 'Special outings your pet will look forward to.', icon: 'trophy' },
+  audienceTitle: 'Best suited for',
+  timeline: [],
+  tips: [],
+  notIncludedTitle: 'Not suitable for',
+  notIncluded: [
+    'Very young puppies',
+    'Dogs with significant mobility limitations',
+    'Dogs that are highly reactive or aggressive',
+    'Dogs not comfortable in unfamiliar environments',
+    'Dogs unable to safely manage the route',
   ],
-  whoIsThisFor: ['Working and sporting breeds', 'Athletic adult dogs', 'Weekend adventure seekers'],
-  timeline: [
-    { period: 'Session 1', title: 'Fitness check and trail introduction' },
-    { period: 'Session 2', title: 'Extended route with hydration stops' },
-    { period: 'Session 3', title: 'Adventure pace established' },
-    { period: 'Ongoing', title: 'Regular long walks on varied terrain' },
+  importantNotesTitle: 'Safety & Route Suitability',
+  importantNotes: [
+    "The route and activity level should be appropriate for the dog's age, fitness, temperament and ability to safely handle the environment.",
   ],
-  tips: ['Ensure flea and tick protection is current', 'Carry portable water on hot days', 'Check weather before booking', 'Use reflective gear for dusk walks'],
 });

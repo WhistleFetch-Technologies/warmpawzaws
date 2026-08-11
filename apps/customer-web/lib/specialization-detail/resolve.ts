@@ -6,7 +6,7 @@ export function resolveSpecializationDetail(
   specializationId: string,
   context?: SpecializationResolveContext,
 ): SpecializationDetailContent {
-  const hit = getSpecializationDetail(specializationId);
+  const hit = getSpecializationDetail(specializationId, { category: context?.category });
   if (hit) return hit;
   return resolveUnknownSpecializationFallback(specializationId, context);
 }

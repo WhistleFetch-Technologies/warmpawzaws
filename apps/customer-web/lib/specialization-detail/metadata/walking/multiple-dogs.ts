@@ -1,32 +1,47 @@
 import { defineSpecialization } from '../../define';
+import { walkingFeatures } from './walking-content-helpers';
 
 export const multipleDogsMetadata = defineSpecialization({
   id: 'multiple_dogs',
   category: 'walking',
-  title: 'Multiple Dogs Walk',
+  title: 'Group Walks',
   description:
-    'Coordinated walks for households with two or more dogs, handled by experienced walkers who manage leashes, pacing, and group dynamics safely.',
-  highlightChips: ['Multi-Dog Expertise', 'Group Coordination', 'Safe Handling'],
-  whatsIncluded: [
-    { label: 'Multi-Leash Management', icon: 'footprints' },
-    { label: 'Group Pace Matching', icon: 'activity' },
-    { label: 'Individual Attention', icon: 'dog' },
-    { label: 'Conflict Prevention', icon: 'shield' },
-    { label: 'Route Planning', icon: 'mapPin' },
-    { label: 'Walk Summary', icon: 'check' },
+    'Supervised group walks that combine exercise, outdoor enrichment and appropriate social exposure around other dogs.',
+  heroImage: '/images/home/Walking/group-walking-detail.webp',
+  heroImagePosition: 'center top',
+  highlightChips: ['Social & Active', 'Pack Walking', 'Supervised Group'],
+  overviewTitle: 'What are Group Walks?',
+  overviewBody:
+    'A supervised walk where compatible dogs walk together in a controlled group environment.',
+  whatsIncludedTitle: 'What is included',
+  whatsIncluded: walkingFeatures([
+    'Supervised group walking',
+    'Leash-based walking',
+    'Controlled interaction',
+    'Outdoor exercise',
+    'Social exposure',
+    'Sniffing and exploration',
+    'Group safety supervision',
+  ]),
+  benefits: [],
+  whoIsThisFor: [
+    'Social and comfortable dogs',
+    'Dogs comfortable around other dogs',
+    'Dogs with suitable basic leash manners',
+    'Dogs that enjoy group environments',
   ],
-  benefits: [
-    { title: 'One Booking, All Dogs', description: 'Simplify scheduling for multi-dog homes.', icon: 'calendar' },
-    { title: 'Balanced Exercise', description: 'Each dog gets appropriate activity for their energy.', icon: 'activity' },
-    { title: 'Safer Outings', description: 'Experienced handling of tangled leashes and reactivity.', icon: 'shield' },
-    { title: 'Less Home Chaos', description: 'Tired dogs are calmer together indoors.', icon: 'heart' },
+  audienceTitle: 'Best suited for',
+  timeline: [],
+  tips: [],
+  notIncludedTitle: 'Not suitable for',
+  notIncluded: [
+    'Highly reactive dogs',
+    'Dogs showing aggression toward other dogs or people',
+    'Dogs that become highly stressed in groups',
+    'Dogs that cannot safely be managed around other dogs',
   ],
-  whoIsThisFor: ['Two or more dogs in one household', 'Siblings who walk better together', 'Busy owners of multiple pets'],
-  timeline: [
-    { period: 'Session 1', title: 'Group meet-and-greet and dynamic assessment' },
-    { period: 'Session 2', title: 'Leash setup and route trial' },
-    { period: 'Session 3', title: 'Smooth group walking established' },
-    { period: 'Ongoing', title: 'Regular multi-dog walks with updates' },
+  importantNotesTitle: 'Safety & Compatibility',
+  importantNotes: [
+    'Dogs should be grouped based on compatibility, temperament and safety. Group walking does not mean that every dog will interact or play with every other dog.',
   ],
-  tips: ['Use distinct harness colours for each dog', 'Share any inter-dog tension history', 'Ensure all dogs are vaccinated', 'Inform walker of individual medical needs'],
 });

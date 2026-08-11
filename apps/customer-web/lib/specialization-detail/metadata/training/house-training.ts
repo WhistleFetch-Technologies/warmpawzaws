@@ -1,4 +1,6 @@
 import { defineSpecialization } from '../../define';
+import { trainingBenefits, trainingFeatures } from './training-content-helpers';
+import { trainingServiceModes } from './training-service-mode-defaults';
 
 export const houseTrainingMetadata = defineSpecialization({
   id: 'house_training',
@@ -6,28 +8,57 @@ export const houseTrainingMetadata = defineSpecialization({
   category: 'training',
   title: 'House Training',
   description:
-    'Establish dependable toilet habits through structured routines, positive reinforcement, and guidance tailored to your home layout and schedule.',
-  highlightChips: ['Gentle Methods', 'Home Routines', 'Expert Guidance'],
-  whatsIncluded: [
-    { label: 'Schedule Planning', icon: 'calendar' },
-    { label: 'Accident Prevention', icon: 'shield' },
-    { label: 'Crate Guidance', icon: 'home' },
-    { label: 'Positive Reinforcement', icon: 'heart' },
-    { label: 'Night Routine', icon: 'clock' },
-    { label: 'Follow-up Tips', icon: 'check' },
+    'Practical training designed to help dogs build consistent toilet routines and appropriate indoor habits.',
+  heroImage: '/images/home/Training/house-training-training.webp',
+  heroImagePosition: 'center top',
+  highlightChips: ['Toilet Training', 'Home Routine', 'Positive Reinforcement'],
+  whatYouLearn: [
+    'Consistent toilet routines',
+    'Recognising toilet cues',
+    'Appropriate toilet-area behaviour',
+    'Predictable schedules',
+    'Rewarding desired behaviour',
+    'Managing indoor accidents',
+    'Consistent pet-parent routines',
+    'Reinforcing good habits',
   ],
-  benefits: [
-    { title: 'Cleaner Home', description: 'Fewer accidents and less daily cleanup stress.', icon: 'home' },
-    { title: 'Confident Puppy', description: 'Clear expectations help your pet feel secure.', icon: 'dog' },
-    { title: 'Faster Progress', description: 'Structured steps accelerate reliable habits.', icon: 'zap' },
-    { title: 'Long-term Success', description: 'Skills that carry through adolescence and beyond.', icon: 'star' },
+  whatsIncluded: trainingFeatures([
+    'Assessment of the current routine',
+    'Practical demonstrations',
+    'Positive reinforcement guidance',
+    'Routine-building guidance',
+    'Pet-parent coaching',
+    'Home practice plan',
+  ]),
+  benefits: trainingBenefits([
+    { title: 'Better routine', icon: 'calendar' },
+    { title: 'Fewer indoor accidents', icon: 'home' },
+    { title: 'Clearer communication', icon: 'heart' },
+    { title: 'More predictable behaviour', icon: 'check' },
+    { title: 'Better household management', icon: 'star' },
+  ]),
+  whoIsThisFor: ['Puppies', 'Newly adopted dogs', 'Dogs struggling with inconsistent toilet habits'],
+  audienceTitle: 'Who Is This Training For?',
+  timeline: [],
+  tips: [],
+  notIncluded: [
+    'Medical diagnosis',
+    'Medical treatment',
+    'Treatment of urinary/fecal medical conditions',
+    'Behaviour problems unrelated to house training',
   ],
-  whoIsThisFor: ['New puppies', 'Rescue dogs adjusting to a new home', 'Apartment and indoor pets'],
-  timeline: [
-    { period: 'Week 1', title: 'Routine setup and supervised access' },
-    { period: 'Week 2', title: 'Pattern recognition and timing cues' },
-    { period: 'Week 3', title: 'Fewer accidents and growing confidence' },
-    { period: 'Week 4', title: 'Reliable habits at home' },
-  ],
-  tips: ['Stick to consistent feeding times', 'Reward immediately after outdoor success', 'Limit unsupervised indoor access', 'Stay patient and consistent'],
+  serviceModeInformation: trainingServiceModes({
+    at_home: {
+      title: 'House Training – At Home',
+      description: 'Toilet training guidance in your home environment.',
+      details: [
+        'Observe the home environment',
+        'Review current toilet routine',
+        'Establish a consistent routine',
+        'Demonstrate positive reinforcement',
+        'Guide the pet parent',
+        'Create a home practice plan',
+      ],
+    },
+  }),
 });

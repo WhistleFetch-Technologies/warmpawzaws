@@ -4297,7 +4297,12 @@ export function CustomerHomeWrapper({
               setCurrentServiceType('pet_nutritionist');
               navigateToScreen('problem_grid');
             } else if (screen === 'problem_selected') {
-              setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Nutrition', roleId: 'pet_nutritionist' });
+              setSelectedProblem({
+                id: data?.problemId,
+                title: data?.problemTitle || 'Nutrition',
+                roleId: 'pet_nutritionist',
+                category: 'nutrition',
+              });
               navigateToScreen('problem_grid_flow');
             } else if (screen === 'expert-nutritionists') {
               navigateToScreen('expert-nutritionists');

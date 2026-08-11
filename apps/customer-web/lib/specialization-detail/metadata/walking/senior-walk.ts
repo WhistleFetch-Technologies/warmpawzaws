@@ -1,32 +1,49 @@
 import { defineSpecialization } from '../../define';
+import { walkingFeatures } from './walking-content-helpers';
 
 export const seniorWalkMetadata = defineSpecialization({
   id: 'senior_walk',
   category: 'walking',
-  title: 'Senior Walk',
+  title: 'Senior Dog Walks',
   description:
-    'Slow, supportive walks tailored to senior dogs with joint-aware routes, frequent rest breaks, and walkers trained for mobility limitations.',
-  highlightChips: ['Gentle Pace', 'Joint-Aware Routes', 'Caring Walkers'],
-  whatsIncluded: [
-    { label: 'Slow-Paced Walks', icon: 'footprints' },
-    { label: 'Rest Breaks', icon: 'clock' },
-    { label: 'Flat Safe Routes', icon: 'mapPin' },
-    { label: 'Mobility Support', icon: 'heart' },
-    { label: 'Temperature Awareness', icon: 'sun' },
-    { label: 'Health Notes', icon: 'check' },
+    "Gentle, low-impact walks adapted to senior dogs' pace, comfort and mobility needs.",
+  heroImage: '/images/home/Walking/senior-walking-detail.webp',
+  heroImagePosition: 'center top',
+  highlightChips: ['Gentle & Safe', 'Low Impact', 'Senior Care'],
+  overviewTitle: 'What are Senior Dog Walks?',
+  overviewBody:
+    'Slow, comfortable walks designed for older dogs who benefit from regular movement without excessive physical exertion.',
+  whatsIncludedTitle: 'What is included',
+  whatsIncluded: walkingFeatures([
+    'Slow walking pace',
+    'Short walking sessions',
+    'Frequent rest breaks',
+    'Sniffing and mental enrichment',
+    'Flat/even routes where possible',
+    'Close monitoring for fatigue or discomfort',
+    'Flexible return-home option',
+  ]),
+  benefits: [],
+  whoIsThisFor: [
+    'Older dogs',
+    'Dogs that prefer slower walks',
+    'Dogs needing gentle outdoor activity',
+    'Dogs with reduced stamina, subject to appropriate veterinary guidance',
   ],
-  benefits: [
-    { title: 'Comfortable Movement', description: 'Exercise without strain on aging joints.', icon: 'heart' },
-    { title: 'Mental Stimulation', description: 'Sniff walks keep senior minds engaged.', icon: 'brain' },
-    { title: 'Weight Support', description: 'Gentle activity helps maintain mobility.', icon: 'activity' },
-    { title: 'Trusted Care', description: 'Walkers attentive to senior-specific needs.', icon: 'shield' },
+  audienceTitle: 'Best suited for',
+  timeline: [],
+  tips: [],
+  notIncludedTitle: 'Not included',
+  notIncluded: [
+    'Running',
+    'Long-distance walks',
+    'Steep or difficult routes',
+    'Jumping or stair-heavy routes',
+    'Rehabilitation exercises',
+    'Medical treatment',
   ],
-  whoIsThisFor: ['Senior dogs slowing down', 'Pets with arthritis or hip issues', 'Post-surgery recovery walks (vet cleared)'],
-  timeline: [
-    { period: 'Session 1', title: 'Mobility assessment and route selection' },
-    { period: 'Session 2', title: 'Gentle pace with rest stops' },
-    { period: 'Session 3', title: 'Comfortable senior routine' },
-    { period: 'Ongoing', title: 'Regular supportive walks with notes' },
+  importantNotesTitle: 'Comfort & Safety',
+  importantNotes: [
+    'The walker should follow the dog\'s comfortable pace and adjust the walk if the dog shows signs of fatigue, discomfort or difficulty continuing.',
   ],
-  tips: ['Share mobility limitations and medications', 'Bring any support harness your vet recommends', 'Avoid peak heat hours', 'Keep your vet\'s advice handy for activity limits'],
 });

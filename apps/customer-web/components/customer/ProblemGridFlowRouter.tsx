@@ -23,6 +23,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import { apiClient } from '@/lib/api-client';
 import { SpecializationDetailPage } from './specialization-detail/SpecializationDetailPage';
+import { VetSpecializationDetailPage } from './specialization-detail/vet/VetSpecializationDetailPage';
 import type { ServiceStyle } from './specialization-detail/ServiceModeSelection';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { toast } from 'sonner';
@@ -527,25 +528,29 @@ export function ProblemGridFlowRouter({
   const renderServiceStyleSelection = () => {
     if (!selectedProblem) return null;
 
-    return (
-      <SpecializationDetailPage
-        problem={{
-          id: selectedProblem.id,
-          name: selectedProblem.name,
-          icon: selectedProblem.icon,
-          description: selectedProblem.description,
-          category: selectedProblem.category,
-          roleId: selectedProblem.roleId,
-          linkedServiceRoles: selectedProblem.linkedServiceRoles,
-        }}
-        availableStyles={availableStyles}
-        loadingProblemDetails={loadingProblemDetails}
-        hasTeleOption={hasTeleOption}
-        instantTeleEnabled={isInstantTeleUiEnabled()}
-        onBack={() => onClose?.()}
-        onServiceStyleSelect={handleServiceStyleSelect}
-      />
-    );
+    const detailProps = {
+      problem: {
+        id: selectedProblem.id,
+        name: selectedProblem.name,
+        icon: selectedProblem.icon,
+        description: selectedProblem.description,
+        category: selectedProblem.category,
+        roleId: selectedProblem.roleId,
+        linkedServiceRoles: selectedProblem.linkedServiceRoles,
+      },
+      availableStyles,
+      loadingProblemDetails,
+      hasTeleOption,
+      instantTeleEnabled: isInstantTeleUiEnabled(),
+      onBack: () => onClose?.(),
+      onServiceStyleSelect: handleServiceStyleSelect,
+    };
+
+    if (isVetProblem(selectedProblem)) {
+      return <VetSpecializationDetailPage {...detailProps} />;
+    }
+
+    return <SpecializationDetailPage {...detailProps} />;
   };
 
   // ✅ Discovery step renders hub screens (Grooming/Walker/Vet/etc.) whose own

@@ -9,6 +9,8 @@ type SpecializationBenefitsProps = {
 };
 
 export function SpecializationBenefits({ items }: SpecializationBenefitsProps) {
+  if (!items.length) return null;
+
   return (
     <SpecializationDetailSection delay={0.12} className="space-y-4">
       <h2 className="text-lg font-bold text-slate-900">Benefits for Your Pet</h2>

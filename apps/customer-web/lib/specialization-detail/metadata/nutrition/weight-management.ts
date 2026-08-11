@@ -1,33 +1,34 @@
 import { defineSpecialization } from '../../define';
+import { nutritionFeatures } from './nutrition-content-helpers';
 
 export const weightManagementMetadata = defineSpecialization({
   id: 'weight_management',
-  aliases: ['weight_loss', 'weight_measurement'],
   category: 'nutrition',
   title: 'Weight Management',
   description:
-    'Structured weight-loss or maintenance programs with calorie targets, portion control, and exercise guidance to help overweight pets reach a healthy size safely.',
-  highlightChips: ['Calorie Control', 'Safe Weight Loss', 'Progress Tracking'],
-  whatsIncluded: [
-    { label: 'Body Condition Score', icon: 'activity' },
-    { label: 'Calorie Target Plan', icon: 'calendar' },
-    { label: 'Portion Measurements', icon: 'check' },
-    { label: 'Treat Budget', icon: 'heart' },
-    { label: 'Exercise Recommendations', icon: 'footprints' },
-    { label: 'Weekly Weigh-ins', icon: 'star' },
+    'Nutrition planning designed to help pets maintain a healthy body condition through appropriate calorie intake, feeding routines and lifestyle-aware dietary guidance.',
+  heroImage: '/images/home/Nutrition/weight-management-detail.webp',
+  heroImagePosition: 'center top',
+  highlightChips: ['Healthy Weight', 'Portion Guidance', 'Diet Planning'],
+  overviewTitle: 'What is Weight Management?',
+  overviewBody:
+    'Nutrition planning designed to help pets maintain a healthy body condition through appropriate calorie intake, feeding routines and lifestyle-aware dietary guidance.',
+  whatsIncludedTitle: 'What is included',
+  whatsIncluded: nutritionFeatures([
+    'Body condition assessment support',
+    'Calorie and portion guidance',
+    'Structured feeding routine planning',
+    'Treat and snack planning guidance',
+    'Progress monitoring support',
+    'Lifestyle-aware diet adjustments',
+  ]),
+  benefits: [],
+  whoIsThisFor: [
+    'Overweight or underweight pets',
+    'Pets needing structured portion control',
+    'Pet parents working toward a healthy body condition',
   ],
-  benefits: [
-    { title: 'Healthier Joints', description: 'Less weight means less strain on hips and knees.', icon: 'shield' },
-    { title: 'More Energy', description: 'Lean pets often become more active and playful.', icon: 'zap' },
-    { title: 'Longer Life', description: 'Healthy weight linked to increased lifespan.', icon: 'heart' },
-    { title: 'Measurable Progress', description: 'Structured tracking keeps you on course.', icon: 'calendar' },
-  ],
-  whoIsThisFor: ['Overweight or obese pets', 'Breeds prone to weight gain', 'Post-neuter weight creep'],
-  timeline: [
-    { period: 'Week 1', title: 'Weigh-in and calorie baseline' },
-    { period: 'Week 2', title: 'Reduced-calorie plan starts' },
-    { period: 'Week 4', title: 'First progress weigh-in' },
-    { period: 'Month 2+', title: 'Adjust until target weight reached' },
-  ],
-  tips: ['Measure food with a scale, not a scoop', 'Account for all treats in daily calories', 'Increase activity gradually', 'Never crash-diet—slow loss is safest'],
+  audienceTitle: 'Best suited for',
+  timeline: [],
+  tips: [],
 });

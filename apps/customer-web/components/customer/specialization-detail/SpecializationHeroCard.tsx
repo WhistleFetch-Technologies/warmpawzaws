@@ -2,10 +2,13 @@
 
 import { motion } from 'framer-motion';
 import { CachedImage } from '@/components/shared/CachedImage';
-import type { SpecializationDetailContent } from '@/lib/specialization-detail';
+import type { StandardSpecializationDetailContent } from '@/lib/specialization-detail';
 
 type SpecializationHeroCardProps = {
-  content: Pick<SpecializationDetailContent, 'title' | 'description' | 'heroImage'>;
+  content: Pick<
+    StandardSpecializationDetailContent,
+    'title' | 'description' | 'heroImage' | 'heroImagePosition'
+  >;
   icon?: React.ReactNode;
 };
 
@@ -23,6 +26,11 @@ export function SpecializationHeroCard({ content, icon }: SpecializationHeroCard
           alt=""
           fill
           className="object-cover"
+          style={
+            content.heroImagePosition
+              ? { objectFit: 'cover', objectPosition: content.heroImagePosition }
+              : undefined
+          }
           sizes="(max-width: 640px) 100vw, 480px"
           loading="eager"
         />
