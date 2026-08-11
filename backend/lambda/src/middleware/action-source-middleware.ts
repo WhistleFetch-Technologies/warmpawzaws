@@ -162,6 +162,84 @@ function  evalPredicate(predicate: string | null | undefined, resBody: any): boo
 	return false;
 }
 
+function resolveRepeatArrayItems(
+	matched: ActionSource,
+	responseJson: any
+): Array<{ petId?: string; id?: string; [key: string]: unknown }> {
+	const meta = matched.metadata_resolvers;
+	if (!meta || typeof meta !== 'object') return [];
+	const repeatPath = meta._repeatArrayPath;
+	if (!repeatPath || typeof repeatPath !== 'string') return [];
+	const arr = resolveDotPath(repeatPath, { res: responseJson, req: {}, jwt: {} });
+	return Array.isArray(arr) ? arr : [];
+}
+
+async function publishMappingEvents(
+	matched: ActionSource,
+	ctx: { res: any; req: any; jwt: any; param: any }
+): Promise<void> {
+	const entityId = String(resolveExpr(matched.entity_resolver, ctx) || '');
+	if (!entityId) {
+		console.warn('[action-source-middleware] skip mapping: empty entityId', {
+			mappingId: matched.id,
+			action: matched.action_name,
+		});
+		return;
+	}
+	const entityType = (matched.entity_type || 'auto') as 'customer' | 'vendor' | 'auto';
+	const amountVal = resolveExpr(matched.amount_resolver || undefined, ctx);
+	const repeatItems = resolveRepeatArrayItems(matched, ctx.res);
+	const repeatIdField =
+		(matched.metadata_resolvers?._repeatIdField as string | undefined) || 'petId';
+
+	const publishOne = async (referenceId?: string) => {
+		const metadata: Json = {};
+		if (matched.metadata_resolvers && typeof matched.metadata_resolvers === 'object') {
+			for (const [k, v] of Object.entries(matched.metadata_resolvers)) {
+				if (k.startsWith('_repeat')) continue;
+				metadata[k] = resolveExpr(String(v), ctx);
+			}
+		}
+		const evt: EventPayload = {
+			eventId: randomUUID(),
+			eventType: 'ActionOccurred',
+			occurredAt: new Date().toISOString(),
+			actionName: matched.action_name,
+			entity: { type: entityType, id: entityId },
+			actor: { type: entityType, id: entityId },
+			amount: amountVal !== undefined ? Number(amountVal) : undefined,
+			reference: matched.reference_type
+				? {
+						type: matched.reference_type,
+						id: referenceId ? String(referenceId) : undefined,
+					}
+				: undefined,
+			metadata,
+		};
+		if (matched.dry_run) {
+			console.log('[ActionOccurred][dry-run]', JSON.stringify(evt).substring(0, 800));
+			return;
+		}
+		await publishActionOccurred(evt);
+	};
+
+	if (repeatItems.length > 0) {
+		for (const item of repeatItems) {
+			const refId =
+				(item && typeof item === 'object'
+					? (item as Record<string, unknown>)[repeatIdField] ??
+						(item as Record<string, unknown>).petId ??
+						(item as Record<string, unknown>).id
+					: undefined) ?? resolveExpr(matched.reference_id_resolver || undefined, ctx);
+			await publishOne(refId ? String(refId) : undefined);
+		}
+		return;
+	}
+
+	const referenceId = resolveExpr(matched.reference_id_resolver || undefined, ctx);
+	await publishOne(referenceId ? String(referenceId) : undefined);
+}
+
 // EventBridge publisher
 async function publishActionOccurred(evt: EventPayload): Promise<void> {
 	const bus = process.env.EVENT_BUS_NAME || 'default';
@@ -290,7 +368,6 @@ export function actionSourceMiddleware() {
 
 			for (const matched of matchedMappings) {
 				try {
-					// Diagnostics: mapping entry
 					try {
 						console.log('[ASDIAG] mappingEnter', JSON.stringify({
 							mappingId: matched.id,
@@ -300,55 +377,7 @@ export function actionSourceMiddleware() {
 							reference_id_resolver: matched.reference_id_resolver
 						}));
 					} catch { /* ignore */ }
-					const entityId = String(resolveExpr(matched.entity_resolver, ctx) || '');
-					if (!entityId) {
-						try {
-							console.log('[ASDIAG] skipEmptyEntityId', JSON.stringify({
-								mappingId: matched.id,
-								action: matched.action_name
-							}));
-						} catch { /* ignore */ }
-						console.warn('[action-source-middleware] skip mapping: empty entityId', { mappingId: matched.id, action: matched.action_name });
-						continue;
-					}
-					const entityType = (matched.entity_type || 'auto') as 'customer' | 'vendor' | 'auto';
-					const amountVal = resolveExpr(matched.amount_resolver || undefined, ctx);
-					const referenceId = resolveExpr(matched.reference_id_resolver || undefined, ctx);
-					const metadata: Json = {};
-					if (matched.metadata_resolvers && typeof matched.metadata_resolvers === 'object') {
-						for (const [k, v] of Object.entries(matched.metadata_resolvers)) {
-							metadata[k] = resolveExpr(String(v), ctx);
-						}
-					}
-
-
-					// Diagnostics: resolved fields
-					try {
-						console.log('[ASDIAG] resolved', JSON.stringify({
-							mappingId: matched.id,
-							action: matched.action_name,
-							entityId,
-							referenceId: referenceId ? String(referenceId) : undefined
-						}));
-					} catch { /* ignore */ }
-					const evt: EventPayload = {
-						eventId: randomUUID(),
-						eventType: 'ActionOccurred',
-						occurredAt: new Date().toISOString(),
-						actionName: matched.action_name,
-						entity: { type: entityType, id: entityId },
-						actor: { type: entityType, id: entityId },
-						amount: amountVal !== undefined ? Number(amountVal) : undefined,
-						reference: matched.reference_type ? { type: matched.reference_type, id: referenceId ? String(referenceId) : undefined } : undefined,
-						metadata,
-					};
-					if (matched.dry_run) {
-						console.log('[ActionOccurred][dry-run]', JSON.stringify(evt).substring(0, 800));
-						continue;
-					}
-
-					//Event is being published to event bridge
-					await publishActionOccurred(evt);
+					await publishMappingEvents(matched, ctx);
 				} catch (mappingErr: any) {
 					console.warn('[action-source-middleware] mapping failed (continuing):', {
 						mappingId: matched.id,
