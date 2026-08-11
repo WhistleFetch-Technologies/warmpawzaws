@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 
 import { PrescriptionModal } from './PrescriptionModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
+import { useCustomerBookingMessagesModal } from './messaging/CustomerBookingMessagesModalProvider';
 import { LiveTrackingMap } from '../tracking/LiveTrackingMap';
 import { FollowUpBookingModal } from './FollowUpBookingModal';
 import { RateServiceModal } from './RateServiceModal';
@@ -24,6 +25,7 @@ interface AppointmentDetailsProps {
 
 export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel, onReschedule }: AppointmentDetailsProps) {
   const router = useRouter();
+  const { bumpMessagesInboxVersion } = useCustomerBookingMessagesModal();
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -543,6 +545,7 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
           otherUserName={booking.vendorName}
           userType="customer"
           onClose={() => setCommunicationMode(null)}
+          onBookingChatMarkedRead={() => bumpMessagesInboxVersion()}
           // Note: onNavigate would need to be passed as prop if needed
           meetingId={booking.meetingId}
         />

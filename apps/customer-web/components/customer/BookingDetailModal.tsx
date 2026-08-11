@@ -12,6 +12,7 @@ import { copyTextToClipboard } from '@/lib/shareUtils';
 import { PrescriptionModal } from './PrescriptionModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
+import { useCustomerBookingMessagesModal } from './messaging/CustomerBookingMessagesModalProvider';
 import { LiveTrackingMap } from '../tracking/LiveTrackingMap';
 import { FollowUpBookingModal } from './FollowUpBookingModal';
 import { RateServiceModal } from './RateServiceModal';
@@ -290,6 +291,7 @@ interface Prescription {
 
 export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorderMedicine, onNavigate }: BookingDetailModalProps) {
   const router = useRouter();
+  const { bumpMessagesInboxVersion } = useCustomerBookingMessagesModal();
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copiedOtp, setCopiedOtp] = useState(false);
@@ -1675,6 +1677,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           onClose={() => setCommunicationMode(null)}
           onBookFollowUp={() => setShowFollowUp(true)}
           onNavigate={onNavigate}
+          onBookingChatMarkedRead={() => bumpMessagesInboxVersion()}
           meetingId={booking.meetingId}
           onStartVideoCall={async (bid, existingMeetingId): Promise<string | undefined> => {
             try {
