@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import { resolveCustomerId, normalizePhone, resolveCustomerPhotoForDisplay } from '../repos/module-helpers.repo';
+import { resolvePetPhotoForDisplay } from '../../../../services/image';
 import * as customer_profile_getRepo from '../repos/customer_profile_get.repo';
 import { Hono } from 'hono';
 import {
@@ -81,7 +82,7 @@ export async function executecustomerProfileGet(c: Context) {
         pets.map(async (p: any) => {
           const rawPhoto = p.profile_photo_url;
           const signed =
-            (await resolveCustomerPhotoForDisplay(rawPhoto, customer.id)) || rawPhoto;
+            (await resolvePetPhotoForDisplay(rawPhoto, p.id)) || rawPhoto;
           return {
             id: p.id,
             name: p.name,

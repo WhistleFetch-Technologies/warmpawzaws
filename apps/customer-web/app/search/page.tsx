@@ -1433,10 +1433,9 @@ function SearchContent() {
             <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-white shadow-sm ring-1 ring-orange-100">
               <Search className="h-10 w-10 text-[#FF8C42]" strokeWidth={1.75} />
             </div>
-            <h2 className="text-lg font-semibold text-gray-900">No results found</h2>
-            <p className="mt-2 max-w-[260px] text-sm text-gray-500">
-              Try a different keyword or pick another category.
-            </p>
+            <h2 className="text-lg font-semibold text-gray-900 max-w-[280px]">
+              Oops! We sniffed around, but couldn&apos;t fetch that!!
+            </h2>
           </div>
         ) : (
           <div className="space-y-3">

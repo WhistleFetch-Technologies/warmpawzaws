@@ -304,20 +304,12 @@ if [ "$HTML_ALIAS_FAILED" -gt 0 ]; then
 fi
 
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
-# Quote each path so shells do not expand wildcards (e.g. /_next/*) before aws sees them.
-INVALIDATION_PATH_ARGS=( "/index.html" "/runtime-config.js" "/_next/*" )
-if git rev-parse HEAD~1 >/dev/null 2>&1; then
-  if git diff --name-only HEAD~1 HEAD -- "apps/${APP_NAME}/public/images" "apps/${APP_NAME}/public/logo.webp" 2>/dev/null | grep -q .; then
-    INVALIDATION_PATH_ARGS+=( "/images/*" "/logo.webp" )
-    echo -e "${BLUE}   Static images changed in last commit — including /images/* and /logo.webp${NC}"
-  fi
-fi
-
+# Use /* only — mixed wildcards like /_next/* fail InvalidArgument on some AWS CLI/shell combos.
 INVALIDATION_ID=$(aws cloudfront create-invalidation \
   --distribution-id "${CLOUDFRONT_DIST_ID}" \
-  --paths "${INVALIDATION_PATH_ARGS[@]}" \
+  --paths "/*" \
   --query 'Invalidation.Id' \
-  --output text)
+  --output text 2>/dev/null || true)
 
 if [ $? -eq 0 ]; then
   echo -e "${GREEN}✅ CloudFront invalidation created: ${INVALIDATION_ID}${NC}"
