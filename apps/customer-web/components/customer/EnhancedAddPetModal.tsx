@@ -28,6 +28,7 @@ import { toast } from 'sonner';
 import { BloodTypeSelector } from '@/components/customer/pet-blood-type';
 import { getBloodTypeLabel, normalizeBloodTypeKey } from '@/lib/pet-blood-types';
 import {
+  hasMeaningfulPetInput,
   hasRequiredPetFieldErrors,
   validateRequiredPetFields,
 } from '@/lib/pet-profile-validation';
@@ -113,6 +114,9 @@ interface EnhancedAddPetModalProps {
   variant?: 'modal' | 'fullscreen';
   /** Fullscreen header back; defaults to `onClose` when omitted. */
   onBack?: () => void;
+  /** Onboarding `/add-pet` only: show skip and relax required fields on create. */
+  allowSkipPetCreation?: boolean;
+  onSkipPetCreation?: () => void;
 }
 
 type Step = 'photo' | 'basic' | 'physical' | 'health' | 'vaccinations' | 'behavior' | 'review';
@@ -230,8 +234,11 @@ export function EnhancedAddPetModal({
   editPet,
   variant = 'modal',
   onBack,
+  allowSkipPetCreation = false,
+  onSkipPetCreation,
 }: EnhancedAddPetModalProps) {
   const isModal = variant === 'modal';
+  const strictFields = !allowSkipPetCreation || !!editPet;
   const committedPhotoKeyRef = useRef<string | null>(
     editPet ? extractPetImageKey(editPet.photo) : null,
   );
@@ -537,9 +544,17 @@ export function EnhancedAddPetModal({
     );
   };
 
+  const handleSkipPetCreation = async () => {
+    if (uploadingPhoto || !onSkipPetCreation) return;
+    await abandonUnsavedUploads();
+    onSkipPetCreation();
+  };
+
   // Validate current step
   const validateStep = (): boolean => {
-    const allErrors = validateRequiredPetFields(petData, photoPreview);
+    const allErrors = validateRequiredPetFields(petData, photoPreview, {
+      strict: strictFields,
+    });
     const stepErrors: Record<string, string> = {};
 
     switch (step) {
@@ -601,7 +616,14 @@ export function EnhancedAddPetModal({
 
   // Save pet (Review step only)
   const handleSavePet = async () => {
-    const requiredErrors = validateRequiredPetFields(petData, photoPreview);
+    if (allowSkipPetCreation && !editPet && !hasMeaningfulPetInput(petData, photoPreview)) {
+      toast.error('Add pet details or tap Skip pet creation');
+      return;
+    }
+
+    const requiredErrors = validateRequiredPetFields(petData, photoPreview, {
+      strict: strictFields,
+    });
     if (hasRequiredPetFieldErrors(requiredErrors)) {
       setValidationErrors(requiredErrors);
       toast.error('Please fill in all required fields');
@@ -696,6 +718,9 @@ export function EnhancedAddPetModal({
       if (editPet) {
         await apiClient.put(`/pets/${editPet.id}`, payload);
       } else {
+        if (allowSkipPetCreation) {
+          payload.onboardingRelaxed = true;
+        }
         await apiClient.post('/pets', payload);
       }
 
@@ -896,7 +921,7 @@ export function EnhancedAddPetModal({
               {/* Pet Type Selection */}
               <div className="pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-3">
-                  What type of pet? <span className="text-red-500">*</span>
+                  What type of pet?{strictFields ? <span className="text-red-500"> *</span> : null}
                 </label>
                 <div className="grid grid-cols-2 gap-4">
                   {(['Dog', 'Cat'] as const).map((type) => (
@@ -929,7 +954,7 @@ export function EnhancedAddPetModal({
               {/* Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Pet Name <span className="text-red-500">*</span>
+                  Pet Name{strictFields ? <span className="text-red-500"> *</span> : null}
                 </label>
                 <input
                   type="text"
@@ -948,7 +973,7 @@ export function EnhancedAddPetModal({
               {/* Breed */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Breed <span className="text-red-500">*</span>
+                  Breed{strictFields ? <span className="text-red-500"> *</span> : null}
                 </label>
                 <select
                   value={petData.breed}
@@ -967,7 +992,7 @@ export function EnhancedAddPetModal({
               {/* Date of Birth */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date of Birth <span className="text-red-500">*</span>
+                  Date of Birth{strictFields ? <span className="text-red-500"> *</span> : null}
                 </label>
                 <input
                   type="date"
@@ -988,7 +1013,7 @@ export function EnhancedAddPetModal({
               {/* Gender */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Gender <span className="text-red-500">*</span>
+                  Gender{strictFields ? <span className="text-red-500"> *</span> : null}
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   {(['Male', 'Female'] as const).map((gender) => (
@@ -1617,6 +1642,16 @@ export function EnhancedAddPetModal({
 
         {/* Footer Navigation */}
         <div className="flex-shrink-0 p-5 bg-white border-t border-gray-100">
+          {allowSkipPetCreation && onSkipPetCreation && (
+            <button
+              type="button"
+              onClick={handleSkipPetCreation}
+              disabled={loading || uploadingPhoto}
+              className="mb-3 w-full py-2 text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
+            >
+              Skip pet creation
+            </button>
+          )}
           <div className="flex gap-3">
             {step !== 'photo' && (
               <Button

@@ -43,7 +43,10 @@ import {
   resolveBloodTypeFromPayload,
   wasBloodTypeInPayload,
 } from '../lib/pet-blood-types';
-import { validatePetCreatePayload } from '../utils/pet-create-validation';
+import {
+  resolveOnboardingPetInsertDefaults,
+  validatePetCreatePayload,
+} from '../utils/pet-create-validation';
 import { deletePetProfilePhotoAssets } from '../services/image/delete-pet-profile-photo.service';
 
 async function resolvePetPhotoForDisplay(
@@ -291,12 +294,25 @@ export function registerPetEndpoints(app: Hono) {
         emergencyContact,
       } = petData;
 
-      const createValidation = validatePetCreatePayload(petData);
+      const onboardingRelaxed = petData.onboardingRelaxed === true;
+      const createValidation = validatePetCreatePayload(petData, {
+        mode: onboardingRelaxed ? 'onboarding' : 'strict',
+      });
       if (!createValidation.ok) {
         return c.json({ error: createValidation.error }, 400);
       }
 
-      const petTypeToValidate = petType || petData.type || petData.species;
+      const insertDefaults = onboardingRelaxed
+        ? resolveOnboardingPetInsertDefaults(petData)
+        : null;
+      const resolvedName =
+        insertDefaults?.name ??
+        (typeof name === 'string' && name.trim().length > 0 ? name.trim() : name);
+      const resolvedSpecies =
+        insertDefaults?.species ??
+        (petType || petData.type || petData.species);
+
+      const petTypeToValidate = resolvedSpecies;
 
       const bloodTypeResult = resolveBloodTypeFromPayload(petData, petTypeToValidate);
       if (!bloodTypeResult.ok) {
@@ -364,8 +380,8 @@ export function registerPetEndpoints(app: Hono) {
 
       const insertPayload = await omitMissingPetsColumns({
         customer_id: customerId,
-        name: name,
-        species: petType || petData.type || petData.species, // Schema uses 'species', not 'pet_type'
+        name: resolvedName,
+        species: resolvedSpecies, // Schema uses 'species', not 'pet_type'
         breed: breed || null,
         age_years: age_years,
         age_months: age_months,
