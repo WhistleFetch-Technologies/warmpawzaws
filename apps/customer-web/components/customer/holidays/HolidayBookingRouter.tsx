@@ -11,6 +11,8 @@ import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 interface HolidayBookingRouterProps {
   phone: string;
@@ -90,12 +92,7 @@ export function HolidayBookingRouter({
     try {
       const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        setPets(petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        })));
+        setPets(petsResponse.pets.map((p: any) => mapBookingPetFromApi(p)));
       }
       
       try {
@@ -171,12 +168,7 @@ export function HolidayBookingRouter({
     try {
       const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        setPets(petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        })));
+        setPets(petsResponse.pets.map((p: any) => mapBookingPetFromApi(p)));
       }
     } catch (err) {
       console.error('Error refreshing pets:', err);
@@ -476,77 +468,26 @@ export function HolidayBookingRouter({
           </div>
         )}
 
-        {/* Pet Selection */}
         {step === 'pet' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Select Pets</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => {
-                  const isSelected = selectedPets.find(p => p.id === pet.id);
-                  return (
-                    <button
-                      key={pet.id}
-                      onClick={() => togglePetSelection(pet)}
-                      className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${
-                        isSelected 
-                          ? 'border-[#FF8C42] bg-orange-50' 
-                          : 'border-gray-200 bg-white hover:border-orange-200'
-                      }`}
-                    >
-                      <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center">
-                        {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? (
-                          <Dog className="w-7 h-7 text-orange-600" />
-                        ) : pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? (
-                          <Cat className="w-7 h-7 text-orange-600" />
-                        ) : (
-                          <User className="w-7 h-7 text-orange-600" />
-                        )}
-                      </div>
-                      <div className="flex-1 text-left">
-                        <h3 className="font-semibold text-gray-900">{pet.name}</h3>
-                        <p className="text-sm text-gray-500 capitalize">{pet.breed}</p>
-                      </div>
-                      {isSelected && (
-                        <CheckCircle2 className="w-6 h-6 text-orange-500" />
-                      )}
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                  <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Dog className="w-8 h-8 text-gray-400" />
-                  </div>
-                  <p className="text-gray-600 font-medium mb-2">No pets added yet</p>
-                  <p className="text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
-                  <button
-                    onClick={() => setShowAddPetModal(true)}
-                    className="px-6 py-3 bg-[#FF8C42] text-white rounded-xl font-medium hover:bg-[#FF7A35] transition"
-                  >
-                    + Add Your First Pet
-                  </button>
-                </div>
-              )}
-            </div>
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={selectedPets.length === 0}
-            >
-              {selectedPets.length > 0 ? `Continue (${selectedPets.length} pet${selectedPets.length > 1 ? 's' : ''})` : 'Select at least one pet'}
-            </Button>
-          </div>
+          <BookingPetSelection
+            title="Select Pets"
+            showBanner={false}
+            pets={pets}
+            allowMultiple
+            selectedPetIds={selectedPets.map((p) => p.id)}
+            onTogglePet={togglePetSelection}
+            onSelectPet={() => {}}
+            onAddPet={() => setShowAddPetModal(true)}
+            showContinue
+            onContinue={handleNext}
+            continueDisabled={selectedPets.length === 0}
+            continueLabel={
+              selectedPets.length > 0
+                ? `Continue (${selectedPets.length} pet${selectedPets.length > 1 ? 's' : ''})`
+                : 'Continue'
+            }
+            continueDisabledLabel="Select at least one pet"
+          />
         )}
 
         {/* Guest Count */}

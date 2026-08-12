@@ -33,6 +33,10 @@ export type HomeServiceProfileService = {
   price: number;
   duration: number;
   category: string;
+  isPackage?: boolean;
+  packageDetails?: unknown;
+  metadata?: unknown;
+  serviceId?: string;
 };
 
 /**
@@ -62,8 +66,27 @@ export function mapHomeServiceProfileServices(rows: unknown[]): HomeServiceProfi
     const duration =
       Number(s.duration ?? s.durationMinutes ?? s.duration_minutes ?? 0) || 0;
     const category = String(s.category ?? s.categoryName ?? s.categorySlug ?? '').trim();
+    const meta =
+      s.metadata && typeof s.metadata === 'object' && !Array.isArray(s.metadata)
+        ? (s.metadata as Record<string, unknown>)
+        : undefined;
+    const packageDetails = s.packageDetails ?? meta?.packageDetails;
+    const isPackage = Boolean(
+      s.isPackage ?? s.is_package ?? meta?.isPackage ?? packageDetails
+    );
 
-    mapped.push({ id: key, name, description, price, duration, category });
+    mapped.push({
+      id: key,
+      name,
+      description,
+      price,
+      duration,
+      category,
+      isPackage,
+      packageDetails,
+      metadata: meta ?? s.metadata,
+      serviceId: String(s.serviceId ?? s.service_id ?? '').trim() || undefined,
+    });
   }
 
   return mapped;

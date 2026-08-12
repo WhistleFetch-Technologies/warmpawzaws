@@ -284,6 +284,7 @@ type ScreenType =
   | 'pet-details' 
   | 'add-pet' 
   | 'walker' 
+  | 'walker_home'
   | 'walker-booking'
   | 'walker-provider-profile'
   | 'vet'
@@ -1506,7 +1507,8 @@ export function CustomerHomeWrapper({
       service === 'grooming_home' ||
       service === 'grooming_center' ||
       service === 'training_home' ||
-      service === 'training_center'
+      service === 'training_center' ||
+      service === 'walker_home'
     ) {
       navigateToScreen(service as ScreenType);
       return;
@@ -2049,6 +2051,8 @@ export function CustomerHomeWrapper({
       navigateToScreen('schedule-walk');
     } else if (screen === 'walker-provider-profile') {
       navigateToScreen('walker-provider-profile');
+    } else if (screen === 'walker_home') {
+      navigateToScreen('walker_home');
     }
   };
 
@@ -5007,6 +5011,53 @@ export function CustomerHomeWrapper({
               }, vetServiceData);
             }}
             onNavigate={groomingHomeNavigate}
+          />
+        </div>
+      </CustomerScreenWrapper>
+    );
+  }
+
+  const walkerHomeNavigate = (screen: string, data?: any) => {
+    if (screen === 'walker-booking' || screen === 'booking' || screen === 'create-booking') {
+      handleWalkerNavigate('walker-booking', {
+        ...data,
+        serviceType: 'walking',
+        serviceStyle: data?.serviceStyle || 'at_home',
+      });
+      return;
+    }
+    if (screen === 'walker-provider-profile') {
+      handleWalkerNavigate('walker-provider-profile', data);
+      return;
+    }
+    if (screen === 'purchase-package') {
+      handleWalkerNavigate('purchase-package', data);
+      return;
+    }
+    handleNavigateToService(screen, data);
+  };
+  if (currentScreen === 'walker_home') {
+    return (
+      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
+          <UniversalServicesByStyle
+            phone={phone}
+            roleId="walker"
+            serviceStyle="at_home"
+            serviceTypeName="All Dog Walkers"
+            category="walker"
+            bookingScreen="walker-booking"
+            onBack={() => {
+              backFromBannerOr(() => {
+                if (returnToProblemGridFromStyleHub) {
+                  setReturnToProblemGridFromStyleHub(false);
+                  navigateToScreen('problem_grid_flow');
+                  return;
+                }
+                handleBack();
+              }, vetServiceData);
+            }}
+            onNavigate={walkerHomeNavigate}
           />
         </div>
       </CustomerScreenWrapper>

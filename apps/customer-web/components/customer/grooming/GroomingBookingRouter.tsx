@@ -29,6 +29,8 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { BookingConfirmationSavings } from '../pricing/BookingConfirmationSavings';
 import { MarketplaceReview } from '../marketplace/MarketplaceReview';
+import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -493,12 +495,7 @@ export function GroomingBookingRouter({
       // Load pets from API
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const loadedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const loadedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(loadedPets);
         
         // ✅ NEW: If we have a pre-filled pet ID, update selectedPet with full data
@@ -542,12 +539,7 @@ export function GroomingBookingRouter({
     try {
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const mappedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(mappedPets);
         // Auto-select newly added pet
         if (mappedPets.length > 0) {
@@ -1231,76 +1223,13 @@ export function GroomingBookingRouter({
               </div>
             )}
 
-            <div className="space-y-4 border-t border-gray-100 pt-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900">Your pet</h2>
-                <button
-                  type="button"
-                  onClick={() => setShowAddPetModal(true)}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Pet
-                </button>
-              </div>
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
-                <Dog className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                <p className="text-sm text-amber-800">
-                  A pet profile is required for this service to provide the best care.
-                </p>
-              </div>
-              {pets.length > 1 ? (
-                <select
-                  className="h-12 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-900 outline-none focus:ring-2 focus:ring-orange-500"
-                  value={selectedPet?.id || ''}
-                  onChange={(e) => {
-                    const pet = pets.find((p) => p.id === e.target.value);
-                    if (pet) setSelectedPet(pet);
-                  }}
-                  aria-label="Select pet"
-                >
-                  <option value="">Select a pet</option>
-                  {pets.map((pet) => (
-                    <option key={pet.id} value={pet.id}>
-                      {pet.name}
-                      {pet.breed ? ` · ${pet.breed}` : ''}
-                    </option>
-                  ))}
-                </select>
-              ) : pets.length === 1 ? (
-                <div className="flex items-center gap-4 rounded-xl border-2 border-[#FF8C42] bg-orange-50 p-4">
-                  <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-orange-100">
-                    {pets[0].species === 'dog' || (pets[0].species || '').toLowerCase().includes('dog') ? (
-                      <Dog className="h-7 w-7 text-orange-600" />
-                    ) : pets[0].species === 'cat' || (pets[0].species || '').toLowerCase().includes('cat') ? (
-                      <Cat className="h-7 w-7 text-orange-600" />
-                    ) : (
-                      <User className="h-7 w-7 text-orange-600" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1 text-left">
-                    <h3 className="font-semibold text-gray-900">{pets[0].name}</h3>
-                    <p className="text-sm capitalize text-gray-500">{pets[0].breed}</p>
-                  </div>
-                  <CheckCircle2 className="h-6 w-6 flex-shrink-0 text-orange-500" />
-                </div>
-              ) : (
-                <div className="rounded-xl border-2 border-dashed border-gray-200 py-12 text-center">
-                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
-                    <Dog className="h-8 w-8 text-gray-400" />
-                  </div>
-                  <p className="mb-2 font-medium text-gray-600">No pets added yet</p>
-                  <p className="mb-4 text-sm text-gray-500">Add your pet to continue with the booking</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddPetModal(true)}
-                    className="rounded-xl bg-orange-500 px-6 py-3 font-medium text-white transition hover:bg-orange-600"
-                  >
-                    + Add Your First Pet
-                  </button>
-                </div>
-              )}
-            </div>
+            <BookingPetSelection
+              variant="embedded"
+              pets={pets}
+              selectedPet={selectedPet}
+              onSelectPet={setSelectedPet}
+              onAddPet={() => setShowAddPetModal(true)}
+            />
 
             <div className="space-y-4 border-t border-gray-100 pt-6">
               <div className="flex items-center justify-between">

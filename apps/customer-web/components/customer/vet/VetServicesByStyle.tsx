@@ -35,6 +35,7 @@ import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
 import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 import {
   buildVendorServicesPageUrl,
   vendorServicesNextCursor,
@@ -94,6 +95,8 @@ interface Provider {
     description?: string;
     category?: string;
     isPackage?: boolean;
+    packageDetails?: unknown;
+    metadata?: unknown;
   }[];
   /** First page of vendor services loaded (card mode). */
   servicesHydrated?: boolean;
@@ -933,10 +936,17 @@ export function VetServicesByStyle({
                   </div>
                 </div>
 
-                {/* Services List - Enhanced Cards */}
+                {/* Services + Packages — Enhanced Cards */}
                 {sortedServices.length > 0 ? (
-                  <div className="space-y-3">
-                    {sortedServices.map((service) => {
+                  <div className="space-y-5">
+                    {discoveryServiceSections(
+                      sortedServices as unknown as Record<string, unknown>[]
+                    ).map((sec) => (
+                      <div key={sec.title} className="space-y-3">
+                        <h4 className="text-sm font-semibold text-gray-700">
+                          {sec.title} ({sec.list.length})
+                        </h4>
+                        {(sec.list as typeof sortedServices).map((service) => {
                       const isSelected = selectedServices.has(service.id) || selectedServices.has(service.serviceId);
                       return (
                         <div
@@ -1004,7 +1014,9 @@ export function VetServicesByStyle({
                           </div>
                         </div>
                       );
-                    })}
+                        })}
+                      </div>
+                    ))}
                     <DiscoveryVendorFeedSentinel
                       hasMore={!!profileProvider.servicesNextCursor}
                       loading={fetchingServicesFor === profileProvider.providerId}
@@ -1348,15 +1360,21 @@ export function VetServicesByStyle({
                       </div>
                     )}
                     
-                    <h4 className="text-sm font-medium text-gray-600 mb-2">
-                      Available Services ({provider.services.length}{provider.servicesNextCursor ? '+' : ''})
-                    </h4>
                     {fetchingServicesFor === provider.providerId && provider.services.length === 0 ? (
                       <div className="flex justify-center py-6">
                         <Loader2 className="h-8 w-8 animate-spin text-[#FF8C42]" />
                       </div>
                     ) : null}
-                    {provider.services.map((service) => (
+                    {discoveryServiceSections(
+                      provider.services as unknown as Record<string, unknown>[]
+                    ).map((sec) => (
+                      <div key={sec.title} className="space-y-3">
+                        <h4 className="text-sm font-semibold text-gray-700">
+                          {sec.title} ({sec.list.length}
+                          {sec.title === 'Available Services' && provider.servicesNextCursor ? '+' : ''}
+                          )
+                        </h4>
+                        {(sec.list as typeof provider.services).map((service) => (
                       <div
                         key={service.id}
                         className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
@@ -1425,6 +1443,8 @@ export function VetServicesByStyle({
                             </Button>
                           </div>
                         </div>
+                      </div>
+                        ))}
                       </div>
                     ))}
                     <DiscoveryVendorFeedSentinel

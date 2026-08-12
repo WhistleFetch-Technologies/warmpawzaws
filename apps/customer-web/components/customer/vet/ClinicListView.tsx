@@ -46,6 +46,7 @@ import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 
 interface ClinicListViewProps {
   phone: string;
@@ -850,10 +851,7 @@ export function ClinicListView({
 
                   {expanded && (
                     <div className="bg-gray-50 p-4 space-y-3">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <h4 className="text-sm font-semibold text-gray-700">
-                          Available Services ({clinic.services.length}{clinic.servicesNextCursor ? '+' : ''})
-                        </h4>
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
                         <button
                           type="button"
                           onClick={(e) => openClinicDetails(e, clinic.id)}
@@ -871,8 +869,19 @@ export function ClinicListView({
                       ) : clinic.services.length === 0 ? (
                         <p className="text-sm text-gray-500 text-center py-4">No services listed for this clinic.</p>
                       ) : (
-                        <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-3">
-                          {clinic.services.map((service) => {
+                        <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-4">
+                          {discoveryServiceSections(
+                            clinic.services as unknown as Record<string, unknown>[]
+                          ).map((sec) => (
+                            <div key={sec.title} className="space-y-3">
+                              <h4 className="text-sm font-semibold text-gray-700">
+                                {sec.title} ({sec.list.length}
+                                {sec.title === 'Available Services' && clinic.servicesNextCursor
+                                  ? '+'
+                                  : ''}
+                                )
+                              </h4>
+                              {(sec.list as unknown as ClinicServiceRow[]).map((service) => {
                             const descTrim = service.description?.trim() ?? '';
                             const isPackage = Boolean((service as any).isPackage);
                             return (
@@ -947,7 +956,9 @@ export function ClinicListView({
                                 </div>
                               </div>
                             );
-                          })}
+                              })}
+                            </div>
+                          ))}
                           <DiscoveryVendorFeedSentinel
                             hasMore={!!clinic.servicesNextCursor}
                             loading={fetchingServicesFor === clinic.id}

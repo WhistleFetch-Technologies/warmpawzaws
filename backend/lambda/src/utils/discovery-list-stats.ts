@@ -2,7 +2,10 @@
  * Batched price/count aggregates for discovery list cards.
  * WHERE for style + discoverable must stay aligned with list card eligibility.
  */
-import { sqlVendorServiceDiscoverable } from '../lib/discovery-vendor-query';
+import {
+  sqlVendorServiceDiscoverable,
+  WALKER_HUB_ROLE_SQL_IN_LIST,
+} from '../lib/discovery-vendor-query';
 
 export type DiscoveryListVendorStats = {
   serviceCount: number;
@@ -21,6 +24,8 @@ export type DiscoveryListStatsFilter = {
   catTextExact?: string[];
   catTextLike?: string[];
   catUUIDs?: string[];
+  /** Walker hub at_home: count services for walker-role vendors even when vs.category is blank. */
+  walkerHubAtHome?: boolean;
   /** Extra AND clause fragment (already spaced); uses nextParamIndex+… if needed via embed. */
   extraAndSql?: string;
 };
@@ -49,6 +54,16 @@ export function buildDiscoveryListStatsWhere(filter: DiscoveryListStatsFilter): 
   const catUUIDs = filter.catUUIDs || [];
   const hasCat = catExact.length + catUUIDs.length > 0;
 
+  const walkerHubRoleBypassOr =
+    filter.walkerHubAtHome && !filter.isAtCenter
+      ? ` OR EXISTS (
+          SELECT 1 FROM vendors v_hub
+          JOIN roles r_hub ON r_hub.id = v_hub.role_id
+          WHERE v_hub.id = vs.vendor_id
+            AND LOWER(COALESCE(TRIM(r_hub.name), '')) IN (${WALKER_HUB_ROLE_SQL_IN_LIST})
+        )`
+      : '';
+
   let categorySql = '';
   const paramsTail: unknown[] = [];
   if (hasCat) {
@@ -57,6 +72,7 @@ export function buildDiscoveryListStatsWhere(filter: DiscoveryListStatsFilter): 
         ${catExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($3::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($4::text[])` : `FALSE`}
         ${catExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
         ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
+        ${walkerHubRoleBypassOr}
       )`;
     if (catExact.length > 0) {
       paramsTail.push(catExact, catLike);
@@ -81,6 +97,7 @@ export function buildDiscoveryListStatsWhere(filter: DiscoveryListStatsFilter): 
     filter.isAtCenter ? 'at_center' : 'any_style',
     filter.allowNullEnabled ? 'null_enabled' : 'strict_enabled',
     hasCat ? 'cat:yes' : 'cat:no',
+    filter.walkerHubAtHome ? 'walker_hub:at_home' : 'walker_hub:no',
     discoverable,
   ].join('|');
 

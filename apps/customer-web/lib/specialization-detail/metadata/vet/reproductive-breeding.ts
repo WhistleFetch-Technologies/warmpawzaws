@@ -12,11 +12,6 @@ export const reproductiveMetadata = defineVetSpecialization({
   serviceModeInformation: DEFAULT_VET_SERVICE_MODE_INFORMATION,
   sections: [
     {
-      type: 'overview',
-      title: 'What Is Reproductive & Breeding Care?',
-      body: 'Reproductive veterinary care covers health assessments and guidance related to breeding, pregnancy, and reproductive wellbeing. Care plans depend on species, age, and individual health.',
-    },
-    {
       type: 'when_to_consider',
       title: 'When Is Veterinary Guidance Useful?',
       items: [

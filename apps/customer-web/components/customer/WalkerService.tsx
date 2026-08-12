@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Dog,
@@ -51,7 +51,9 @@ import {
   clearSkipPackageAutoRedirect,
 } from '@/lib/vendor-package-purchase-nav';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { useDiscoveryVendorFeed } from '@/hooks/useDiscoveryVendorFeed';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
@@ -278,10 +280,50 @@ function WalkerListCardHero({ walker }: { walker: Record<string, unknown> }) {
   );
 }
 
+function walkerRowKey(w: Record<string, unknown>): string {
+  return String(w.vendorId || w.id || w.vendor_id || '').trim();
+}
+
+function mergeWalkerDiscoveryRows(...lists: Record<string, unknown>[][]): Record<string, unknown>[] {
+  const map = new Map<string, Record<string, unknown>>();
+  for (const list of lists) {
+    for (const row of list) {
+      const key = walkerRowKey(row);
+      if (!key || map.has(key)) continue;
+      map.set(key, row);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function walkerCardAddress(w: Record<string, unknown>): string {
+  const loc = w.location as { address?: string } | undefined;
+  return (
+    String(
+      w.shortAddress ||
+        w.short_address ||
+        loc?.address ||
+        w.address ||
+        w.city ||
+        ''
+    ).trim() || 'Location'
+  );
+}
+
+const WALKER_FEED_PAGE_SIZE = 3;
+
+async function fetchWalkerVendorsSearchFallback(locationParams: string): Promise<any[]> {
+  const params = new URLSearchParams({ roleId: 'walker', serviceStyle: 'at_home', limit: '50' });
+  const searchData = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(
+    `/customer/vendors/search?${params.toString()}${locationParams}`
+  );
+  return searchData.vendors || searchData.services || searchData.staff || [];
+}
+
 export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }: WalkerServiceProps) {
-  const [loading, setLoading] = useState(true);
-  const [walkers, setWalkers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFallbackList, setSearchFallbackList] = useState<any[] | null>(null);
+  const [searchSupplement, setSearchSupplement] = useState<any[]>([]);
   const [activeWalks, setActiveWalks] = useState<ActiveWalk[]>([]);
   const [activePackages, setActivePackages] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
@@ -364,147 +406,159 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     }
   };
 
-  const searchQueryRef = useRef(searchQuery);
-  searchQueryRef.current = searchQuery;
+  const coordsRef = useRef<{ latitude?: string; longitude?: string }>({});
+  const fallbackAttemptedRef = useRef(false);
 
-  /** Full discover list for current location — search filters this in-memory (vendors/search uses stricter status rules and often returns nothing). */
-  const walkersDiscoverCacheRef = useRef<{ key: string; list: any[] } | null>(null);
-  /** Matches `walkersDiscoverCacheRef.current.key` after last successful discover fetch (for instant in-memory search without re-awaiting geo/profile). */
-  const lastDiscoverLocationKeyRef = useRef<string | null>(null);
-  /** Drop stale async results when a newer search/load started. */
-  const loadWalkersGenRef = useRef(0);
-
-  /** Same coord order as search tab / useHubVendorDiscovery (profile → localStorage → GPS). */
-  const getLocationQuerySuffix = useCallback(async (): Promise<string> => {
-    const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
-    if (latitude != null && longitude != null) {
-      return `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
-    }
-    return '';
-  }, [phone]);
-
-  const fetchDiscoverWalkers = useCallback(
-    async (locationParams: string): Promise<any[]> => {
-      let walkerList: any[] = [];
-      try {
-        // Prefer category=walker discover (includes non-walker roles with Dog Walker services).
-        // roleId is omitted so trainer_solo vendors offering walk packages are not dropped.
-        const endpoint = `/customer/discover-services?category=walker&serviceStyle=at_home${locationParams}`;
-        const data = await apiClient.get<{
-          success?: boolean;
-          vendors?: any[];
-          providers?: any[];
-          services?: any[];
-          staff?: any[];
-        }>(endpoint);
-        walkerList = discoveryVendorList(data);
-        if (walkerList.length === 0 && Array.isArray(data.services)) {
-          walkerList = data.services;
-        }
-        if (walkerList.length === 0 && Array.isArray(data.staff)) {
-          walkerList = data.staff;
-        }
-        if (walkerList.length === 0) {
-          const fallbackUrl = `/customer/discover-services?category=walker&serviceStyle=at_home&roleId=walker${locationParams}`;
-          const fallback = await apiClient.get<{ vendors?: any[]; providers?: any[]; services?: any[] }>(fallbackUrl);
-          walkerList = discoveryVendorList(fallback);
-        }
-      } catch (_) {
-        try {
-          // vendors/search now also matches Dog Walker category services for walker roleIds
-          const params = new URLSearchParams({ roleId: 'pet_walker', serviceStyle: 'at_home', limit: '50' });
-          const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(
-            `/customer/vendors/search?${params.toString()}${locationParams}`
-          );
-          walkerList = data.vendors || data.services || data.staff || [];
-        } catch (__) {
-          walkerList = [];
-        }
-      }
-      return walkerList;
+  const buildWalkerFeedUrl = useCallback(
+    ({ limit, cursor }: { limit: number; cursor?: string }) => {
+      const { latitude, longitude } = coordsRef.current;
+      const locationParams =
+        latitude != null && longitude != null
+          ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
+          : '';
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+      const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+      return `/customer/discover-services?category=walker&serviceStyle=at_home&limit=${limit}${cursorParam}${locationParams}${phoneParam}`;
     },
-    []
+    [phone]
   );
 
-  const loadWalkers = useCallback(async () => {
-    const gen = ++loadWalkersGenRef.current;
-    const q = searchQueryRef.current.trim();
-
-    if (q) {
-      const snap = walkersDiscoverCacheRef.current;
-      if (
-        snap?.list?.length &&
-        snap.key === lastDiscoverLocationKeyRef.current
-      ) {
-        const filtered = snap.list.filter((w: any) =>
-          walkerRowMatchesQuery(w as Record<string, unknown>, q)
-        );
-        if (gen !== loadWalkersGenRef.current) return;
-        if (filtered.length === 0 && snap.list.length > 0) {
-          toast.info('No walkers match that search. Try a name, area, or service.');
-        }
-        setWalkers(filtered);
-        return;
-      }
-    }
-
-    try {
-      const locationParams = await getLocationQuerySuffix();
-      if (gen !== loadWalkersGenRef.current) return;
-
-      const locationCacheKey = locationParams || '__no_geo__';
-
-      if (!q) {
-        setLoading(true);
-        const all = await fetchDiscoverWalkers(locationParams);
-        if (gen !== loadWalkersGenRef.current) return;
-        walkersDiscoverCacheRef.current = { key: locationCacheKey, list: all };
-        lastDiscoverLocationKeyRef.current = locationCacheKey;
-        setWalkers(all);
-        return;
-      }
-
-      const cached = walkersDiscoverCacheRef.current;
-      const cacheOk = Boolean(cached?.key === locationCacheKey && Array.isArray(cached?.list));
-      const needNetwork = !cacheOk || (cached?.list?.length ?? 0) === 0;
-
-      if (needNetwork) {
-        setLoading(true);
-        const base = await fetchDiscoverWalkers(locationParams);
-        if (gen !== loadWalkersGenRef.current) return;
-        walkersDiscoverCacheRef.current = { key: locationCacheKey, list: base };
-        lastDiscoverLocationKeyRef.current = locationCacheKey;
-        const filtered = base.filter((w: any) => walkerRowMatchesQuery(w as Record<string, unknown>, q));
-        if (gen !== loadWalkersGenRef.current) return;
-        if (filtered.length === 0 && base.length > 0) {
-          toast.info('No walkers match that search. Try a name, area, or service.');
-        }
-        setWalkers(filtered);
-        return;
-      }
-
-      const base = cached?.list ?? [];
-      const filtered = base.filter((w: any) => walkerRowMatchesQuery(w as Record<string, unknown>, q));
-      if (gen !== loadWalkersGenRef.current) return;
-      if (filtered.length === 0 && base.length > 0) {
-        toast.info('No walkers match that search. Try a name, area, or service.');
-      }
-      setWalkers(filtered);
-    } catch (error) {
-      console.error('Error loading walkers:', error);
-      if (gen === loadWalkersGenRef.current) setWalkers([]);
-    } finally {
-      if (gen === loadWalkersGenRef.current) setLoading(false);
-    }
-  }, [fetchDiscoverWalkers, getLocationQuerySuffix]);
+  const {
+    vendors: feedWalkers,
+    loading: feedLoading,
+    loadingMore: feedLoadingMore,
+    hasMore: feedHasMore,
+    loadMore: feedLoadMore,
+    reload: feedReload,
+  } = useDiscoveryVendorFeed({
+    buildUrl: buildWalkerFeedUrl,
+    pageSize: WALKER_FEED_PAGE_SIZE,
+  });
 
   useEffect(() => {
-    const delayMs = searchQuery.trim() ? 350 : 0;
-    const t = setTimeout(() => {
-      void loadWalkers();
-    }, delayMs);
-    return () => clearTimeout(t);
-  }, [searchQuery, loadWalkers]);
+    let cancelled = false;
+    void (async () => {
+      const coords = await resolveCustomerDiscoveryCoords(phone);
+      if (cancelled) return;
+      coordsRef.current = coords;
+      fallbackAttemptedRef.current = false;
+      setSearchFallbackList(null);
+      setSearchSupplement([]);
+      await feedReload();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [phone, feedReload]);
+
+  useEffect(() => {
+    if (feedLoading || feedLoadingMore || feedWalkers.length > 0 || feedHasMore) {
+      if (feedWalkers.length > 0 && searchFallbackList) {
+        setSearchFallbackList(null);
+      }
+      return;
+    }
+    if (fallbackAttemptedRef.current) return;
+    fallbackAttemptedRef.current = true;
+
+    void (async () => {
+      const { latitude, longitude } = coordsRef.current;
+      const locationParams =
+        latitude != null && longitude != null
+          ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
+          : '';
+      try {
+        const roleRetry = await apiClient.get<{ vendors?: any[]; providers?: any[] }>(
+          `/customer/discover-services?category=walker&serviceStyle=at_home&roleId=walker&limit=50${locationParams}`
+        );
+        let list = discoveryVendorList(roleRetry);
+        if (list.length === 0) {
+          list = await fetchWalkerVendorsSearchFallback(locationParams);
+        }
+        if (list.length > 0) {
+          setSearchFallbackList(list);
+        }
+      } catch {
+        try {
+          const list = await fetchWalkerVendorsSearchFallback(locationParams);
+          if (list.length > 0) {
+            setSearchFallbackList(list);
+          }
+        } catch {
+          /* non-fatal */
+        }
+      }
+    })();
+  }, [feedLoading, feedLoadingMore, feedWalkers.length, feedHasMore, searchFallbackList]);
+
+  /** vendors/search includes trainer_solo + walk catalog rows that paginated discover may omit on page 1. */
+  useEffect(() => {
+    if (feedLoading || searchFallbackList) return;
+    let cancelled = false;
+    void (async () => {
+      const { latitude, longitude } = coordsRef.current;
+      const locationParams =
+        latitude != null && longitude != null
+          ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
+          : '';
+      try {
+        const list = await fetchWalkerVendorsSearchFallback(locationParams);
+        if (!cancelled) setSearchSupplement(list);
+      } catch {
+        if (!cancelled) setSearchSupplement([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [feedLoading, feedWalkers.length, phone, searchFallbackList]);
+
+  const allWalkers = useMemo(
+    () =>
+      mergeWalkerDiscoveryRows(
+        feedWalkers as Record<string, unknown>[],
+        (searchFallbackList ?? []) as Record<string, unknown>[],
+        searchSupplement as Record<string, unknown>[]
+      ),
+    [feedWalkers, searchFallbackList, searchSupplement]
+  );
+
+  const displayedWalkers = useMemo((): any[] => {
+    const q = searchQuery.trim();
+    let list: any[] = q
+      ? allWalkers.filter((w) => walkerRowMatchesQuery(w, q))
+      : [...allWalkers];
+    if (!q && list.length > WALKER_FEED_PAGE_SIZE) {
+      list = list.slice(0, WALKER_FEED_PAGE_SIZE);
+    }
+    return list;
+  }, [allWalkers, searchQuery]);
+
+  const walkersLoading =
+    feedLoading && allWalkers.length === 0 && !searchFallbackList;
+
+  const totalDiscoveryCount =
+    typeof walkerDiscovery.data === 'number' ? walkerDiscovery.data : 0;
+
+  const showViewAllButton =
+    !searchQuery.trim() &&
+    !walkersLoading &&
+    (allWalkers.length > 0 || totalDiscoveryCount > 0);
+
+  const handleSearchSubmit = useCallback(() => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    const filtered = allWalkers.filter((w) =>
+      walkerRowMatchesQuery(w, q)
+    );
+    if (filtered.length === 0 && allWalkers.length > 0) {
+      toast.info('No walkers match that search. Try a name, area, or service.');
+    }
+  }, [allWalkers, searchQuery]);
+
+  const handleViewAllWalkers = useCallback(() => {
+    onNavigate?.('walker_home');
+  }, [onNavigate]);
 
   const buildWalkerPayload = (walker: any) => {
     const vid = resolveWalkerVendorId(walker);
@@ -772,7 +826,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  void loadWalkers();
+                  handleSearchSubmit();
                 }
               }}
               className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-3 text-gray-900 placeholder-gray-500 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -782,7 +836,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           <Button
             type="button"
             className="shrink-0 rounded-xl bg-[#FF8C42] px-4 font-semibold text-white hover:bg-[#FF7A2E]"
-            onClick={() => void loadWalkers()}
+            onClick={() => handleSearchSubmit()}
           >
             Search
           </Button>
@@ -1011,13 +1065,23 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
         <div ref={walkersSectionRef}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900">Available Walkers</h2>
+            {showViewAllButton ? (
+              <button
+                type="button"
+                className="flex items-center gap-1 text-sm font-medium text-[#FF8C42]"
+                onClick={handleViewAllWalkers}
+              >
+                View All
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            ) : null}
           </div>
 
-          {loading ? (
+          {walkersLoading ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
             </div>
-          ) : walkers.length === 0 ? (
+          ) : displayedWalkers.length === 0 ? (
             <Card className="p-8 text-center">
               <Dog className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="font-semibold text-gray-900 mb-2">No Walkers Found</h3>
@@ -1025,9 +1089,9 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
             </Card>
           ) : (
             <div className="space-y-4">
-              {walkers.map((walker, index) => (
+              {displayedWalkers.map((walker, index) => (
                 <Card 
-                  key={walker.id || walker.vendorId || index} 
+                  key={walkerRowKey(walker as Record<string, unknown>) || index} 
                   className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                   onClick={() => handleWalkerSelect(walker)}
                 >
@@ -1059,14 +1123,19 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                     <div>
                       <h3 className="font-bold text-lg text-gray-900">{walker.name || walker.businessName || 'Pet Walker'}</h3>
                       <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
-                        <MapPin className="w-4 h-4" />
-                        <span>{walker.location?.address || walker.address || walker.city || 'Location'}</span>
+                        <MapPin className="w-4 h-4 shrink-0" />
+                        <span>{walkerCardAddress(walker as Record<string, unknown>)}</span>
                       </div>
-                      <div className="flex items-center gap-3 mt-2 text-sm">
+                      <div className="flex items-center gap-3 mt-2 text-sm flex-wrap">
                         <span className="text-gray-600">{walker.reviewsCount || walker.reviewCount || 0} reviews</span>
-                        {walker.priceRange && (
+                        {(walker as any).distanceText ? (
+                          <span className="text-blue-600 font-medium">{(walker as any).distanceText}</span>
+                        ) : null}
+                        {walker.priceRange ? (
                           <span className="text-orange-500 font-semibold">{walker.priceRange}</span>
-                        )}
+                        ) : (walker as any).priceMin ? (
+                          <span className="text-orange-500 font-semibold">From ₹{(walker as any).priceMin}</span>
+                        ) : null}
                         {walker.experience && (
                           <span className="text-gray-500">• {walker.experience}</span>
                         )}
@@ -1087,6 +1156,14 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                   </div>
                 </Card>
               ))}
+              {!searchQuery.trim() && !searchFallbackList ? (
+                <DiscoveryVendorFeedSentinel
+                  hasMore={feedHasMore}
+                  loading={feedLoading}
+                  loadingMore={feedLoadingMore}
+                  onLoadMore={() => void feedLoadMore()}
+                />
+              ) : null}
             </div>
           )}
         </div>

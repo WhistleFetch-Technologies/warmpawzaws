@@ -22,6 +22,8 @@ import {
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -232,6 +234,15 @@ export function TrainingBookingRouter({
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
 
+  useEffect(() => {
+    if (step === 'datetime' && pets.length === 1 && !selectedPet) {
+      setSelectedPet(pets[0]);
+    }
+  }, [step, pets, selectedPet]);
+
+  const trainingIncludesAddressStep =
+    selectedServiceType === 'at_home' || selectedServiceType === 'home';
+
   // Default training program options (used when no specific services loaded)
   const defaultServiceTypeOptions = [
     { id: 'basic', name: 'Basic Obedience', icon: Home, price: 799, duration: 60, desc: 'Basic commands & behavior', color: 'orange' },
@@ -406,12 +417,7 @@ export function TrainingBookingRouter({
       // Load pets from API
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const loadedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const loadedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(loadedPets);
         
         // ✅ NEW: If we have a pre-filled pet ID, update selectedPet with full data
@@ -455,12 +461,7 @@ export function TrainingBookingRouter({
     try {
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const mappedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(mappedPets);
         // Auto-select newly added pet
         if (mappedPets.length > 0) {
@@ -536,8 +537,7 @@ export function TrainingBookingRouter({
   };
 
   const handleNext = () => {
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
-    const currentIdx = steps.indexOf(step);
+    const steps: BookingStep[] = ['service', 'datetime', 'address', 'payment', 'confirmation'];
 
     if (step === 'service' && vendorId && vendorServices.length > 0 && selectedServiceType) {
       const row = vendorServices.find(
@@ -559,35 +559,36 @@ export function TrainingBookingRouter({
         }
       }
     }
-    
-    // ✅ FIX: Skip address for tele and at_center (customer goes to center)
-    if (step === 'pet' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
-      setStep('payment');
+
+    if (step === 'datetime') {
+      if (selectedServiceType === 'tele' || selectedServiceType === 'at_center') {
+        setStep('payment');
+        return;
+      }
+      setStep('address');
       return;
     }
-    
-    if (currentIdx < steps.length - 1) {
+
+    const currentIdx = steps.indexOf(step);
+    if (currentIdx >= 0 && currentIdx < steps.length - 1) {
       setStep(steps[currentIdx + 1]);
     }
   };
 
   const handleBack = useCallback(() => {
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
+    const steps: BookingStep[] = ['service', 'datetime', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
 
-    // When we skipped the in-flow service step (hasServiceContext → start at datetime), Date/Time is the
-    // first visible step — back must leave the booking flow, not navigate to the hidden `service` step.
     if (step === 'datetime' && hasServiceContext) {
       onBack();
       return;
     }
-    
-    // ✅ FIX: Handle back from payment for tele and at_center (both skip address - customer goes to center)
+
     if (step === 'payment' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
-      setStep('pet');
+      setStep('datetime');
       return;
     }
-    
+
     if (currentIdx > 0) {
       setStep(steps[currentIdx - 1]);
     } else {
@@ -698,19 +699,18 @@ export function TrainingBookingRouter({
       : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
 
   const renderStepIndicator = () => {
-    // ✅ FIX: Only show steps that are relevant - skip 'Service' if already selected from profile
     const skipServiceStep = hasServiceContext && selectedVendorService;
-    const baseSteps = selectedServiceType === 'tele' 
-      ? ['Service', 'Date/Time', 'Pet', 'Payment']
-      : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
+    const baseSteps = trainingIncludesAddressStep
+      ? ['Service', 'Date/Time', 'Address', 'Payment']
+      : ['Service', 'Date/Time', 'Payment'];
     const steps = skipServiceStep ? baseSteps.slice(1) : baseSteps;
     const currentStepMap: Record<BookingStep, number> = {
-      service: skipServiceStep ? -1 : 0, 
-      datetime: skipServiceStep ? 0 : 1, 
-      pet: skipServiceStep ? 1 : 2, 
-      address: skipServiceStep ? 2 : 3, 
-      payment: skipServiceStep ? (selectedServiceType === 'tele' ? 2 : 3) : (selectedServiceType === 'tele' ? 3 : 4), 
-      confirmation: skipServiceStep ? (selectedServiceType === 'tele' ? 3 : 4) : 5
+      service: skipServiceStep ? -1 : 0,
+      datetime: skipServiceStep ? 0 : 1,
+      pet: skipServiceStep ? 0 : 1,
+      address: skipServiceStep ? 1 : 2,
+      payment: skipServiceStep ? (trainingIncludesAddressStep ? 2 : 1) : trainingIncludesAddressStep ? 3 : 2,
+      confirmation: skipServiceStep ? (trainingIncludesAddressStep ? 3 : 2) : trainingIncludesAddressStep ? 4 : 3,
     };
     const currentIdx = currentStepMap[step];
 
@@ -749,31 +749,28 @@ export function TrainingBookingRouter({
 
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
-    
+
     const skipServiceStep = hasServiceContext && selectedVendorService;
-    const baseSteps = selectedServiceType === 'tele' 
-      ? ['Service', 'Date/Time', 'Pet', 'Payment']
-      : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
+    const baseSteps = trainingIncludesAddressStep
+      ? ['Service', 'Date/Time', 'Address', 'Payment']
+      : ['Service', 'Date/Time', 'Payment'];
     const stepLabels = skipServiceStep ? baseSteps.slice(1) : baseSteps;
-    
+
     const currentStepMap: Record<BookingStep, number> = {
-      service: skipServiceStep ? -1 : 0, 
-      datetime: skipServiceStep ? 0 : 1, 
-      pet: skipServiceStep ? 1 : 2, 
-      address: skipServiceStep ? 2 : 3, 
-      payment: skipServiceStep ? (selectedServiceType === 'tele' ? 2 : 3) : (selectedServiceType === 'tele' ? 3 : 4), 
-      confirmation: skipServiceStep ? (selectedServiceType === 'tele' ? 3 : 4) : 5
+      service: skipServiceStep ? -1 : 0,
+      datetime: skipServiceStep ? 0 : 1,
+      pet: skipServiceStep ? 0 : 1,
+      address: skipServiceStep ? 1 : 2,
+      payment: skipServiceStep ? (trainingIncludesAddressStep ? 2 : 1) : trainingIncludesAddressStep ? 3 : 2,
+      confirmation: skipServiceStep ? (trainingIncludesAddressStep ? 3 : 2) : trainingIncludesAddressStep ? 4 : 3,
     };
     const currentIdx = currentStepMap[step];
-    
-    return stepLabels.map((label, idx) => {
-      const actualStepIdx = skipServiceStep ? idx + 1 : idx;
-      return {
-        label,
-        isCompleted: actualStepIdx < currentIdx,
-        isCurrent: actualStepIdx === currentIdx
-      };
-    });
+
+    return stepLabels.map((label, idx) => ({
+      label,
+      isCompleted: idx < currentIdx,
+      isCurrent: idx === currentIdx,
+    }));
   };
 
   if (step === 'payment' && showPaymentPage) {
@@ -960,7 +957,7 @@ export function TrainingBookingRouter({
 
         {/* Date & Time Selection */}
         {step === 'datetime' && (
-          <div className="space-y-6">
+          <div className="space-y-6 pb-4">
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-3">Select Date</h2>
               <div className="flex gap-2 overflow-x-auto pb-2 min-h-[5.5rem]">
@@ -1024,90 +1021,24 @@ export function TrainingBookingRouter({
               </div>
             )}
 
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedDate || !selectedTime}
-            >
-              Continue
-            </Button>
-          </div>
-        )}
+            <BookingPetSelection
+              variant="embedded"
+              pets={pets}
+              selectedPet={selectedPet}
+              onSelectPet={setSelectedPet}
+              onAddPet={() => setShowAddPetModal(true)}
+            />
 
-        {/* Pet Selection */}
-        {step === 'pet' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-            
-            {/* Required notice */}
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
-              <Dog className="w-4 h-4 text-amber-600 flex-shrink-0" />
-              <p className="text-sm text-amber-800">
-                A pet profile is required for this service to provide the best care.
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                    }`}
-                  >
-                    <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? (
-                        <Dog className="w-7 h-7 text-orange-600" />
-                      ) : pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? (
-                        <Cat className="w-7 h-7 text-orange-600" />
-                      ) : (
-                        <User className="w-7 h-7 text-orange-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 text-left">
-                      <h3 className="font-semibold text-gray-900">{pet.name}</h3>
-                      <p className="text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                      <CheckCircle2 className="w-6 h-6 text-orange-500" />
-                    )}
-                  </button>
-                ))
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                  <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Dog className="w-8 h-8 text-gray-400" />
-                  </div>
-                  <p className="text-gray-600 font-medium mb-2">No pets added yet</p>
-                  <p className="text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
-                  <button
-                    onClick={() => setShowAddPetModal(true)}
-                    className="px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition"
-                  >
-                    + Add Your First Pet
-                  </button>
-                </div>
-              )}
-            </div>
             <Button 
               onClick={handleNext} 
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedPet}
+              disabled={!selectedDate || !selectedTime || !selectedPet}
             >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
+              {!selectedDate || !selectedTime
+                ? 'Select Date & Time'
+                : !selectedPet
+                  ? 'Select a Pet'
+                  : 'Continue'}
             </Button>
           </div>
         )}

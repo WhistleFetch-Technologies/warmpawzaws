@@ -8,6 +8,7 @@ import {
   sqlVetHubExcludeNonVetServices,
   sqlVetHubPlaceholderCategoryOr,
   TRAINING_HUB_ROLE_SQL_IN_LIST,
+  WALKER_HUB_ROLE_SQL_IN_LIST,
 } from '../../../../../lib/discovery-vendor-query';
 import { getDiscoveryVendorListSchemaFlags } from '../../../../../utils/discovery-vendor-list-setup';
 import * as discover_servicesRepo from '../../repos/discover-services.repo';
@@ -122,6 +123,20 @@ export async function buildServicesByStyleCategoryContext(
       ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})`
       : '';
 
+  const walkerHubDiscoverySearchByStyle = catTextExact.some((c) =>
+    ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c)
+  );
+
+  const walkerRoleUncategorizedOrByStyle =
+    walkerHubDiscoverySearchByStyle
+      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${WALKER_HUB_ROLE_SQL_IN_LIST}))`
+      : '';
+
+  const walkerRoleHomeBypassOrByStyle =
+    walkerHubDiscoverySearchByStyle && !isAtCenter
+      ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${WALKER_HUB_ROLE_SQL_IN_LIST})`
+      : '';
+
   const trainingCategoryAliasVendorOrByStyle = trainingDiscoverySearchByStyle
     ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
     : '';
@@ -218,6 +233,8 @@ export async function buildServicesByStyleCategoryContext(
     behaviorCategoryAliasVendorOrByStyle,
     behaviorTrainingCategoryVendorOrByStyle,
     walkerCategoryDiscoveryOrByStyle,
+    walkerRoleUncategorizedOrByStyle,
+    walkerRoleHomeBypassOrByStyle,
     walkerCustomCategoryIdOrByStyleSql,
     vetCategoryEmptyOrByStyle,
     vetExcludeNonVetSqlByStyle,

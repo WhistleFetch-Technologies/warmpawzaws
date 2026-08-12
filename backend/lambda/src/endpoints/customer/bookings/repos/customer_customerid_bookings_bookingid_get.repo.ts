@@ -59,3 +59,36 @@ export async function dbCustomerCustomeridBookingsBookingidGet2(bookingId: strin
     [bookingId, customerId]
   );
 }
+
+export async function dbRefundSummaryForBookingId(bookingId: string): Promise<{
+  amount: string;
+  status: string;
+  method: string | null;
+} | null> {
+  const res = await query(
+    `SELECT
+       COALESCE(SUM(refund_amount::numeric), 0)::text AS amount,
+       CASE
+         WHEN bool_or(LOWER(COALESCE(refund_status, '')) = 'failed') THEN 'failed'
+         WHEN bool_or(LOWER(COALESCE(refund_status, '')) IN ('processing', 'approved')) THEN 'processing'
+         WHEN bool_or(LOWER(COALESCE(refund_status, '')) IN ('completed', 'processed')) THEN 'completed'
+         ELSE COALESCE(MAX(refund_status), 'processing')
+       END AS status,
+       (ARRAY_AGG(refund_method ORDER BY requested_at DESC NULLS LAST))[1]::text AS method
+     FROM refunds
+     WHERE booking_id = $1::uuid
+       AND LOWER(COALESCE(refund_status, '')) IN (
+         'completed', 'processing', 'approved', 'processed', 'failed'
+       )`,
+    [bookingId]
+  );
+  const row = (res as any).rows?.[0];
+  if (!row) return null;
+  const amount = parseFloat(String(row.amount ?? '0')) || 0;
+  if (amount <= 0.009 && String(row.status || '') !== 'failed') return null;
+  return {
+    amount: String(row.amount ?? '0'),
+    status: String(row.status || 'processing'),
+    method: row.method != null ? String(row.method) : null,
+  };
+}

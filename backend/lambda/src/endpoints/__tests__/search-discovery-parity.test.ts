@@ -377,6 +377,18 @@ describe('buildDiscoveryVendorExistsSql', () => {
     expect(sql).toContain('behavioral');
   });
 
+  it('walker category includes walker role uncategorized OR and at_home role bypass', async () => {
+    const { sql } = await buildDiscoveryVendorExistsSql({
+      category: 'walker',
+      serviceStyle: 'at_home',
+      paramOffset: 1,
+    });
+    expect(sql).toContain("'walker'");
+    expect(sql).toContain("'pet_walker'");
+    expect(sql).toContain("LOWER(COALESCE(TRIM(vs.category), '')) = ''");
+    expect(sql).toContain("LOWER(COALESCE(TRIM(r.name), '')) IN ('walker', 'walker_solo', 'pet_walker', 'dog_walker')");
+  });
+
   it('boarding discovery can include category_id OR fragment', async () => {
     const { sql } = await buildDiscoveryVendorExistsSql({
       category: 'boarding',

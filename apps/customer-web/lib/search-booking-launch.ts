@@ -605,6 +605,60 @@ export function launchSearchServiceBooking({
     serviceStyle: serviceStyleOpt,
   });
 
+  // Packages must route before category-specific one-off booking launches
+  // (training/grooming/boarding/walker/sitting early returns used to skip this).
+  {
+    const { persona: earlyPersona, serviceStyle: earlyDefaultStyle } =
+      resolveSearchCategoryPersona(category);
+    const earlyServiceStyle = serviceStyleOpt || earlyDefaultStyle;
+    const earlyServiceObj = normalizeVendorServiceRowForPackage({
+      id: String(service.vendorServiceId),
+      serviceId: service.catalogServiceId,
+      vendorServiceId: service.vendorServiceId,
+      name: service.name,
+      price: service.price,
+      duration: service.duration,
+      isPackage: service.isPackage,
+      packageDetails: service.packageDetails,
+      metadata: service.metadata,
+    });
+    if (isVendorServicePackageRow(earlyServiceObj)) {
+      const earlyPackageCategory = isNutritionCategory(category)
+        ? 'nutrition'
+        : earlyPersona === 'grooming'
+          ? 'grooming'
+          : earlyPersona === 'training'
+            ? 'training'
+            : earlyPersona === 'boarding'
+              ? 'boarding'
+              : earlyPersona === 'walker'
+                ? 'walker'
+                : earlyPersona === 'sitter'
+                  ? 'sitting'
+                  : earlyPersona === 'cafe'
+                    ? 'cafe'
+                    : earlyPersona === 'resort'
+                      ? 'resort'
+                      : earlyPersona === 'pharmacy'
+                        ? 'pharmacy'
+                        : 'vet';
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(vendorId),
+        vendorName,
+        serviceRow: earlyServiceObj,
+        serviceTypeCategory: earlyPackageCategory,
+        serviceStyle: earlyServiceStyle,
+      });
+      if (nav) {
+        const bookServiceId = String(service.catalogServiceId || service.vendorServiceId);
+        router.push(buildVendorBookDeepLink(vendorId, vendorName, category, bookServiceId));
+        return;
+      }
+      toast.error('Could not start package booking. Please try again or pick another service.');
+      return;
+    }
+  }
+
   if (isNutritionCategory(category)) {
     launchSearchNutritionBooking({
       vendorId,

@@ -233,6 +233,7 @@ class UniversalSearchHandler extends BaseHandler {
     categorySource: CategorySource;
     hubDrivenRetrieval: boolean;
     searchText: string;
+    blockedEcommerce?: boolean;
   }) {
     return {
       categories: opts.categories,
@@ -242,6 +243,7 @@ class UniversalSearchHandler extends BaseHandler {
       categorySource: opts.categorySource,
       hubDrivenRetrieval: opts.hubDrivenRetrieval,
       searchText: opts.searchText,
+      blockedEcommerce: opts.blockedEcommerce ?? false,
     };
   }
 
@@ -261,6 +263,7 @@ class UniversalSearchHandler extends BaseHandler {
           topHubSlug: null,
           topMatchedPhrase: null,
           source: 'none' as const,
+          blockedEcommerce: false,
         };
     const taxonomyHub =
       !explicitCategory && taxonomy.topHubSlug ? taxonomy.topHubSlug : undefined;
@@ -286,7 +289,34 @@ class UniversalSearchHandler extends BaseHandler {
       categorySource,
       hubDrivenRetrieval: hubFromTaxonomy,
       searchText: residual.searchText,
+      blockedEcommerce: taxonomy.blockedEcommerce ?? false,
     });
+
+    if (taxonomy.blockedEcommerce && !isProductSearchHub(explicitCategory)) {
+      logSearchTaxonomyDebug({
+        query: searchQuery,
+        categories,
+        topHubSlug: taxonomy.topHubSlug,
+        explicitCategory,
+        effectiveCategory,
+        categorySource,
+        searchMethod: 'sql',
+        taxonomySource: taxonomy.source,
+        hubDrivenRetrieval: false,
+        searchText: '',
+        searchTokens: [],
+      });
+      return this.success({
+        query: searchQuery,
+        ...taxonomyMeta,
+        vendors: [],
+        services: [],
+        products: [],
+        total: 0,
+        searchMethod: 'sql',
+        discoveryParity: false,
+      });
+    }
 
     const result = await this.searchWithPostgres(
       searchQuery,

@@ -32,6 +32,13 @@ import {
   type UniversalProviderProfileAbout,
 } from '@/lib/universal-provider-profile-enrichment';
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
+import { BookingPetSelection, type BookingPet } from './BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 
 // ============================================================================
 // TYPES
@@ -47,6 +54,9 @@ interface Service {
   popular?: boolean;
   categoryName?: string;
   serviceStyle: string;
+  isPackage?: boolean;
+  packageDetails?: unknown;
+  metadata?: unknown;
 }
 
 interface Review {
@@ -97,12 +107,8 @@ interface TimeSlot {
   booked?: boolean;
 }
 
-interface Pet {
-  id: string;
-  name: string;
-  type: string;
-  breed: string;
-  photo?: string;
+interface Pet extends BookingPet {
+  type?: string;
 }
 
 interface Address {
@@ -273,10 +279,21 @@ export function UniversalProviderProfile({
           duration: s.duration,
           serviceStyle,
           categoryName: s.category,
+          isPackage: s.isPackage,
+          packageDetails: s.packageDetails,
+          metadata: s.metadata,
         }));
       }
       return (rows || []).map((raw) => {
         const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+        const meta =
+          s.metadata && typeof s.metadata === 'object' && !Array.isArray(s.metadata)
+            ? (s.metadata as Record<string, unknown>)
+            : undefined;
+        const packageDetails = s.packageDetails ?? meta?.packageDetails;
+        const isPackage = Boolean(
+          s.isPackage ?? s.is_package ?? meta?.isPackage ?? packageDetails
+        );
         return {
           id: String(s.id ?? s.serviceId ?? ''),
           serviceId: String(s.serviceId ?? s.id ?? ''),
@@ -289,6 +306,9 @@ export function UniversalProviderProfile({
           categoryName:
             String(s.categoryLabel ?? s.category ?? s.categoryName ?? '').trim() ||
             undefined,
+          isPackage,
+          packageDetails,
+          metadata: meta ?? s.metadata,
         };
       });
     },
@@ -459,15 +479,16 @@ export function UniversalProviderProfile({
       // Load pets
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse?.pets) {
-        setPets(petsResponse.pets);
-        if (petsResponse.pets.length > 0) {
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
+        setPets(mappedPets);
+        if (mappedPets.length > 0) {
           if (initialSelectedPetId) {
-            const match = petsResponse.pets.find(
+            const match = mappedPets.find(
               (p: Pet) => String(p.id) === String(initialSelectedPetId),
             );
-            setSelectedPet(match ?? petsResponse.pets[0]);
+            setSelectedPet(match ?? mappedPets[0]);
           } else {
-            setSelectedPet(petsResponse.pets[0]);
+            setSelectedPet(mappedPets[0]);
           }
         }
       }
@@ -620,6 +641,30 @@ export function UniversalProviderProfile({
   const handleProceedToBooking = () => {
     if (selectedServices.size === 0) {
       toast.error('Please select at least one service');
+      return;
+    }
+    const pkgOnly = selectedServicesList.filter((s) =>
+      isVendorServicePackageRow(s as unknown as Record<string, unknown>)
+    );
+    if (pkgOnly.length === 1 && selectedServicesList.length === 1) {
+      const pkg = pkgOnly[0]!;
+      const vendorIdForPkg = String(provider.vendorId || provider.providerId || '').trim();
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: vendorIdForPkg,
+        vendorName: displayName || provider.name,
+        serviceRow: pkg as unknown as Record<string, unknown>,
+        serviceTypeCategory: category,
+        serviceStyle,
+      });
+      if (nav) {
+        onNavigate('purchase-package', nav);
+        return;
+      }
+      toast.error('Could not start package booking. Please try again.');
+      return;
+    }
+    if (pkgOnly.length > 0 && selectedServicesList.length > 1) {
+      toast.error('Packages must be booked separately from one-off services.');
       return;
     }
     setShowBookingForm(true);
@@ -889,42 +934,13 @@ export function UniversalProviderProfile({
             </div>
           )}
 
-          {/* Pet Selection */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-medium text-sm">Select Pet</h3>
-              <button 
-                onClick={() => onNavigate('add-pet')}
-                className="text-orange-500 text-sm flex items-center gap-1"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {pets.map((pet) => (
-                <button
-                  key={pet.id}
-                  onClick={() => setSelectedPet(pet)}
-                  className={`flex-shrink-0 p-3 rounded-xl flex items-center gap-2 transition-all ${
-                    selectedPet?.id === pet.id 
-                      ? 'bg-orange-500 text-white' 
-                      : 'bg-white border border-gray-200 hover:border-orange-300'
-                  }`}
-                >
-                  <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-200">
-                    {pet.photo ? (
-                      <img src={pet.photo} alt={pet.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-lg">{pet.type === 'Dog' ? '🐕' : '🐈'}</span>
-                    )}
-                  </div>
-                  <span className="font-medium">{pet.name}</span>
-                  {selectedPet?.id === pet.id && <Check className="w-4 h-4" />}
-                </button>
-              ))}
-            </div>
-          </div>
+          <BookingPetSelection
+            variant="embedded"
+            pets={pets}
+            selectedPet={selectedPet}
+            onSelectPet={setSelectedPet}
+            onAddPet={() => onNavigate('add-pet')}
+          />
 
           {/* Address Selection (for at_home) - modal in-context, no navigation */}
           {serviceStyle === 'at_home' && (
@@ -1012,7 +1028,6 @@ export function UniversalProviderProfile({
           <div className="px-4 pt-4 cw-scroll-pad-tabbar-sticky-cta">
             {activeTab === 'services' && (
               <div className="space-y-3">
-                <h3 className="font-medium text-gray-700">Available Services</h3>
                 {servicesLoading ? (
                   <Card className="p-6 text-center">
                     <Loader2 className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-2" />
@@ -1024,7 +1039,14 @@ export function UniversalProviderProfile({
                   </Card>
                 ) : (
                   <>
-                    {services.map((service) => {
+                    {discoveryServiceSections(
+                      services as unknown as Record<string, unknown>[]
+                    ).map((sec) => (
+                      <div key={sec.title} className="space-y-3">
+                        <h3 className="font-medium text-gray-700">
+                          {sec.title} ({sec.list.length})
+                        </h3>
+                        {(sec.list as unknown as Service[]).map((service) => {
                     const isSelected = selectedServices.has(service.id);
                     return (
                       <Card 
@@ -1040,6 +1062,11 @@ export function UniversalProviderProfile({
                               <h4 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
                                 {service.name}
                               </h4>
+                              {service.isPackage && (
+                                <Badge className="bg-purple-100 text-purple-700 text-xs shrink-0 border border-purple-200">
+                                  Package
+                                </Badge>
+                              )}
                               {service.popular && (
                                 <Badge className="bg-amber-100 text-amber-700 text-xs shrink-0">Popular</Badge>
                               )}
@@ -1080,6 +1107,8 @@ export function UniversalProviderProfile({
                       </Card>
                     );
                   })}
+                      </div>
+                    ))}
                     <DiscoveryVendorFeedSentinel
                       hasMore={hasMoreServices}
                       loading={servicesLoading}

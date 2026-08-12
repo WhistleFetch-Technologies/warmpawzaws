@@ -51,6 +51,18 @@ export async function executecustomerCustomeridBookingsBookingidGet(c: Context) 
 
       const paymentFeeFields = await loadCustomerPaymentFeeFields(bookingId);
 
+      const refundRow =
+        await customer_customerid_bookings_bookingid_getRepo.dbRefundSummaryForBookingId(
+          bookingId
+        );
+      const refundSummary = refundRow
+        ? {
+            amount: Math.round((parseFloat(String(refundRow.amount ?? '0')) || 0) * 100) / 100,
+            status: String(refundRow.status || 'processing'),
+            method: refundRow.method ? String(refundRow.method) : 'original',
+          }
+        : null;
+
       return c.json({
         success: true,
         booking: {
@@ -129,6 +141,8 @@ export async function executecustomerCustomeridBookingsBookingidGet(c: Context) 
           notes: booking.notes,
           ...paymentFeeFields,
           cancellationReason: booking.cancellation_reason,
+          cancelledBy: booking.cancelled_by ?? null,
+          refundSummary,
           createdAt: booking.created_at,
           completedAt: booking.completed_at,
           cancelledAt: booking.cancelled_at,

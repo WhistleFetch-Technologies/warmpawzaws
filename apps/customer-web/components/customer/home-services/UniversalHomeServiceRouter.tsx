@@ -402,42 +402,61 @@ export function UniversalHomeServiceRouter({
         config={config}
         onBack={handleBack}
         onSelectService={(service: HomeServiceProfileService, rawRow?: Record<string, unknown>) => {
-          if (serviceType === 'walker') {
-            const vid = bookingFlow.vendorId;
-            const sid = String(service.id || '').trim();
-            if (vid && sid) clearSkipPackageAutoRedirect(vid, sid);
-            const probe = {
-              ...(rawRow || {}),
-              id: rawRow?.id ?? sid,
-              name: rawRow?.name ?? service.name,
-              isPackage: rawRow?.isPackage,
-            } as Record<string, unknown>;
-            if (vid && (isVendorServicePackageRow(probe) || isWalkerVendorServicePackageRow(probe))) {
-              const pkgNav =
-                buildWalkerServiceDataForVendorPackagePurchase({
-                  vendorId: vid,
-                  vendorName: bookingFlow.vendorName ?? undefined,
-                  serviceRow: { ...probe, isPackage: true },
-                  serviceTypeCategory: 'walking',
-                  serviceStyle: 'at_home',
-                }) ||
-                (sid
-                  ? {
-                      vendorId: vid,
-                      vendorServiceId: sid,
-                      serviceName: service.name || 'Package',
-                      totalSessions: 1,
-                      price: service.price,
-                      duration: service.duration,
-                      serviceType: 'walking',
-                      serviceStyle: 'at_home',
-                    }
-                  : null);
-              if (pkgNav && String(pkgNav.vendorServiceId || '').trim()) {
-                onNavigate?.('purchase-package', pkgNav);
-                return;
-              }
+          const vid = bookingFlow.vendorId;
+          const sid = String(service.id || '').trim();
+          if (vid && sid) clearSkipPackageAutoRedirect(vid, sid);
+          const probe = {
+            ...(rawRow || {}),
+            id: rawRow?.id ?? sid,
+            name: rawRow?.name ?? service.name,
+            isPackage: rawRow?.isPackage ?? service.isPackage,
+            packageDetails: rawRow?.packageDetails ?? service.packageDetails,
+            metadata: rawRow?.metadata ?? service.metadata,
+          } as Record<string, unknown>;
+          const asPackage =
+            isVendorServicePackageRow(probe) ||
+            (serviceType === 'walker' && isWalkerVendorServicePackageRow(probe));
+          if (vid && asPackage) {
+            const categoryForPkg =
+              serviceType === 'walker'
+                ? 'walking'
+                : serviceType === 'grooming'
+                  ? 'grooming'
+                  : serviceType === 'training'
+                    ? 'training'
+                    : serviceType === 'behaviour'
+                      ? 'behaviour'
+                      : serviceType === 'nutritionist'
+                        ? 'nutrition'
+                        : serviceType === 'sitter'
+                          ? 'sitting'
+                          : serviceType;
+            const pkgNav =
+              buildWalkerServiceDataForVendorPackagePurchase({
+                vendorId: vid,
+                vendorName: bookingFlow.vendorName ?? undefined,
+                serviceRow: { ...probe, isPackage: true },
+                serviceTypeCategory: categoryForPkg,
+                serviceStyle: 'at_home',
+              }) ||
+              (sid
+                ? {
+                    vendorId: vid,
+                    vendorServiceId: sid,
+                    serviceName: service.name || 'Package',
+                    totalSessions: 1,
+                    price: service.price,
+                    duration: service.duration,
+                    serviceType: categoryForPkg,
+                    serviceStyle: 'at_home',
+                  }
+                : null);
+            if (pkgNav && String(pkgNav.vendorServiceId || '').trim()) {
+              onNavigate?.('purchase-package', pkgNav);
+              return;
             }
+          }
+          if (serviceType === 'walker') {
             onNavigate?.('walker-booking', {
               vendorId: vid,
               walker: {

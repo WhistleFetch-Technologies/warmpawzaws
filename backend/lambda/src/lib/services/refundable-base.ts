@@ -1,12 +1,14 @@
 /**
- * Refund tier math applies to **what the customer can get back** for the service/net amount:
+ * Refund tier math applies to **what the customer can get back**:
  * - Prefer completed **payments** for the booking.
+ * - **GST is refundable** (included in capturable gross / refundable base).
  * - **Platform fee** and **convenience fee** on each payment are never refundable
  *   (excluded from the base used for % refunds).
  * - **Coupons / promos**: net of `discount_amount` on the booking when no payment rows exist.
  *
  * Priority for refundable base:
- *  1) SUM(amount − platform_fee − convenience_fee) for completed captures (authoritative when present).
+ *  1) SUM(capturable_gross − platform_fee − convenience_fee) for completed captures
+ *     (capturable_gross prefers total_amount, else amount+gst when tax-exclusive, else amount).
  *  2) bookings.total_amount − COALESCE(bookings.discount_amount, 0) when no payments.
  *  3) bookings.total_amount alone.
  */
@@ -36,6 +38,43 @@ function roundMoney(n: number): number {
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.round(n * 100) / 100;
 }
+
+/**
+ * Gross amount captured for a payment row (what Razorpay / wallet actually took).
+ * Prefer total_amount; if missing and amount looks tax-exclusive, add gst_amount.
+ * Never double-add GST when amount already ≈ total_amount.
+ */
+export function resolvePaymentCapturableGross(input: {
+  amount?: number | string | null;
+  total_amount?: number | string | null;
+  gst_amount?: number | string | null;
+}): number {
+  const amount = parseFloat(String(input.amount ?? 0)) || 0;
+  const total = parseFloat(String(input.total_amount ?? 0)) || 0;
+  const gst = parseFloat(String(input.gst_amount ?? 0)) || 0;
+
+  if (total > 0.009) {
+    return roundMoney(total);
+  }
+  if (gst > 0.009 && amount > 0.009) {
+    // If amount already looks all-in (≈ amount without adding gst again is impossible
+    // without total); only skip add when amount ≈ amount+gst within 5 paise (gst≈0).
+    const withGst = amount + gst;
+    if (Math.abs(amount - withGst) <= 0.05) return roundMoney(amount);
+    return roundMoney(withGst);
+  }
+  return roundMoney(Math.max(0, amount));
+}
+
+/** SQL expression: per-row capturable gross (mirrors resolvePaymentCapturableGross). */
+const PAYMENT_CAPTURABLE_GROSS_SQL = `
+  CASE
+    WHEN COALESCE(total_amount, 0)::numeric > 0.009 THEN COALESCE(total_amount, 0)::numeric
+    WHEN COALESCE(gst_amount, 0)::numeric > 0.009
+      THEN COALESCE(amount, 0)::numeric + COALESCE(gst_amount, 0)::numeric
+    ELSE COALESCE(amount, 0)::numeric
+  END
+`;
 
 /** Wallet applied to the booking (split-pay / wallet-only), not in Razorpay `payments.amount`. */
 async function loadWalletDebitTotalForBooking(bookingId: string): Promise<number> {
@@ -125,10 +164,17 @@ async function loadCompletedPaymentTotals(bookingId: string): Promise<{
   try {
     const paidRes = await query(
       `SELECT
-         COALESCE(SUM(amount::numeric), 0)::text AS paid_total,
+         COALESCE(SUM(${PAYMENT_CAPTURABLE_GROSS_SQL}), 0)::text AS paid_total,
          COALESCE(SUM(COALESCE(platform_fee, 0)::numeric), 0)::text AS platform_fee_total,
          COALESCE(SUM(COALESCE(convenience_fee, 0)::numeric), 0)::text AS convenience_fee_total,
-         COALESCE(SUM((amount::numeric - COALESCE(platform_fee, 0)::numeric - COALESCE(convenience_fee, 0)::numeric)), 0)::text AS refundable_from_payments
+         COALESCE(SUM(
+           GREATEST(
+             0,
+             (${PAYMENT_CAPTURABLE_GROSS_SQL})
+               - COALESCE(platform_fee, 0)::numeric
+               - COALESCE(convenience_fee, 0)::numeric
+           )
+         ), 0)::text AS refundable_from_payments
        FROM payments
        WHERE booking_id = $1::uuid
          AND payment_status = 'completed'`,

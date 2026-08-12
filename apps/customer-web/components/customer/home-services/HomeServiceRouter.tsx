@@ -38,6 +38,7 @@ import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, trackPageView, useBookingAnalytics, ServiceCategory } from '@/lib/analytics';
+import { BookingPetSelection } from '../shared/BookingPetSelection';
 
 // Service types that support home service
 export type HomeServiceType = 'walking' | 'grooming' | 'training' | 'veterinary' | 'sitting' | 'nutrition' | 'behaviourist' | 'diagnostics';
@@ -1410,75 +1411,14 @@ export function HomeServiceRouter({
               </div>
             )}
 
-            <div className={`space-y-4 border-t border-gray-100 pt-6`}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900">Your pet</h2>
-                <button
-                  type="button"
-                  onClick={() => setShowAddPetModal(true)}
-                  className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium ${colors.light}`}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Pet
-                </button>
-              </div>
-              <div className={`rounded-lg p-3 ${colors.light}`}>
-                <p className="text-sm">
-                  🐾 A pet profile is required for {serviceName.toLowerCase()} services.
-                </p>
-              </div>
-              {pets.length > 1 ? (
-                <select
-                  className="h-12 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                  value={selectedPet?.id || ''}
-                  onChange={(e) => {
-                    const pet = pets.find((p) => p.id === e.target.value);
-                    if (pet) setSelectedPet(pet);
-                  }}
-                  aria-label="Select pet"
-                >
-                  <option value="">Select a pet</option>
-                  {pets.map((pet) => (
-                    <option key={pet.id} value={pet.id}>
-                      {pet.name}
-                      {pet.breed ? ` · ${pet.breed}` : ''}
-                    </option>
-                  ))}
-                </select>
-              ) : pets.length === 1 ? (
-                <div
-                  className={`flex items-center gap-4 rounded-xl border-2 p-4 ${
-                    colors.light.includes('border') ? colors.light.split(' ')[1] : 'border-green-500'
-                  } ${colors.light.includes('bg') ? colors.light.split(' ')[0] : 'bg-green-50'}`}
-                >
-                  <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-orange-100 text-2xl">
-                    {pets[0].photo ? (
-                      <img src={pets[0].photo} alt={pets[0].name} className="h-full w-full object-cover" />
-                    ) : pets[0].species?.toLowerCase().includes('dog') ? (
-                      '🐕'
-                    ) : pets[0].species?.toLowerCase().includes('cat') ? (
-                      '🐈'
-                    ) : (
-                      '🐾'
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1 text-left">
-                    <h3 className="font-semibold text-gray-900">{pets[0].name}</h3>
-                    <p className="text-sm capitalize text-gray-500">{pets[0].breed}</p>
-                  </div>
-                  <CheckCircle2 className={`h-6 w-6 flex-shrink-0 ${colors.text}`} />
-                </div>
-              ) : (
-                <Card className="border-2 border-dashed p-8 text-center">
-                  <div className="mb-3 text-5xl">🐾</div>
-                  <p className="mb-2 font-medium text-gray-900">No pets added yet</p>
-                  <p className="mb-4 text-sm text-gray-500">Add your pet to continue</p>
-                  <Button onClick={() => setShowAddPetModal(true)} className={colors.primary}>
-                    + Add Your First Pet
-                  </Button>
-                </Card>
-              )}
-            </div>
+            <BookingPetSelection
+              variant="embedded"
+              pets={pets}
+              selectedPet={selectedPet}
+              onSelectPet={setSelectedPet}
+              onAddPet={() => setShowAddPetModal(true)}
+              bannerMessage={`A pet profile is required for ${serviceName.toLowerCase()} services.`}
+            />
 
             <div className="space-y-4 border-t border-gray-100 pt-6">
               <div className="flex items-center justify-between">
