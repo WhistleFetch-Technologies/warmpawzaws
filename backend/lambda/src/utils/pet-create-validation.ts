@@ -53,7 +53,40 @@ function resolveGender(payload: Record<string, unknown>): string | null {
 export type ValidatePetCreateOptions = {
   /** When true (default), customerId must be present on the payload. */
   requireCustomerId?: boolean;
+  /** strict = all core fields required; onboarding = relaxed first-time pet wizard. */
+  mode?: 'strict' | 'onboarding';
 };
+
+function validateOnboardingPayload(payload: Record<string, unknown>): PetCreateValidationResult {
+  const petType = resolvePetType(payload);
+  if (petType && !ALLOWED_PET_TYPES.includes(petType.toLowerCase())) {
+    return {
+      ok: false,
+      error: 'Invalid pet type. Platform currently supports Dogs and Cats only.',
+    };
+  }
+
+  const gender = payload.gender;
+  if (nonEmptyString(gender)) {
+    const normalized = gender.trim().toLowerCase();
+    if (!ALLOWED_GENDERS.includes(normalized)) {
+      return {
+        ok: false,
+        error: 'Gender is invalid (male, female, neutered, or spayed)',
+      };
+    }
+  }
+
+  const dob = payload.dob ?? payload.dateOfBirth ?? payload.date_of_birth;
+  if (nonEmptyString(dob)) {
+    const d = new Date(dob);
+    if (Number.isNaN(d.getTime())) {
+      return { ok: false, error: 'Date of birth is invalid' };
+    }
+  }
+
+  return { ok: true };
+}
 
 /**
  * Validates required fields for creating a new pet profile.
@@ -64,12 +97,17 @@ export function validatePetCreatePayload(
   options: ValidatePetCreateOptions = {},
 ): PetCreateValidationResult {
   const requireCustomerId = options.requireCustomerId !== false;
+  const mode = options.mode ?? 'strict';
 
   if (requireCustomerId) {
     const customerId = payload.customerId ?? payload.customer_id;
     if (!nonEmptyString(customerId)) {
       return { ok: false, error: 'customerId is required' };
     }
+  }
+
+  if (mode === 'onboarding') {
+    return validateOnboardingPayload(payload);
   }
 
   if (!nonEmptyString(payload.name)) {
@@ -107,4 +145,19 @@ export function validatePetCreatePayload(
   }
 
   return { ok: true };
+}
+
+/** Defaults for pets.name / pets.species NOT NULL when onboarding relaxed create omits them. */
+export function resolveOnboardingPetInsertDefaults(payload: Record<string, unknown>): {
+  name: string;
+  species: string;
+} {
+  const rawName = payload.name;
+  const name =
+    typeof rawName === 'string' && rawName.trim().length > 0 ? rawName.trim() : 'My Pet';
+
+  const petType = resolvePetType(payload);
+  const species = petType ? petType.toLowerCase() : 'dog';
+
+  return { name, species };
 }

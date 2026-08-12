@@ -1,4 +1,5 @@
 import {
+  computeCartDeliverySlaEstimate,
   computeDeliverySlaEstimate,
   INTRA_STATE_SLA,
   INTER_STATE_SLA,
@@ -85,5 +86,48 @@ describe('delivery SLA estimate', () => {
     );
     expect(est?.vendorPincode).toBe('400001');
     expect(est?.isInterState).toBe(false);
+  });
+
+  describe('computeCartDeliverySlaEstimate', () => {
+    const customer = { pincode: '560034', state: 'Karnataka' };
+
+    it('returns null without valid customer pincode', () => {
+      expect(
+        computeCartDeliverySlaEstimate(
+          [{ state: 'Karnataka', pincode: '560001' }],
+          { pincode: '' },
+          fixedNow,
+        ),
+      ).toBeNull();
+    });
+
+    it('returns null for empty vendor list', () => {
+      expect(computeCartDeliverySlaEstimate([], customer, fixedNow)).toBeNull();
+    });
+
+    it('single intra-state line → 2–3 days', () => {
+      const est = computeCartDeliverySlaEstimate(
+        [{ state: 'Karnataka', pincode: '560001' }],
+        customer,
+        fixedNow,
+      );
+      expect(est?.maxDays).toBe(INTRA_STATE_SLA.maxDays);
+      expect(est?.label).toBe('Delivery in 2–3 days');
+    });
+
+    it('mix of intra + inter → inter wins (4–5 days)', () => {
+      const est = computeCartDeliverySlaEstimate(
+        [
+          { state: 'Karnataka', pincode: '560001' },
+          { state: 'Maharashtra', pincode: '400001' },
+        ],
+        customer,
+        fixedNow,
+      );
+      expect(est?.maxDays).toBe(INTER_STATE_SLA.maxDays);
+      expect(est?.minDays).toBe(INTER_STATE_SLA.minDays);
+      expect(est?.label).toBe('Delivery in 4–5 days');
+      expect(est?.deliverByDate).toBe('2026-08-12');
+    });
   });
 });

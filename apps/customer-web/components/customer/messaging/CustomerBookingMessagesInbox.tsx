@@ -342,8 +342,7 @@ export function CustomerBookingMessagesInbox({
           const raw = res.responses || [];
           const visible = raw.filter((r) => !r.is_internal);
           markSupportThreadSeenInBrowser(ticketId, { ticket: res.ticket, responses: visible });
-          // Server-side mark-read so iOS devices don't lose read state when localStorage is cleared
-          supportCrmApi.markCustomerRead(ticketId).catch(() => {});
+          await supportCrmApi.markCustomerRead(ticketId).catch(() => {});
           setSupportTicketDetail({ ticket: res.ticket, responses: visible });
           bumpMessagesInboxVersion();
           void refreshInbox();
@@ -609,6 +608,7 @@ export function CustomerBookingMessagesInbox({
                 setSupportTicketDetail(null);
                 setSupportReplyText('');
                 setSupportReplyAttachments([]);
+                bumpMessagesInboxVersion();
                 void refreshInbox();
               }}
             />

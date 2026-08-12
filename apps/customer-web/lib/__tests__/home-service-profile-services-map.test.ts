@@ -39,4 +39,21 @@ describe('mapHomeServiceProfileServices', () => {
     expect(mapped[0]!.id).toBe('row-0');
     expect(mapped[1]!.id).toBe('row-1');
   });
+
+  it('preserves package flags for purchase-package routing', () => {
+    const mapped = mapHomeServiceProfileServices([
+      {
+        id: 'pkg-1',
+        name: 'Walk Bundle',
+        isPackage: true,
+        packageDetails: { totalSessions: 10 },
+        price: 2000,
+      },
+    ]);
+    expect(mapped[0]).toMatchObject({
+      id: 'pkg-1',
+      isPackage: true,
+      packageDetails: { totalSessions: 10 },
+    });
+  });
 });

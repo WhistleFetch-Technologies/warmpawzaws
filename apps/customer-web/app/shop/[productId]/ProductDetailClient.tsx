@@ -48,7 +48,6 @@ import {
 import {
   readCheckoutAddressId,
 } from '@/lib/ecommerce/checkout-address-storage';
-import { ECOMMERCE_DEFAULT_DELIVERY_FEE } from '@/lib/ecommerce/cart-pricing';
 import {
   displayProductSpecValue,
   isMeaningfulProductSpecValue,
@@ -651,6 +650,11 @@ export default function ProductDetailClient() {
       images: heroImage ? [heroImage] : product.images,
       ...(vendorId ? { vendor_id: vendorId } : {}),
       vendor_name: product.vendor_name,
+      ...(product.vendor_state ? { vendor_state: product.vendor_state } : {}),
+      ...(product.vendor_pincode ? { vendor_pincode: product.vendor_pincode } : {}),
+      ...(product.vendor_shipping_origin_pincode
+        ? { vendor_shipping_origin_pincode: product.vendor_shipping_origin_pincode }
+        : {}),
       ...(product.category_id ? { category_id: product.category_id } : {}),
       stock: displayStock,
       ...(deliveryRegions.length > 0 ? { delivery_regions: deliveryRegions } : {}),
@@ -1240,9 +1244,6 @@ export default function ProductDetailClient() {
                       </button>
                     </div>
                   )}
-                  <p className="text-sm text-slate-500 mt-1">
-                    ₹{ECOMMERCE_DEFAULT_DELIVERY_FEE.toLocaleString('en-IN')} on all orders
-                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

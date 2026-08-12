@@ -96,6 +96,23 @@ describe('extractBookingFinancial payment-row fallback', () => {
     expect(fin.lines.find((l) => l.label === 'Platform & other fees')).toBeUndefined();
     expect(fin.lines.find((l) => l.kind === 'final')!.label).toBe('Total payable');
   });
+
+  it('reconstructs all-in Total payable when stored total is tax-exclusive (Anannya grooming case)', () => {
+    const fin = extractBookingFinancial({
+      total_amount: '1699',
+      base_price: '1699',
+      price: '1699',
+      payment_status: 'pending',
+      status: 'cancelled',
+      notes:
+        'wp_financial_meta:{"servicePrice":1699,"cgst":152.91,"sgst":152.91,"totalTax":305.82,"finalPaid":1699}',
+    });
+    expect(fin.servicePrice).toBe(1699);
+    expect(fin.totalTax).toBe(305.82);
+    expect(fin.finalPaid).toBe(2004.82);
+    expect(fin.lines.find((l) => l.kind === 'final')!.amount).toBe(2004.82);
+    expect(fin.isPaid).toBe(false);
+  });
 });
 
 describe('extractBookingFinancial wallet line', () => {

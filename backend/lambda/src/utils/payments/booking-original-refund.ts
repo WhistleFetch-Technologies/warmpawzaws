@@ -7,6 +7,7 @@ import { query, withTransaction } from '../../database/rds-connection';
 import { getRazorpayClient } from './razorpay-client';
 import { resolveBookingPaymentSources } from './booking-payment-sources';
 import { creditCustomerWalletForBookingRefund } from '../credit-customer-wallet';
+import { resolvePaymentCapturableGross } from '../../lib/services/refundable-base';
 
 export type RefundInitiator = 'customer' | 'vendor' | 'admin' | 'system' | 'support';
 
@@ -65,26 +66,51 @@ export async function bookingHasGatewayPayment(bookingId: string): Promise<boole
 async function loadGatewayPayment(bookingId: string): Promise<{
   id: string;
   amount: number;
+  capturable: number;
   razorpay_payment_id: string;
   payment_status: string;
   customer_id: string;
 } | null> {
-  const res = await query(
-    `SELECT id, amount::text, razorpay_payment_id, payment_status, customer_id::text
-     FROM payments
-     WHERE booking_id = $1::uuid
-       AND payment_status IN ('completed', 'partially_refunded')
-       AND razorpay_payment_id IS NOT NULL
-       AND COALESCE(payment_method, '') <> 'wallet'
-     ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END, created_at DESC
-     LIMIT 1`,
-    [bookingId]
-  );
-  const row = (res as any).rows?.[0];
+  let row: any;
+  try {
+    const res = await query(
+      `SELECT id, amount::text, total_amount::text, gst_amount::text,
+              razorpay_payment_id, payment_status, customer_id::text
+       FROM payments
+       WHERE booking_id = $1::uuid
+         AND payment_status IN ('completed', 'partially_refunded')
+         AND razorpay_payment_id IS NOT NULL
+         AND COALESCE(payment_method, '') <> 'wallet'
+       ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END, created_at DESC
+       LIMIT 1`,
+      [bookingId]
+    );
+    row = (res as any).rows?.[0];
+  } catch {
+    const res = await query(
+      `SELECT id, amount::text, razorpay_payment_id, payment_status, customer_id::text
+       FROM payments
+       WHERE booking_id = $1::uuid
+         AND payment_status IN ('completed', 'partially_refunded')
+         AND razorpay_payment_id IS NOT NULL
+         AND COALESCE(payment_method, '') <> 'wallet'
+       ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END, created_at DESC
+       LIMIT 1`,
+      [bookingId]
+    );
+    row = (res as any).rows?.[0];
+  }
   if (!row?.id || !row.razorpay_payment_id) return null;
+  const amount = parseFloat(String(row.amount ?? '0')) || 0;
+  const capturable = resolvePaymentCapturableGross({
+    amount,
+    total_amount: row.total_amount,
+    gst_amount: row.gst_amount,
+  });
   return {
     id: String(row.id),
-    amount: parseFloat(String(row.amount ?? '0')) || 0,
+    amount,
+    capturable: capturable > 0.009 ? capturable : amount,
     razorpay_payment_id: String(row.razorpay_payment_id),
     payment_status: String(row.payment_status ?? ''),
     customer_id: String(row.customer_id ?? ''),
@@ -233,7 +259,8 @@ export async function processBookingOriginalPaymentRefund(
   }
 
   const alreadyRefunded = await sumProcessedRefundsForPayment(payment.id);
-  const availableOnPayment = round2(payment.amount - alreadyRefunded);
+  const capturable = payment.capturable > 0.009 ? payment.capturable : payment.amount;
+  const availableOnPayment = round2(capturable - alreadyRefunded);
   const razorpayAmount = round2(Math.min(gatewaySlice, availableOnPayment));
 
   if (razorpayAmount <= 0.009) {
@@ -263,7 +290,7 @@ export async function processBookingOriginalPaymentRefund(
     finalStatus = rzResult.status === 'processed' ? 'completed' : 'processing';
 
     const refundStatusDb = finalStatus === 'completed' ? 'completed' : 'processing';
-    const isFullPaymentRefund = round2(alreadyRefunded + razorpayAmount) >= payment.amount - 0.01;
+    const isFullPaymentRefund = round2(alreadyRefunded + razorpayAmount) >= capturable - 0.01;
     const newPaymentStatus = isFullPaymentRefund ? 'refunded' : 'partially_refunded';
 
     await withTransaction(async (client) => {

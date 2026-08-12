@@ -13,6 +13,7 @@ import { SERVICE_CONFIGS } from '@/lib/home/service-configs';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
+  clearSkipPackageAutoRedirect,
   isVendorServicePackageRow,
   isPackagePurchaseTransitScreen,
   markSkipPackageAutoRedirect,
@@ -822,6 +823,11 @@ export function CustomerHomeWrapper({
       const vsid = String(
         payload?.vendorServiceId ?? (payload as { vendor_service_id?: string })?.vendor_service_id ?? '',
       ).trim();
+      const pkgVid = String(payload?.vendorId ?? '').trim();
+      // Explicit package open must win over "skip auto-redirect" left from a previous back.
+      if (pkgVid && vsid) {
+        clearSkipPackageAutoRedirect(pkgVid, vsid);
+      }
       const key = vsid ? routeKey.packagePurchase(vsid) : undefined;
 
       if (options?.mergeWalkerData) {
@@ -2955,20 +2961,58 @@ export function CustomerHomeWrapper({
         config={SERVICE_CONFIGS.walker}
         onBack={() => backFromBannerOr(handleBack, walkerServiceData)}
         onSelectService={(service, rawRow) => {
-          if (rawRow && isVendorServicePackageRow(rawRow)) {
-            const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-              vendorId: vid,
-              vendorName: String(
+          const sid = String(service.id || '').trim();
+          if (vid && sid) clearSkipPackageAutoRedirect(vid, sid);
+          const rowLooksPackage =
+            (rawRow && isVendorServicePackageRow(rawRow)) ||
+            (rawRow && Boolean(rawRow.isPackage)) ||
+            /\b(package|bundle|pack)\b/i.test(String(service.name || '')) ||
+            (/\b(monthly|weekly)\b/i.test(String(service.name || '')) &&
+              /\b(walk|walking)\b/i.test(String(service.name || '')));
+          if (rowLooksPackage) {
+            const walkerName =
+              String(
                 walkerServiceData?.walker?.name ??
                   walkerServiceData?.walker?.businessName ??
                   ''
-              ).trim() || undefined,
-              serviceRow: rawRow,
-              serviceTypeCategory: 'walking',
-              serviceStyle: 'at_home',
-            });
-            if (pkgNav) {
-              openPurchasePackageScreen(pkgNav as Record<string, unknown>, { mergeWalkerData: true });
+              ).trim() || undefined;
+            const serviceRow = (rawRow && typeof rawRow === 'object'
+              ? { ...rawRow, isPackage: true, name: rawRow.name ?? service.name, id: rawRow.id ?? sid }
+              : {
+                  id: sid,
+                  isPackage: true,
+                  name: service.name,
+                  price: service.price,
+                  duration: service.duration,
+                }) as Record<string, unknown>;
+            const pkgNav =
+              buildWalkerServiceDataForVendorPackagePurchase({
+                vendorId: vid,
+                vendorName: walkerName,
+                serviceRow,
+                serviceTypeCategory: 'walking',
+                serviceStyle: 'at_home',
+              }) ||
+              (sid
+                ? ({
+                    vendorId: vid,
+                    vendorServiceId: sid,
+                    serviceName: service.name || 'Package',
+                    totalSessions: Number(
+                      (serviceRow as { totalSessions?: number }).totalSessions ??
+                        (serviceRow.packageDetails as { totalSessions?: number } | undefined)
+                          ?.totalSessions ??
+                        1
+                    ) || 1,
+                    price: service.price,
+                    duration: service.duration,
+                    serviceType: 'walking',
+                    serviceStyle: 'at_home',
+                    ...(walkerName ? { walker: { name: walkerName } } : {}),
+                  } as Record<string, unknown>)
+                : null);
+            if (pkgNav && String(pkgNav.vendorServiceId || '').trim()) {
+              openPurchasePackageScreen(pkgNav, { mergeWalkerData: true });
               return;
             }
           }

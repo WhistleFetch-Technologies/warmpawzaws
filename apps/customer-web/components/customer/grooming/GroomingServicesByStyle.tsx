@@ -27,6 +27,7 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { isDiscoveryAutoApplyPromotion } from '@/lib/promotion-banner-filter';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
@@ -96,6 +97,8 @@ interface Provider {
     description?: string;
     category?: string;
     isPackage?: boolean;
+    packageDetails?: unknown;
+    metadata?: unknown;
   }[];
   servicesHydrated?: boolean;
   servicesNextCursor?: string | null;
@@ -246,21 +249,33 @@ export function GroomingServicesByStyle({
           promotions,
           category
         );
-        const services = withPromos.map((s) => ({
-          id: String(s.id ?? s.serviceId ?? ''),
-          serviceId: String(s.serviceId ?? s.id ?? ''),
-          name: String(s.name ?? 'Service'),
-          price: Number(s.price ?? 0),
-          originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
-          discountPercentage:
-            s.discountPercentage != null ? Number(s.discountPercentage) : undefined,
-          discountAmount: s.discountAmount != null ? Number(s.discountAmount) : undefined,
-          promotionId: s.promotionId as string | undefined,
-          duration: Number(s.duration ?? 30),
-          description: s.description as string | undefined,
-          category: s.category as string | undefined,
-          isPackage: Boolean(s.isPackage),
-        }));
+        const services = withPromos.map((s) => {
+          const meta =
+            s.metadata && typeof s.metadata === 'object' && !Array.isArray(s.metadata)
+              ? (s.metadata as Record<string, unknown>)
+              : undefined;
+          const packageDetails = s.packageDetails ?? meta?.packageDetails;
+          const isPackage = Boolean(
+            s.isPackage ?? s.is_package ?? meta?.isPackage ?? packageDetails
+          );
+          return {
+            id: String(s.id ?? s.serviceId ?? ''),
+            serviceId: String(s.serviceId ?? s.id ?? ''),
+            name: String(s.name ?? 'Service'),
+            price: Number(s.price ?? 0),
+            originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
+            discountPercentage:
+              s.discountPercentage != null ? Number(s.discountPercentage) : undefined,
+            discountAmount: s.discountAmount != null ? Number(s.discountAmount) : undefined,
+            promotionId: s.promotionId as string | undefined,
+            duration: Number(s.duration ?? 30),
+            description: (s.description ?? s.shortDescription) as string | undefined,
+            category: (s.category ?? s.categoryLabel) as string | undefined,
+            isPackage,
+            packageDetails,
+            metadata: meta ?? s.metadata,
+          };
+        });
         const nextCursor = vendorServicesNextCursor(res);
         setProviders((prev) =>
           prev.map((v) => {
@@ -1043,10 +1058,17 @@ export function GroomingServicesByStyle({
                   </div>
                 </div>
 
-                {/* Services List - Enhanced Cards */}
+                {/* Services + Packages — Enhanced Cards */}
                 {sortedServices.length > 0 ? (
-                  <div className="space-y-3">
-                    {sortedServices.map((service) => {
+                  <div className="space-y-5">
+                    {discoveryServiceSections(
+                      sortedServices as unknown as Record<string, unknown>[]
+                    ).map((sec) => (
+                      <div key={sec.title} className="space-y-3">
+                        <h4 className="text-sm font-semibold text-gray-700">
+                          {sec.title} ({sec.list.length})
+                        </h4>
+                        {(sec.list as typeof sortedServices).map((service) => {
                       const isSelected = selectedServices.has(service.id) || selectedServices.has(service.serviceId);
                       return (
                         <div
@@ -1062,7 +1084,7 @@ export function GroomingServicesByStyle({
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <h4 className="font-bold text-gray-900 text-base">{service.name}</h4>
-                                {service.isPackage && (
+                                {(service.isPackage || isVendorServicePackageRow(service as any)) && (
                                   <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
                                 )}
                                 {isSelected && (
@@ -1111,7 +1133,9 @@ export function GroomingServicesByStyle({
                           </div>
                         </div>
                       );
-                    })}
+                        })}
+                      </div>
+                    ))}
                   </div>
                 ) : fetchingServicesFor === profileProvider.providerId ||
                   !profileProvider.servicesHydrated ? (
@@ -1459,16 +1483,21 @@ export function GroomingServicesByStyle({
                       </div>
                     )}
                     
-                    <h4 className="text-sm font-medium text-gray-600 mb-2">
-                      Available Services ({provider.services.length})
-                    </h4>
                     {fetchingServicesFor === provider.providerId && !provider.servicesHydrated ? (
                       <div className="bg-white rounded-lg p-6 text-center">
                         <Loader2 className="w-8 h-8 animate-spin text-[#FF8C42] mx-auto mb-2" />
                         <p className="text-sm text-gray-500">Loading services…</p>
                       </div>
                     ) : provider.services.length > 0 ? (
-                      provider.services.map((service) => {
+                      <div className="space-y-4">
+                        {discoveryServiceSections(
+                          provider.services as unknown as Record<string, unknown>[]
+                        ).map((sec) => (
+                          <div key={sec.title} className="space-y-3">
+                            <h4 className="text-sm font-semibold text-gray-700">
+                              {sec.title} ({sec.list.length})
+                            </h4>
+                            {(sec.list as typeof provider.services).map((service) => {
                         const descTrim = service.description?.trim() ?? '';
                         return (
                           <div
@@ -1481,7 +1510,7 @@ export function GroomingServicesByStyle({
                                 <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
                                   {service.name}
                                 </h5>
-                                {service.isPackage && (
+                                {(service.isPackage || isVendorServicePackageRow(service as any)) && (
                                   <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
                                     Package
                                   </span>
@@ -1536,7 +1565,10 @@ export function GroomingServicesByStyle({
                             </div>
                           </div>
                         );
-                      })
+                            })}
+                          </div>
+                        ))}
+                      </div>
                     ) : provider.servicesHydrated ? (
                       <div className="bg-white rounded-lg p-4 text-center text-gray-500 text-sm">
                         No services available from this provider

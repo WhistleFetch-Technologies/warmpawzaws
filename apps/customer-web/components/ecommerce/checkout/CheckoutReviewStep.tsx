@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Loader2, MapPin, Package, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import {
   cartLineMrpTotal,
 } from '@/lib/ecommerce/cart-product-helpers';
 import { getShippingOptionLabel } from '@/lib/ecommerce/checkout-shipping-options';
+import { computeCheckoutDeliveryEstimate } from '@/lib/ecommerce/checkout-delivery-estimate';
 import {
   EcommerceCheckoutTermsAcceptance,
   type EcommerceCheckoutTermsAcceptanceHandle,
@@ -33,6 +34,11 @@ export function CheckoutReviewStep() {
     placeOrder,
     setStep,
   } = useCheckout();
+
+  const deliveryEstimate = useMemo(
+    () => computeCheckoutDeliveryEstimate(cart, address),
+    [cart, address],
+  );
 
   const handlePayClick = () => {
     if (!termsAccepted) {
@@ -89,6 +95,14 @@ export function CheckoutReviewStep() {
           <h3 className="font-semibold text-slate-900">Delivery</h3>
         </div>
         <p className="text-sm text-slate-600">{getShippingOptionLabel(shippingMethod)}</p>
+        {deliveryEstimate ? (
+          <>
+            <p className="text-sm font-medium text-emerald-700 mt-1">
+              {deliveryEstimate.deliverByLabel}
+            </p>
+            <p className="text-sm text-slate-500">{deliveryEstimate.label}</p>
+          </>
+        ) : null}
       </section>
 
       <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">

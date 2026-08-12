@@ -48,6 +48,7 @@ import {
 import {
   isVendorServicePackageRow,
   buildWalkerServiceDataForVendorPackagePurchase,
+  clearSkipPackageAutoRedirect,
 } from '@/lib/vendor-package-purchase-nav';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { useDiscoveryVendorFeed } from '@/hooks/useDiscoveryVendorFeed';
@@ -667,14 +668,30 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
       const walkerName = String(
         walker?.name ?? walker?.business_name ?? walker?.businessName ?? ''
       ).trim();
-      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-        vendorId: vid,
-        vendorName: walkerName || undefined,
-        serviceRow: r as Record<string, unknown>,
-        serviceTypeCategory: 'walking',
-        serviceStyle: styleFromRow,
-      });
+      const fallbackVsid = String(r.id ?? r.vendorServiceId ?? r.vendor_service_id ?? '').trim();
+      const pkgNav =
+        buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: vid,
+          vendorName: walkerName || undefined,
+          serviceRow: r as Record<string, unknown>,
+          serviceTypeCategory: 'walking',
+          serviceStyle: styleFromRow,
+        }) ||
+        (fallbackVsid
+          ? {
+              vendorId: vid,
+              vendorServiceId: fallbackVsid,
+              serviceName: String(r.name || r.service_name || r.serviceName || 'Package').trim(),
+              totalSessions: Number(r.totalSessions ?? r.packageDetails?.totalSessions ?? 1) || 1,
+              price: Number(r.price ?? r.custom_price ?? 0) || 0,
+              duration: Number(r.duration ?? r.durationMinutes ?? 30) || 30,
+              serviceType: 'walking',
+              serviceStyle: styleFromRow,
+              ...(walkerName ? { walker: { name: walkerName } } : {}),
+            }
+          : null);
       if (pkgNav) {
+        clearSkipPackageAutoRedirect(vid, String(pkgNav.vendorServiceId || fallbackVsid));
         onNavigate?.('purchase-package', pkgNav);
         setPackagesDialogOpen(false);
         return;

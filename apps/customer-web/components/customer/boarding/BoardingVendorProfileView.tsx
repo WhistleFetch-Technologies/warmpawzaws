@@ -43,6 +43,7 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 
 export interface BoardingVendorProfileViewProps {
   phone: string;
@@ -507,8 +508,15 @@ export function BoardingVendorProfileView({
                 No published boarding plans yet. Check back later or contact the center.
               </p>
             ) : (
-              <div className="mt-3 space-y-2">
-                {publishedPlans.map((plan) => {
+              <div className="mt-3 space-y-4">
+                {discoveryServiceSections(
+                  publishedPlans as unknown as Record<string, unknown>[]
+                ).map((sec) => (
+                  <div key={sec.title} className="space-y-2">
+                    <h3 className="text-sm font-semibold text-gray-700">
+                      {sec.title} ({sec.list.length})
+                    </h3>
+                    {(sec.list as typeof publishedPlans).map((plan) => {
                   const Icon = pickIconForPublishedPlan(plan.name, plan.serviceStyle);
                   const isSel = selectedOffer?.rowId === plan.rowId;
                   return (
@@ -527,6 +535,12 @@ export function BoardingVendorProfileView({
                         <span className={`truncate font-medium ${isSel ? 'text-orange-900' : 'text-gray-800'}`}>
                           {plan.name}
                         </span>
+                        {(plan.isPackage ||
+                          isVendorServicePackageRow(plan as unknown as Record<string, unknown>)) && (
+                          <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">
+                            Package
+                          </span>
+                        )}
                         <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" aria-label="Available" />
                       </span>
                       <span
@@ -536,7 +550,9 @@ export function BoardingVendorProfileView({
                       </span>
                     </button>
                   );
-                })}
+                    })}
+                  </div>
+                ))}
               </div>
             )}
           </div>

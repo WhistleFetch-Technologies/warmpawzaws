@@ -284,36 +284,24 @@ export function CommunicationHub({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Mark all provider-side messages read when customer views chat (one bulk call + refresh).
-  const lastBulkReadMsRef = useRef(0);
+  // Mark provider messages read when customer opens the booking thread (idempotent).
   useEffect(() => {
-    if (!bookingId) return;
-    const hasUnreadFromOthers = messages.some((m) => {
-      const st = String(m.sender_type || '').toLowerCase();
-      const read = m.is_read ?? (m as { isRead?: boolean }).isRead;
-      return st !== 'customer' && !read;
-    });
-    if (!hasUnreadFromOthers) return;
-
-    const now = Date.now();
-    if (now - lastBulkReadMsRef.current < 2000) return;
+    if (!bookingId || userType !== 'customer') return;
 
     let cancelled = false;
     (async () => {
-      lastBulkReadMsRef.current = Date.now();
       try {
         await apiClient.post(`/chat/conversations/${encodeURIComponent(bookingId)}/read`, {});
-        await loadConversation(true);
+        if (!cancelled) onBookingChatMarkedRead?.();
       } catch {
-        /* allow retry after debounce window */
+        /* allow retry on next open */
       }
-      if (!cancelled) onBookingChatMarkedRead?.();
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [messages, bookingId, loadConversation, onBookingChatMarkedRead]);
+  }, [bookingId, userType, onBookingChatMarkedRead]);
 
   // ============================================================================
   // ACTIONS

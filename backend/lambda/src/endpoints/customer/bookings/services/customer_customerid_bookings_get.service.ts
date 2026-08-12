@@ -90,6 +90,21 @@ export async function executecustomerCustomeridBookingsGet(c: Context) {
         bookings.rows.map((b: any) => ({ id: b.id, total_amount: b.total_amount }))
       );
 
+      const refundRows =
+        await customer_customerid_bookings_getRepo.dbRefundSummariesForBookingIds(
+          bookings.rows.map((b: any) => String(b.id))
+        );
+      const refundByBooking = new Map(
+        refundRows.map((r) => [
+          r.booking_id,
+          {
+            amount: Math.round((parseFloat(String(r.amount ?? '0')) || 0) * 100) / 100,
+            status: String(r.status || 'processing'),
+            method: r.method ? String(r.method) : 'original',
+          },
+        ])
+      );
+
       const statsQuery = await customer_customerid_bookings_getRepo.dbCustomerCustomeridBookingsGet2(customerId)
 
       const stats = statsQuery.rows[0];
@@ -128,6 +143,8 @@ export async function executecustomerCustomeridBookingsGet(c: Context) {
           otpExpiresAt: b.otp_expires_at,
           // ✅ Include cancellation/refund info
           cancellationReason: b.cancellation_reason,
+          cancelledBy: b.cancelled_by ?? null,
+          refundSummary: refundByBooking.get(String(b.id)) ?? null,
           rescheduledFromBookingId: b.rescheduled_from_booking_id,
           // ✅ FIX: Include notes field for diagnostic test names
           notes: b.notes,

@@ -33,6 +33,7 @@ import {
   isVendorServicePackageRow,
   serviceTypeCategoryFromRoleId,
 } from '@/lib/vendor-package-purchase-nav';
+import { partitionVendorServicesForDiscovery } from '@/lib/vendor-services-package-sections';
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
 import { DiscoveryProviderAvatar } from './DiscoveryProviderAvatar';
 import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
@@ -106,6 +107,10 @@ interface Provider {
     description?: string;
     category?: string;
     inActivePackage?: boolean;
+    isPackage?: boolean;
+    metadata?: Record<string, unknown> | unknown;
+    packageDetails?: Record<string, unknown>;
+    serviceStyle?: string;
   }[];
   servicesHydrated?: boolean;
   servicesNextCursor?: string | null;
@@ -117,18 +122,36 @@ function mapUniversalVendorServiceRows(
   rows: unknown[],
   roleName: string
 ): Provider['services'] {
-  return (rows as Record<string, unknown>[]).map((s) => ({
-    id: String(s.id ?? s.service_id ?? ''),
-    serviceId: String(s.serviceId ?? s.id ?? s.service_id ?? ''),
-    name: String(s.name ?? s.service_name ?? s.serviceName ?? roleName),
-    price: Number(s.price ?? s.custom_price ?? 0),
-    originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
-    vendorDiscount: Number(s.vendor_discount ?? s.discount ?? 0) || undefined,
-    duration: Number(s.duration ?? s.custom_duration ?? s.duration_minutes ?? 30),
-    description: s.description as string | undefined,
-    category: (s.category_name ?? s.category ?? s.categoryName) as string | undefined,
-    inActivePackage: Boolean(s.inActivePackage),
-  }));
+  return (rows as Record<string, unknown>[]).map((s) => {
+    const meta =
+      s.metadata && typeof s.metadata === 'object' && !Array.isArray(s.metadata)
+        ? (s.metadata as Record<string, unknown>)
+        : undefined;
+    const packageDetails =
+      (s.packageDetails as Record<string, unknown> | undefined) ||
+      (meta?.packageDetails as Record<string, unknown> | undefined);
+    const isPackage = Boolean(
+      s.isPackage ?? s.is_package ?? meta?.isPackage ?? packageDetails
+    );
+    return {
+      id: String(s.id ?? s.service_id ?? ''),
+      serviceId: String(s.serviceId ?? s.id ?? s.service_id ?? ''),
+      name: String(s.name ?? s.service_name ?? s.serviceName ?? roleName),
+      price: Number(s.price ?? s.custom_price ?? 0),
+      originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
+      vendorDiscount: Number(s.vendor_discount ?? s.discount ?? 0) || undefined,
+      duration: Number(s.duration ?? s.custom_duration ?? s.duration_minutes ?? 30),
+      description: (s.description ?? s.shortDescription) as string | undefined,
+      category: (s.category_name ?? s.category ?? s.categoryName ?? s.categoryLabel) as
+        | string
+        | undefined,
+      inActivePackage: Boolean(s.inActivePackage),
+      isPackage,
+      metadata: meta ?? s.metadata,
+      packageDetails,
+      serviceStyle: (s.serviceStyle ?? s.service_style) as string | undefined,
+    };
+  });
 }
 
 export function UniversalServicesByStyle({
@@ -596,6 +619,14 @@ export function UniversalServicesByStyle({
 
   const isSingleServiceSelection = serviceStyle === 'tele' || roleId === 'trainer';
 
+  const sortedServicePartitions = useMemo(
+    () =>
+      partitionVendorServicesForDiscovery(
+        sortedServices as unknown as Record<string, unknown>[]
+      ),
+    [sortedServices]
+  );
+
   const toggleServiceSelection = (serviceId: string) => {
     if (isSingleServiceSelection) {
       setSelectedServices((prev) => {
@@ -1059,10 +1090,26 @@ export function UniversalServicesByStyle({
                   </div>
                 </div>
 
-                {/* Services List - Enhanced Cards */}
+                {/* Services + Packages — Enhanced Cards */}
                 {sortedServices.length > 0 ? (
-                  <div className="space-y-3">
-                    {sortedServices.map((service) => {
+                  <div className="space-y-5">
+                    {([
+                      {
+                        title: 'Packages',
+                        list: sortedServicePartitions.packages as typeof sortedServices,
+                      },
+                      {
+                        title: 'Available Services',
+                        list: sortedServicePartitions.services as typeof sortedServices,
+                      },
+                    ] as const)
+                      .filter((sec) => sec.list.length > 0)
+                      .map((sec) => (
+                    <div key={sec.title} className="space-y-3">
+                      <h4 className="text-sm font-semibold text-gray-700">
+                        {sec.title} ({sec.list.length})
+                      </h4>
+                    {sec.list.map((service) => {
                       const isSelected = selectedServices.has(service.id) || selectedServices.has(service.serviceId);
                       return (
                         <div
@@ -1137,6 +1184,8 @@ export function UniversalServicesByStyle({
                         </div>
                       );
                     })}
+                    </div>
+                      ))}
                   </div>
                 ) : fetchingServicesFor === profileProvider.providerId ||
                   !profileProvider.servicesHydrated ? (
@@ -1476,16 +1525,31 @@ export function UniversalServicesByStyle({
                       </div>
                     )}
                     
-                    <h4 className="text-sm font-medium text-gray-600 mb-2">
-                      Available Services ({provider.services.length})
-                    </h4>
                     {fetchingServicesFor === provider.providerId && !provider.servicesHydrated ? (
                       <div className="bg-white rounded-lg p-6 text-center">
                         <Loader2 className="w-8 h-8 animate-spin text-[#FF8C42] mx-auto mb-2" />
                         <p className="text-sm text-gray-500">Loading services…</p>
                       </div>
                     ) : provider.services.length > 0 ? (
-                    provider.services.map((service) => (
+                    (() => {
+                      const parts = partitionVendorServicesForDiscovery(
+                        provider.services as unknown as Record<string, unknown>[]
+                      );
+                      const sections = [
+                        { title: 'Packages', list: parts.packages as typeof provider.services },
+                        {
+                          title: 'Available Services',
+                          list: parts.services as typeof provider.services,
+                        },
+                      ].filter((s) => s.list.length > 0);
+                      return (
+                        <div className="space-y-4">
+                          {sections.map((sec) => (
+                            <div key={sec.title} className="space-y-3">
+                              <h4 className="text-sm font-semibold text-gray-700">
+                                {sec.title} ({sec.list.length})
+                              </h4>
+                              {sec.list.map((service) => (
                       <div
                         key={service.id}
                         className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
@@ -1562,7 +1626,12 @@ export function UniversalServicesByStyle({
                           </div>
                         </div>
                       </div>
-                    ))
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()
                     ) : provider.servicesHydrated ? (
                       <div className="bg-white rounded-lg p-4 text-center text-gray-500 text-sm">
                         No services available from this provider

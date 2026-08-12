@@ -17,6 +17,9 @@ export interface ShopProduct {
   stock: number;
   vendor_id: string;
   vendor_name: string;
+  vendor_state?: string;
+  vendor_pincode?: string;
+  vendor_shipping_origin_pincode?: string;
   is_active: boolean;
   delivery_regions?: string[];
   has_variants?: boolean;

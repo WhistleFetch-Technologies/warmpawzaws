@@ -12,6 +12,7 @@ import { copyTextToClipboard } from '@/lib/shareUtils';
 import { PrescriptionModal } from './PrescriptionModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
+import { useCustomerBookingMessagesModal } from './messaging/CustomerBookingMessagesModalProvider';
 import { LiveTrackingMap } from '../tracking/LiveTrackingMap';
 import { FollowUpBookingModal } from './FollowUpBookingModal';
 import { RateServiceModal } from './RateServiceModal';
@@ -28,6 +29,12 @@ import {
 import { BookingPricingSummary } from '@/components/customer/pricing/BookingPricingSummary';
 import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
 import { extractBookingFinancial } from '@/lib/pricing/booking-financial';
+import {
+  buildRefundStripCopy,
+  cancelledByLabel,
+  hasChargedOrRefundedPayment,
+  humanizeCancellationReason,
+} from '@/lib/booking-cancel-display';
 
 interface BookingDetailModalProps {
   bookingId: string;
@@ -290,6 +297,7 @@ interface Prescription {
 
 export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorderMedicine, onNavigate }: BookingDetailModalProps) {
   const router = useRouter();
+  const { bumpMessagesInboxVersion } = useCustomerBookingMessagesModal();
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copiedOtp, setCopiedOtp] = useState(false);
@@ -855,6 +863,57 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               </span>
             </div>
 
+            {bookingStatusNormalized === 'cancelled' && (
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3.5">
+                  <p className="font-semibold text-rose-950">
+                    {cancelledByLabel(
+                      booking.cancelledBy ?? booking.cancelled_by ?? null
+                    )}
+                  </p>
+                  {humanizeCancellationReason(
+                    booking.cancellationReason ?? booking.cancellation_reason
+                  ) ? (
+                    <p className="mt-1 text-sm text-rose-900/85 leading-snug">
+                      {humanizeCancellationReason(
+                        booking.cancellationReason ?? booking.cancellation_reason
+                      )}
+                    </p>
+                  ) : null}
+                  {(booking.cancelledAt || booking.cancelled_at) && (
+                    <p className="mt-2 text-xs text-rose-800/70">
+                      {formatDate(
+                        String(booking.cancelledAt || booking.cancelled_at)
+                      )}
+                      {formatTime(
+                        String(booking.cancelledAt || booking.cancelled_at)
+                      )
+                        ? ` · ${formatTime(
+                            String(booking.cancelledAt || booking.cancelled_at)
+                          )}`
+                        : ''}
+                    </p>
+                  )}
+                </div>
+                {(() => {
+                  const refundCopy = buildRefundStripCopy(
+                    booking.refundSummary ?? booking.refund_summary ?? null
+                  );
+                  if (!refundCopy) return null;
+                  return (
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3.5">
+                      <p className="font-semibold text-emerald-950">
+                        {refundCopy.title}
+                      </p>
+                      <p className="mt-1 text-sm text-emerald-900/85">
+                        {refundCopy.subtitle}
+                      </p>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
             {isBookingAwaitingPayment(booking) &&
             booking.paymentStatus !== 'paid' &&
             (isPaymentHoldActive(booking) || isPaymentHoldExpired(booking)) ? (
@@ -1143,9 +1202,28 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                     booking.payment_status === 'completed'
                   }
                 />
-                {bookingStatusNormalized === 'cancelled' && !bookingFinancial.isPaid && (
+                {bookingStatusNormalized === 'cancelled' &&
+                  !bookingFinancial.isPaid &&
+                  !hasChargedOrRefundedPayment({
+                    paymentStatus:
+                      booking.paymentStatus ?? booking.payment_status ?? null,
+                    refundSummary:
+                      booking.refundSummary ?? booking.refund_summary ?? null,
+                  }) && (
                   <p className="text-xs text-gray-500 px-1">
                     No amount was charged for this booking
+                  </p>
+                )}
+                {bookingStatusNormalized === 'cancelled' &&
+                  hasChargedOrRefundedPayment({
+                    paymentStatus:
+                      booking.paymentStatus ?? booking.payment_status ?? null,
+                    refundSummary:
+                      booking.refundSummary ?? booking.refund_summary ?? null,
+                  }) &&
+                  !(booking.refundSummary ?? booking.refund_summary) && (
+                  <p className="text-xs text-emerald-700 px-1">
+                    Payment was received for this booking. Refund details will appear when available.
                   </p>
                 )}
               </div>
@@ -1675,6 +1753,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           onClose={() => setCommunicationMode(null)}
           onBookFollowUp={() => setShowFollowUp(true)}
           onNavigate={onNavigate}
+          onBookingChatMarkedRead={() => bumpMessagesInboxVersion()}
           meetingId={booking.meetingId}
           onStartVideoCall={async (bid, existingMeetingId): Promise<string | undefined> => {
             try {
