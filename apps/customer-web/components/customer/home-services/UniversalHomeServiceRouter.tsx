@@ -403,14 +403,27 @@ export function UniversalHomeServiceRouter({
           if (serviceType === 'walker') {
             const vid = bookingFlow.vendorId;
             if (rawRow && isVendorServicePackageRow(rawRow) && vid) {
-              const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-                vendorId: vid,
-                vendorName: bookingFlow.vendorName ?? undefined,
-                serviceRow: rawRow,
-                serviceTypeCategory: 'walking',
-                serviceStyle: 'at_home',
-              });
-              if (pkgNav) {
+              const pkgNav =
+                buildWalkerServiceDataForVendorPackagePurchase({
+                  vendorId: vid,
+                  vendorName: bookingFlow.vendorName ?? undefined,
+                  serviceRow: rawRow,
+                  serviceTypeCategory: 'walking',
+                  serviceStyle: 'at_home',
+                }) ||
+                (String(service.id || '').trim()
+                  ? {
+                      vendorId: vid,
+                      vendorServiceId: String(service.id).trim(),
+                      serviceName: service.name || 'Package',
+                      totalSessions: 1,
+                      price: service.price,
+                      duration: service.duration,
+                      serviceType: 'walking',
+                      serviceStyle: 'at_home',
+                    }
+                  : null);
+              if (pkgNav && String(pkgNav.vendorServiceId || '').trim()) {
                 onNavigate?.('purchase-package', pkgNav);
                 return;
               }

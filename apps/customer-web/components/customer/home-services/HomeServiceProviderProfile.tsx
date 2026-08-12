@@ -524,23 +524,26 @@ export function HomeServiceProviderProfile({
           description: '',
           category: 'walking',
         };
-    const rawRow =
-      rawServiceRowsRef.current.get(selectedServiceId) ??
-      (option?.isPackage
-        ? ({
-            id: option.id,
-            isPackage: true,
-            name: option.name,
+    const fromMap = rawServiceRowsRef.current.get(selectedServiceId);
+    // Prefer API row, but force package flags from the picker option so we never
+    // fall through to one-off walker-booking when the card was shown as a bundle.
+    const rawRow: Record<string, unknown> | undefined = option?.isPackage
+      ? ({
+          ...(fromMap || {}),
+          id: (fromMap?.id as string | undefined) ?? option.id,
+          isPackage: true,
+          name: option.name,
+          price: option.price,
+          duration: option.duration,
+          packageDetails: {
+            ...((fromMap?.packageDetails as Record<string, unknown> | undefined) || {}),
+            totalSessions: option.totalSessions,
+            sessionsPerDay: option.sessionsPerDay,
+            sessionIntervalDays: option.sessionIntervalDays,
             price: option.price,
-            duration: option.duration,
-            packageDetails: {
-              totalSessions: option.totalSessions,
-              sessionsPerDay: option.sessionsPerDay,
-              sessionIntervalDays: option.sessionIntervalDays,
-              price: option.price,
-            },
-          } as Record<string, unknown>)
-        : undefined);
+          },
+        } as Record<string, unknown>)
+      : fromMap;
     onSelectService(service, rawRow);
   }, [onSelectService, provider, selectedServiceId]);
 

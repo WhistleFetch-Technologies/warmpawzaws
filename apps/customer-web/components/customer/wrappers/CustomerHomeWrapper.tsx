@@ -13,6 +13,7 @@ import { SERVICE_CONFIGS } from '@/lib/home/service-configs';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
+  clearSkipPackageAutoRedirect,
   isVendorServicePackageRow,
   isPackagePurchaseTransitScreen,
   markSkipPackageAutoRedirect,
@@ -821,6 +822,11 @@ export function CustomerHomeWrapper({
       const vsid = String(
         payload?.vendorServiceId ?? (payload as { vendor_service_id?: string })?.vendor_service_id ?? '',
       ).trim();
+      const pkgVid = String(payload?.vendorId ?? '').trim();
+      // Explicit package open must win over "skip auto-redirect" left from a previous back.
+      if (pkgVid && vsid) {
+        clearSkipPackageAutoRedirect(pkgVid, vsid);
+      }
       const key = vsid ? routeKey.packagePurchase(vsid) : undefined;
 
       if (options?.mergeWalkerData) {
@@ -2952,19 +2958,40 @@ export function CustomerHomeWrapper({
         onBack={() => backFromBannerOr(handleBack, walkerServiceData)}
         onSelectService={(service, rawRow) => {
           if (rawRow && isVendorServicePackageRow(rawRow)) {
-            const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-              vendorId: vid,
-              vendorName: String(
+            const walkerName =
+              String(
                 walkerServiceData?.walker?.name ??
                   walkerServiceData?.walker?.businessName ??
                   ''
-              ).trim() || undefined,
-              serviceRow: rawRow,
-              serviceTypeCategory: 'walking',
-              serviceStyle: 'at_home',
-            });
-            if (pkgNav) {
-              openPurchasePackageScreen(pkgNav as Record<string, unknown>, { mergeWalkerData: true });
+              ).trim() || undefined;
+            const pkgNav =
+              buildWalkerServiceDataForVendorPackagePurchase({
+                vendorId: vid,
+                vendorName: walkerName,
+                serviceRow: rawRow,
+                serviceTypeCategory: 'walking',
+                serviceStyle: 'at_home',
+              }) ||
+              (String(service.id || '').trim()
+                ? ({
+                    vendorId: vid,
+                    vendorServiceId: String(service.id).trim(),
+                    serviceName: service.name || 'Package',
+                    totalSessions: Number(
+                      (rawRow as { totalSessions?: number }).totalSessions ??
+                        (rawRow.packageDetails as { totalSessions?: number } | undefined)
+                          ?.totalSessions ??
+                        1
+                    ) || 1,
+                    price: service.price,
+                    duration: service.duration,
+                    serviceType: 'walking',
+                    serviceStyle: 'at_home',
+                    ...(walkerName ? { walker: { name: walkerName } } : {}),
+                  } as Record<string, unknown>)
+                : null);
+            if (pkgNav && String(pkgNav.vendorServiceId || '').trim()) {
+              openPurchasePackageScreen(pkgNav, { mergeWalkerData: true });
               return;
             }
           }
