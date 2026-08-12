@@ -25,6 +25,7 @@ import { validateScheduleSlot } from '../../../utils/scheduling-policy-enforcer'
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { normalizeAvailabilityServiceStyles } from '../../../utils/availability-service-styles';
+import { notifyBookingCancelledByVendor } from '../../../utils/booking-notifications';
 
 /**
  * Generate time slots from a time window
@@ -1352,23 +1353,6 @@ export function registerVendorScheduleEndpoints(app: Hono) {
               'Provider went offline (advance availability)'
             );
 
-            if (booking.customer_id) {
-              try {
-                await insert('notifications', {
-                  recipient_id: booking.customer_id,
-                  recipient_type: 'customer',
-                  title: 'Booking cancelled',
-                  message: OFFLINE_CANCEL_REASON,
-                  notification_type: 'booking_cancelled',
-                  channels: { email: false, sms: false, inApp: true, push: true },
-                  is_read: false,
-                  data: { bookingId, reason: 'vendor_went_offline' },
-                });
-              } catch (notifErr: any) {
-                console.warn('[toggle-online] Customer notification insert failed:', notifErr?.message);
-              }
-            }
-
             try {
               await publishBookingStatusUpdated({
                 bookingId,
@@ -1382,6 +1366,18 @@ export function registerVendorScheduleEndpoints(app: Hono) {
               });
             } catch (snsErr: any) {
               console.warn('[toggle-online] SNS publish failed:', snsErr?.message);
+            }
+
+            try {
+              await notifyBookingCancelledByVendor({
+                bookingId,
+                reason: OFFLINE_CANCEL_REASON,
+              });
+            } catch (notifErr: any) {
+              console.warn(
+                '[toggle-online] Customer cancel notification failed:',
+                notifErr?.message
+              );
             }
           } catch (rowErr: any) {
             console.error(`[toggle-online] Failed to cancel booking ${bookingId}:`, rowErr?.message);
