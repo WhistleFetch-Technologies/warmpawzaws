@@ -1,4 +1,7 @@
-import { validatePetCreatePayload } from '../pet-create-validation';
+import {
+  resolveOnboardingPetInsertDefaults,
+  validatePetCreatePayload,
+} from '../pet-create-validation';
 
 const validPayload = {
   customerId: '550e8400-e29b-41d4-a716-446655440000',
@@ -90,5 +93,52 @@ describe('validatePetCreatePayload', () => {
   it('accepts species and type aliases', () => {
     const { petType, ...rest } = validPayload;
     expect(validatePetCreatePayload({ ...rest, species: 'Cat' })).toEqual({ ok: true });
+  });
+
+  describe('onboarding mode', () => {
+    it('accepts minimal payload with only customerId', () => {
+      expect(
+        validatePetCreatePayload(
+          { customerId: validPayload.customerId },
+          { mode: 'onboarding' },
+        ),
+      ).toEqual({ ok: true });
+    });
+
+    it('rejects invalid gender when provided', () => {
+      const result = validatePetCreatePayload(
+        { customerId: validPayload.customerId, gender: 'unknown' },
+        { mode: 'onboarding' },
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain('Gender');
+    });
+
+    it('rejects invalid pet type when provided', () => {
+      const result = validatePetCreatePayload(
+        { customerId: validPayload.customerId, petType: 'Bird' },
+        { mode: 'onboarding' },
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain('pet type');
+    });
+  });
+});
+
+describe('resolveOnboardingPetInsertDefaults', () => {
+  it('uses My Pet and dog when name and type omitted', () => {
+    expect(resolveOnboardingPetInsertDefaults({})).toEqual({
+      name: 'My Pet',
+      species: 'dog',
+    });
+  });
+
+  it('preserves provided name and species', () => {
+    expect(
+      resolveOnboardingPetInsertDefaults({ name: 'Luna', petType: 'Cat' }),
+    ).toEqual({
+      name: 'Luna',
+      species: 'cat',
+    });
   });
 });

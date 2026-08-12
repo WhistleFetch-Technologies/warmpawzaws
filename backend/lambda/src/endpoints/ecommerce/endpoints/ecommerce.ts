@@ -394,7 +394,10 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       const productWhere = await storefrontProductWhereSql();
       let productQuery = `
-        SELECT p.*, v.business_name as vendor_name
+        SELECT p.*, v.business_name as vendor_name,
+                v.state as vendor_state,
+                v.pincode as vendor_pincode,
+                v.shipping_origin_pincode as vendor_shipping_origin_pincode
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
         WHERE ${productWhere}${STOREFRONT_ACTIVE_CATEGORY_SQL}
@@ -571,7 +574,10 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       const runListQueries = async (orderByClause: string) => {
         const listQuery = `
-        SELECT p.*, v.business_name as vendor_name
+        SELECT p.*, v.business_name as vendor_name,
+                v.state as vendor_state,
+                v.pincode as vendor_pincode,
+                v.shipping_origin_pincode as vendor_shipping_origin_pincode
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
         WHERE ${whereClause}

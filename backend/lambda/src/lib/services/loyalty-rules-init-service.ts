@@ -66,7 +66,7 @@ export class LoyaltyRulesInitService {
           max_points_per_transaction INTEGER,
           
           -- Frequency/Limits
-          frequency_type TEXT CHECK (frequency_type IN ('one_time', 'recurring', 'unlimited', 'monthly_limit', 'yearly_limit')),
+          frequency_type TEXT CHECK (frequency_type IN ('one_time', 'recurring', 'unlimited', 'monthly_limit', 'yearly_limit', 'lifetime_limit')),
           frequency_limit INTEGER,
           frequency_period TEXT CHECK (frequency_period IN ('day', 'week', 'month', 'year')),
           

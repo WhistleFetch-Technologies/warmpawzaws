@@ -40,6 +40,7 @@ import {
   resolveBloodTypeFromPayload,
 } from '../../../../lib/pet-blood-types';
 import { validatePetCreatePayload } from '../../../../utils/pet-create-validation';
+import { buildSinglePetCreateLoyaltyFields } from '../../../../lib/pet-loyalty-response';
 import { findCustomerByPhone } from '../../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../../lib/rule-engine';
 import {
@@ -312,10 +313,16 @@ export class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
       };
 
       const pets = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers5(petData)
+      const created = pets[0] as Record<string, unknown>;
+      const loyaltyFields = buildSinglePetCreateLoyaltyFields(
+        customerId,
+        String(created.id),
+        body as Record<string, unknown>
+      );
 
       // First-pet / profile loyalty: handled by action_sources → loyalty-events-consumer (not inline here).
 
-      return this.success({ pet: pets[0] }, requestId);
+      return this.success({ pet: created, ...loyaltyFields }, requestId);
     } catch (error: any) {
       console.error('Error adding pet:', error);
       return this.error(
