@@ -28,6 +28,7 @@ import {
   vendorCancellationReasonLabel,
   applyRefundAfterProviderCancellation,
 } from '../../../lib/services/provider-booking-cancel-refund';
+import { notifyBookingCancelledByVendor } from '../../../utils/booking-notifications';
 import {
   bookingUsesDedicatedEndSessionOtp,
   ensureDedicatedEndSessionOtp,
@@ -1903,6 +1904,19 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         });
       } catch (pubErr) {
         console.error('Failed to publish booking status updated event:', pubErr);
+      }
+
+      try {
+        await notifyBookingCancelledByVendor({
+          bookingId,
+          reason: cancellation_reason,
+          refundInfo: refundInfo ?? undefined,
+        });
+      } catch (notifErr: any) {
+        console.warn(
+          '[vendor/reject] Customer cancel notification failed:',
+          notifErr?.message || notifErr
+        );
       }
 
       return c.json({
