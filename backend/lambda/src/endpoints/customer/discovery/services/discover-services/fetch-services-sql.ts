@@ -5,6 +5,7 @@ import {
 import {
   vendorRoleIsBehaviorHub,
   vendorRoleIsTrainingHub,
+  vendorRoleIsWalkerHub,
 } from '../../repos/legacy-helpers.repo';
 import type { DiscoverCategoryContext } from './types';
 
@@ -61,6 +62,23 @@ export function buildDiscoverServiceFetchSql(
     vendorRoleIsTrainingHub(vendorRoleName)
       ? ` OR TRUE`
       : '';
+  const walkerHubDiscoverySearch = catTextExact.some((c) =>
+    ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c)
+  );
+  const walkerUncatSql =
+    !sitterRoleBypass &&
+    walkerHubDiscoverySearch &&
+    vendorRoleName &&
+    vendorRoleIsWalkerHub(vendorRoleName)
+      ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+      : '';
+  const walkerHomeFetchBypassOr =
+    !sitterRoleBypass &&
+    walkerHubDiscoverySearch &&
+    !isAtCenter &&
+    vendorRoleIsWalkerHub(vendorRoleName)
+      ? ` OR TRUE`
+      : '';
   const vetCategoryEmptyForFetch =
     !sitterRoleBypass && isVetCategoryDiscovery
       ? ` OR (
@@ -107,6 +125,8 @@ export function buildDiscoverServiceFetchSql(
             ${behaviorCategoryAliasFetchOr}
             ${behaviorTrainingCategoryFetchOr}
             ${walkerCategoryDiscoveryOr}
+            ${walkerUncatSql}
+            ${walkerHomeFetchBypassOr}
             ${vetCategoryEmptyForFetch}
             ${boardingCustomCategoryIdOrSql}
             ${trainingCustomCategoryIdOrSql}

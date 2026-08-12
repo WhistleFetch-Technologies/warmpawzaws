@@ -32,6 +32,8 @@ import {
   type UniversalProviderProfileAbout,
 } from '@/lib/universal-provider-profile-enrichment';
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
+import { BookingPetSelection, type BookingPet } from './BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 // ============================================================================
 // TYPES
@@ -97,12 +99,8 @@ interface TimeSlot {
   booked?: boolean;
 }
 
-interface Pet {
-  id: string;
-  name: string;
-  type: string;
-  breed: string;
-  photo?: string;
+interface Pet extends BookingPet {
+  type?: string;
 }
 
 interface Address {
@@ -459,15 +457,16 @@ export function UniversalProviderProfile({
       // Load pets
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse?.pets) {
-        setPets(petsResponse.pets);
-        if (petsResponse.pets.length > 0) {
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
+        setPets(mappedPets);
+        if (mappedPets.length > 0) {
           if (initialSelectedPetId) {
-            const match = petsResponse.pets.find(
+            const match = mappedPets.find(
               (p: Pet) => String(p.id) === String(initialSelectedPetId),
             );
-            setSelectedPet(match ?? petsResponse.pets[0]);
+            setSelectedPet(match ?? mappedPets[0]);
           } else {
-            setSelectedPet(petsResponse.pets[0]);
+            setSelectedPet(mappedPets[0]);
           }
         }
       }
@@ -889,42 +888,13 @@ export function UniversalProviderProfile({
             </div>
           )}
 
-          {/* Pet Selection */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-medium text-sm">Select Pet</h3>
-              <button 
-                onClick={() => onNavigate('add-pet')}
-                className="text-orange-500 text-sm flex items-center gap-1"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {pets.map((pet) => (
-                <button
-                  key={pet.id}
-                  onClick={() => setSelectedPet(pet)}
-                  className={`flex-shrink-0 p-3 rounded-xl flex items-center gap-2 transition-all ${
-                    selectedPet?.id === pet.id 
-                      ? 'bg-orange-500 text-white' 
-                      : 'bg-white border border-gray-200 hover:border-orange-300'
-                  }`}
-                >
-                  <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-200">
-                    {pet.photo ? (
-                      <img src={pet.photo} alt={pet.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-lg">{pet.type === 'Dog' ? '🐕' : '🐈'}</span>
-                    )}
-                  </div>
-                  <span className="font-medium">{pet.name}</span>
-                  {selectedPet?.id === pet.id && <Check className="w-4 h-4" />}
-                </button>
-              ))}
-            </div>
-          </div>
+          <BookingPetSelection
+            variant="embedded"
+            pets={pets}
+            selectedPet={selectedPet}
+            onSelectPet={setSelectedPet}
+            onAddPet={() => onNavigate('add-pet')}
+          />
 
           {/* Address Selection (for at_home) - modal in-context, no navigation */}
           {serviceStyle === 'at_home' && (

@@ -17,6 +17,7 @@ const FIXED_STYLE_SCREENS: Record<string, StyleLaunchScreenTarget> = {
   'grooming_home': { serviceId: 'grooming', serviceStyle: 'at_home' },
   'training_center': { serviceId: 'training', serviceStyle: 'at_center' },
   'training_home': { serviceId: 'training', serviceStyle: 'at_home' },
+  'walker_home': { serviceId: 'walker', serviceStyle: 'at_home' },
 };
 
 export function resolveStyleLaunchTargetForScreen(
