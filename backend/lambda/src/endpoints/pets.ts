@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import { resolveImageForContext } from '../services/image';
+import { resolvePetPhotoForDisplay } from '../services/image';
 import {
   buildVaccinationStorage,
   extractHealthRecordsForClient,
@@ -52,27 +52,6 @@ import {
   validatePetCreatePayload,
 } from '../utils/pet-create-validation';
 import { deletePetProfilePhotoAssets } from '../services/image/delete-pet-profile-photo.service';
-
-async function resolvePetPhotoForDisplay(
-  raw: string | null | undefined,
-  petId: string,
-): Promise<string | null | undefined> {
-  if (!raw) return raw;
-  const resolved = await resolveImageForContext(raw, {
-    assetType: 'pet',
-    ownerId: petId,
-    context: 'detail',
-    migrate: true,
-    persist: {
-      kind: 'scalar',
-      table: 'pets',
-      column: 'profile_photo_url',
-      idColumn: 'id',
-      id: petId,
-    },
-  });
-  return resolved?.displayUrl ?? raw;
-}
 
 export function registerPetEndpoints(app: Hono) {
   /**

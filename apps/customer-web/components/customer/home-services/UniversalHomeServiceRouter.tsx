@@ -36,8 +36,10 @@ import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock'
 import { SERVICE_CONFIGS, type HomeServiceType } from '@/lib/home/service-configs';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
+  clearSkipPackageAutoRedirect,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
+import { isWalkerVendorServicePackageRow } from '@/lib/walker-vendor-offerings';
 import type { HomeServiceProfileService } from '@/lib/customer-vendor-services-merge';
 
 export type { HomeServiceType };
@@ -402,15 +404,36 @@ export function UniversalHomeServiceRouter({
         onSelectService={(service: HomeServiceProfileService, rawRow?: Record<string, unknown>) => {
           if (serviceType === 'walker') {
             const vid = bookingFlow.vendorId;
-            if (rawRow && isVendorServicePackageRow(rawRow) && vid) {
-              const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-                vendorId: vid,
-                vendorName: bookingFlow.vendorName ?? undefined,
-                serviceRow: rawRow,
-                serviceTypeCategory: 'walking',
-                serviceStyle: 'at_home',
-              });
-              if (pkgNav) {
+            const sid = String(service.id || '').trim();
+            if (vid && sid) clearSkipPackageAutoRedirect(vid, sid);
+            const probe = {
+              ...(rawRow || {}),
+              id: rawRow?.id ?? sid,
+              name: rawRow?.name ?? service.name,
+              isPackage: rawRow?.isPackage,
+            } as Record<string, unknown>;
+            if (vid && (isVendorServicePackageRow(probe) || isWalkerVendorServicePackageRow(probe))) {
+              const pkgNav =
+                buildWalkerServiceDataForVendorPackagePurchase({
+                  vendorId: vid,
+                  vendorName: bookingFlow.vendorName ?? undefined,
+                  serviceRow: { ...probe, isPackage: true },
+                  serviceTypeCategory: 'walking',
+                  serviceStyle: 'at_home',
+                }) ||
+                (sid
+                  ? {
+                      vendorId: vid,
+                      vendorServiceId: sid,
+                      serviceName: service.name || 'Package',
+                      totalSessions: 1,
+                      price: service.price,
+                      duration: service.duration,
+                      serviceType: 'walking',
+                      serviceStyle: 'at_home',
+                    }
+                  : null);
+              if (pkgNav && String(pkgNav.vendorServiceId || '').trim()) {
                 onNavigate?.('purchase-package', pkgNav);
                 return;
               }

@@ -10,16 +10,30 @@ export type SearchTaxonomyKeywordRow = {
   is_active: boolean;
 };
 
+export type SearchIntentModifiers = {
+  nearMe?: boolean;
+  atHome?: boolean;
+  sameDay?: boolean;
+  openNow?: boolean;
+};
+
 export type SearchCategoryMatch = {
   categorySlug: string;
   displayName: string;
   subcategory: string | null;
   hubSlug: string;
   score: number;
+  intentCode?: string;
+  matchedSignals?: string[];
+  matchKind?: 'phrase' | 'token_set' | 'intent_rule';
 };
 
 export type SearchTaxonomyResolveResult = {
   categories: SearchCategoryMatch[];
+  intentCode?: string | null;
+  modifiers?: SearchIntentModifiers;
+  confidence?: number;
+  blockedEcommerce?: boolean;
 };
 
 export type CategorySource = 'explicit' | 'taxonomy' | 'none';

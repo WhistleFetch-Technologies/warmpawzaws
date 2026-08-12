@@ -65,7 +65,10 @@ import {
   WalkerWalkServicePicker,
   type WalkerWalkPickerSelection,
 } from '../walker/WalkerWalkServicePicker';
-import type { WalkerServiceOption } from '@/lib/walker-vendor-offerings';
+import {
+  isWalkerVendorServicePackageRow,
+  type WalkerServiceOption,
+} from '@/lib/walker-vendor-offerings';
 
 /** Second identity-chip line derived only from vertical (not vendor-specific catalog copy). */
 const HOME_SERVICE_CONTEXT_LABEL: Record<HomeServiceType, string> = {
@@ -507,6 +510,7 @@ export function HomeServiceProviderProfile({
   const walkerContinueToBook = useCallback(() => {
     if (!selectedServiceId || !provider) return;
     const option = walkerSelectedOptionRef.current;
+    const fromMap = rawServiceRowsRef.current.get(selectedServiceId);
     const service: HomeServiceProfileService = option
       ? {
           id: option.id,
@@ -518,13 +522,42 @@ export function HomeServiceProviderProfile({
         }
       : {
           id: selectedServiceId,
-          name: '',
-          price: 0,
-          duration: 0,
+          name: String((fromMap as { name?: string } | undefined)?.name ?? ''),
+          price: Number((fromMap as { price?: number } | undefined)?.price ?? 0) || 0,
+          duration: Number((fromMap as { duration?: number } | undefined)?.duration ?? 0) || 0,
           description: '',
           category: 'walking',
         };
-    onSelectService(service, rawServiceRowsRef.current.get(selectedServiceId));
+    // Treat picker packages OR name/metadata heuristics as packages (never fall through to one-off booking).
+    const mergedProbe = {
+      ...(fromMap || {}),
+      id: (fromMap?.id as string | undefined) ?? option?.id ?? selectedServiceId,
+      name: option?.name ?? service.name,
+      isPackage: option?.isPackage || (fromMap as { isPackage?: boolean } | undefined)?.isPackage,
+      totalSessions: option?.totalSessions,
+      packageDetails: {
+        ...((fromMap?.packageDetails as Record<string, unknown> | undefined) || {}),
+        ...(option?.totalSessions != null ? { totalSessions: option.totalSessions } : {}),
+        ...(option?.sessionsPerDay != null ? { sessionsPerDay: option.sessionsPerDay } : {}),
+        ...(option?.sessionIntervalDays != null
+          ? { sessionIntervalDays: option.sessionIntervalDays }
+          : {}),
+        ...(option?.price != null ? { price: option.price } : {}),
+      },
+    } as Record<string, unknown>;
+    const asPackage =
+      Boolean(option?.isPackage) || isWalkerVendorServicePackageRow(mergedProbe);
+
+    const rawRow: Record<string, unknown> | undefined = asPackage
+      ? ({
+          ...mergedProbe,
+          isPackage: true,
+          name: option?.name ?? service.name,
+          price: option?.price ?? service.price,
+          duration: option?.duration ?? service.duration,
+        } as Record<string, unknown>)
+      : fromMap;
+    onSelectService(service, rawRow);
   }, [onSelectService, provider, selectedServiceId]);
 
   const continueBookingDisabled = useMemo(() => {

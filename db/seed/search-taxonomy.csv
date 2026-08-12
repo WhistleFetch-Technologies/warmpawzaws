@@ -4,6 +4,8 @@ Veterinary & Healthcare,General Vet Care,Dog doctor
 Veterinary & Healthcare,General Vet Care,Cat doctor
 Veterinary & Healthcare,General Vet Care,Pet clinic
 Veterinary & Healthcare,General Vet Care,Animal hospital
+Veterinary & Healthcare,General Vet Care,Pet doctor
+Veterinary & Healthcare,General Vet Care,Veterinarian
 Veterinary & Healthcare,General Vet Care,Pet surgery
 Veterinary & Healthcare,Preventive Care,Vaccination
 Veterinary & Healthcare,Preventive Care,Deworming
@@ -30,6 +32,7 @@ Grooming,Bath & Fur Care,Medicated bath
 Grooming,Bath & Fur Care,Deshedding
 Grooming,Hygiene Services,Nail trimming
 Grooming,Hygiene Services,Hair cut
+Grooming,Hygiene Services,Dog haircut
 Grooming,Hygiene Services,Fur trimming
 Grooming,Skin & Tick Care,Tick treatment
 Grooming,Skin & Tick Care,Flea treatment
@@ -47,6 +50,8 @@ Walking & Sitting,Home Care,Home pet care
 Walking & Sitting,Home Care,Weekend pet care
 Walking & Sitting,Home Care,Pet nanny
 Boarding & Daycare,Boarding,Dog boarding
+Boarding & Daycare,Boarding,Safe boarding
+Boarding & Daycare,Boarding,Keep my dog
 Boarding & Daycare,Boarding,Cat boarding
 Boarding & Daycare,Boarding,Pet hostel
 Boarding & Daycare,Daycare,Pet daycare
@@ -64,6 +69,8 @@ Training & Behaviour,Behaviour Correction,Behaviourist
 Training & Behaviour,Behaviour Correction,Barking
 Training & Behaviour,Behaviour Correction,Anxiety
 Training & Behaviour,Behaviour Correction,Biting
+Training & Behaviour,Behaviour Correction,Behaviour correction
+Training & Behaviour,Behaviour Correction,Stop barking
 Training & Behaviour,Habit Training,Potty training
 Training & Behaviour,Habit Training,Leash training
 Training & Behaviour,Advanced Training,Socialization training
@@ -77,6 +84,7 @@ Nutrition & Wellness,Specialized Diets,Allergy diet
 Nutrition & Wellness,Age Specific,Senior dog nutrition
 Nutrition & Wellness,Age Specific,Cat nutrition
 Nutrition & Wellness,Age Specific,Weight management
+Nutrition & Wellness,Age Specific,Overweight
 Nutrition & Wellness,Supplements,Pet supplements
 Nutrition & Wellness,Home Nutrition,At home nutrition
 Ecommerce – Food,Pet Food,Dog food

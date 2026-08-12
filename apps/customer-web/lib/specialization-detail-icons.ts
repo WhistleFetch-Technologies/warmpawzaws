@@ -1,0 +1,58 @@
+import type { LucideIcon } from 'lucide-react';
+import {
+  Activity,
+  Award,
+  BadgeCheck,
+  Brain,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Dog,
+  Footprints,
+  GraduationCap,
+  Heart,
+  Home,
+  Leaf,
+  MapPin,
+  PawPrint,
+  Shield,
+  Sparkles,
+  Star,
+  Stethoscope,
+  Sun,
+  Target,
+  Trophy,
+  Users,
+  Zap,
+} from 'lucide-react';
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  activity: Activity,
+  award: Award,
+  badgeCheck: BadgeCheck,
+  brain: Brain,
+  calendar: Calendar,
+  check: CheckCircle2,
+  clock: Clock,
+  dog: Dog,
+  footprints: Footprints,
+  graduation: GraduationCap,
+  heart: Heart,
+  home: Home,
+  leaf: Leaf,
+  mapPin: MapPin,
+  paw: PawPrint,
+  shield: Shield,
+  sparkles: Sparkles,
+  star: Star,
+  stethoscope: Stethoscope,
+  sun: Sun,
+  target: Target,
+  trophy: Trophy,
+  users: Users,
+  zap: Zap,
+};
+
+export function specializationDetailIcon(name: string): LucideIcon {
+  return ICON_MAP[name] ?? CheckCircle2;
+}

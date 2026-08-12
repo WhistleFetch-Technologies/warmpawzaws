@@ -17,10 +17,16 @@ import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHead
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import {
   fetchWalkerVendorCatalogMerged,
+  getWalkerDisplayOfferings,
   getWalkerRouterOfferingsForStyle,
+  isWalkerVendorServicePackageRow,
   mapWalkerApiRowToOption,
   type WalkerServiceOption,
 } from '@/lib/walker-vendor-offerings';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  clearSkipPackageAutoRedirect,
+} from '@/lib/vendor-package-purchase-nav';
 import { WalkerWalkServicePicker } from './WalkerWalkServicePicker';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
@@ -107,17 +113,20 @@ export function WalkerBookingRouter({
   const enteredWithServiceRef = useRef(Boolean(hasServiceContext));
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
+  const packageRedirectRef = useRef(false);
+  /** When entered with a preselected service, hide Date/Time until package redirect is decided. */
+  const [packageGateResolved, setPackageGateResolved] = useState(!hasServiceContext);
   
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
   const initializedRef = useRef(false);
   useEffect(() => {
-    if (!initializedRef.current && hasServiceContext && step === 'service') {
+    if (!initializedRef.current && hasServiceContext && step === 'service' && packageGateResolved) {
       // If we have service context but step is 'service', move to datetime
       setStep('datetime');
       initializedRef.current = true;
     }
-  }, [serviceId, serviceType, serviceStyle, step]);
+  }, [serviceId, serviceType, serviceStyle, step, packageGateResolved]);
   const [loading, setLoading] = useState(false);
   /** Passed to available-slots only — must be at_home | outdoor | … never a vendor service UUID */
   const [bookingServiceStyle, setBookingServiceStyle] = useState(() => initialBookingServiceStyle(serviceStyle));
@@ -322,8 +331,109 @@ export function WalkerBookingRouter({
       price: opt.price,
       duration: opt.duration,
       serviceStyle: opt.serviceStyle,
+      isPackage: opt.isPackage,
     });
   }, [vendorCatalog, serviceId, selectedService, bookingServiceStyle]);
+
+  /** Profile/deep link: preselected walk package must go to purchase-package, not one-off booking. */
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    if (!hasServiceContext) {
+      setPackageGateResolved(true);
+      return;
+    }
+    if (!vendorId || !vendorCatalog) return;
+    const wantId = String(serviceId || selectedService || selectedVendorServiceId || '').trim();
+    if (!wantId) {
+      packageRedirectRef.current = true;
+      setPackageGateResolved(true);
+      return;
+    }
+    // Prefer style-filtered rows, then full walk catalog (packages often mis-tagged by style).
+    const styled = getWalkerRouterOfferingsForStyle(vendorCatalog, bookingServiceStyle);
+    const allWalks = getWalkerDisplayOfferings(vendorCatalog, bookingServiceStyle, {
+      requireStyleMatch: false,
+    });
+    const findMatch = (rows: any[]) =>
+      rows.find((r) => {
+        const ids = [r.id, r.serviceId, r.service_id, r.vendorServiceId, r.vendor_service_id].map(
+          (x) => (x != null ? String(x).trim() : '')
+        );
+        return ids.some((id) => id && id === wantId);
+      });
+    const match = findMatch(styled) || findMatch(allWalks);
+    if (!match) {
+      // Name hint from navigation when catalog id mismatch — still try package checkout.
+      const navName = String(serviceName || '').trim();
+      if (isWalkerVendorServicePackageRow({ name: navName, isPackage: false })) {
+        packageRedirectRef.current = true;
+        clearSkipPackageAutoRedirect(String(vendorId), wantId);
+        onNavigate('purchase-package', {
+          vendorId: String(vendorId),
+          vendorServiceId: wantId,
+          serviceName: navName || 'Package',
+          totalSessions: 1,
+          price: Number(price ?? 0) || 0,
+          duration: Number(duration ?? 30) || 30,
+          serviceType: 'walking',
+          serviceStyle: bookingServiceStyle || 'at_home',
+        });
+        return;
+      }
+      packageRedirectRef.current = true;
+      setPackageGateResolved(true);
+      return;
+    }
+    if (!isWalkerVendorServicePackageRow(match as Record<string, any>)) {
+      packageRedirectRef.current = true;
+      setPackageGateResolved(true);
+      return;
+    }
+    packageRedirectRef.current = true;
+    const walkerName = String(
+      walker?.name ?? walker?.business_name ?? walker?.businessName ?? ''
+    ).trim();
+    const enriched = {
+      ...(match as Record<string, unknown>),
+      isPackage: true,
+    };
+    const nav =
+      buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(vendorId),
+        vendorName: walkerName || undefined,
+        serviceRow: enriched,
+        serviceTypeCategory: 'walking',
+        serviceStyle: String(
+          match.serviceStyle ?? match.service_style ?? bookingServiceStyle ?? 'at_home'
+        ),
+      }) || {
+        vendorId: String(vendorId),
+        vendorServiceId: wantId,
+        serviceName: String(match.name || match.service_name || serviceName || 'Package'),
+        totalSessions: 1,
+        price: Number(match.price ?? price ?? 0) || 0,
+        duration: Number(match.duration ?? duration ?? 30) || 30,
+        serviceType: 'walking',
+        serviceStyle: bookingServiceStyle || 'at_home',
+      };
+    // Walker uses replace→profile on back, so skip-auto-redirect must not block re-booking.
+    clearSkipPackageAutoRedirect(String(vendorId), wantId);
+    onNavigate('purchase-package', nav);
+    // Keep gate closed — screen is being replaced; avoids Date/Time flash.
+  }, [
+    hasServiceContext,
+    vendorId,
+    vendorCatalog,
+    serviceId,
+    selectedService,
+    selectedVendorServiceId,
+    bookingServiceStyle,
+    walker,
+    onNavigate,
+    serviceName,
+    price,
+    duration,
+  ]);
 
   const loadVendorServices = async () => {
     if (!vendorId) return;
@@ -340,6 +450,7 @@ export function WalkerBookingRouter({
       console.log('Loaded vendor walk services + packages:', n);
     } catch (error) {
       console.error('Error loading vendor services:', error);
+      setVendorCatalog({ services: [], packages: [] });
     } finally {
       setLoading(false);
     }
@@ -474,6 +585,7 @@ export function WalkerBookingRouter({
     if (step === 'service') {
       const sel = serviceOptions.find((s) => s.id === selectedVendorServiceId);
       if (sel?.isPackage) {
+        if (vendorId) clearSkipPackageAutoRedirect(String(vendorId), String(sel.id));
         onNavigate?.('purchase-package', {
           vendorId,
           vendorServiceId: sel.id,
@@ -660,6 +772,31 @@ export function WalkerBookingRouter({
         }}
         onSuccess={handlePaymentSuccess}
       />
+    );
+  }
+
+  // Avoid flashing Date/Time while we decide if this preselected row is a package.
+  if (hasServiceContext && !packageGateResolved) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <ServiceDashboardHeader
+          serviceName={getServiceTitle()}
+          serviceSubtitle={getServiceSubtitle()}
+          serviceIcon={Bike}
+          iconColor="text-white"
+          stats={dashboardStats}
+          steps={getStepIndicators()}
+          onBack={onBack}
+          showBackButton={true}
+          headerColor="bg-[#FF8C42]"
+        />
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#FF8C42] mx-auto mb-3" />
+            <p className="text-sm text-gray-600">Checking package options…</p>
+          </div>
+        </div>
+      </div>
     );
   }
 

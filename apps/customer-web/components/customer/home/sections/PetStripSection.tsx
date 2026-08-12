@@ -35,7 +35,7 @@ function PetAvatar({
   pet: Pet;
   selected: boolean;
 }) {
-  const photoSrc = pet.photo || pet.image;
+  const photoSrc = pet.photo || pet.image || pet.profile_photo_url;
   const [photoFailed, setPhotoFailed] = useState(false);
 
   useEffect(() => {
