@@ -311,6 +311,7 @@ function ShopPageContent() {
           const params = new URLSearchParams();
           if (apiCategoryId) params.set('category', apiCategoryId);
           params.set('sort', sortBy);
+          params.set('view', 'card');
           params.set('limit', String(limit));
           params.set('offset', String(offset));
           if (debouncedSearch) params.set('search', debouncedSearch);
@@ -438,38 +439,40 @@ function ShopPageContent() {
   }, [loadCart]);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const mapped = await loadCategories();
-        if (cancelled) return;
-        const fromUrl = categoryFromUrl || selectedCategory;
-        if (!fromUrl) return;
-        const resolved = resolveShopCategoryParam(fromUrl, mapped);
-        if (resolved) {
-          resolvedCategoryRef.current = resolved;
-          setSelectedCategory(resolved);
-          setShopCategoryInUrl(resolved);
-        } else {
-          resolvedCategoryRef.current = '';
-          setSelectedCategory('');
-          clearShopCategoryFromUrl();
-        }
-      } catch (err) {
-        console.error('Error loading shop categories:', err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void loadCategories();
   }, [loadCategories]);
 
-  /** Reset and reload products when filters/sort/search/category change (after categories ready). */
+  /** Resolve ?category= slug to UUID once categories are loaded. */
   useEffect(() => {
-    if (!categoriesReady) return;
+    if (!categoriesReady || !categoryFromUrl) return;
+    const resolved = resolveShopCategoryParam(categoryFromUrl, categories);
+    if (resolved && resolved !== selectedCategory) {
+      resolvedCategoryRef.current = resolved;
+      setSelectedCategory(resolved);
+      setShopCategoryInUrl(resolved);
+    } else if (!resolved && selectedCategory) {
+      resolvedCategoryRef.current = '';
+      setSelectedCategory('');
+      clearShopCategoryFromUrl();
+    }
+  }, [categoriesReady, categoryFromUrl, categories, selectedCategory]);
+
+  /**
+   * Load catalog: All tab starts immediately; URL category waits for categoriesReady.
+   */
+  useEffect(() => {
+    const needsCategoryResolution = Boolean(categoryFromUrl);
+    if (needsCategoryResolution && !categoriesReady) return;
     void loadProducts(true, 0, selectedCategory);
-  }, [categoriesReady, selectedCategory, sortBy, debouncedSearch, priceRange, loadProducts]);
+  }, [
+    categoriesReady,
+    selectedCategory,
+    sortBy,
+    debouncedSearch,
+    priceRange,
+    loadProducts,
+    categoryFromUrl,
+  ]);
 
   useEffect(() => {
     loadFeaturedDeals();

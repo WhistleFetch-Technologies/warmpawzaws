@@ -147,6 +147,13 @@ export async function prepareStorefrontProductRows(
   return Promise.all(rows.map((r) => prepareStorefrontProductRow(r, 'list')));
 }
 
+/** Lean PLP: list context, first image only per row. */
+export async function prepareStorefrontProductRowsForList(
+  rows: Record<string, unknown>[],
+): Promise<Record<string, unknown>[]> {
+  return Promise.all(rows.map((r) => prepareStorefrontProductRow(r, 'list')));
+}
+
 /** Presign product.images and metadata.images for API responses (private S3 bucket). */
 export async function presignProductRowForDisplay(
   row: Record<string, unknown>,
@@ -179,9 +186,23 @@ export async function presignProductRowForDisplay(
   }
 
   if ('images' in out) {
-    out.images = await presignProductImagesJsonb(out.images, context, vendorId);
+    const normalized = normalizeProductImagesField(out.images);
+    if (context === 'list') {
+      const firstOnly = normalized.length > 0 ? normalized.slice(0, 1) : [];
+      out.images =
+        firstOnly.length > 0
+          ? await presignProductImagesJsonb(firstOnly, context, vendorId)
+          : [];
+    } else {
+      out.images = await presignProductImagesJsonb(out.images, context, vendorId);
+    }
   }
-  if (out.metadata != null && typeof out.metadata === 'object' && !Array.isArray(out.metadata)) {
+  if (
+    context !== 'list' &&
+    out.metadata != null &&
+    typeof out.metadata === 'object' &&
+    !Array.isArray(out.metadata)
+  ) {
     const m = { ...(out.metadata as Record<string, unknown>) };
     if ('images' in m) {
       m.images = await presignProductImagesJsonb(m.images, context, vendorId);
