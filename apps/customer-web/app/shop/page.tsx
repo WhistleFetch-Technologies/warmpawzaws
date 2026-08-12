@@ -73,23 +73,6 @@ function scrollToCatalog() {
   document.getElementById('shop-all-products')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function clearShopCategoryFromUrl() {
-  if (typeof window === 'undefined') return;
-  const url = new URL(window.location.href);
-  if (!url.searchParams.has('category')) return;
-  url.searchParams.delete('category');
-  const next = url.pathname + (url.search ? url.search : '');
-  window.history.replaceState({}, '', next);
-}
-
-function setShopCategoryInUrl(categoryId: string) {
-  if (typeof window === 'undefined' || !categoryId) return;
-  const url = new URL(window.location.href);
-  if (url.searchParams.get('category') === categoryId) return;
-  url.searchParams.set('category', categoryId);
-  window.history.replaceState({}, '', url.pathname + url.search);
-}
-
 /** Full-viewport column — same width token as home + BottomNavigation (no grey outer frame). */
 const SHOP_PAGE_SHELL =
   'relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-customer mx-auto flex-col overflow-hidden bg-white';
@@ -160,9 +143,13 @@ function ShopPageContent() {
   const applyCategorySelection = useCallback((categoryId: string) => {
     resolvedCategoryRef.current = categoryId;
     setSelectedCategory(categoryId);
-    if (categoryId) setShopCategoryInUrl(categoryId);
-    else clearShopCategoryFromUrl();
-  }, []);
+    // nav-exception: chip selection must update useSearchParams (replaceState leaves stale params)
+    if (categoryId) {
+      router.replace(`/shop?category=${encodeURIComponent(categoryId)}`, { scroll: false });
+    } else {
+      router.replace('/shop', { scroll: false });
+    }
+  }, [router]);
 
   const loadCustomerData = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -246,8 +233,22 @@ function ShopPageContent() {
       return;
     }
 
-    setSelectedCategory(categoryFromUrl);
-  }, [categoryFromUrl, categories]);
+    if (!categoryFromUrl) {
+      resolvedCategoryRef.current = '';
+      setSelectedCategory('');
+      return;
+    }
+
+    if (!categoriesReady) return;
+
+    const resolved = resolveShopCategoryParam(categoryFromUrl, categories) || categoryFromUrl;
+    resolvedCategoryRef.current = resolved;
+    setSelectedCategory(resolved);
+    if (resolved !== categoryFromUrl) {
+      router.replace(`/shop?category=${encodeURIComponent(resolved)}`, { scroll: false });
+      lastAppliedUrlCategoryRef.current = resolved;
+    }
+  }, [categoryFromUrl, categories, categoriesReady, router]);
 
   /**
    * Load storefront category chips once per mount (categories that have products).
@@ -311,6 +312,7 @@ function ShopPageContent() {
           const params = new URLSearchParams();
           if (apiCategoryId) params.set('category', apiCategoryId);
           params.set('sort', sortBy);
+          params.set('view', 'card');
           params.set('limit', String(limit));
           params.set('offset', String(offset));
           if (debouncedSearch) params.set('search', debouncedSearch);
@@ -438,38 +440,25 @@ function ShopPageContent() {
   }, [loadCart]);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const mapped = await loadCategories();
-        if (cancelled) return;
-        const fromUrl = categoryFromUrl || selectedCategory;
-        if (!fromUrl) return;
-        const resolved = resolveShopCategoryParam(fromUrl, mapped);
-        if (resolved) {
-          resolvedCategoryRef.current = resolved;
-          setSelectedCategory(resolved);
-          setShopCategoryInUrl(resolved);
-        } else {
-          resolvedCategoryRef.current = '';
-          setSelectedCategory('');
-          clearShopCategoryFromUrl();
-        }
-      } catch (err) {
-        console.error('Error loading shop categories:', err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void loadCategories();
   }, [loadCategories]);
 
-  /** Reset and reload products when filters/sort/search/category change (after categories ready). */
+  /**
+   * Load catalog: All tab starts immediately; URL category waits for categoriesReady.
+   */
   useEffect(() => {
-    if (!categoriesReady) return;
+    const needsCategoryResolution = Boolean(categoryFromUrl);
+    if (needsCategoryResolution && !categoriesReady) return;
     void loadProducts(true, 0, selectedCategory);
-  }, [categoriesReady, selectedCategory, sortBy, debouncedSearch, priceRange, loadProducts]);
+  }, [
+    categoriesReady,
+    selectedCategory,
+    sortBy,
+    debouncedSearch,
+    priceRange,
+    loadProducts,
+    categoryFromUrl,
+  ]);
 
   useEffect(() => {
     loadFeaturedDeals();

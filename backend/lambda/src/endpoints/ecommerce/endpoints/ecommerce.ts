@@ -25,7 +25,7 @@ import {
   sqlExcludeSuppressedSettlementRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { isValidUUID } from '../../../types/entities';
-import { prepareStorefrontProductRow, prepareStorefrontProductRows, presignProductSkusForDisplay, presignProductImagesJsonb } from '../../../utils/s3-media-presign';
+import { prepareStorefrontProductRow, prepareStorefrontProductRows, prepareStorefrontProductRowsForList, presignProductSkusForDisplay, presignProductImagesJsonb } from '../../../utils/s3-media-presign';
 import { loadProductSkus, loadProductSkusForProducts } from '../../../utils/product-sku-service';
 import {
   resolveEcommerceOrderLine,
@@ -125,6 +125,21 @@ import {
 } from '../../../utils/ecommerce-storefront-product-filter';
 import { enrichStorefrontProductsWithPromoPricing } from '../../../utils/storefront-product-promo-pricing';
 import { buildStorefrontCategoryFilter } from '../../../utils/storefront-category-filter';
+import {
+  storefrontProductWhereSql,
+  storefrontProductBaseWhereSql,
+  STOREFRONT_ACTIVE_CATEGORY_SQL,
+  STOREFRONT_ACTIVE_STATUS_SQL,
+} from '../../../utils/storefront-product-where';
+import {
+  sliceStorefrontListPage,
+  storefrontListFetchLimit,
+} from '../../../utils/storefront-products-pagination';
+import {
+  isStorefrontCardView,
+  STOREFRONT_PLP_CARD_SELECT,
+  STOREFRONT_PLP_FULL_SELECT,
+} from '../../../utils/storefront-plp-select';
 
 const ADMIN_CATEGORY_SELECT = `
   SELECT id::text AS id, name, description, display_order, is_active, image_url,
@@ -193,26 +208,6 @@ async function queryAdminCategories() {
   }
 }
 
-/** Only admin-approved products appear on the public storefront (see products.status + is_active). */
-async function storefrontProductWhereSql(): Promise<string> {
-  const exclude = await storefrontExcludeMealProductsSql();
-  return `
-  p.is_active = true
-  AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
-  ${exclude}`;
-}
-
-/** Hide products tied to admin-disabled ecommerce categories. */
-const STOREFRONT_ACTIVE_CATEGORY_SQL = `
-  AND (
-    p.category_id IS NULL
-    OR EXISTS (
-      SELECT 1 FROM ecommerce_categories ec
-      WHERE ec.id = p.category_id AND ec.is_active = true
-    )
-  )
-`;
-
 function normalizeAdminProductLifecycleStatus(raw: unknown): { status: string; is_active: boolean } {
   const s = String(raw ?? '').trim().toLowerCase();
   if (s === 'approved' || s === 'approve') {
@@ -277,8 +272,11 @@ function resolveOptionalStorefrontCustomerId(c: { req: { query: (key: string) =>
 async function enrichStorefrontProductListRows(
   rows: Record<string, unknown>[],
   customerId?: string | null,
+  cardView = false,
 ): Promise<Record<string, unknown>[]> {
-  const signed = await prepareStorefrontProductRows(rows);
+  const signed = cardView
+    ? await prepareStorefrontProductRowsForList(rows)
+    : await prepareStorefrontProductRows(rows);
   const ids = signed.map((r) => String(r.id ?? '')).filter(Boolean);
   const skuMap = await loadProductSkusForProducts(ids);
   const withSkuPricing = signed.map((row) => {
@@ -493,8 +491,10 @@ export function registerEcommerceEndpoints(app: Hono) {
    *   max_price  — inclusive upper price bound
    *   featured   — true/1 to show only featured products
    *   vendorId   — optional vendor scope
+   *   view       — card | plp for lean PLP payload (default: full row)
+   *   include_total — true/1 to run COUNT(*) (default: skip; uses LIMIT+1 hasMore)
    *
-   * Response: { success, products, total (COUNT(*)), offset, limit, hasMore }
+   * Response: { success, products, total?, offset, limit, hasMore }
    */
   app.get("/ecommerce/products", async (c) => {
     /** Default and max page sizes — keep in sync with SHOP_PAGE_SIZE on the frontend. */
@@ -507,6 +507,9 @@ export function registerEcommerceEndpoints(app: Hono) {
       const search = c.req.query('search');
       const featuredOnly =
         c.req.query('featured') === 'true' || c.req.query('featured') === '1';
+      const includeTotal =
+        c.req.query('include_total') === 'true' || c.req.query('include_total') === '1';
+      const cardView = isStorefrontCardView(c.req.query('view'));
 
       const rawLimit = parseInt(c.req.query('limit') || String(SHOP_DEFAULT_LIMIT), 10);
       const limit = Number.isFinite(rawLimit) && rawLimit > 0
@@ -522,8 +525,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       const minPriceRaw = parseFloat(c.req.query('min_price') ?? '');
       const maxPriceRaw = parseFloat(c.req.query('max_price') ?? '');
 
-      const productWhere = await storefrontProductWhereSql();
-      const baseWhere = `${productWhere}${STOREFRONT_ACTIVE_CATEGORY_SQL}`;
+      const baseWhere = await storefrontProductBaseWhereSql();
       let whereClause = baseWhere;
       const filterParams: any[] = [];
       let paramIndex = 1;
@@ -565,43 +567,46 @@ export function registerEcommerceEndpoints(app: Hono) {
         paramIndex++;
       }
 
-      const countQuery = `
+      const selectClause = cardView ? STOREFRONT_PLP_CARD_SELECT : STOREFRONT_PLP_FULL_SELECT;
+      const fromJoin = cardView
+        ? 'FROM products p'
+        : 'FROM products p LEFT JOIN vendors v ON p.vendor_id = v.id';
+
+      const fetchLimit = storefrontListFetchLimit(limit);
+
+      const runListQuery = async (orderByClause: string) => {
+        const listQuery = `
+        SELECT ${selectClause}
+        ${fromJoin}
+        WHERE ${whereClause}
+        ORDER BY ${orderByClause}
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
+        const paginatedParams = [...filterParams, fetchLimit, offset];
+        return query(listQuery, paginatedParams);
+      };
+
+      const runCountQuery = async () => {
+        const countQuery = `
         SELECT COUNT(*) AS count
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
         WHERE ${whereClause}
       `;
-
-      const runListQueries = async (orderByClause: string) => {
-        const listQuery = `
-        SELECT p.*, v.business_name as vendor_name,
-                v.state as vendor_state,
-                v.pincode as vendor_pincode,
-                v.shipping_origin_pincode as vendor_shipping_origin_pincode
-        FROM products p
-        LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE ${whereClause}
-        ORDER BY ${orderByClause}
-        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-      `;
-        const paginatedParams = [...filterParams, limit, offset];
-        const [productsResult, countResult] = await Promise.all([
-          query(listQuery, paginatedParams),
-          query(countQuery, filterParams),
-        ]);
-        const total = parseInt(
+        const countResult = await query(countQuery, filterParams);
+        return parseInt(
           (countResult?.rows?.[0] as Record<string, string>)?.count ?? '0',
           10,
         );
-        return { productsResult, total };
       };
 
       let products;
-      let totalCount = 0;
+      let totalCount: number | null = null;
       try {
-        const first = await runListQueries(orderBy);
-        products = first.productsResult;
-        totalCount = first.total;
+        products = await runListQuery(orderBy);
+        if (includeTotal) {
+          totalCount = await runCountQuery();
+        }
       } catch (error: any) {
         const isMissingColumn =
           error.code === '42703' || String(error.message ?? '').includes('column');
@@ -616,7 +621,7 @@ export function registerEcommerceEndpoints(app: Hono) {
           return c.json({
             success: true,
             products: [],
-            total: 0,
+            total: includeTotal ? 0 : null,
             offset,
             limit,
             hasMore: false,
@@ -632,9 +637,10 @@ export function registerEcommerceEndpoints(app: Hono) {
               { sortParam, orderBy, safeOrderBy, error: error.message },
             );
             orderBy = safeOrderBy;
-            const retry = await runListQueries(orderBy);
-            products = retry.productsResult;
-            totalCount = retry.total;
+            products = await runListQuery(orderBy);
+            if (includeTotal) {
+              totalCount = await runCountQuery();
+            }
           } else {
             throw error;
           }
@@ -643,18 +649,23 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
-      const rows = (products?.rows || []) as Record<string, unknown>[];
+      const rawRows = (products?.rows || []) as Record<string, unknown>[];
+      const { items: pageRows, hasMore } = sliceStorefrontListPage(rawRows, limit);
       const customerId = resolveOptionalStorefrontCustomerId(c);
-      const signedProducts = await enrichStorefrontProductListRows(rows, customerId);
+      const signedProducts = await enrichStorefrontProductListRows(pageRows, customerId, cardView);
 
-      return c.json({
+      const response: Record<string, unknown> = {
         success: true,
         products: signedProducts,
-        total: totalCount,
         offset,
         limit,
-        hasMore: offset + signedProducts.length < totalCount,
-      });
+        hasMore,
+      };
+      if (includeTotal && totalCount != null) {
+        response.total = totalCount;
+      }
+
+      return c.json(response);
     } catch (error: any) {
       console.error('Error fetching ecommerce products:', error);
       return c.json({ error: error.message }, 500);
@@ -1458,8 +1469,7 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
           SELECT id FROM ecommerce_categories WHERE parent_category_id = ec.id
         )
       )
-        AND p.is_active = true
-        AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+        AND ${STOREFRONT_ACTIVE_STATUS_SQL}
         ${exclude}
     ) pc ON true`;
 }

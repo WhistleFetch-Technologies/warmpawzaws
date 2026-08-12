@@ -55,18 +55,27 @@ export function uploadBucketCandidates(): string[] {
     return [...seen];
 }
 
+/** In-process cache for HeadObject bucket resolution (Lambda lifetime). */
+const uploadBucketForKeyCache = new Map<string, string | null>();
+
 /** Find which upload bucket contains `key` (HeadObject probe). */
 export async function resolveUploadBucketForKey(s3Key: string): Promise<string | null> {
     const key = String(s3Key || '').trim().replace(/^\/+/, '');
     if (!key) return null;
 
+    if (uploadBucketForKeyCache.has(key)) {
+        return uploadBucketForKeyCache.get(key) ?? null;
+    }
+
     const { S3Client, HeadObjectCommand } = await import('@aws-sdk/client-s3');
     const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 
+    let resolved: string | null = null;
     for (const bucket of uploadBucketCandidates()) {
         try {
             await s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-            return bucket;
+            resolved = bucket;
+            break;
         } catch (headError: unknown) {
             const err = headError as { name?: string; $metadata?: { httpStatusCode?: number } };
             if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
@@ -75,7 +84,8 @@ export async function resolveUploadBucketForKey(s3Key: string): Promise<string |
             console.warn(`[resolveUploadBucketForKey] HeadObject failed bucket=${bucket} key=${key}:`, err);
         }
     }
-    return null;
+    uploadBucketForKeyCache.set(key, resolved);
+    return resolved;
 }
 
 /** Presign GET for a key in a known bucket. */
