@@ -209,11 +209,30 @@ export function mergeWalkerModalVendorOfferings(svcRes: Record<string, any> | nu
   return mergeCustomerVendorServicesPayload(root);
 }
 
+/**
+ * Walker packages sometimes arrive with thin metadata (name-only / sessions on the row).
+ * Keep parity with purchase-package detection, plus walk-specific heuristics.
+ */
 export function isWalkerVendorServicePackageRow(
   s: Record<string, any> | null | undefined
 ): boolean {
-  // Same detection as vet/boarding/grooming purchase-package routing (string metadata + packageDetails).
-  return isVendorServicePackageRow(s as Record<string, unknown> | null | undefined);
+  if (!s) return false;
+  if (isVendorServicePackageRow(s as Record<string, unknown>)) return true;
+
+  const normalized = normalizeVendorServiceRowForPackage(s as Record<string, unknown>);
+  const topSessions = Number(
+    normalized.totalSessions ?? normalized.total_sessions ?? normalized.sessions
+  );
+  if (Number.isFinite(topSessions) && topSessions > 1) return true;
+
+  const name = String(
+    normalized.name ?? normalized.serviceName ?? normalized.service_name ?? ''
+  ).toLowerCase();
+  // "Puppy Walking Monthly Package", "10 Walk Bundle", etc.
+  if (/\b(package|bundle|pack)\b/.test(name)) return true;
+  if (/\b(monthly|weekly)\b/.test(name) && /\b(walk|walking)\b/.test(name)) return true;
+
+  return false;
 }
 
 /** Split merged vendor rows for WalkerBookingRouter `{ services, packages }` payload. */
@@ -372,7 +391,7 @@ export function mapWalkerApiRowToOption(
   bookingServiceStyle: string
 ): WalkerServiceOption {
   const normalized = normalizeVendorServiceRowForPackage(s as Record<string, unknown>);
-  const isPackage = isVendorServicePackageRow(normalized);
+  const isPackage = isWalkerVendorServicePackageRow(normalized);
   const metaObj =
     normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
       ? (normalized.metadata as Record<string, unknown>)

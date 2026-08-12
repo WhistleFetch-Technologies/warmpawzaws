@@ -17,15 +17,15 @@ import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHead
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import {
   fetchWalkerVendorCatalogMerged,
+  getWalkerDisplayOfferings,
   getWalkerRouterOfferingsForStyle,
+  isWalkerVendorServicePackageRow,
   mapWalkerApiRowToOption,
   type WalkerServiceOption,
 } from '@/lib/walker-vendor-offerings';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   clearSkipPackageAutoRedirect,
-  isVendorServicePackageRow,
-  shouldSkipPackageAutoRedirect,
 } from '@/lib/vendor-package-purchase-nav';
 import { WalkerWalkServicePicker } from './WalkerWalkServicePicker';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
@@ -349,24 +349,42 @@ export function WalkerBookingRouter({
       setPackageGateResolved(true);
       return;
     }
-    if (shouldSkipPackageAutoRedirect(String(vendorId), wantId)) {
-      packageRedirectRef.current = true;
-      setPackageGateResolved(true);
-      return;
-    }
-    const rows = getWalkerRouterOfferingsForStyle(vendorCatalog, bookingServiceStyle);
-    const match = rows.find((r) => {
-      const ids = [r.id, r.serviceId, r.service_id, r.vendorServiceId, r.vendor_service_id].map((x) =>
-        x != null ? String(x).trim() : ''
-      );
-      return ids.some((id) => id && id === wantId);
+    // Prefer style-filtered rows, then full walk catalog (packages often mis-tagged by style).
+    const styled = getWalkerRouterOfferingsForStyle(vendorCatalog, bookingServiceStyle);
+    const allWalks = getWalkerDisplayOfferings(vendorCatalog, bookingServiceStyle, {
+      requireStyleMatch: false,
     });
+    const findMatch = (rows: any[]) =>
+      rows.find((r) => {
+        const ids = [r.id, r.serviceId, r.service_id, r.vendorServiceId, r.vendor_service_id].map(
+          (x) => (x != null ? String(x).trim() : '')
+        );
+        return ids.some((id) => id && id === wantId);
+      });
+    const match = findMatch(styled) || findMatch(allWalks);
     if (!match) {
+      // Name hint from navigation when catalog id mismatch — still try package checkout.
+      const navName = String(serviceName || '').trim();
+      if (isWalkerVendorServicePackageRow({ name: navName, isPackage: false })) {
+        packageRedirectRef.current = true;
+        clearSkipPackageAutoRedirect(String(vendorId), wantId);
+        onNavigate('purchase-package', {
+          vendorId: String(vendorId),
+          vendorServiceId: wantId,
+          serviceName: navName || 'Package',
+          totalSessions: 1,
+          price: Number(price ?? 0) || 0,
+          duration: Number(duration ?? 30) || 30,
+          serviceType: 'walking',
+          serviceStyle: bookingServiceStyle || 'at_home',
+        });
+        return;
+      }
       packageRedirectRef.current = true;
       setPackageGateResolved(true);
       return;
     }
-    if (!isVendorServicePackageRow(match as Record<string, unknown>)) {
+    if (!isWalkerVendorServicePackageRow(match as Record<string, any>)) {
       packageRedirectRef.current = true;
       setPackageGateResolved(true);
       return;
@@ -375,11 +393,15 @@ export function WalkerBookingRouter({
     const walkerName = String(
       walker?.name ?? walker?.business_name ?? walker?.businessName ?? ''
     ).trim();
+    const enriched = {
+      ...(match as Record<string, unknown>),
+      isPackage: true,
+    };
     const nav =
       buildWalkerServiceDataForVendorPackagePurchase({
         vendorId: String(vendorId),
         vendorName: walkerName || undefined,
-        serviceRow: match as Record<string, unknown>,
+        serviceRow: enriched,
         serviceTypeCategory: 'walking',
         serviceStyle: String(
           match.serviceStyle ?? match.service_style ?? bookingServiceStyle ?? 'at_home'
@@ -394,6 +416,7 @@ export function WalkerBookingRouter({
         serviceType: 'walking',
         serviceStyle: bookingServiceStyle || 'at_home',
       };
+    // Walker uses replace→profile on back, so skip-auto-redirect must not block re-booking.
     clearSkipPackageAutoRedirect(String(vendorId), wantId);
     onNavigate('purchase-package', nav);
     // Keep gate closed — screen is being replaced; avoids Date/Time flash.

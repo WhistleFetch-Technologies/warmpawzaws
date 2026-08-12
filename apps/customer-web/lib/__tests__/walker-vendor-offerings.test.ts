@@ -5,6 +5,23 @@ import {
   servicePackageQualifiesForWalkingModal,
 } from '../walker-vendor-offerings';
 
+describe('isWalkerVendorServicePackageRow name heuristics', () => {
+  it('detects Puppy Walking Monthly Package by name', () => {
+    expect(
+      isWalkerVendorServicePackageRow({
+        id: '33333333-3333-4333-8333-333333333333',
+        name: 'Puppy Walking Monthly Package',
+      })
+    ).toBe(true);
+    expect(
+      mapWalkerApiRowToOption(
+        { id: '33333333-3333-4333-8333-333333333333', name: 'Puppy Walking Monthly Package' },
+        'at_home'
+      ).isPackage
+    ).toBe(true);
+  });
+});
+
 describe('rowQualifiesForWalkingModal', () => {
   it('rejects vet at_home clinical services', () => {
     expect(

@@ -2957,29 +2957,46 @@ export function CustomerHomeWrapper({
         config={SERVICE_CONFIGS.walker}
         onBack={() => backFromBannerOr(handleBack, walkerServiceData)}
         onSelectService={(service, rawRow) => {
-          if (rawRow && isVendorServicePackageRow(rawRow)) {
+          const sid = String(service.id || '').trim();
+          if (vid && sid) clearSkipPackageAutoRedirect(vid, sid);
+          const rowLooksPackage =
+            (rawRow && isVendorServicePackageRow(rawRow)) ||
+            (rawRow && Boolean(rawRow.isPackage)) ||
+            /\b(package|bundle|pack)\b/i.test(String(service.name || '')) ||
+            (/\b(monthly|weekly)\b/i.test(String(service.name || '')) &&
+              /\b(walk|walking)\b/i.test(String(service.name || '')));
+          if (rowLooksPackage) {
             const walkerName =
               String(
                 walkerServiceData?.walker?.name ??
                   walkerServiceData?.walker?.businessName ??
                   ''
               ).trim() || undefined;
+            const serviceRow = (rawRow && typeof rawRow === 'object'
+              ? { ...rawRow, isPackage: true, name: rawRow.name ?? service.name, id: rawRow.id ?? sid }
+              : {
+                  id: sid,
+                  isPackage: true,
+                  name: service.name,
+                  price: service.price,
+                  duration: service.duration,
+                }) as Record<string, unknown>;
             const pkgNav =
               buildWalkerServiceDataForVendorPackagePurchase({
                 vendorId: vid,
                 vendorName: walkerName,
-                serviceRow: rawRow,
+                serviceRow,
                 serviceTypeCategory: 'walking',
                 serviceStyle: 'at_home',
               }) ||
-              (String(service.id || '').trim()
+              (sid
                 ? ({
                     vendorId: vid,
-                    vendorServiceId: String(service.id).trim(),
+                    vendorServiceId: sid,
                     serviceName: service.name || 'Package',
                     totalSessions: Number(
-                      (rawRow as { totalSessions?: number }).totalSessions ??
-                        (rawRow.packageDetails as { totalSessions?: number } | undefined)
+                      (serviceRow as { totalSessions?: number }).totalSessions ??
+                        (serviceRow.packageDetails as { totalSessions?: number } | undefined)
                           ?.totalSessions ??
                         1
                     ) || 1,
