@@ -96,7 +96,16 @@ const KEYWORD_HUB = {
   // Walking & Sitting
   'dog walker': 'walker',
   'daily dog walk': 'walker',
+  'dog walking': 'walker',
+  'walking my dog': 'walker',
+  'walk my dog': 'walker',
+  'dog walk': 'walker',
   'puppy walk': 'walker',
+  // Nutrition & Wellness
+  'diet consultation': 'nutritionist',
+  'diet consultant': 'nutritionist',
+  'nutrition consultation': 'nutritionist',
+  'nutrition consultant': 'nutritionist',
   'pet sitter': 'pet-sitter',
   'cat sitter': 'pet-sitter',
   'pet nanny': 'pet-sitter',

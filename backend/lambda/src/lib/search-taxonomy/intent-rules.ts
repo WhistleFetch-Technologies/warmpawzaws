@@ -124,6 +124,13 @@ export function resolveIntentFromRules(
   if (has('doctor') && hasPet) {
     add('vet', 'GENERAL_VET_CARE', 420, 'doctor+pet');
   }
+  if (
+    (hasAny('vet', 'veterinarian', 'doctor', 'clinic') || normalized.includes('pet')) &&
+    hasAny('vaccination', 'vaccinate', 'deworming') &&
+    (hasPet || normalized.includes('pet'))
+  ) {
+    add('vet', 'PREVENTIVE_OR_GENERAL_VET', 430, 'vet+preventive');
+  }
   if (hasAny('veterinarian', 'veterinary') || tokenSet.has('vet')) {
     add('vet', 'GENERAL_VET_CARE', 400, 'vet');
   }
@@ -181,6 +188,12 @@ export function resolveIntentFromRules(
   if (hasAny('trainer', 'training', 'obedience', 'behaviourist', 'behaviorist')) {
     add('training', 'TRAINING', 400, 'training');
   }
+  if (
+    hasAny('trainer', 'training', 'obedi') &&
+    hasAny('aggressive', 'aggression', 'barking', 'biting', 'anxiety')
+  ) {
+    add('training', 'BEHAVIOUR_CORRECTION', 620, 'trainer+behaviour');
+  }
   if (hasAny('aggressive', 'aggression', 'barking', 'biting', 'anxiety')) {
     add('training', 'BEHAVIOUR_CORRECTION', 390, 'behaviour');
   }
@@ -194,6 +207,14 @@ export function resolveIntentFromRules(
   // ── Walker ──
   if (hasAny('walker', 'walking') || normalized.includes('dog walk') || normalized.includes('walk my dog')) {
     add('walker', 'DOG_WALKING', 400, 'walker');
+  }
+  if (
+    hasPet &&
+    tokenSet.has('walk') &&
+    !tokenSet.has('walker') &&
+    !tokenSet.has('walking')
+  ) {
+    add('walker', 'DOG_WALKING', 385, 'walk+pet');
   }
   if (normalized.includes('daily walk') || normalized.includes('puppy walk')) {
     add('walker', 'DOG_WALKING', 380, 'daily walk');
@@ -213,6 +234,12 @@ export function resolveIntentFromRules(
   }
 
   // ── Nutrition ──
+  if (
+    normalized.includes('diet consultation') ||
+    normalized.includes('nutrition consultation')
+  ) {
+    add('nutritionist', 'NUTRITION_CONSULT', 415, 'diet consultation');
+  }
   if (tokenSet.has('nutritionist') || normalized.includes('pet nutritionist')) {
     add('nutritionist', 'NUTRITION_CONSULT', 420, 'nutritionist');
   }

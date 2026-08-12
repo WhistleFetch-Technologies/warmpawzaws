@@ -42,6 +42,18 @@ export const BEHAVIOR_HUB_ROLE_SQL_IN_LIST = BEHAVIOR_HUB_ROLE_NAMES_LOWER.map((
   ', '
 );
 
+/** `roles.name` values for the customer Dog Walking hub. */
+const WALKER_HUB_ROLE_NAMES_LOWER: readonly string[] = [
+  'walker',
+  'walker_solo',
+  'pet_walker',
+  'dog_walker',
+];
+
+export const WALKER_HUB_ROLE_SQL_IN_LIST = WALKER_HUB_ROLE_NAMES_LOWER.map((n) => `'${n}'`).join(
+  ', '
+);
+
 export function catTextRequestsBehaviorHub(catTextExact: string[]): boolean {
   return catTextExact.some((c) => {
     const x = String(c).toLowerCase().trim();
@@ -457,6 +469,21 @@ export async function buildDiscoveryVendorExistsSql(
     ? ` OR ${sqlTrainingCategoryAliasOrVs(vsAlias)}`
     : '';
 
+  const walkerHubDiscoverySearch = catTextExact.some((c) =>
+    ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c)
+  );
+
+  const walkerRoleUncategorizedOr =
+    !sittingDiscoveryRelaxed && walkerHubDiscoverySearch
+      ? ` OR (LOWER(COALESCE(TRIM(${vsAlias}.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${WALKER_HUB_ROLE_SQL_IN_LIST}))`
+      : '';
+
+  /** Parity with vendors/search: walker-role accounts with any at_home discoverable service qualify. */
+  const walkerRoleHomeBypassOr =
+    walkerHubDiscoverySearch && (opts.forVendorCount || serviceStyleNorm === 'at_home')
+      ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${WALKER_HUB_ROLE_SQL_IN_LIST})`
+      : '';
+
   const behaviorRoleUncategorizedOr = behaviorHubDiscoverySearch
     ? ` OR (LOWER(COALESCE(TRIM(${vsAlias}.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST}))`
     : '';
@@ -681,6 +708,8 @@ export async function buildDiscoveryVendorExistsSql(
                 ${behaviorCategoryAliasVendorOr}
                 ${behaviorTrainingCategoryVendorOr}
                 ${walkerCategoryDiscoveryOr}
+                ${walkerRoleUncategorizedOr}
+                ${walkerRoleHomeBypassOr}
                 ${vetCategoryEmptyOr}
                 ${boardingCustomCategoryIdOrSql}
                 ${trainingCustomCategoryIdOrSql}
@@ -704,7 +733,8 @@ export async function buildDiscoveryVendorExistsSql(
 
   const availabilitySql =
     sittingDiscoveryRelaxed ||
-    (!opts.forVendorCount && (trainingDiscoverySearch || behaviorHubDiscoverySearch))
+    (!opts.forVendorCount &&
+      (trainingDiscoverySearch || behaviorHubDiscoverySearch || walkerHubDiscoverySearch))
       ? ''
       : `
           AND ${sqlVendorAvailabilityOrNotConfigured(vAlias)}`;

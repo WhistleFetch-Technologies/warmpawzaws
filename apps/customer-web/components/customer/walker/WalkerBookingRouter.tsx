@@ -30,6 +30,8 @@ import {
 import { WalkerWalkServicePicker } from './WalkerWalkServicePicker';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 interface WalkerBookingRouterProps {
   phone: string;
@@ -461,12 +463,7 @@ export function WalkerBookingRouter({
       // Load pets from API
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        setPets(petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        })));
+        setPets(petsResponse.pets.map((p: any) => mapBookingPetFromApi(p)));
       }
       
       // Load customer addresses from API
@@ -501,12 +498,7 @@ export function WalkerBookingRouter({
     try {
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const mappedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(mappedPets);
         // Auto-select newly added pet
         if (mappedPets.length > 0) {
@@ -982,82 +974,18 @@ export function WalkerBookingRouter({
           </div>
         )}
 
-        {/* Pet Selection */}
         {step === 'pet' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-[#FF8C42] rounded-lg text-sm font-medium hover:bg-orange-200 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-            
-            {/* Required notice */}
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
-              <Dog className="w-4 h-4 text-amber-600 flex-shrink-0" />
-              <p className="text-sm text-amber-800">
-                A pet profile is required for this service to provide the best care.
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-orange-200'
-                    }`}
-                  >
-                    <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? (
-                        <Dog className="w-7 h-7 text-orange-600" />
-                      ) : pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? (
-                        <Cat className="w-7 h-7 text-orange-600" />
-                      ) : (
-                        <User className="w-7 h-7 text-orange-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 text-left">
-                      <h3 className="font-semibold text-gray-900">{pet.name}</h3>
-                      <p className="text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                      <CheckCircle2 className="w-6 h-6 text-[#FF8C42]" />
-                    )}
-                  </button>
-                ))
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                  <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Dog className="w-8 h-8 text-gray-400" />
-                  </div>
-                  <p className="text-gray-600 font-medium mb-2">No pets added yet</p>
-                  <p className="text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
-                  <button
-                    onClick={() => setShowAddPetModal(true)}
-                    className="px-6 py-3 bg-[#FF8C42] text-white rounded-xl font-medium hover:bg-[#FF7A35] transition"
-                  >
-                    + Add Your First Pet
-                  </button>
-                </div>
-              )}
-            </div>
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedPet}
-            >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
-            </Button>
-          </div>
+          <BookingPetSelection
+            pets={pets}
+            selectedPet={selectedPet}
+            onSelectPet={setSelectedPet}
+            onAddPet={() => setShowAddPetModal(true)}
+            showContinue
+            onContinue={handleNext}
+            continueDisabled={!selectedPet}
+            continueLabel="Continue"
+            continueDisabledLabel="Select a Pet to Continue"
+          />
         )}
 
         {/* Address Selection (not for tele) */}

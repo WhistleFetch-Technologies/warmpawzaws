@@ -18,6 +18,8 @@ import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { BookingPetSelection } from './BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 import {
   buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
@@ -505,13 +507,7 @@ export function UniversalBookingRouter({
       if (petsResult.status === 'fulfilled') {
         const petsResponse = petsResult.value as any;
         if (petsResponse.pets && petsResponse.pets.length > 0) {
-          const mappedPets = petsResponse.pets.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            species: p.species || p.type,
-            breed: p.breed,
-            photo: p.photo || p.profilePhoto || p.image,
-          }));
+          const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
           setPets(mappedPets);
           // Phase 1: Pre-select last-used pet from sessionStorage
           try {
@@ -549,13 +545,7 @@ export function UniversalBookingRouter({
     try {
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const mappedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-          photo: p.photo || p.profilePhoto || p.image,
-        }));
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(mappedPets);
         // Auto-select newly added pet
         if (mappedPets.length > 0) {
@@ -1399,69 +1389,20 @@ export function UniversalBookingRouter({
                 )}
               </div>
 
-              <div className="border-t border-gray-100 pt-6">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Select Your Pet</h2>
-                  <button
-                    onClick={() => setShowAddPetModal(true)}
-                    className="flex items-center gap-1 rounded-lg bg-orange-100 px-2 py-1.5 text-xs font-medium text-orange-600 transition hover:bg-orange-200 sm:px-3 sm:text-sm"
-                  >
-                    <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
-                    <span className="hidden sm:inline">Add Pet</span>
-                    <span className="sm:hidden">Add</span>
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {pets.length > 0 ? (
-                    pets.map((pet) => (
-                      <button
-                        key={pet.id}
-                        onClick={() => {
-                          setSelectedPet(pet);
-                          try {
-                            sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id));
-                          } catch {
-                            /* ignore */
-                          }
-                        }}
-                        className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 transition-all sm:gap-4 sm:p-4 ${
-                          selectedPet?.id === pet.id
-                            ? 'border-orange-500 bg-orange-50'
-                            : 'border-gray-200 bg-gray-50 hover:border-orange-200'
-                        }`}
-                      >
-                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-xl sm:h-14 sm:w-14 sm:text-2xl">
-                          {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog')
-                            ? '🐕'
-                            : pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat')
-                              ? '🐈'
-                              : '🐾'}
-                        </div>
-                        <div className="min-w-0 flex-1 text-left">
-                          <h3 className="text-sm font-semibold text-gray-900 sm:text-base">{pet.name}</h3>
-                          <p className="text-xs capitalize text-gray-500 sm:text-sm">{pet.breed}</p>
-                        </div>
-                        {selectedPet?.id === pet.id && (
-                          <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-orange-500 sm:h-6 sm:w-6" />
-                        )}
-                      </button>
-                    ))
-                  ) : (
-                    <div className="rounded-xl border-2 border-dashed border-gray-200 py-8 text-center sm:py-12">
-                      <div className="mb-3 text-4xl sm:text-5xl">🐾</div>
-                      <p className="mb-2 text-sm font-medium text-gray-600 sm:text-base">No pets added yet</p>
-                      <p className="mb-4 text-xs text-gray-500 sm:text-sm">Add your pet to continue with the booking</p>
-                      <button
-                        onClick={() => setShowAddPetModal(true)}
-                        className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-orange-600 sm:px-6 sm:py-3 sm:text-base"
-                      >
-                        + Add Your First Pet
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <BookingPetSelection
+                variant="embedded"
+                pets={pets}
+                selectedPet={selectedPet}
+                onSelectPet={(pet) => {
+                  setSelectedPet(pet);
+                  try {
+                    sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id));
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                onAddPet={() => setShowAddPetModal(true)}
+              />
             </div>
 
             <div className="mx-auto w-full max-w-xs sm:max-w-sm">

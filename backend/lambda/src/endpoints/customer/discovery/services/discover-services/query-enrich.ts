@@ -154,6 +154,10 @@ export async function queryAndEnrichDiscoverVendors(
                 )
               )`
       : undefined;
+    const walkerHubAtHome =
+      !sittingDiscoveryRelaxed &&
+      !isAtCenter &&
+      catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c));
     vendorStatsDiscover = await discover_servicesRepo.dbFetchDiscoveryListStatsForVendors(
       discoverVendorIds,
       {
@@ -164,6 +168,7 @@ export async function queryAndEnrichDiscoverVendors(
         catTextExact,
         catTextLike,
         catUUIDs,
+        walkerHubAtHome,
         extraAndSql: sittingExcludeExtra,
       }
     );

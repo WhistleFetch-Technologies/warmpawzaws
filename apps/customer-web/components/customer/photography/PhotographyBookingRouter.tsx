@@ -15,6 +15,8 @@ import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 interface PhotographyBookingRouterProps {
   phone: string;
@@ -239,12 +241,7 @@ export function PhotographyBookingRouter({
       // Load pets from API
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        setPets(petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        })));
+        setPets(petsResponse.pets.map((p: any) => mapBookingPetFromApi(p)));
       }
       
       // Load customer addresses from API
@@ -279,12 +276,7 @@ export function PhotographyBookingRouter({
     try {
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const mappedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(mappedPets);
         // Auto-select newly added pet
         if (mappedPets.length > 0) {
@@ -685,72 +677,17 @@ export function PhotographyBookingRouter({
 
         {/* Pet Selection */}
         {step === 'pet' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-            
-            {/* Required notice */}
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm text-amber-800">
-                🐾 A pet profile is required for this service to provide the best care.
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-orange-200'
-                    }`}
-                  >
-                    <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center text-2xl">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? '🐕' : 
-                       pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? '🐈' : '🐾'}
-                    </div>
-                    <div className="flex-1 text-left">
-                      <h3 className="font-semibold text-gray-900">{pet.name}</h3>
-                      <p className="text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                      <CheckCircle2 className="w-6 h-6 text-orange-500" />
-                    )}
-                  </button>
-                ))
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                  <div className="text-5xl mb-3">🐾</div>
-                  <p className="text-gray-600 font-medium mb-2">No pets added yet</p>
-                  <p className="text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
-                  <button
-                    onClick={() => setShowAddPetModal(true)}
-                    className="px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition"
-                  >
-                    + Add Your First Pet
-                  </button>
-                </div>
-              )}
-            </div>
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedPet}
-            >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
-            </Button>
-          </div>
+          <BookingPetSelection
+            pets={pets}
+            selectedPet={selectedPet}
+            onSelectPet={setSelectedPet}
+            onAddPet={() => setShowAddPetModal(true)}
+            showContinue
+            onContinue={handleNext}
+            continueDisabled={!selectedPet}
+            continueLabel="Continue"
+            continueDisabledLabel="Select a Pet to Continue"
+          />
         )}
 
         {/* Address Selection (not for tele) */}

@@ -783,6 +783,18 @@ export function vendorRoleIsBehaviorHub(name: string | null | undefined): boolea
   return BEHAVIOR_HUB_ROLE_NAMES_LOWER.includes(String(name).toLowerCase().trim());
 }
 
+const WALKER_HUB_ROLE_NAMES_LOWER: readonly string[] = [
+  'walker',
+  'walker_solo',
+  'pet_walker',
+  'dog_walker',
+];
+
+export function vendorRoleIsWalkerHub(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return WALKER_HUB_ROLE_NAMES_LOWER.includes(String(name).toLowerCase().trim());
+}
+
 // ✅ Using helper functions from constants/helper.ts instead of duplicate implementations
 
 /** Flatten metadata.gallery / facility_photos entries (strings or { url, key, … }). */

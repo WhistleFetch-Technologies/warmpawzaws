@@ -34,6 +34,8 @@ const PHRASE_NORMALIZATIONS: [RegExp, string][] = [
   [/\b24\s*hours?\b/g, '24 hour'],
   [/\bx\s*ray\b/g, 'x-ray'],
   [/\bxray\b/g, 'x-ray'],
+  [/\bdiet consultant\b/g, 'diet consultation'],
+  [/\bnutrition consultant\b/g, 'nutrition consultation'],
 ];
 
 function normalizeToken(token: string): string {

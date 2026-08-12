@@ -23,6 +23,7 @@ const SHELL_TITLE: Record<string, string> = {
   'grooming_home': 'Grooming at home',
   'grooming-booking': 'Grooming booking',
   walker: 'Dog walker',
+  walker_home: 'All dog walkers',
   'walker-booking': 'Walker booking',
   shop: 'Shop',
   product_detail: 'Product',

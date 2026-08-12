@@ -17,6 +17,8 @@ import { NutritionistBookingRouterProps, Pet, TimeSlot } from './constants/inter
 import { defaultServiceTypeOptions } from './constants';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { normalizeAvailableSlotsResponse, buildDefaultSlotsWithPastGuard } from '@/lib/available-slots-response';
+import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 /** Real catalog service UUID (not role/category slugs like pet_nutritionist). */
 function looksLikeCatalogServiceId(id: string | undefined | null): id is string {
@@ -130,6 +132,14 @@ export function NutritionistBookingRouter({
   // Add Pet/Address modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
+
+  useEffect(() => {
+    if (step === 'datetime' && pets.length === 1 && !selectedPet) {
+      setSelectedPet(pets[0]);
+    }
+  }, [step, pets, selectedPet]);
+
+  const nutritionIncludesAddressStep = selectedServiceType === 'at_home';
 
   // Map vendor services to display format (API already filters by style via query param)
   const mapVendorServices = () => {
@@ -284,12 +294,7 @@ export function NutritionistBookingRouter({
       // Load pets from API
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        setPets(petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        })));
+        setPets(petsResponse.pets.map((p: any) => mapBookingPetFromApi(p)));
       }
 
       // Load customer addresses from API
@@ -324,12 +329,7 @@ export function NutritionistBookingRouter({
     try {
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const mappedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(mappedPets);
         // Auto-select newly added pet
         if (mappedPets.length > 0) {
@@ -405,16 +405,19 @@ export function NutritionistBookingRouter({
   };
 
   const handleNext = () => {
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
-    const currentIdx = steps.indexOf(step);
+    const steps: BookingStep[] = ['service', 'datetime', 'address', 'payment', 'confirmation'];
 
-    // ✅ FIX: Skip address for tele and at_center (customer goes to clinic)
-    if (step === 'pet' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
-      setStep('payment');
+    if (step === 'datetime') {
+      if (selectedServiceType === 'tele' || selectedServiceType === 'at_center') {
+        setStep('payment');
+        return;
+      }
+      setStep('address');
       return;
     }
 
-    if (currentIdx < steps.length - 1) {
+    const currentIdx = steps.indexOf(step);
+    if (currentIdx >= 0 && currentIdx < steps.length - 1) {
       setStep(steps[currentIdx + 1]);
     }
   };
@@ -424,11 +427,11 @@ export function NutritionistBookingRouter({
       setShowPaymentPage(false);
       return;
     }
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
+    const steps: BookingStep[] = ['service', 'datetime', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
 
     if (step === 'payment' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
-      setStep('pet');
+      setStep('datetime');
       return;
     }
 
@@ -572,11 +575,19 @@ export function NutritionistBookingRouter({
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
 
-    const stepLabels = selectedServiceType === 'tele'
-      ? ['Service', 'Date/Time', 'Pet', 'Payment']
-      : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
+    const skipServiceStep = hasServiceContext && selectedVendorService;
+    const baseSteps = nutritionIncludesAddressStep
+      ? ['Service', 'Date/Time', 'Address', 'Payment']
+      : ['Service', 'Date/Time', 'Payment'];
+    const stepLabels = skipServiceStep ? baseSteps.slice(1) : baseSteps;
+
     const currentStepMap: Record<BookingStep, number> = {
-      service: 0, datetime: 1, pet: 2, address: 3, payment: selectedServiceType === 'tele' ? 3 : 4, confirmation: 5
+      service: skipServiceStep ? -1 : 0,
+      datetime: skipServiceStep ? 0 : 1,
+      pet: skipServiceStep ? 0 : 1,
+      address: skipServiceStep ? 1 : 2,
+      payment: skipServiceStep ? (nutritionIncludesAddressStep ? 2 : 1) : nutritionIncludesAddressStep ? 3 : 2,
+      confirmation: skipServiceStep ? (nutritionIncludesAddressStep ? 3 : 2) : nutritionIncludesAddressStep ? 4 : 3,
     };
     const currentIdx = currentStepMap[step];
 
@@ -842,7 +853,7 @@ export function NutritionistBookingRouter({
 
         {/* Date & Time Selection */}
         {step === 'datetime' && (
-          <div className="space-y-6">
+          <div className="space-y-6 pb-4">
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-3">Select Date</h2>
               <div className="flex gap-2 overflow-x-auto pb-2">
@@ -901,81 +912,24 @@ export function NutritionistBookingRouter({
               </div>
             )}
 
+            <BookingPetSelection
+              variant="embedded"
+              pets={pets}
+              selectedPet={selectedPet}
+              onSelectPet={setSelectedPet}
+              onAddPet={() => setShowAddPetModal(true)}
+            />
+
             <Button
               onClick={handleNext}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedDate || !selectedTime}
+              disabled={!selectedDate || !selectedTime || !selectedPet}
             >
-              Continue
-            </Button>
-          </div>
-        )}
-
-        {/* Pet Selection */}
-        {step === 'pet' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-[#FF8C42] rounded-lg text-sm font-medium hover:bg-orange-200 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-
-            {/* Required notice */}
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm text-amber-800">
-                🐾 A pet profile is required for this service to provide the best care.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${selectedPet?.id === pet.id
-                      ? 'border-[#FF8C42] bg-orange-50'
-                      : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                      }`}
-                  >
-                    <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center text-2xl">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? '🐕' :
-                        pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? '🐈' : '🐾'}
-                    </div>
-                    <div className="flex-1 text-left">
-                      <h3 className="font-semibold text-gray-900">{pet.name}</h3>
-                      <p className="text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                      <CheckCircle2 className="w-6 h-6 text-orange-500" />
-                    )}
-                  </button>
-                ))
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                  <div className="text-5xl mb-3">🐾</div>
-                  <p className="text-gray-600 font-medium mb-2">No pets added yet</p>
-                  <p className="text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
-                  <button
-                    onClick={() => setShowAddPetModal(true)}
-                    className="px-6 py-3 bg-[#FF8C42] text-white rounded-xl font-medium hover:bg-[#FF7A35] transition"
-                  >
-                    + Add Your First Pet
-                  </button>
-                </div>
-              )}
-            </div>
-            <Button
-              onClick={handleNext}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedPet}
-            >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
+              {!selectedDate || !selectedTime
+                ? 'Select Date & Time'
+                : !selectedPet
+                  ? 'Select a Pet'
+                  : 'Continue'}
             </Button>
           </div>
         )}
