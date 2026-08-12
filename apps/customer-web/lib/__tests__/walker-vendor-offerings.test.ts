@@ -1,4 +1,6 @@
 import {
+  isWalkerVendorServicePackageRow,
+  mapWalkerApiRowToOption,
   rowQualifiesForWalkingModal,
   servicePackageQualifiesForWalkingModal,
 } from '../walker-vendor-offerings';
@@ -85,5 +87,34 @@ describe('servicePackageQualifiesForWalkingModal', () => {
         category: 'boarding',
       })
     ).toBe(false);
+  });
+});
+
+describe('walker package detection parity', () => {
+  it('detects packages when metadata is a JSON string with packageDetails', () => {
+    const row = {
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'Puppy Walk Pack',
+      category: 'Dog Walker',
+      metadata: JSON.stringify({
+        isPackage: true,
+        packageType: 'session',
+        packageDetails: { price: 3850, totalSessions: 10 },
+      }),
+    };
+    expect(isWalkerVendorServicePackageRow(row)).toBe(true);
+    const opt = mapWalkerApiRowToOption(row, 'at_home');
+    expect(opt.isPackage).toBe(true);
+    expect(opt.totalSessions).toBe(10);
+  });
+
+  it('detects packages from packageDetails alone (no top-level isPackage)', () => {
+    const row = {
+      id: '22222222-2222-4222-8222-222222222222',
+      name: 'Weekly Walks',
+      packageDetails: { totalSessions: 7, price: 2100 },
+    };
+    expect(isWalkerVendorServicePackageRow(row)).toBe(true);
+    expect(mapWalkerApiRowToOption(row, 'at_home').isPackage).toBe(true);
   });
 });

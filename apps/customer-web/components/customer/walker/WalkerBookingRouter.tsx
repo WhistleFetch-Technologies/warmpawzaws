@@ -21,6 +21,11 @@ import {
   mapWalkerApiRowToOption,
   type WalkerServiceOption,
 } from '@/lib/walker-vendor-offerings';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+  shouldSkipPackageAutoRedirect,
+} from '@/lib/vendor-package-purchase-nav';
 import { WalkerWalkServicePicker } from './WalkerWalkServicePicker';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
@@ -107,6 +112,7 @@ export function WalkerBookingRouter({
   const enteredWithServiceRef = useRef(Boolean(hasServiceContext));
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
+  const packageRedirectRef = useRef(false);
   
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
@@ -322,8 +328,52 @@ export function WalkerBookingRouter({
       price: opt.price,
       duration: opt.duration,
       serviceStyle: opt.serviceStyle,
+      isPackage: opt.isPackage,
     });
   }, [vendorCatalog, serviceId, selectedService, bookingServiceStyle]);
+
+  /** Profile/deep link: preselected walk package must go to purchase-package, not one-off booking. */
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    if (!vendorId || !vendorCatalog) return;
+    const wantId = String(serviceId || selectedService || selectedVendorServiceId || '').trim();
+    if (!wantId) return;
+    if (shouldSkipPackageAutoRedirect(String(vendorId), wantId)) {
+      packageRedirectRef.current = true;
+      return;
+    }
+    const rows = getWalkerRouterOfferingsForStyle(vendorCatalog, bookingServiceStyle);
+    const match = rows.find((r) => {
+      const ids = [r.id, r.serviceId, r.service_id, r.vendorServiceId, r.vendor_service_id].map((x) =>
+        x != null ? String(x).trim() : ''
+      );
+      return ids.some((id) => id && id === wantId);
+    });
+    if (!match || !isVendorServicePackageRow(match as Record<string, unknown>)) return;
+    packageRedirectRef.current = true;
+    const walkerName = String(
+      walker?.name ?? walker?.business_name ?? walker?.businessName ?? ''
+    ).trim();
+    const nav = buildWalkerServiceDataForVendorPackagePurchase({
+      vendorId: String(vendorId),
+      vendorName: walkerName || undefined,
+      serviceRow: match as Record<string, unknown>,
+      serviceTypeCategory: 'walking',
+      serviceStyle: String(
+        match.serviceStyle ?? match.service_style ?? bookingServiceStyle ?? 'at_home'
+      ),
+    });
+    if (nav) onNavigate('purchase-package', nav);
+  }, [
+    vendorId,
+    vendorCatalog,
+    serviceId,
+    selectedService,
+    selectedVendorServiceId,
+    bookingServiceStyle,
+    walker,
+    onNavigate,
+  ]);
 
   const loadVendorServices = async () => {
     if (!vendorId) return;

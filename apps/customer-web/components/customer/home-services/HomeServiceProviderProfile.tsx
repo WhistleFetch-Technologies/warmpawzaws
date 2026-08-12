@@ -524,7 +524,24 @@ export function HomeServiceProviderProfile({
           description: '',
           category: 'walking',
         };
-    onSelectService(service, rawServiceRowsRef.current.get(selectedServiceId));
+    const rawRow =
+      rawServiceRowsRef.current.get(selectedServiceId) ??
+      (option?.isPackage
+        ? ({
+            id: option.id,
+            isPackage: true,
+            name: option.name,
+            price: option.price,
+            duration: option.duration,
+            packageDetails: {
+              totalSessions: option.totalSessions,
+              sessionsPerDay: option.sessionsPerDay,
+              sessionIntervalDays: option.sessionIntervalDays,
+              price: option.price,
+            },
+          } as Record<string, unknown>)
+        : undefined);
+    onSelectService(service, rawRow);
   }, [onSelectService, provider, selectedServiceId]);
 
   const continueBookingDisabled = useMemo(() => {

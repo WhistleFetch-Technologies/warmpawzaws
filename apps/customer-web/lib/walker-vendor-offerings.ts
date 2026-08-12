@@ -4,6 +4,10 @@
  */
 
 import { mergeCustomerVendorServicesPayload } from './customer-vendor-services-merge';
+import {
+  isVendorServicePackageRow,
+  normalizeVendorServiceRowForPackage,
+} from './vendor-package-purchase-nav';
 
 const WALK_BOOKING_HOME_STYLES = new Set(['at_home', 'home', 'home_visit']);
 
@@ -208,17 +212,8 @@ export function mergeWalkerModalVendorOfferings(svcRes: Record<string, any> | nu
 export function isWalkerVendorServicePackageRow(
   s: Record<string, any> | null | undefined
 ): boolean {
-  if (!s) return false;
-  const meta =
-    s.metadata && typeof s.metadata === 'object' && !Array.isArray(s.metadata)
-      ? (s.metadata as Record<string, unknown>)
-      : undefined;
-  return Boolean(
-    s.isPackage ||
-      s.is_package ||
-      meta?.isPackage ||
-      meta?.type === 'package'
-  );
+  // Same detection as vet/boarding/grooming purchase-package routing (string metadata + packageDetails).
+  return isVendorServicePackageRow(s as Record<string, unknown> | null | undefined);
 }
 
 /** Split merged vendor rows for WalkerBookingRouter `{ services, packages }` payload. */
@@ -376,17 +371,13 @@ export function mapWalkerApiRowToOption(
   s: Record<string, any>,
   bookingServiceStyle: string
 ): WalkerServiceOption {
-  const isPackage = Boolean(
-    s.isPackage ||
-      s.is_package ||
-      s.metadata?.isPackage ||
-      s.metadata?.type === 'package'
-  );
+  const normalized = normalizeVendorServiceRowForPackage(s as Record<string, unknown>);
+  const isPackage = isVendorServicePackageRow(normalized);
   const metaObj =
-    s.metadata && typeof s.metadata === 'object' && !Array.isArray(s.metadata)
-      ? (s.metadata as Record<string, unknown>)
+    normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+      ? (normalized.metadata as Record<string, unknown>)
       : undefined;
-  const pd = (s.packageDetails || s.package_details || metaObj?.packageDetails) as
+  const pd = (normalized.packageDetails || normalized.package_details || metaObj?.packageDetails) as
     | {
         totalSessions?: number;
         sessionDuration?: number;
@@ -399,27 +390,39 @@ export function mapWalkerApiRowToOption(
       }
     | undefined;
   const name =
-    s.name || s.service_name || s.serviceName || (isPackage ? 'Walk bundle' : 'Walk');
+    normalized.name ||
+    normalized.service_name ||
+    normalized.serviceName ||
+    (isPackage ? 'Walk bundle' : 'Walk');
   const basePrice = Number(
-    s.price ?? s.custom_price ?? s.base_price ?? s.package_price ?? 0
+    normalized.price ??
+      normalized.custom_price ??
+      normalized.base_price ??
+      normalized.package_price ??
+      pd?.price ??
+      (pd as { packagePrice?: number } | undefined)?.packagePrice ??
+      0
   );
   const duration = Number(
-    s.duration ??
-      s.durationMinutes ??
-      s.duration_minutes ??
+    normalized.duration ??
+      normalized.durationMinutes ??
+      normalized.duration_minutes ??
       pd?.sessionDuration ??
       30
   );
-  const stRaw = s.serviceStyle || s.service_style;
+  const stRaw = normalized.serviceStyle || normalized.service_style;
   const normalizedStyle =
     typeof stRaw === 'string' && stRaw.trim()
       ? String(stRaw).trim()
       : bookingServiceStyle;
-  const totalSessionsRaw = pd?.totalSessions ?? metaObj?.totalSessions;
+  const totalSessionsRaw =
+    pd?.totalSessions ??
+    (pd as { total_sessions?: number } | undefined)?.total_sessions ??
+    metaObj?.totalSessions ??
+    metaObj?.total_sessions;
+  const totalSessionsNum = Number(totalSessionsRaw);
   const totalSessions =
-    typeof totalSessionsRaw === 'number' && Number.isFinite(totalSessionsRaw)
-      ? totalSessionsRaw
-      : null;
+    Number.isFinite(totalSessionsNum) && totalSessionsNum > 0 ? totalSessionsNum : null;
   const sessionsPerDay = Math.max(
     1,
     Math.min(
@@ -457,13 +460,17 @@ export function mapWalkerApiRowToOption(
     priceLabel = `₹${basePrice.toLocaleString('en-IN')}`;
   }
   return {
-    id: String(s.id || s.serviceId || s.service_id || ''),
-    serviceId: String(s.serviceId || s.service_id || s.id || ''),
-    name,
+    id: String(normalized.id || normalized.serviceId || normalized.service_id || ''),
+    serviceId: String(normalized.serviceId || normalized.service_id || normalized.id || ''),
+    name: String(name),
     price: basePrice,
     duration,
     desc: String(
-      s.shortDescription || s.description || s.desc || s.longDescription || (isPackage ? 'Session bundle' : '')
+      normalized.shortDescription ||
+        normalized.description ||
+        normalized.desc ||
+        normalized.longDescription ||
+        (isPackage ? 'Session bundle' : '')
     ),
     serviceStyle: normalizedStyle,
     isPackage,
