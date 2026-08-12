@@ -124,17 +124,27 @@ export function buildWalkerServiceDataForVendorPackagePurchase(opts: {
     normalized.serviceName ?? normalized.name ?? normalized.service_name ?? 'Package'
   ).trim();
 
-  /** vendor_services row id (API `id`); never use catalog `serviceId`/`service_id` as vendorServiceId. */
+  /** vendor_services row id (API `id`); prefer dedicated fields over catalog `serviceId`. */
+  const uuidRe =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const idRaw = (normalized as Record<string, unknown>).id;
   const idStr = idRaw != null ? String(idRaw).trim() : '';
-  const idLooksUuid =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      idStr
-    );
-  const vsid = String(
+  const catalogSid = String(
+    (normalized as Record<string, unknown>).serviceId ??
+      (normalized as Record<string, unknown>).service_id ??
+      ''
+  ).trim();
+  const explicitVsid = String(
     (normalized as Record<string, unknown>).vendorServiceId ??
       (normalized as Record<string, unknown>).vendor_service_id ??
-      (idLooksUuid ? idStr : '')
+      ''
+  ).trim();
+  const vsid = (
+    explicitVsid ||
+    (uuidRe.test(idStr) ? idStr : '') ||
+    (idStr && idStr !== catalogSid ? idStr : '') ||
+    // Package rows occasionally only expose a UUID on serviceId — allow as last resort.
+    (Boolean(normalized.isPackage || meta?.isPackage) && uuidRe.test(catalogSid) ? catalogSid : '')
   ).trim();
   if (!vsid) return null;
 

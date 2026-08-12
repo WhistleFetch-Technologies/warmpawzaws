@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import { resolveImageForContext } from '../services/image';
+import { resolvePetPhotoForDisplay } from '../services/image';
 import {
   buildVaccinationStorage,
   extractHealthRecordsForClient,
@@ -39,33 +39,19 @@ import {
   petVaccinationsMeaningfullyUpdated,
 } from '../lib/pet-vaccination-loyalty';
 import {
+  buildSinglePetCreateLoyaltyFields,
+  buildSinglePetUpdateLoyaltyFields,
+} from '../lib/pet-loyalty-response';
+import {
   normalizeBloodTypeForStorage,
   resolveBloodTypeFromPayload,
   wasBloodTypeInPayload,
 } from '../lib/pet-blood-types';
-import { validatePetCreatePayload } from '../utils/pet-create-validation';
+import {
+  resolveOnboardingPetInsertDefaults,
+  validatePetCreatePayload,
+} from '../utils/pet-create-validation';
 import { deletePetProfilePhotoAssets } from '../services/image/delete-pet-profile-photo.service';
-
-async function resolvePetPhotoForDisplay(
-  raw: string | null | undefined,
-  petId: string,
-): Promise<string | null | undefined> {
-  if (!raw) return raw;
-  const resolved = await resolveImageForContext(raw, {
-    assetType: 'pet',
-    ownerId: petId,
-    context: 'detail',
-    migrate: true,
-    persist: {
-      kind: 'scalar',
-      table: 'pets',
-      column: 'profile_photo_url',
-      idColumn: 'id',
-      id: petId,
-    },
-  });
-  return resolved?.displayUrl ?? raw;
-}
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -291,12 +277,25 @@ export function registerPetEndpoints(app: Hono) {
         emergencyContact,
       } = petData;
 
-      const createValidation = validatePetCreatePayload(petData);
+      const onboardingRelaxed = petData.onboardingRelaxed === true;
+      const createValidation = validatePetCreatePayload(petData, {
+        mode: onboardingRelaxed ? 'onboarding' : 'strict',
+      });
       if (!createValidation.ok) {
         return c.json({ error: createValidation.error }, 400);
       }
 
-      const petTypeToValidate = petType || petData.type || petData.species;
+      const insertDefaults = onboardingRelaxed
+        ? resolveOnboardingPetInsertDefaults(petData)
+        : null;
+      const resolvedName =
+        insertDefaults?.name ??
+        (typeof name === 'string' && name.trim().length > 0 ? name.trim() : name);
+      const resolvedSpecies =
+        insertDefaults?.species ??
+        (petType || petData.type || petData.species);
+
+      const petTypeToValidate = resolvedSpecies;
 
       const bloodTypeResult = resolveBloodTypeFromPayload(petData, petTypeToValidate);
       if (!bloodTypeResult.ok) {
@@ -364,8 +363,8 @@ export function registerPetEndpoints(app: Hono) {
 
       const insertPayload = await omitMissingPetsColumns({
         customer_id: customerId,
-        name: name,
-        species: petType || petData.type || petData.species, // Schema uses 'species', not 'pet_type'
+        name: resolvedName,
+        species: resolvedSpecies, // Schema uses 'species', not 'pet_type'
         breed: breed || null,
         age_years: age_years,
         age_months: age_months,
@@ -378,14 +377,16 @@ export function registerPetEndpoints(app: Hono) {
 
       const pet = await insert('pets', insertPayload);
       const created = pet[0] as Record<string, unknown>;
-      const vaccinationUpdated = petPayloadHasVaccinations(petData as Record<string, unknown>);
+      const loyaltyFields = buildSinglePetCreateLoyaltyFields(
+        String(customerId),
+        String(created.id),
+        petData as Record<string, unknown>
+      );
 
       return c.json({
         success: true,
         pet: created,
-        customerId: customerId,
-        petId: created.id,
-        vaccinationUpdated,
+        ...loyaltyFields,
         message: 'Pet created successfully',
       });
     } catch (error: any) {
@@ -511,18 +512,18 @@ export function registerPetEndpoints(app: Hono) {
 
       const afterPet = updated[0] as Record<string, unknown>;
       const beforePet = (existingPets[0] || {}) as Record<string, unknown>;
-      const vaccinationUpdated = petVaccinationsMeaningfullyUpdated(
+      const loyaltyFields = buildSinglePetUpdateLoyaltyFields(
+        String(afterPet.customer_id),
+        String(afterPet.id ?? petId),
         beforePet,
         afterPet,
-        payloadHadVaccinations
+        petData as Record<string, unknown>
       );
 
       return c.json({
         success: true,
         pet: afterPet,
-        customerId: afterPet.customer_id,
-        petId: afterPet.id ?? petId,
-        vaccinationUpdated,
+        ...loyaltyFields,
         message: 'Pet updated successfully',
       });
     } catch (error: any) {
@@ -715,6 +716,15 @@ export function registerPetEndpoints(app: Hono) {
       const pet = updated[0];
       const vaccinations = extractVaccinationsForClient(pet);
       const bloodType = normalizeBloodTypeForStorage(pet.medical_history?.bloodType, pet.species);
+      const afterPet = pet as Record<string, unknown>;
+      const beforePet = existingPet as Record<string, unknown>;
+      const loyaltyFields = buildSinglePetUpdateLoyaltyFields(
+        String(customer.id),
+        String(pet.id ?? petId),
+        beforePet,
+        afterPet,
+        petData as Record<string, unknown>
+      );
       return c.json({
         success: true,
         pet: {
@@ -733,6 +743,7 @@ export function registerPetEndpoints(app: Hono) {
           healthRecords: extractHealthRecordsForClient(pet.medical_history, pet.species),
           vaccinations,
         },
+        ...loyaltyFields,
         message: 'Pet updated successfully',
       });
     } catch (error: any) {

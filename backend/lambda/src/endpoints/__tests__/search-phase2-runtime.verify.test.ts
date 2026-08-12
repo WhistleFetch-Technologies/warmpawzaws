@@ -274,4 +274,47 @@ describe('Phase 2 /search runtime verification (mocked RDS)', () => {
     expect(body).toHaveProperty('total');
     expect(body.searchMethod).toBe('sql');
   });
+
+  it('GET /search?q=best+trainer+for+dog resolves training hub', async () => {
+    const res = await app.request('http://localhost/search?q=best%20trainer%20for%20dog&limit=20');
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(res.status).toBe(200);
+    expect(body.effectiveCategory).toBe('training');
+    expect(body.blockedEcommerce).toBe(false);
+  });
+
+  it('GET /search?q=I+need+walk+for+my+dog resolves walker hub', async () => {
+    const res = await app.request('http://localhost/search?q=I%20need%20walk%20for%20my%20dog&limit=20');
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(res.status).toBe(200);
+    expect(body.effectiveCategory).toBe('walker');
+  });
+
+  it('GET /search?q=my+dog+is+overweight resolves nutritionist hub', async () => {
+    const res = await app.request('http://localhost/search?q=my%20dog%20is%20overweight&limit=20');
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(res.status).toBe(200);
+    expect(body.effectiveCategory).toBe('nutritionist');
+  });
+
+  it('GET /search?q=I+need+diet+consultation+for+my+dog resolves nutritionist hub', async () => {
+    const res = await app.request(
+      'http://localhost/search?q=I%20need%20diet%20consultation%20for%20my%20dog&limit=20'
+    );
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(res.status).toBe(200);
+    expect(body.effectiveCategory).toBe('nutritionist');
+  });
+
+  it('GET /search?q=dog+food returns no service vendors (blocked ecommerce)', async () => {
+    const res = await app.request('http://localhost/search?q=dog%20food&limit=20');
+    const body = (await res.json()) as Record<string, unknown>;
+    const vendors = body.vendors as unknown[] | undefined;
+    const services = body.services as unknown[] | undefined;
+    expect(res.status).toBe(200);
+    expect(body.blockedEcommerce).toBe(true);
+    expect(vendors?.length ?? 0).toBe(0);
+    expect(services?.length ?? 0).toBe(0);
+    expect(body.total).toBe(0);
+  });
 });

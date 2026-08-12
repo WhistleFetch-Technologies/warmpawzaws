@@ -230,6 +230,66 @@ export async function notifyBookingCancelled(params: {
   });
 }
 
+/**
+ * Provider cancelled/declined a booking: notify the customer (in-app + push + SMS).
+ * Does not notify the vendor (they initiated the cancel).
+ */
+export async function notifyBookingCancelledByVendor(params: {
+  bookingId: string;
+  reason?: string;
+  refundInfo?: unknown;
+}): Promise<BookingNotificationResult> {
+  const ctx = await loadBookingContext(params.bookingId);
+  if (!ctx?.booking?.customer_id) return { notified: false, bookingId: params.bookingId };
+
+  const { booking, customer, vendor, vendorName, serviceName } = ctx;
+  const customerId = String(booking.customer_id);
+  const reason = String(params.reason || booking.cancellation_reason || '').trim();
+  const whenDisplay = formatIstBookingWhen(
+    String(booking.booking_date || ''),
+    String(booking.booking_time || '')
+  );
+
+  const message = reason
+    ? `Your booking for ${serviceName} with ${vendorName}${whenDisplay ? ` (${whenDisplay})` : ''} was cancelled by the provider. ${reason}`
+    : `Your booking for ${serviceName} with ${vendorName}${whenDisplay ? ` (${whenDisplay})` : ''} has been cancelled. Refund will be processed shortly.`;
+
+  await dispatchNotification({
+    recipientId: customerId,
+    recipientType: 'customer',
+    notificationType: 'booking_cancelled',
+    title: 'Booking Cancelled',
+    message,
+    channels: { inApp: true, push: true },
+    priority: 'high',
+    data: {
+      bookingId: booking.id,
+      vendorId: booking.vendor_id,
+      vendorName,
+      serviceName,
+      cancellationReason: reason || null,
+      cancelledBy: 'provider',
+      refundInfo: params.refundInfo,
+      dedupeKey: `booking-${booking.id}-cancelled-by-vendor-customer`,
+    },
+  });
+
+  // Approved Jio DLT template: booking_cancelled
+  triggerBookingNotification('booking_cancelled', {
+    booking,
+    customer,
+    vendor,
+    service: { name: serviceName },
+  }).catch((smsErr) => {
+    console.warn(
+      '[SMS] Vendor-cancel booking SMS failed:',
+      smsErr?.message || smsErr
+    );
+  });
+
+  return { notified: true, bookingId: String(booking.id) };
+}
+
 export async function notifyBookingRescheduled(params: {
   bookingId: string;
   vendorId: string;

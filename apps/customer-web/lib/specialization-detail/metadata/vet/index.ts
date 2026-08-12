@@ -1,0 +1,13 @@
+export { labDiagnosticsMetadata } from './lab-diagnostics';
+export { palliativeMetadata } from './palliative-end-of-life';
+export { reproductiveMetadata } from './reproductive-breeding';
+export { medicineMetadata } from './general';
+export { vaccinationMetadata } from './vaccination';
+export { dermatologyMetadata } from './skin-care';
+export { dentistryMetadata } from './dental';
+export { ophthalmologyMetadata } from './eye-care';
+export { cardiologyMetadata } from './heart-care';
+export { surgeryMetadata } from './surgery';
+export { emergencyMetadata } from './emergency';
+export { orthopedicsMetadata } from './bone-joint';
+export { neurologyMetadata } from './neurology';

@@ -17,10 +17,16 @@ import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHead
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import {
   fetchWalkerVendorCatalogMerged,
+  getWalkerDisplayOfferings,
   getWalkerRouterOfferingsForStyle,
+  isWalkerVendorServicePackageRow,
   mapWalkerApiRowToOption,
   type WalkerServiceOption,
 } from '@/lib/walker-vendor-offerings';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  clearSkipPackageAutoRedirect,
+} from '@/lib/vendor-package-purchase-nav';
 import { WalkerWalkServicePicker } from './WalkerWalkServicePicker';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
@@ -41,6 +47,9 @@ import {
   getWapptBookingStepIndex,
   getWapptBookingSteps,
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
+import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
+
 
 interface WalkerBookingRouterProps {
   phone: string;
@@ -128,17 +137,20 @@ export function WalkerBookingRouter({
   const enteredWithServiceRef = useRef(Boolean(hasServiceContext));
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
+  const packageRedirectRef = useRef(false);
+  /** When entered with a preselected service, hide Date/Time until package redirect is decided. */
+  const [packageGateResolved, setPackageGateResolved] = useState(!hasServiceContext);
   
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
   const initializedRef = useRef(false);
   useEffect(() => {
-    if (!initializedRef.current && hasServiceContext && step === 'service') {
+    if (!initializedRef.current && hasServiceContext && step === 'service' && packageGateResolved) {
       // If we have service context but step is 'service', move to datetime
       setStep('datetime');
       initializedRef.current = true;
     }
-  }, [serviceId, serviceType, serviceStyle, step]);
+  }, [serviceId, serviceType, serviceStyle, step, packageGateResolved]);
   const [loading, setLoading] = useState(false);
   /** Passed to available-slots only — must be at_home | outdoor | … never a vendor service UUID */
   const [bookingServiceStyle, setBookingServiceStyle] = useState(() => initialBookingServiceStyle(serviceStyle));
@@ -371,8 +383,109 @@ export function WalkerBookingRouter({
       price: opt.price,
       duration: opt.duration,
       serviceStyle: opt.serviceStyle,
+      isPackage: opt.isPackage,
     });
   }, [vendorCatalog, serviceId, selectedService, bookingServiceStyle]);
+
+  /** Profile/deep link: preselected walk package must go to purchase-package, not one-off booking. */
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    if (!hasServiceContext) {
+      setPackageGateResolved(true);
+      return;
+    }
+    if (!vendorId || !vendorCatalog) return;
+    const wantId = String(serviceId || selectedService || selectedVendorServiceId || '').trim();
+    if (!wantId) {
+      packageRedirectRef.current = true;
+      setPackageGateResolved(true);
+      return;
+    }
+    // Prefer style-filtered rows, then full walk catalog (packages often mis-tagged by style).
+    const styled = getWalkerRouterOfferingsForStyle(vendorCatalog, bookingServiceStyle);
+    const allWalks = getWalkerDisplayOfferings(vendorCatalog, bookingServiceStyle, {
+      requireStyleMatch: false,
+    });
+    const findMatch = (rows: any[]) =>
+      rows.find((r) => {
+        const ids = [r.id, r.serviceId, r.service_id, r.vendorServiceId, r.vendor_service_id].map(
+          (x) => (x != null ? String(x).trim() : '')
+        );
+        return ids.some((id) => id && id === wantId);
+      });
+    const match = findMatch(styled) || findMatch(allWalks);
+    if (!match) {
+      // Name hint from navigation when catalog id mismatch — still try package checkout.
+      const navName = String(serviceName || '').trim();
+      if (isWalkerVendorServicePackageRow({ name: navName, isPackage: false })) {
+        packageRedirectRef.current = true;
+        clearSkipPackageAutoRedirect(String(vendorId), wantId);
+        onNavigate('purchase-package', {
+          vendorId: String(vendorId),
+          vendorServiceId: wantId,
+          serviceName: navName || 'Package',
+          totalSessions: 1,
+          price: Number(price ?? 0) || 0,
+          duration: Number(duration ?? 30) || 30,
+          serviceType: 'walking',
+          serviceStyle: bookingServiceStyle || 'at_home',
+        });
+        return;
+      }
+      packageRedirectRef.current = true;
+      setPackageGateResolved(true);
+      return;
+    }
+    if (!isWalkerVendorServicePackageRow(match as Record<string, any>)) {
+      packageRedirectRef.current = true;
+      setPackageGateResolved(true);
+      return;
+    }
+    packageRedirectRef.current = true;
+    const walkerName = String(
+      walker?.name ?? walker?.business_name ?? walker?.businessName ?? ''
+    ).trim();
+    const enriched = {
+      ...(match as Record<string, unknown>),
+      isPackage: true,
+    };
+    const nav =
+      buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(vendorId),
+        vendorName: walkerName || undefined,
+        serviceRow: enriched,
+        serviceTypeCategory: 'walking',
+        serviceStyle: String(
+          match.serviceStyle ?? match.service_style ?? bookingServiceStyle ?? 'at_home'
+        ),
+      }) || {
+        vendorId: String(vendorId),
+        vendorServiceId: wantId,
+        serviceName: String(match.name || match.service_name || serviceName || 'Package'),
+        totalSessions: 1,
+        price: Number(match.price ?? price ?? 0) || 0,
+        duration: Number(match.duration ?? duration ?? 30) || 30,
+        serviceType: 'walking',
+        serviceStyle: bookingServiceStyle || 'at_home',
+      };
+    // Walker uses replace→profile on back, so skip-auto-redirect must not block re-booking.
+    clearSkipPackageAutoRedirect(String(vendorId), wantId);
+    onNavigate('purchase-package', nav);
+    // Keep gate closed — screen is being replaced; avoids Date/Time flash.
+  }, [
+    hasServiceContext,
+    vendorId,
+    vendorCatalog,
+    serviceId,
+    selectedService,
+    selectedVendorServiceId,
+    bookingServiceStyle,
+    walker,
+    onNavigate,
+    serviceName,
+    price,
+    duration,
+  ]);
 
   const loadVendorServices = async () => {
     if (!vendorId) return;
@@ -389,6 +502,7 @@ export function WalkerBookingRouter({
       console.log('Loaded vendor walk services + packages:', n);
     } catch (error) {
       console.error('Error loading vendor services:', error);
+      setVendorCatalog({ services: [], packages: [] });
     } finally {
       setLoading(false);
     }
@@ -399,12 +513,7 @@ export function WalkerBookingRouter({
       // Load pets from API
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        setPets(petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        })));
+        setPets(petsResponse.pets.map((p: any) => mapBookingPetFromApi(p)));
       }
       
       // Load customer addresses from API
@@ -439,12 +548,7 @@ export function WalkerBookingRouter({
     try {
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const mappedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(mappedPets);
         // Auto-select newly added pet
         if (mappedPets.length > 0) {
@@ -553,6 +657,7 @@ export function WalkerBookingRouter({
     if (step === 'service') {
       const sel = serviceOptions.find((s) => s.id === selectedVendorServiceId);
       if (sel?.isPackage) {
+        if (vendorId) clearSkipPackageAutoRedirect(String(vendorId), String(sel.id));
         onNavigate?.('purchase-package', {
           vendorId,
           vendorServiceId: sel.id,
@@ -811,6 +916,31 @@ export function WalkerBookingRouter({
     );
   }
 
+  // Avoid flashing Date/Time while we decide if this preselected row is a package.
+  if (hasServiceContext && !packageGateResolved) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <ServiceDashboardHeader
+          serviceName={getServiceTitle()}
+          serviceSubtitle={getServiceSubtitle()}
+          serviceIcon={Bike}
+          iconColor="text-white"
+          stats={dashboardStats}
+          steps={getStepIndicators()}
+          onBack={onBack}
+          showBackButton={true}
+          headerColor="bg-[#FF8C42]"
+        />
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#FF8C42] mx-auto mb-3" />
+            <p className="text-sm text-gray-600">Checking package options…</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {(step !== 'payment' || (appointmentsMode && !showPaymentPage)) && (
@@ -1064,82 +1194,18 @@ export function WalkerBookingRouter({
           </div>
         ) : null}
 
-        {/* Pet Selection */}
         {step === 'pet' && !appointmentsMode && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-[#FF8C42] rounded-lg text-sm font-medium hover:bg-orange-200 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-            
-            {/* Required notice */}
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
-              <Dog className="w-4 h-4 text-amber-600 flex-shrink-0" />
-              <p className="text-sm text-amber-800">
-                A pet profile is required for this service to provide the best care.
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-orange-200'
-                    }`}
-                  >
-                    <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? (
-                        <Dog className="w-7 h-7 text-orange-600" />
-                      ) : pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? (
-                        <Cat className="w-7 h-7 text-orange-600" />
-                      ) : (
-                        <User className="w-7 h-7 text-orange-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 text-left">
-                      <h3 className="font-semibold text-gray-900">{pet.name}</h3>
-                      <p className="text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                      <CheckCircle2 className="w-6 h-6 text-[#FF8C42]" />
-                    )}
-                  </button>
-                ))
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                  <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Dog className="w-8 h-8 text-gray-400" />
-                  </div>
-                  <p className="text-gray-600 font-medium mb-2">No pets added yet</p>
-                  <p className="text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
-                  <button
-                    onClick={() => setShowAddPetModal(true)}
-                    className="px-6 py-3 bg-[#FF8C42] text-white rounded-xl font-medium hover:bg-[#FF7A35] transition"
-                  >
-                    + Add Your First Pet
-                  </button>
-                </div>
-              )}
-            </div>
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedPet}
-            >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
-            </Button>
-          </div>
+          <BookingPetSelection
+            pets={pets}
+            selectedPet={selectedPet}
+            onSelectPet={setSelectedPet}
+            onAddPet={() => setShowAddPetModal(true)}
+            showContinue
+            onContinue={handleNext}
+            continueDisabled={!selectedPet}
+            continueLabel="Continue"
+            continueDisabledLabel="Select a Pet to Continue"
+          />
         )}
 
         {/* Address Selection (not for tele) */}

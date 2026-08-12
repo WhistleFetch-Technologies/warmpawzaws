@@ -46,6 +46,9 @@ export type ServicesByStyleCategoryContext = {
   behaviorCategoryAliasVendorOrByStyle: string;
   behaviorTrainingCategoryVendorOrByStyle: string;
   walkerCategoryDiscoveryOrByStyle: string;
+  walkerRoleUncategorizedOrByStyle: string;
+  walkerRoleHomeBypassOrByStyle: string;
+  walkerCustomCategoryIdOrByStyleSql: string;
   vetCategoryEmptyOrByStyle: string;
   vetExcludeNonVetSqlByStyle: string;
   hasLogoUrl: boolean;

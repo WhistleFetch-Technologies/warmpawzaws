@@ -25,45 +25,12 @@ import { select, update, query, insert } from '../../../../database/rds-connecti
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../../utils/entity-extractor';
 import { isValidUUID } from '../../../../types/entities';
-import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../../../../utils/s3-media-presign';
-import { resolveImageForContext } from '../../../../services/image';
+import { resolveCustomerPhotoForDisplay as resolveCustomerPhotoForDisplayShared } from '../../../../services/image';
 import { getCustomerByPhoneFromMicroservice } from '../../../../lib/services/customer-microservice-client';
 import { geocodeAddress, geocodeIndiaPincode } from '../../../../lib/utils/geocode';
 
-/** Module helpers (move-only). */
-/**
- * DB may store bare S3 keys, unsigned HTTPS object URLs, or expired presigned URLs.
- * Uses ImageService resolve layer for managed keys (WebP thumbs on list paths elsewhere).
- */
-export async function resolveCustomerPhotoForDisplay(
-  raw: string | null | undefined,
-  customerId?: string,
-): Promise<string | null> {
-  if (raw == null) return null;
-  const s = String(raw).trim();
-  if (!s) return null;
-
-  const resolved = await resolveImageForContext(s, {
-    assetType: 'profile',
-    ownerId: customerId || 'customer',
-    context: 'detail',
-    migrate: true,
-    persist: customerId
-      ? {
-          kind: 'scalar',
-          table: 'customers',
-          column: 'profile_photo_url',
-          idColumn: 'id',
-          id: customerId,
-        }
-      : null,
-  });
-  if (resolved?.displayUrl) return resolved.displayUrl;
-
-  const stripped = stripS3PresignQueryFromUrl(s);
-  const presigned = await presignS3GetUrlIfApplicable(stripped);
-  return presigned || stripped;
-}
+/** Re-export shared resolver — persist target remains customers.profile_photo_url. */
+export const resolveCustomerPhotoForDisplay = resolveCustomerPhotoForDisplayShared;
 
 /** Map DB row to API profile with camelCase address detail fields */
 export function withProfileAddressFields(row: Record<string, any> | null | undefined) {

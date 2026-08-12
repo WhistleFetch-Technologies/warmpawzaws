@@ -1,14 +1,17 @@
 import { DistanceResolver } from '../../../../../lib/utils/vendor-customer-distance';
 import {
   appendVetDiscoveryCategoryAliasKeys,
+  appendWalkerDiscoveryCategoryAliasKeys,
   BEHAVIOR_HUB_ROLE_SQL_IN_LIST,
   catTextRequestsBehaviorHub,
   sqlTrainingCategoryAliasOrVs,
   sqlVetHubExcludeNonVetServices,
   sqlVetHubPlaceholderCategoryOr,
   TRAINING_HUB_ROLE_SQL_IN_LIST,
+  WALKER_HUB_ROLE_SQL_IN_LIST,
 } from '../../../../../lib/discovery-vendor-query';
 import { getDiscoveryVendorListSchemaFlags } from '../../../../../utils/discovery-vendor-list-setup';
+import * as discover_servicesRepo from '../../repos/discover-services.repo';
 import * as services_by_styleRepo from '../../repos/services-by-style.repo';
 import { columnExists } from '../../repos/legacy-helpers.repo';
 import { buildStrictCustomDiscoverySql } from './category-strict';
@@ -27,6 +30,8 @@ export async function buildServicesByStyleCategoryContext(
   if (category) rawCategoryKeys.push(String(category));
   if (roleId) rawCategoryKeys.push(String(roleId));
   appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys, category);
+  appendWalkerDiscoveryCategoryAliasKeys(rawCategoryKeys, category);
+  appendWalkerDiscoveryCategoryAliasKeys(rawCategoryKeys, roleId);
   const catTextExact: string[] = rawCategoryKeys.filter(k => !isUuid(k)).map(k => k.toLowerCase());
   const catTextLike: string[] = catTextExact.map(k => `%${k}%`);
   const catUUIDs: string[] = rawCategoryKeys.filter(k => isUuid(k));
@@ -118,6 +123,20 @@ export async function buildServicesByStyleCategoryContext(
       ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})`
       : '';
 
+  const walkerHubDiscoverySearchByStyle = catTextExact.some((c) =>
+    ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c)
+  );
+
+  const walkerRoleUncategorizedOrByStyle =
+    walkerHubDiscoverySearchByStyle
+      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${WALKER_HUB_ROLE_SQL_IN_LIST}))`
+      : '';
+
+  const walkerRoleHomeBypassOrByStyle =
+    walkerHubDiscoverySearchByStyle && !isAtCenter
+      ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${WALKER_HUB_ROLE_SQL_IN_LIST})`
+      : '';
+
   const trainingCategoryAliasVendorOrByStyle = trainingDiscoverySearchByStyle
     ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
     : '';
@@ -153,6 +172,29 @@ export async function buildServicesByStyleCategoryContext(
               )
             )`
       : '';
+
+  let walkerCustomCategoryIdOrByStyleSql = '';
+  const walkerHubByStyle = catTextExact.some((c) =>
+    ['walker', 'walking', 'dog_walker', 'pet_walker', 'dog walker', 'pet walker'].includes(c)
+  );
+  if (walkerHubByStyle && hasVsCategoryIdCol) {
+    const slugResWalk = await discover_servicesRepo
+      .dbDiscoverServicesWalkingCategories()
+      .catch(() => ({ rows: [] as { id: string }[] }));
+    const idsW = (slugResWalk.rows || []).map((r: any) => r?.id).filter(Boolean);
+    const UUID_RE_W =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const cleanW = idsW.filter((id: string) => UUID_RE_W.test(String(id).trim()));
+    if (cleanW.length > 0) {
+      const uuidListW = cleanW.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+      walkerCustomCategoryIdOrByStyleSql = `
+                OR (
+                  COALESCE(vs.is_custom_service, false) = true
+                  AND vs.category_id IS NOT NULL
+                  AND vs.category_id = ANY(ARRAY[${uuidListW}]::uuid[])
+                )`;
+    }
+  }
 
   const vetCategoryEmptyOrByStyle = isVetCategoryDiscoveryByStyle
     ? ` OR ${sqlVetHubPlaceholderCategoryOr('vs', 'v.role_id')}`
@@ -191,6 +233,9 @@ export async function buildServicesByStyleCategoryContext(
     behaviorCategoryAliasVendorOrByStyle,
     behaviorTrainingCategoryVendorOrByStyle,
     walkerCategoryDiscoveryOrByStyle,
+    walkerRoleUncategorizedOrByStyle,
+    walkerRoleHomeBypassOrByStyle,
+    walkerCustomCategoryIdOrByStyleSql,
     vetCategoryEmptyOrByStyle,
     vetExcludeNonVetSqlByStyle,
     hasLogoUrl,

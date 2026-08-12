@@ -233,6 +233,7 @@ class UniversalSearchHandler extends BaseHandler {
     categorySource: CategorySource;
     hubDrivenRetrieval: boolean;
     searchText: string;
+    blockedEcommerce?: boolean;
   }) {
     return {
       categories: opts.categories,
@@ -242,6 +243,7 @@ class UniversalSearchHandler extends BaseHandler {
       categorySource: opts.categorySource,
       hubDrivenRetrieval: opts.hubDrivenRetrieval,
       searchText: opts.searchText,
+      blockedEcommerce: opts.blockedEcommerce ?? false,
     };
   }
 
@@ -261,6 +263,7 @@ class UniversalSearchHandler extends BaseHandler {
           topHubSlug: null,
           topMatchedPhrase: null,
           source: 'none' as const,
+          blockedEcommerce: false,
         };
     const taxonomyHub =
       !explicitCategory && taxonomy.topHubSlug ? taxonomy.topHubSlug : undefined;
@@ -286,7 +289,34 @@ class UniversalSearchHandler extends BaseHandler {
       categorySource,
       hubDrivenRetrieval: hubFromTaxonomy,
       searchText: residual.searchText,
+      blockedEcommerce: taxonomy.blockedEcommerce ?? false,
     });
+
+    if (taxonomy.blockedEcommerce && !isProductSearchHub(explicitCategory)) {
+      logSearchTaxonomyDebug({
+        query: searchQuery,
+        categories,
+        topHubSlug: taxonomy.topHubSlug,
+        explicitCategory,
+        effectiveCategory,
+        categorySource,
+        searchMethod: 'sql',
+        taxonomySource: taxonomy.source,
+        hubDrivenRetrieval: false,
+        searchText: '',
+        searchTokens: [],
+      });
+      return this.success({
+        query: searchQuery,
+        ...taxonomyMeta,
+        vendors: [],
+        services: [],
+        products: [],
+        total: 0,
+        searchMethod: 'sql',
+        discoveryParity: false,
+      });
+    }
 
     const result = await this.searchWithPostgres(
       searchQuery,
@@ -687,12 +717,20 @@ class UniversalSearchHandler extends BaseHandler {
 
     const launchFilter = await resolveLaunchGeoFromQuery(qs);
     const hubCategory = category || (hubContext ? hubContext.discoverCategory : undefined);
+    // Hub-only browse: vendor.category is often roles.name (vet_clinic, pet_groomer, …).
+    // Those slugs historically did not map to platform:service-launch-config keys, so
+    // shouldIncludeSearchResult zeroed the list while /customer/services/by-style
+    // (Home) never applied this filter. Use hub slug for launch checks on hub browse.
     finalVendors = finalVendors.filter((v) =>
       shouldIncludeSearchResult(
         launchFilter,
         {
-          category: (v as { category?: string }).category,
-          serviceType: (v as { category?: string }).category,
+          category: hubBrowseOnly
+            ? hubCategory
+            : (v as { category?: string }).category,
+          serviceType: hubBrowseOnly
+            ? hubCategory
+            : (v as { category?: string }).category,
         },
         hubCategory
       )
@@ -701,8 +739,12 @@ class UniversalSearchHandler extends BaseHandler {
       shouldIncludeSearchResult(
         launchFilter,
         {
-          category: (s as { category?: string }).category,
-          serviceType: (s as { serviceType?: string }).serviceType,
+          category: hubBrowseOnly
+            ? hubCategory
+            : (s as { category?: string }).category,
+          serviceType: hubBrowseOnly
+            ? hubCategory
+            : (s as { serviceType?: string }).serviceType,
           serviceStyle: (s as { serviceStyle?: string }).serviceStyle,
         },
         hubCategory

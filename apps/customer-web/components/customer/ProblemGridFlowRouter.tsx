@@ -22,19 +22,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import { shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
-import {
-  Home,
-  Building2,
-  Video,
-  ArrowLeft,
-  ArrowRight,
-  Loader2,
-  Clock,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { SpecializationDetailPage } from './specialization-detail/SpecializationDetailPage';
+import { VetSpecializationDetailPage } from './specialization-detail/vet/VetSpecializationDetailPage';
+import type { ServiceStyle } from './specialization-detail/ServiceModeSelection';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { toast } from 'sonner';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
@@ -55,8 +46,6 @@ import { BOARDING_NEEDS, NUTRITIONIST_NEEDS, WALKING_NEEDS } from './ProblemGrid
 // ============================================================================
 // TYPES (used by discovery helpers below)
 // ============================================================================
-
-type ServiceStyle = 'at_home' | 'at_center' | 'tele';
 
 interface ProblemGridItem {
   id: string;
@@ -198,7 +187,7 @@ function resolveWapptCategoryForProblem(problem: ProblemGridItem | null): string
   return resolveProblemGridWapptCategory(kind);
 }
 
-/** WAPPT vendor list already exposes at_home / at_center toggles — skip the extra style step. */
+/** WAPPT vendor list already exposes at_home / at_center toggles â€” skip the extra style step. */
 function shouldSkipServiceStyleStepForWappt(problem: ProblemGridItem | null): boolean {
   const category = resolveWapptCategoryForProblem(problem);
   return Boolean(category && isWarmpawzAppointmentsHubEnabled(category));
@@ -230,43 +219,6 @@ interface ProblemGridFlowRouterProps {
   /** Routes booking/profile/package flows from embedded Services lists (vet, grooming, training, behavior). */
   onDiscoveryNavigate: (screen: string, data?: any) => void;
 }
-
-// ============================================================================
-// SERVICE STYLE CONFIGURATION
-// ============================================================================
-
-const SERVICE_STYLE_CONFIG: Record<
-  ServiceStyle,
-  {
-    label: string;
-    icon: React.ReactNode;
-    color: string;
-    bgColor: string;
-    description: string;
-  }
-> = {
-  at_home: {
-    label: 'At Home',
-    icon: <Home className="w-6 h-6" />,
-    color: 'text-green-600',
-    bgColor: 'bg-green-100',
-    description: 'Service at your doorstep',
-  },
-  at_center: {
-    label: 'At Clinic/Center',
-    icon: <Building2 className="w-6 h-6" />,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100',
-    description: 'Visit the service center',
-  },
-  tele: {
-    label: 'Video Call',
-    icon: <Video className="w-6 h-6" />,
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-100',
-    description: 'Online consultation',
-  },
-};
 
 // ============================================================================
 // FLOW STEPS
@@ -401,11 +353,21 @@ export function ProblemGridFlowRouter({
         if (matchingProblem) break;
       }
 
+
       if (!matchingProblem) {
         const legacyRes = await apiClient.get<any>(`/public/problems?roleId=${encodeURIComponent(roleId)}`);
         if (legacyRes?.success && legacyRes.problems) {
           matchingProblem =
             legacyRes.problems.find((p: any) => p.id === selectedProblem.id) ?? null;
+        }
+      }
+
+      if (matchingProblem?.description && typeof matchingProblem.description === 'string') {
+        const desc = matchingProblem.description.trim();
+        if (desc) {
+          setSelectedProblem((prev) =>
+            prev ? { ...prev, description: prev.description || desc } : prev
+          );
         }
       }
 
@@ -508,7 +470,7 @@ export function ProblemGridFlowRouter({
 
     const kind = pickProblemDiscoveryKind(selectedProblem, selectedServiceStyle) ?? 'trainer';
     const specId = selectedProblem.id;
-    console.log(`🔵 [ProblemGridFlowRouter] renderDiscovery: kind=${kind} style=${selectedServiceStyle} specId=${specId} problemId=${selectedProblem.id}`);
+    console.log(`ðŸ”µ [ProblemGridFlowRouter] renderDiscovery: kind=${kind} style=${selectedServiceStyle} specId=${specId} problemId=${selectedProblem.id}`);
     const hubStyle = selectedServiceStyle as HubServiceStyle;
     const profileBack = 'problem_grid_flow';
     const key = `${kind}-${selectedServiceStyle}-${specId}-${discoveryListKey}`;
@@ -674,114 +636,35 @@ export function ProblemGridFlowRouter({
     );
   };
 
-  const renderServiceStyleSelection = () => (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          className="relative z-10 h-11 min-h-[44px] min-w-[44px] shrink-0 p-0 touch-manipulation"
-          aria-label="Go back"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-bold text-gray-900">{selectedProblem?.name || 'Select Service Type'}</h2>
-          <p className="text-sm text-gray-500">Choose how you'd like to receive this service</p>
-        </div>
-        {selectedProblem && <span className="text-4xl">{selectedProblem.icon}</span>}
-      </div>
+  const renderServiceStyleSelection = () => {
+    if (!selectedProblem) return null;
 
-      {loadingProblemDetails && (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-[#FF8C42]" />
-          <span className="ml-2 text-gray-500">Loading options...</span>
-        </div>
-      )}
+    const detailProps = {
+      problem: {
+        id: selectedProblem.id,
+        name: selectedProblem.name,
+        icon: selectedProblem.icon,
+        description: selectedProblem.description,
+        category: selectedProblem.category,
+        roleId: selectedProblem.roleId,
+        linkedServiceRoles: selectedProblem.linkedServiceRoles,
+      },
+      availableStyles,
+      loadingProblemDetails,
+      hasTeleOption,
+      instantTeleEnabled: isInstantTeleUiEnabled(),
+      onBack: () => onClose?.(),
+      onServiceStyleSelect: handleServiceStyleSelect,
+    };
 
-      {!loadingProblemDetails && (
-        <div className="grid gap-4">
-          {availableStyles.map((style) => {
-            const config = SERVICE_STYLE_CONFIG[style];
-            if (!config) return null;
+    if (isVetProblem(selectedProblem)) {
+      return <VetSpecializationDetailPage {...detailProps} />;
+    }
 
-            return (
-              <Card
-                key={style}
-                onClick={() => handleServiceStyleSelect(style)}
-                className="p-4 cursor-pointer hover:shadow-md transition border-gray-200 hover:border-[#FF8C42]"
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`w-14 h-14 ${config.bgColor} rounded-2xl flex items-center justify-center ${config.color}`}
-                  >
-                    {config.icon}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900">{config.label}</h3>
-                    <p className="text-sm text-gray-500">{config.description}</p>
-                  </div>
-                  <ArrowRight className="w-5 h-5 text-gray-400" />
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+    return <SpecializationDetailPage {...detailProps} />;
+  };
 
-      {!loadingProblemDetails && availableStyles.length === 0 && (
-        <div className="text-center py-8">
-          <p className="text-gray-500">No service styles available for this problem.</p>
-          <Button variant="outline" onClick={onClose} className="mt-4">
-            Go Back
-          </Button>
-        </div>
-      )}
-
-      {!loadingProblemDetails && hasTeleOption && isInstantTeleUiEnabled() && (
-        <Card className="bg-gradient-to-r from-purple-500 to-indigo-600 p-4 text-white">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">
-              <Clock className="w-7 h-7" />
-            </div>
-            <div className="flex-1">
-              <h3 className="font-semibold">Need Instant Consultation?</h3>
-              <p className="text-sm text-purple-100">Connect with an available doctor in minutes</p>
-            </div>
-            <Button
-              variant="secondary"
-              className="bg-white text-purple-600 hover:bg-purple-50"
-              onClick={() => {
-                setSelectedServiceStyle('tele');
-                setCurrentStep('discovery');
-              }}
-            >
-              Instant
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {!loadingProblemDetails && availableStyles.length > 0 && (
-        <div className="text-center">
-          <p className="text-sm text-gray-500">Service providers are filtered based on "{selectedProblem?.name}"</p>
-          {availableStyles.length < 3 && (
-            <p className="text-xs text-gray-400 mt-1">
-              Only{' '}
-              {availableStyles
-                .map((s) => SERVICE_STYLE_CONFIG[s]?.label)
-                .filter(Boolean)
-                .join(' and ')}{' '}
-              available for this service
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-
-  // ✅ Discovery step renders hub screens (Grooming/Walker/Vet/etc.) whose own
+  // âœ… Discovery step renders hub screens (Grooming/Walker/Vet/etc.) whose own
   // ServiceDashboardHeader already pads for env(safe-area-inset-*). Re-applying
   // `cw-header-safe-top` / `cw-header-safe-x` on this outer shell would push the
   // orange header inside a viewport-padded box, leaving a visible gray frame on

@@ -16,17 +16,29 @@ export type SearchTaxonomyFullResult = SearchTaxonomyResolveResult & {
 export async function resolveSearchTaxonomy(searchQuery: string): Promise<SearchTaxonomyFullResult> {
   const q = String(searchQuery || '').trim();
   if (!q) {
-    return { categories: [], topHubSlug: null, topMatchedPhrase: null, source: 'none' };
+    return {
+      categories: [],
+      topHubSlug: null,
+      topMatchedPhrase: null,
+      source: 'none',
+      intentCode: null,
+      confidence: 0,
+    };
   }
 
   const dbRows = await loadSearchTaxonomyRows();
   const source: 'db' | 'builtin' = dbRows.length > 0 ? 'db' : 'builtin';
   const rows = dbRows.length > 0 ? dbRows : getBuiltinTaxonomyRows();
-  const { categories } = resolveSearchCategoriesFromRows(q, rows);
-  const topHubSlug = pickTopHubSlug(categories);
+  const resolved = resolveSearchCategoriesFromRows(q, rows);
+  const topHubSlug = pickTopHubSlug(resolved.categories);
   const topMatchedPhrase = findTopHubMatchedPhrase(q, rows, topHubSlug);
 
-  return { categories, topHubSlug, topMatchedPhrase, source };
+  return {
+    ...resolved,
+    topHubSlug,
+    topMatchedPhrase,
+    source,
+  };
 }
 
 function pickTopHubSlug(categories: SearchCategoryMatch[]): string | null {
@@ -54,6 +66,8 @@ export function logSearchTaxonomyDebug(opts: {
       displayName: c.displayName,
       hubSlug: c.hubSlug,
       score: c.score,
+      intentCode: c.intentCode,
+      matchKind: c.matchKind,
     })),
     resolvedTopHub: opts.topHubSlug,
     explicitCategory: opts.explicitCategory || null,

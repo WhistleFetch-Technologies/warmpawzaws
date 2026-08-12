@@ -34,6 +34,12 @@ import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../../servi
 import { expireMealPaymentHolds } from '../../../../utils/meal-payment-hold';
 import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refund-cases';
 import { validatePetCreatePayload } from '../../../../utils/pet-create-validation';
+import {
+  buildPetLoyaltyResponseFields,
+  createEmptyPetLoyaltyBatchState,
+  recordPetInsertLoyalty,
+  recordPetUpdateLoyalty,
+} from '../../../../lib/pet-loyalty-response';
 
 export async function executecustomerPetsPost(c: Context) {
     try {
@@ -54,6 +60,7 @@ export async function executecustomerPetsPost(c: Context) {
       }
 
       const savedPets = [];
+      const loyaltyState = createEmptyPetLoyaltyBatchState();
 
       for (const pet of pets) {
         try {
@@ -142,12 +149,27 @@ export async function executecustomerPetsPost(c: Context) {
 
           if (existingPets.length > 0) {
             // Update existing pet
+            const beforePet = existingPets[0] as Record<string, unknown>;
             const updated = await customer_pets_postRepo.dbCustomerPetsPost1(existingPets, petData)
-            savedPets.push({ ...updated[0], id: existingPets[0].id });
+            const afterPet = updated[0] as Record<string, unknown>;
+            recordPetUpdateLoyalty(
+              loyaltyState,
+              String(existingPets[0].id),
+              beforePet,
+              afterPet,
+              pet as Record<string, unknown>
+            );
+            savedPets.push({ ...afterPet, id: existingPets[0].id });
           } else {
             // Insert new pet
             const inserted = await customer_pets_postRepo.dbCustomerPetsPost2(petData)
-            savedPets.push(inserted[0]);
+            const newPet = inserted[0];
+            recordPetInsertLoyalty(
+              loyaltyState,
+              String(newPet.id),
+              pet as Record<string, unknown>
+            );
+            savedPets.push(newPet);
           }
         } catch (petError: any) {
           console.error(`Error saving pet ${pet.name}:`, petError);
@@ -165,10 +187,17 @@ export async function executecustomerPetsPost(c: Context) {
         console.error('Error updating onboarding status:', stateError);
       }
 
+      const loyaltyFields = buildPetLoyaltyResponseFields(
+        loyaltyState,
+        String(customer.id),
+        savedPets[0]?.id ?? null
+      );
+
       return c.json({
         success: true,
         message: `${savedPets.length} pet(s) saved successfully`,
         pets: savedPets,
+        ...loyaltyFields,
       });
     } catch (error: any) {
       console.error('Error saving customer pets:', error);

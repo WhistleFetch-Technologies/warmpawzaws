@@ -28,6 +28,7 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { isDiscoveryAutoApplyPromotion } from '@/lib/promotion-banner-filter';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
@@ -118,6 +119,8 @@ interface Provider {
     description?: string;
     category?: string;
     isPackage?: boolean;
+    packageDetails?: unknown;
+    metadata?: unknown;
   }[];
   servicesHydrated?: boolean;
   servicesNextCursor?: string | null;
@@ -287,21 +290,33 @@ export function GroomingServicesByStyle({
           promotions,
           category
         );
-        const services = withPromos.map((s) => ({
-          id: String(s.id ?? s.serviceId ?? ''),
-          serviceId: String(s.serviceId ?? s.id ?? ''),
-          name: String(s.name ?? 'Service'),
-          price: Number(s.price ?? 0),
-          originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
-          discountPercentage:
-            s.discountPercentage != null ? Number(s.discountPercentage) : undefined,
-          discountAmount: s.discountAmount != null ? Number(s.discountAmount) : undefined,
-          promotionId: s.promotionId as string | undefined,
-          duration: Number(s.duration ?? 30),
-          description: s.description as string | undefined,
-          category: s.category as string | undefined,
-          isPackage: Boolean(s.isPackage),
-        }));
+        const services = withPromos.map((s) => {
+          const meta =
+            s.metadata && typeof s.metadata === 'object' && !Array.isArray(s.metadata)
+              ? (s.metadata as Record<string, unknown>)
+              : undefined;
+          const packageDetails = s.packageDetails ?? meta?.packageDetails;
+          const isPackage = Boolean(
+            s.isPackage ?? s.is_package ?? meta?.isPackage ?? packageDetails
+          );
+          return {
+            id: String(s.id ?? s.serviceId ?? ''),
+            serviceId: String(s.serviceId ?? s.id ?? ''),
+            name: String(s.name ?? 'Service'),
+            price: Number(s.price ?? 0),
+            originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
+            discountPercentage:
+              s.discountPercentage != null ? Number(s.discountPercentage) : undefined,
+            discountAmount: s.discountAmount != null ? Number(s.discountAmount) : undefined,
+            promotionId: s.promotionId as string | undefined,
+            duration: Number(s.duration ?? 30),
+            description: (s.description ?? s.shortDescription) as string | undefined,
+            category: (s.category ?? s.categoryLabel) as string | undefined,
+            isPackage,
+            packageDetails,
+            metadata: meta ?? s.metadata,
+          };
+        });
         const nextCursor = vendorServicesNextCursor(res);
         setProviders((prev) =>
           prev.map((v) => {
@@ -1159,10 +1174,17 @@ export function GroomingServicesByStyle({
                   </div>
                 </div>
 
-                {/* Services List - Enhanced Cards */}
+                {/* Services + Packages — Enhanced Cards */}
                 {sortedServices.length > 0 ? (
-                  <div className="space-y-3">
-                    {sortedServices.map((service) => {
+                  <div className="space-y-5">
+                    {discoveryServiceSections(
+                      sortedServices as unknown as Record<string, unknown>[]
+                    ).map((sec) => (
+                      <div key={sec.title} className="space-y-3">
+                        <h4 className="text-sm font-semibold text-gray-700">
+                          {sec.title} ({sec.list.length})
+                        </h4>
+                        {(sec.list as typeof sortedServices).map((service) => {
                       const isSelected = selectedServices.has(service.id) || selectedServices.has(service.serviceId);
                       return (
                         <div
@@ -1178,7 +1200,7 @@ export function GroomingServicesByStyle({
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <h4 className="font-bold text-gray-900 text-base">{service.name}</h4>
-                                {service.isPackage && (
+                                {(service.isPackage || isVendorServicePackageRow(service as any)) && (
                                   <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
                                 )}
                                 {isSelected && (
@@ -1227,7 +1249,9 @@ export function GroomingServicesByStyle({
                           </div>
                         </div>
                       );
-                    })}
+                        })}
+                      </div>
+                    ))}
                   </div>
                 ) : fetchingServicesFor === profileProvider.providerId ||
                   !profileProvider.servicesHydrated ? (
@@ -1467,7 +1491,8 @@ export function GroomingServicesByStyle({
             
             {filteredAndSortedProviders.map((provider) => {
               const providerAddress = getProviderAddress(provider);
-              return (
+              if (appointmentsMode) {
+                  return (
                 <WarmpawzPayVendorCard
                   key={provider.providerId}
                   {...buildWapptDiscoveryVendorCardProps({
@@ -1495,7 +1520,268 @@ export function GroomingServicesByStyle({
                     router,
                   })}
                 />
-              );
+                  );
+                }
+                return (
+              <Card key={provider.providerId} className="bg-white overflow-hidden">
+                <div
+                  role={headerInteractive ? 'button' : undefined}
+                  tabIndex={headerInteractive ? 0 : undefined}
+                  className={`p-4 border-b text-left w-full ${headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                  onClick={
+                    headerInteractive
+                      ? () =>
+                          setSelectedProvider(
+                            selectedProvider === provider.providerId ? null : provider.providerId
+                          )
+                      : undefined
+                  }
+                  onKeyDown={
+                    headerInteractive
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedProvider(
+                              selectedProvider === provider.providerId ? null : provider.providerId
+                            );
+                          }
+                        }
+                      : undefined
+                  }
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <DiscoveryProviderAvatar name={provider.name} photo={provider.photo} />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-gray-900">{provider.name}</h3>
+                          {provider.isVerified && (
+                            <Shield className="w-4 h-4 text-green-500" />
+                          )}
+                        </div>
+                        <p className="text-gray-500 text-sm">{getProviderTypeLabel(provider)}</p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <div className="flex items-center gap-1">
+                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                            <span className="text-sm font-medium">{provider.rating}</span>
+                            <span className="text-gray-400 text-sm">({provider.reviewCount} reviews)</span>
+                          </div>
+                          {provider.city && (
+                            <div className="flex items-center gap-1 text-gray-500 text-sm">
+                              <MapPin className="w-3 h-3" />
+                              {provider.city}
+                            </div>
+                          )}
+                          {provider.distance != null && (
+                            <span className="text-xs text-blue-600 font-medium">
+                              {Number(provider.distance) < 1
+                                ? `${Math.round(Number(provider.distance) * 1000)} m away`
+                                : `${Math.round(Number(provider.distance))} km away`}
+                            </span>
+                          )}
+                        </div>
+                        {providerAddress && (
+                          <div className="flex items-start gap-1 text-gray-500 text-xs mt-1 max-w-[240px]">
+                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                            <span className="line-clamp-1">{providerAddress}</span>
+                          </div>
+                        )}
+                        {provider.nextAvailableSlot && (
+                          <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
+                            <Clock className="w-3 h-3" />
+                            <span>Next: {provider.nextAvailableSlot}</span>
+                          </div>
+                        )}
+                        {/* ✅ NEW: Amenities display */}
+                        {shouldShowVendorAmenities(serviceStyle) && provider.amenities && provider.amenities.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {provider.amenities.slice(0, 3).map((amenity, idx) => (
+                              <span key={idx} className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
+                                {amenity}
+                              </span>
+                            ))}
+                            {provider.amenities.length > 3 && (
+                              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                                +{provider.amenities.length - 3} more
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {/* Show experience for staff/individual */}
+                        {provider.experienceYears && provider.providerType !== 'vendor' && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            {provider.experienceYears} years experience
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`View profile: ${provider.name}`}
+                      className="-m-1.5 p-1.5 rounded-full text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 flex-shrink-0 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+                      onClick={(e) => openGroomingProviderProfile(e, provider)}
+                    >
+                      <ChevronRight
+                        className={`w-5 h-5 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                        aria-hidden
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Services List - Expanded */}
+                {expanded && (
+                  <div className="bg-gray-50 p-4 space-y-3">
+                    {/* Provider details for staff/individual */}
+                    {provider.qualifications && (
+                      <div className="bg-white rounded-lg p-3 mb-3 border border-orange-100">
+                        <div className="text-xs text-gray-500 mb-1">Qualifications</div>
+                        <div className="text-sm text-gray-700">{provider.qualifications}</div>
+                      </div>
+                    )}
+                    
+                    {fetchingServicesFor === provider.providerId && !provider.servicesHydrated ? (
+                      <div className="bg-white rounded-lg p-6 text-center">
+                        <Loader2 className="w-8 h-8 animate-spin text-[#FF8C42] mx-auto mb-2" />
+                        <p className="text-sm text-gray-500">Loading services…</p>
+                      </div>
+                    ) : provider.services.length > 0 ? (
+                      <div className="space-y-4">
+                        {discoveryServiceSections(
+                          provider.services as unknown as Record<string, unknown>[]
+                        ).map((sec) => (
+                          <div key={sec.title} className="space-y-3">
+                            <h4 className="text-sm font-semibold text-gray-700">
+                              {sec.title} ({sec.list.length})
+                            </h4>
+                            {(sec.list as typeof provider.services).map((service) => {
+                        const descTrim = service.description?.trim() ?? '';
+                        return (
+                          <div
+                            key={service.id}
+                            className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                          >
+                            {/* Row 1: name + package badge (left) | price (right) */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
+                                  {service.name}
+                                </h5>
+                                {(service.isPackage || isVendorServicePackageRow(service as any)) && (
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                    Package
+                                  </span>
+                                )}
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <ServicePricingDisplay
+                                  basePrice={service.originalPrice ?? service.price}
+                                  usePromoQuote
+                                  vendorId={String(provider.vendorId || provider.providerId || vendorId || '')}
+                                  serviceId={String(service.id || service.serviceId || '')}
+                                  customerId={phone}
+                                  serviceStyle={serviceStyle}
+                                  serviceCategory={category}
+                                  className="items-end"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Row 2: description full width */}
+                            {descTrim && (
+                              <ServiceDescriptionInline
+                                description={descTrim}
+                                title={service.name}
+                                className="m-0 text-sm leading-5 text-gray-500"
+                              />
+                            )}
+
+                            {/* Row 3: badges (left) | Book Now (right) */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline" className="text-xs shrink-0">
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  {service.duration} mins
+                                </Badge>
+                                {resolveServiceCategoryDisplayLabel(service) && (
+                                  <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
+                                    {resolveServiceCategoryDisplayLabel(service)}
+                                  </Badge>
+                                )}
+                              </div>
+                              <Button
+                                size="sm"
+                                className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectService(provider, service);
+                                }}
+                              >
+                                Book Now
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    ) : provider.servicesHydrated ? (
+                      <div className="bg-white rounded-lg p-4 text-center text-gray-500 text-sm">
+                        No services available from this provider
+                      </div>
+                    ) : null}
+                    <DiscoveryVendorFeedSentinel
+                      hasMore={!!provider.servicesNextCursor}
+                      loading={fetchingServicesFor === provider.providerId}
+                      loadingMore={!!provider.servicesLoadingMore}
+                      onLoadMore={() => loadMoreProviderServices(provider.providerId)}
+                    />
+                  </div>
+                )}
+
+                {!expanded && (
+                  <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      {provider.services.length > 0 ? (
+                        <>
+                          {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
+                          {provider.services.length !== 1 ? 's' : ''} available
+                          <span className="text-gray-900 font-medium">
+                            {' '}
+                            from{' '}
+                            {formatPriceWithSymbol(
+                              Math.min(...provider.services.map((s) => s.price))
+                            )}
+                          </span>
+                        </>
+                      ) : provider.priceMin != null && provider.priceMin > 0 ? (
+                        <span>
+                          Services available{' '}
+                          <span className="text-gray-900 font-medium">
+                            from {formatPriceWithSymbol(provider.priceMin)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span>Tap to view services</span>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedProvider(provider.providerId);
+                        void fetchProviderServices(provider.providerId);
+                      }}
+                    >
+                      View Services
+                    </Button>
+                  </div>
+                )}
+              </Card>
+                );
             })}
             <DiscoveryVendorFeedSentinel
               hasMore={hasMore && !vendorId}

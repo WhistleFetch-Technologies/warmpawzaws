@@ -21,6 +21,7 @@ const HUB_SCREENS = new Set<string>([
   'grooming',
   'grooming_center',
   'grooming_home',
+  'walker_home',
   'training',
   'training_center',
   'training_home',

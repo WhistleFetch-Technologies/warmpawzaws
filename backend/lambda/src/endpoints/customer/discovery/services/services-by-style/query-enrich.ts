@@ -129,6 +129,9 @@ export async function queryAndEnrichByStyleVendors(
     const vetExcludeExtra = isVetCategoryDiscoveryByStyle
       ? vetExcludeNonVetSqlByStyle
       : undefined;
+    const walkerHubAtHome =
+      !isAtCenter &&
+      catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c));
     vendorStatsByStyle = await services_by_styleRepo.dbFetchDiscoveryListStatsForVendors(
       byStyleVendorIds,
       {
@@ -137,6 +140,7 @@ export async function queryAndEnrichByStyleVendors(
         catTextExact,
         catTextLike,
         catUUIDs,
+        walkerHubAtHome,
         extraAndSql: vetExcludeExtra,
       }
     );

@@ -115,13 +115,55 @@ export function getSearchCategoryAliases(category: string | null | undefined): s
  */
 export const CATALOG_SLUG_TO_LAUNCH_SERVICE_ID: Readonly<Record<string, string>> = {
   veterinary: 'vet',
+  // Canonical + role/search fallbacks used by GET /search (v.category ?? roles.name).
+  // Keys stored in both hyphen and underscore forms; mapCatalogSlugToLaunchServiceId
+  // looks up normalizeServiceKey (hyphen) then underscore fallback.
+  vet: 'vet',
+  veterinarian: 'vet',
+  'vet-clinic': 'vet',
+  vet_clinic: 'vet',
+  'vet-solo': 'vet',
+  vet_solo: 'vet',
+  'pet-clinic': 'vet',
+  pet_clinic: 'vet',
   grooming: 'grooming',
+  groomer: 'grooming',
+  'pet-groomer': 'grooming',
+  pet_groomer: 'grooming',
+  'groomer-center': 'grooming',
+  groomer_center: 'grooming',
+  'groomer-solo': 'grooming',
+  groomer_solo: 'grooming',
+  'grooming-salon': 'grooming',
+  grooming_salon: 'grooming',
+  'grooming-solo': 'grooming',
+  grooming_solo: 'grooming',
   training: 'training',
+  'trainer-center': 'training',
+  trainer_center: 'training',
+  'training-center': 'training',
+  training_center: 'training',
+  'trainer-solo': 'training',
+  trainer_solo: 'training',
+  'training-solo': 'training',
+  training_solo: 'training',
+  'trainer-home': 'training',
+  trainer_home: 'training',
+  'training-home': 'training',
+  training_home: 'training',
   walking: 'walker',
   walker: 'walker',
   'dog-walker': 'walker',
   dog_walker: 'walker',
+  'walker-solo': 'walker',
+  walker_solo: 'walker',
+  'pet-walker': 'walker',
+  pet_walker: 'walker',
   boarding: 'boarding',
+  'pet-boarding': 'boarding',
+  pet_boarding: 'boarding',
+  'pet-boarder': 'boarding',
+  pet_boarder: 'boarding',
   'pet-holiday': 'holiday',
   pet_holiday: 'holiday',
   pet_holiday_planner: 'holiday',
@@ -147,7 +189,14 @@ export const CATALOG_SLUG_TO_LAUNCH_SERVICE_ID: Readonly<Record<string, string>>
   trainer: 'training',
   sitting: 'pet-sitter',
   'pet-sitter': 'pet-sitter',
+  pet_sitter: 'pet-sitter',
   sitter: 'pet-sitter',
+  'sitter-solo': 'pet-sitter',
+  sitter_solo: 'pet-sitter',
+  'pet-sitter-solo': 'pet-sitter',
+  pet_sitter_solo: 'pet-sitter',
+  'pet-sitter-saas': 'pet-sitter',
+  pet_sitter_saas: 'pet-sitter',
   nutritionist: 'nutritionist',
   pet_nutritionist: 'nutritionist',
   'pet-nutritionist': 'nutritionist',
@@ -181,8 +230,12 @@ export function getCatalogSlugAliasesForLaunchServiceIds(launchIds: readonly str
 
 export function mapCatalogSlugToLaunchServiceId(categoryId: string | null | undefined): string {
   if (categoryId == null || String(categoryId).trim() === '') return 'unknown';
+  // normalizeServiceKey uses hyphens; catalog keys historically mix '-' and '_'.
   const key = normalizeServiceKey(categoryId);
-  const mapped = CATALOG_SLUG_TO_LAUNCH_SERVICE_ID[key];
+  const underscoreKey = key.replace(/-/g, '_');
+  const mapped =
+    CATALOG_SLUG_TO_LAUNCH_SERVICE_ID[key] ||
+    CATALOG_SLUG_TO_LAUNCH_SERVICE_ID[underscoreKey];
   if (mapped) return mapped;
   return String(categoryId).trim();
 }

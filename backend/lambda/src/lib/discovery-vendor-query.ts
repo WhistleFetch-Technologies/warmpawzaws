@@ -42,6 +42,18 @@ export const BEHAVIOR_HUB_ROLE_SQL_IN_LIST = BEHAVIOR_HUB_ROLE_NAMES_LOWER.map((
   ', '
 );
 
+/** `roles.name` values for the customer Dog Walking hub. */
+const WALKER_HUB_ROLE_NAMES_LOWER: readonly string[] = [
+  'walker',
+  'walker_solo',
+  'pet_walker',
+  'dog_walker',
+];
+
+export const WALKER_HUB_ROLE_SQL_IN_LIST = WALKER_HUB_ROLE_NAMES_LOWER.map((n) => `'${n}'`).join(
+  ', '
+);
+
 export function catTextRequestsBehaviorHub(catTextExact: string[]): boolean {
   return catTextExact.some((c) => {
     const x = String(c).toLowerCase().trim();
@@ -510,6 +522,21 @@ export async function buildDiscoveryVendorExistsSql(
     ? ` OR ${sqlTrainingCategoryAliasOrVs(vsAlias)}`
     : '';
 
+  const walkerHubDiscoverySearch = catTextExact.some((c) =>
+    ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c)
+  );
+
+  const walkerRoleUncategorizedOr =
+    !sittingDiscoveryRelaxed && walkerHubDiscoverySearch
+      ? ` OR (LOWER(COALESCE(TRIM(${vsAlias}.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${WALKER_HUB_ROLE_SQL_IN_LIST}))`
+      : '';
+
+  /** Parity with vendors/search: walker-role accounts with any at_home discoverable service qualify. */
+  const walkerRoleHomeBypassOr =
+    walkerHubDiscoverySearch && (opts.forVendorCount || serviceStyleNorm === 'at_home')
+      ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${WALKER_HUB_ROLE_SQL_IN_LIST})`
+      : '';
+
   const behaviorRoleUncategorizedOr = behaviorHubDiscoverySearch
     ? ` OR (LOWER(COALESCE(TRIM(${vsAlias}.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST}))`
     : '';
@@ -600,6 +627,37 @@ export async function buildDiscoveryVendorExistsSql(
                   COALESCE(${vsAlias}.is_custom_service, false) = true
                   AND ${vsAlias}.category_id IS NOT NULL
                   AND ${vsAlias}.category_id = ANY(ARRAY[${uuidListT}]::uuid[])
+                )`;
+    }
+  }
+
+  // Walker hub: custom services store category_id = walking UUID (display name "Dog Walker").
+  // Match by UUID so trainer_solo (and other) vendors with walk packages appear in walker lists.
+  let walkerCustomCategoryIdOrSql = '';
+  const walkerHubSearch = catTextExact.some((c) =>
+    ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c)
+  );
+  if (!sittingDiscoveryRelaxed && walkerHubSearch && hasVsCategoryId) {
+    const slugResWalk = await query(
+      `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+      [['walking', 'walker', 'dog walker', 'pet walker', 'dog_walker', 'pet_walker']]
+    ).catch(() => ({ rows: [] as { id: string }[] }));
+    const idsW = (slugResWalk.rows || []).map((r: { id?: string }) => r?.id).filter(Boolean);
+    const UUID_RE_W =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const cleanW = idsW.filter((id): id is string => !!id && UUID_RE_W.test(String(id).trim()));
+    if (cleanW.length > 0) {
+      const uuidListW = cleanW.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+      walkerCustomCategoryIdOrSql = `
+                OR (
+                  COALESCE(${vsAlias}.is_custom_service, false) = true
+                  AND ${vsAlias}.category_id IS NOT NULL
+                  AND ${vsAlias}.category_id = ANY(ARRAY[${uuidListW}]::uuid[])
                 )`;
     }
   }
@@ -703,9 +761,12 @@ export async function buildDiscoveryVendorExistsSql(
                 ${behaviorCategoryAliasVendorOr}
                 ${behaviorTrainingCategoryVendorOr}
                 ${walkerCategoryDiscoveryOr}
+                ${walkerRoleUncategorizedOr}
+                ${walkerRoleHomeBypassOr}
                 ${vetCategoryEmptyOr}
                 ${boardingCustomCategoryIdOrSql}
                 ${trainingCustomCategoryIdOrSql}
+                ${walkerCustomCategoryIdOrSql}
               )`
       : '';
 
@@ -725,7 +786,8 @@ export async function buildDiscoveryVendorExistsSql(
 
   const availabilitySql =
     sittingDiscoveryRelaxed ||
-    (!opts.forVendorCount && (trainingDiscoverySearch || behaviorHubDiscoverySearch))
+    (!opts.forVendorCount &&
+      (trainingDiscoverySearch || behaviorHubDiscoverySearch || walkerHubDiscoverySearch))
       ? ''
       : `
           AND ${sqlVendorAvailabilityOrNotConfigured(vAlias)}`;

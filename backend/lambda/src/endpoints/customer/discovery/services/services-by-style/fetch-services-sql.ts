@@ -7,6 +7,7 @@ import {
 import {
   vendorRoleIsBehaviorHub,
   vendorRoleIsTrainingHub,
+  vendorRoleIsWalkerHub,
 } from '../../repos/legacy-helpers.repo';
 import type { ServicesByStyleCategoryContext } from './types';
 
@@ -31,6 +32,7 @@ export function buildByStyleServiceFetchSql(
     strictCustomDiscoverySql,
     boardingCustomCategoryIdOrByStyleSql,
     walkerCategoryDiscoveryOrByStyle,
+    walkerCustomCategoryIdOrByStyleSql,
   } = categoryCtx;
 
   const boardingUncatSqlByStyle =
@@ -49,6 +51,17 @@ export function buildByStyleServiceFetchSql(
       : '';
   const trainingUncatSqlByStyle =
     trainingDiscoverySearchByStyle && vendorRoleIsTrainingHub(vendorRoleName)
+      ? ` OR TRUE`
+      : '';
+  const walkerHubDiscoverySearchByStyle = catTextExact.some((c) =>
+    ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c)
+  );
+  const walkerUncatSqlByStyle =
+    walkerHubDiscoverySearchByStyle && vendorRoleIsWalkerHub(vendorRoleName)
+      ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+      : '';
+  const walkerHomeFetchBypassOrByStyle =
+    walkerHubDiscoverySearchByStyle && vendorRoleIsWalkerHub(vendorRoleName)
       ? ` OR TRUE`
       : '';
   const trainingCategoryAliasFetchOrByStyle = trainingDiscoverySearchByStyle
@@ -92,6 +105,9 @@ export function buildByStyleServiceFetchSql(
             ${behaviorCategoryAliasFetchOrByStyle}
             ${behaviorTrainingCategoryFetchOrByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
+            ${walkerUncatSqlByStyle}
+            ${walkerHomeFetchBypassOrByStyle}
+            ${walkerCustomCategoryIdOrByStyleSql || ''}
             ${vetCategoryEmptyForFetchByStyle}
             ${boardingCustomCategoryIdOrByStyleSql}
           )

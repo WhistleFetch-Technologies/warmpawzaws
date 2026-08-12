@@ -61,6 +61,8 @@ export default function AddPetClient() {
       variant="fullscreen"
       phone={phone}
       isOpen
+      allowSkipPetCreation
+      onSkipPetCreation={() => router.replace('/')}
       onBack={() => goBackOrHome(router)}
       onClose={() => goBackOrHome(router)}
       onSuccess={() => {

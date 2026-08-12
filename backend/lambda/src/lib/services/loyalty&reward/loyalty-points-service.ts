@@ -885,21 +885,41 @@ export class LoyaltyPointsService {
       // Handles both "Action <name>" (consumer) and "Earned N points for <name>" (direct)
       const descPattern = `% ${params.actionName}`;
 
-      const queryFrequencyCount = async (entityColumn: string, periodSql?: string): Promise<number> => {
-        const periodClause = periodSql ? ` AND created_at >= ${periodSql}` : '';
+      const capEffectiveFromRaw = rule.conditions?.cap_effective_from;
+      const capEffectiveFrom =
+        typeof capEffectiveFromRaw === 'string' && capEffectiveFromRaw.trim()
+          ? capEffectiveFromRaw.trim()
+          : undefined;
+
+      const queryFrequencyCount = async (
+        entityColumn: string,
+        opts?: { periodSql?: string; cutoffIso?: string }
+      ): Promise<number> => {
+        const paramsList: unknown[] = [userId, descPattern];
+        let extraClause = '';
+        if (opts?.periodSql) {
+          extraClause += ` AND created_at >= ${opts.periodSql}`;
+        }
+        if (opts?.cutoffIso) {
+          paramsList.push(opts.cutoffIso);
+          extraClause += ` AND created_at >= $${paramsList.length}::timestamptz`;
+        }
         const result = await query(
           `SELECT COUNT(*) as count FROM loyalty_transactions
            WHERE ${entityColumn} = $1
              AND transaction_type = 'earned'
-             AND description LIKE $2${periodClause}`,
-          [userId, descPattern]
+             AND description LIKE $2${extraClause}`,
+          paramsList
         );
         return parseInt(result.rows[0]?.count || '0', 10);
       };
 
-      const getFrequencyCount = async (periodSql?: string): Promise<number> => {
+      const getFrequencyCount = async (opts?: {
+        periodSql?: string;
+        cutoffIso?: string;
+      }): Promise<number> => {
         try {
-          return await queryFrequencyCount(primaryEntityColumn, periodSql);
+          return await queryFrequencyCount(primaryEntityColumn, opts);
         } catch (error: any) {
           const message = String(error?.message || '');
           const missingPrimaryColumn =
@@ -910,7 +930,7 @@ export class LoyaltyPointsService {
           }
           // Some environments still store vendor rewards against customer_id.
           // Fallback keeps old data readable while supporting vendor_id-first schemas.
-          return await queryFrequencyCount(fallbackEntityColumn, periodSql);
+          return await queryFrequencyCount(fallbackEntityColumn, opts);
         }
       };
 
@@ -922,13 +942,29 @@ export class LoyaltyPointsService {
         return !alreadyEarned;
       }
 
+      if (rule.frequency_type === 'lifetime_limit' && rule.frequency_limit) {
+        const count = await getFrequencyCount(
+          capEffectiveFrom ? { cutoffIso: capEffectiveFrom } : undefined
+        );
+        if (count >= rule.frequency_limit) {
+          console.log(
+            `[Frequency] lifetime_limit: user ${userId} reached ${count}/${rule.frequency_limit} for action ${params.actionName}`
+          );
+        }
+        return count < rule.frequency_limit;
+      }
+
       if (rule.frequency_type === 'monthly_limit' && rule.frequency_limit) {
-        const count = await getFrequencyCount(`DATE_TRUNC('month', CURRENT_DATE)`);
+        const count = await getFrequencyCount({
+          periodSql: `DATE_TRUNC('month', CURRENT_DATE)`,
+        });
         return count < rule.frequency_limit;
       }
 
       if (rule.frequency_type === 'yearly_limit' && rule.frequency_limit) {
-        const count = await getFrequencyCount(`DATE_TRUNC('year', CURRENT_DATE)`);
+        const count = await getFrequencyCount({
+          periodSql: `DATE_TRUNC('year', CURRENT_DATE)`,
+        });
         return count < rule.frequency_limit;
       }
 
@@ -943,7 +979,7 @@ export class LoyaltyPointsService {
           };
           const periodSql = periodSqlMap[rule.frequency_period];
           if (periodSql) {
-            const count = await getFrequencyCount(periodSql);
+            const count = await getFrequencyCount({ periodSql });
             return count < rule.frequency_limit;
           }
         }

@@ -244,7 +244,7 @@ export const handler: SQSHandler = async (event) => {
 				}
 
 				try {
-					await loyaltyPointsService.awardPoints({
+					const awardResult = await loyaltyPointsService.awardPoints({
 						customerId,
 						vendorId,
 						actionName: evt.actionName,
@@ -254,6 +254,13 @@ export const handler: SQSHandler = async (event) => {
 						description: `Action ${evt.actionName}`,
 						metadata: evt.metadata || {},
 					});
+					if (awardResult.points === 0) {
+						console.info('[LOYALTY CONSUMER] No points awarded (cap reached or ineligible)', {
+							eventId: evt.eventId,
+							actionName: evt.actionName,
+							entityId: evt.entity.id,
+						});
+					}
 				} catch (awardErr: any) {
 					if (!isDuplicateLoyaltyEarnError(awardErr)) {
 						throw awardErr;

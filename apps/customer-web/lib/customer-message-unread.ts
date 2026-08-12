@@ -44,14 +44,14 @@ export function getSupportThreadMaxTimestampMs(detail: SupportDetailShape): numb
 
 /**
  * Call when the customer has viewed the support thread (detail loaded in UI).
- * Persists the max message time they saw; unread clears until a newer message lands.
+ * Persists view time (not last message time) so badge clears even when ticket
+ * updated_at was bumped by assignment/status without a new message.
  */
-export function markSupportThreadSeenInBrowser(ticketId: string, detail: SupportDetailShape): void {
+export function markSupportThreadSeenInBrowser(ticketId: string, _detail?: SupportDetailShape): void {
   if (typeof localStorage === 'undefined' || !ticketId.trim()) return;
-  const maxTs = getSupportThreadMaxTimestampMs(detail);
-  if (maxTs <= 0) return;
+  const viewedAtMs = Date.now();
   try {
-    localStorage.setItem(supportSeenStorageKey(ticketId), String(maxTs));
+    localStorage.setItem(supportSeenStorageKey(ticketId), String(viewedAtMs));
   } catch {
     /* ignore quota */
   }
@@ -126,7 +126,7 @@ function sumVendorUnreadFromConversations(conversations: ConvRow[]): number {
 
 /**
  * List-row unread heuristic (no per-ticket detail GET).
- * Prefer explicit unread flags; else compare updated_at vs customer_viewed_at / local seen tip.
+ * Prefer explicit unread flags; else compare message activity vs customer_viewed_at / local seen.
  */
 export function supportTicketListRowIndicatesUnread(row: Record<string, unknown>): boolean {
   const id = row?.id != null ? String(row.id).trim() : '';
@@ -140,16 +140,10 @@ export function supportTicketListRowIndicatesUnread(row: Record<string, unknown>
   const explicitUnread = Number(row.unread_count ?? row.unreadCount ?? 0);
   if (Number.isFinite(explicitUnread) && explicitUnread > 0) return true;
 
-  const tipRaw =
-    row.last_message_at ??
-    row.lastMessageAt ??
-    row.last_updated_at ??
-    row.lastUpdatedAt ??
-    row.updated_at ??
-    row.updatedAt;
+  const tipRaw = row.last_message_at ?? row.lastMessageAt;
   const tipMs = tipRaw != null ? new Date(String(tipRaw)).getTime() : NaN;
   if (!Number.isFinite(tipMs) || tipMs <= 0) {
-    // No activity timestamps — do not inflate badge
+    // No message-activity timestamp — do not inflate badge from ticket metadata alone
     return false;
   }
 

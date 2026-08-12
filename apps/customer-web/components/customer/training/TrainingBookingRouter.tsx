@@ -40,6 +40,9 @@ import {
   getWapptBookingStepIndex,
   getWapptBookingSteps,
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
+import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
+
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -316,6 +319,15 @@ export function TrainingBookingRouter({
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
 
+  useEffect(() => {
+    if (step === 'datetime' && pets.length === 1 && !selectedPet) {
+      setSelectedPet(pets[0]);
+    }
+  }, [step, pets, selectedPet]);
+
+  const trainingIncludesAddressStep =
+    selectedServiceType === 'at_home' || selectedServiceType === 'home';
+
   // Default training program options (used when no specific services loaded)
   const defaultServiceTypeOptions = [
     { id: 'basic', name: 'Basic Obedience', icon: Home, price: 799, duration: 60, desc: 'Basic commands & behavior', color: 'orange' },
@@ -490,12 +502,7 @@ export function TrainingBookingRouter({
       // Load pets from API
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const loadedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const loadedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(loadedPets);
         
         // ✅ NEW: If we have a pre-filled pet ID, update selectedPet with full data
@@ -539,12 +546,7 @@ export function TrainingBookingRouter({
     try {
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const mappedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const mappedPets = petsResponse.pets.map((p: any) => mapBookingPetFromApi(p));
         setPets(mappedPets);
         // Auto-select newly added pet
         if (mappedPets.length > 0) {
@@ -654,8 +656,7 @@ export function TrainingBookingRouter({
   };
 
   const handleNext = () => {
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
-    const currentIdx = steps.indexOf(step);
+    const steps: BookingStep[] = ['service', 'datetime', 'address', 'payment', 'confirmation'];
 
     if (step === 'service' && vendorId && vendorServices.length > 0 && selectedServiceType) {
       const row = vendorServices.find(
@@ -677,14 +678,18 @@ export function TrainingBookingRouter({
         }
       }
     }
-    
-    // ✅ FIX: Skip address for tele and at_center (customer goes to center)
-    if (step === 'pet' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
-      setStep('payment');
+
+    if (step === 'datetime') {
+      if (selectedServiceType === 'tele' || selectedServiceType === 'at_center') {
+        setStep('payment');
+        return;
+      }
+      setStep('address');
       return;
     }
-    
-    if (currentIdx < steps.length - 1) {
+
+    const currentIdx = steps.indexOf(step);
+    if (currentIdx >= 0 && currentIdx < steps.length - 1) {
       setStep(steps[currentIdx + 1]);
     }
   };
@@ -723,12 +728,13 @@ export function TrainingBookingRouter({
       onBack();
       return;
     }
-    
+
+
     if (step === 'payment' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
-      setStep('pet');
+      setStep('datetime');
       return;
     }
-    
+
     if (currentIdx > 0) {
       setStep(steps[currentIdx - 1]);
     } else {
@@ -840,11 +846,10 @@ export function TrainingBookingRouter({
       : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
 
   const renderStepIndicator = () => {
-    // ✅ FIX: Only show steps that are relevant - skip 'Service' if already selected from profile
     const skipServiceStep = hasServiceContext && selectedVendorService;
-    const baseSteps = selectedServiceType === 'tele' 
-      ? ['Service', 'Date/Time', 'Pet', 'Payment']
-      : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
+    const baseSteps = trainingIncludesAddressStep
+      ? ['Service', 'Date/Time', 'Address', 'Payment']
+      : ['Service', 'Date/Time', 'Payment'];
     const steps = skipServiceStep ? baseSteps.slice(1) : baseSteps;
     const currentStepMap: Record<BookingStep, number> = {
       service: skipServiceStep ? -1 : 0, 
@@ -905,31 +910,14 @@ export function TrainingBookingRouter({
       }
     }
     
-    const skipServiceStep = hasServiceContext && selectedVendorService;
-    const baseSteps = selectedServiceType === 'tele' 
-      ? ['Service', 'Date/Time', 'Pet', 'Payment']
-      : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
-    const stepLabels = skipServiceStep ? baseSteps.slice(1) : baseSteps;
-    
-    const currentStepMap: Record<BookingStep, number> = {
-      service: skipServiceStep ? -1 : 0, 
-      datetime: skipServiceStep ? 0 : 1, 
-      pet: skipServiceStep ? 1 : 2, 
-      address: skipServiceStep ? 2 : 3, 
-      summary: skipServiceStep ? (selectedServiceType === 'tele' ? 2 : 3) : (selectedServiceType === 'tele' ? 3 : 4),
-      payment: skipServiceStep ? (selectedServiceType === 'tele' ? 2 : 3) : (selectedServiceType === 'tele' ? 3 : 4), 
-      confirmation: skipServiceStep ? (selectedServiceType === 'tele' ? 3 : 4) : 5
     };
     const currentIdx = currentStepMap[step];
-    
-    return stepLabels.map((label, idx) => {
-      const actualStepIdx = skipServiceStep ? idx + 1 : idx;
-      return {
-        label,
-        isCompleted: actualStepIdx < currentIdx,
-        isCurrent: actualStepIdx === currentIdx
-      };
-    });
+
+    return stepLabels.map((label, idx) => ({
+      label,
+      isCompleted: idx < currentIdx,
+      isCurrent: idx === currentIdx,
+    }));
   };
 
   if (step === 'payment' && showPaymentPage) {
@@ -1355,9 +1343,13 @@ export function TrainingBookingRouter({
             <Button 
               onClick={handleNext} 
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedPet}
+              disabled={!selectedDate || !selectedTime || !selectedPet}
             >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
+              {!selectedDate || !selectedTime
+                ? 'Select Date & Time'
+                : !selectedPet
+                  ? 'Select a Pet'
+                  : 'Continue'}
             </Button>
           </div>
         )}

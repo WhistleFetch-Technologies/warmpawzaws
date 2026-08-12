@@ -31,6 +31,9 @@ export function buildByStyleVendorSql(
     behaviorCategoryAliasVendorOrByStyle,
     behaviorTrainingCategoryVendorOrByStyle,
     walkerCategoryDiscoveryOrByStyle,
+    walkerRoleUncategorizedOrByStyle,
+    walkerRoleHomeBypassOrByStyle,
+    walkerCustomCategoryIdOrByStyleSql,
     vetCategoryEmptyOrByStyle,
     boardingCustomCategoryIdOrByStyleSql,
     vetExcludeNonVetSqlByStyle,
@@ -79,6 +82,9 @@ export function buildByStyleVendorSql(
                 ${behaviorCategoryAliasVendorOrByStyle}
                 ${behaviorTrainingCategoryVendorOrByStyle}
                 ${walkerCategoryDiscoveryOrByStyle}
+                ${walkerRoleUncategorizedOrByStyle}
+                ${walkerRoleHomeBypassOrByStyle}
+                ${walkerCustomCategoryIdOrByStyleSql}
                 ${vetCategoryEmptyOrByStyle}
                 ${boardingCustomCategoryIdOrByStyleSql}
               )` : ``}

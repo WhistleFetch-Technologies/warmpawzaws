@@ -24,6 +24,7 @@ import { formatDistanceDisplay } from '@/lib/distance-display';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 
 export interface BoardingVendorExpandableCardProps {
   v: BoardingListVendor;
@@ -236,10 +237,7 @@ export function BoardingVendorExpandableCard({
 
       {expanded && (
         <div className="bg-gray-50 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h4 className="text-sm font-semibold text-gray-700">
-              Available Services ({v.planRows.length})
-            </h4>
+          <div className="flex items-center justify-end gap-2 flex-wrap">
             <button
               type="button"
               onClick={(e) => onOpenCenterDetails(e, centerProfileVendorId)}
@@ -257,8 +255,15 @@ export function BoardingVendorExpandableCard({
           ) : v.planRows.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-4">No services listed for this center.</p>
           ) : (
-            <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-3">
-              {v.planRows.map((plan) => {
+            <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-4">
+              {discoveryServiceSections(
+                v.planRows as unknown as Record<string, unknown>[]
+              ).map((sec) => (
+                <div key={sec.title} className="space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-700">
+                    {sec.title} ({sec.list.length})
+                  </h4>
+                  {(sec.list as unknown as BoardingPlanRow[]).map((plan) => {
                 const descTrim = plan.description?.trim() ?? '';
                 return (
                   <div
@@ -349,7 +354,9 @@ export function BoardingVendorExpandableCard({
                     </div>
                   </div>
                 );
-              })}
+                  })}
+                </div>
+              ))}
             </div>
           )}
         </div>

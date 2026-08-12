@@ -323,12 +323,10 @@ if [ "$HTML_ALIAS_FAILED" -gt 0 ]; then
 fi
 
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
-# Use a single wildcard path so shells (especially Git Bash on Windows) never expand
-# `/_next/*` into invalid path tokens before AWS CLI sees them — that caused stale
-# index.html + fresh chunks and `Unexpected token '<'` on webpack-*.js.
+# Use /* only — mixed wildcards like /_next/* fail InvalidArgument on some AWS CLI/shell combos.
 INVALIDATION_ID=$(aws cloudfront create-invalidation \
   --distribution-id "${CLOUDFRONT_DIST_ID}" \
-  --paths '/*' \
+  --paths "/*" \
   --query 'Invalidation.Id' \
   --output text 2>/dev/null || true)
 

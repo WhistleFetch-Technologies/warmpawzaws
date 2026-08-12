@@ -49,7 +49,7 @@ interface LoyaltyActionRule {
   base_amount?: number;
   min_amount?: number;
   max_points_per_transaction?: number;
-  frequency_type?: 'one_time' | 'recurring' | 'unlimited' | 'monthly_limit' | 'yearly_limit';
+  frequency_type?: 'one_time' | 'recurring' | 'unlimited' | 'monthly_limit' | 'yearly_limit' | 'lifetime_limit';
   frequency_limit?: number;
   frequency_period?: 'day' | 'week' | 'month' | 'year';
   conditions?: {
@@ -84,7 +84,7 @@ interface ActionRuleFormData {
   base_amount?: number;
   min_amount?: number;
   max_points_per_transaction?: number;
-  frequency_type?: 'one_time' | 'recurring' | 'unlimited' | 'monthly_limit' | 'yearly_limit';
+  frequency_type?: 'one_time' | 'recurring' | 'unlimited' | 'monthly_limit' | 'yearly_limit' | 'lifetime_limit';
   frequency_limit?: number;
   frequency_period?: 'day' | 'week' | 'month' | 'year';
   conditions?: {
@@ -626,8 +626,28 @@ export function LoyaltyActionRulesManagement() {
                     <SelectItem value="unlimited">Unlimited</SelectItem>
                     <SelectItem value="monthly_limit">Monthly Limit</SelectItem>
                     <SelectItem value="yearly_limit">Yearly Limit</SelectItem>
+                    <SelectItem value="lifetime_limit">Lifetime Limit</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="frequency_limit">Frequency Limit</Label>
+                <Input
+                  id="frequency_limit"
+                  type="number"
+                  min={1}
+                  value={formData.frequency_limit ?? ''}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      frequency_limit: e.target.value
+                        ? parseInt(e.target.value, 10)
+                        : undefined,
+                    }))
+                  }
+                  placeholder="e.g. 3 for max 3 lifetime earns"
+                />
               </div>
 
               <div className="space-y-2">

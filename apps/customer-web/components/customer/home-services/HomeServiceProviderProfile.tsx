@@ -44,6 +44,7 @@ import {
   mapHomeServiceProfileServices,
   type HomeServiceProfileService,
 } from '@/lib/customer-vendor-services-merge';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 import { homeServiceProfileVendorServicesQuery, filterHomeServiceProfileVendorRows } from '@/lib/home-service-profile-vendor-services';
 import { useProviderServicesLazyLoad } from '@/hooks/useProviderServicesLazyLoad';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
@@ -59,11 +60,16 @@ import {
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 import { homeServiceTypeToPersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 import { mergeProviderAboutFromFacility } from '@/lib/universal-provider-profile-enrichment';
+import { resolveHomeServiceProfileOverviewFields } from '@/lib/home-service-profile-overview';
+import { formatOperatingHours } from '@/lib/format-utils';
 import {
   WalkerWalkServicePicker,
   type WalkerWalkPickerSelection,
 } from '../walker/WalkerWalkServicePicker';
-import type { WalkerServiceOption } from '@/lib/walker-vendor-offerings';
+import {
+  isWalkerVendorServicePackageRow,
+  type WalkerServiceOption,
+} from '@/lib/walker-vendor-offerings';
 
 /** Second identity-chip line derived only from vertical (not vendor-specific catalog copy). */
 const HOME_SERVICE_CONTEXT_LABEL: Record<HomeServiceType, string> = {
@@ -142,6 +148,7 @@ interface ProviderDetails {
   specializations: string[];
   amenities: string[];
   customAmenities: string[];
+  qualifications: string;
   certifications: string[];
   experience: number;
   serviceCount: number;
@@ -397,13 +404,19 @@ export function HomeServiceProviderProfile({
 
       const specs = merged.specializations;
       const specFallback = merged.services;
-      const specializations: string[] = Array.isArray(specs)
-        ? (specs as string[])
-        : Array.isArray(specFallback)
-          ? (specFallback as string[])
-          : [];
+      const overviewFields = resolveHomeServiceProfileOverviewFields({ merged, customerVendorRow });
+      const specializations: string[] =
+        overviewFields.specializations.length > 0
+          ? overviewFields.specializations
+          : Array.isArray(specs)
+            ? (specs as string[])
+            : Array.isArray(specFallback)
+              ? (specFallback as string[])
+              : [];
 
       const { amenities, customAmenities } = resolveCustomerVendorAmenities(merged);
+      const qualifications = overviewFields.qualifications;
+      const experienceYears = overviewFields.experienceYears;
 
       setProvider({
         id: (merged.id as string) || vendorId,
@@ -428,8 +441,9 @@ export function HomeServiceProviderProfile({
         specializations,
         amenities,
         customAmenities,
+        qualifications,
         certifications: (Array.isArray(merged.certifications) ? merged.certifications : []) as string[],
-        experience: Number(merged.experience ?? merged.yearsOfExperience ?? merged.years_of_experience ?? 0),
+        experience: experienceYears,
         serviceCount: Number(merged.serviceCount ?? merged.completedServices ?? merged.completed_bookings ?? 0),
         isVerified: Boolean(merged.isVerified ?? merged.verified ?? merged.is_verified),
         operatingHours: (merged.operatingHours || merged.operating_hours || merged.hours || {}) as ProviderDetails['operatingHours'],
@@ -497,6 +511,7 @@ export function HomeServiceProviderProfile({
   const walkerContinueToBook = useCallback(() => {
     if (!selectedServiceId || !provider) return;
     const option = walkerSelectedOptionRef.current;
+    const fromMap = rawServiceRowsRef.current.get(selectedServiceId);
     const service: HomeServiceProfileService = option
       ? {
           id: option.id,
@@ -508,13 +523,42 @@ export function HomeServiceProviderProfile({
         }
       : {
           id: selectedServiceId,
-          name: '',
-          price: 0,
-          duration: 0,
+          name: String((fromMap as { name?: string } | undefined)?.name ?? ''),
+          price: Number((fromMap as { price?: number } | undefined)?.price ?? 0) || 0,
+          duration: Number((fromMap as { duration?: number } | undefined)?.duration ?? 0) || 0,
           description: '',
           category: 'walking',
         };
-    onSelectService(service, rawServiceRowsRef.current.get(selectedServiceId));
+    // Treat picker packages OR name/metadata heuristics as packages (never fall through to one-off booking).
+    const mergedProbe = {
+      ...(fromMap || {}),
+      id: (fromMap?.id as string | undefined) ?? option?.id ?? selectedServiceId,
+      name: option?.name ?? service.name,
+      isPackage: option?.isPackage || (fromMap as { isPackage?: boolean } | undefined)?.isPackage,
+      totalSessions: option?.totalSessions,
+      packageDetails: {
+        ...((fromMap?.packageDetails as Record<string, unknown> | undefined) || {}),
+        ...(option?.totalSessions != null ? { totalSessions: option.totalSessions } : {}),
+        ...(option?.sessionsPerDay != null ? { sessionsPerDay: option.sessionsPerDay } : {}),
+        ...(option?.sessionIntervalDays != null
+          ? { sessionIntervalDays: option.sessionIntervalDays }
+          : {}),
+        ...(option?.price != null ? { price: option.price } : {}),
+      },
+    } as Record<string, unknown>;
+    const asPackage =
+      Boolean(option?.isPackage) || isWalkerVendorServicePackageRow(mergedProbe);
+
+    const rawRow: Record<string, unknown> | undefined = asPackage
+      ? ({
+          ...mergedProbe,
+          isPackage: true,
+          name: option?.name ?? service.name,
+          price: option?.price ?? service.price,
+          duration: option?.duration ?? service.duration,
+        } as Record<string, unknown>)
+      : fromMap;
+    onSelectService(service, rawRow);
   }, [onSelectService, provider, selectedServiceId]);
 
   const continueBookingDisabled = useMemo(() => {
@@ -544,6 +588,24 @@ export function HomeServiceProviderProfile({
     () => (provider?.gallery ?? []).filter((u) => typeof u === 'string' && u.trim().length > 0),
     [provider?.gallery]
   );
+  const operatingHoursLabel = useMemo(
+    () => formatOperatingHours(provider?.operatingHours),
+    [provider?.operatingHours]
+  );
+  const hasOverviewContent = useMemo(() => {
+    if (!provider) return false;
+    return Boolean(
+      provider.bio ||
+        provider.description ||
+        provider.specializations.length > 0 ||
+        provider.qualifications ||
+        provider.certifications.length > 0 ||
+        provider.experience > 0 ||
+        provider.amenities.length > 0 ||
+        provider.customAmenities.length > 0 ||
+        operatingHoursLabel
+    );
+  }, [provider, operatingHoursLabel]);
   const hasPhotos = heroPhotos.length > 0;
   const PlaceholderIcon = profileHeroPlaceholderIcon(serviceType);
   const tabs: { id: TabType; label: string }[] = [
@@ -776,6 +838,40 @@ export function HomeServiceProviderProfile({
               </div>
             )}
 
+            {/* Specializations — primary for solo walkers / home providers */}
+            {provider.specializations.length > 0 && (
+              <div>
+                <h3 className="font-semibold text-gray-800 mb-2">Specializations</h3>
+                <div className="flex flex-wrap gap-2">
+                  {provider.specializations.map((spec) => (
+                    <span
+                      key={spec}
+                      className="rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-800"
+                    >
+                      {spec}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {provider.experience > 0 && (
+              <div>
+                <h3 className="font-semibold text-gray-800 mb-2">Experience</h3>
+                <p className="text-sm text-gray-600">
+                  {provider.experience} {provider.experience === 1 ? 'year' : 'years'} of experience
+                </p>
+              </div>
+            )}
+
+            {/* Qualifications (solo providers) */}
+            {provider.qualifications && (
+              <div>
+                <h3 className="font-semibold text-gray-800 mb-2">Qualifications</h3>
+                <p className="text-sm leading-relaxed text-gray-600">{provider.qualifications}</p>
+              </div>
+            )}
+
             {/* Amenities */}
             {(provider.amenities.length > 0 || provider.customAmenities.length > 0) && (
               <div>
@@ -804,24 +900,16 @@ export function HomeServiceProviderProfile({
             )}
 
             {/* Operating Hours */}
-            {Object.keys(provider.operatingHours).length > 0 && (
+            {operatingHoursLabel ? (
               <div>
                 <h3 className="font-semibold text-gray-800 mb-2">Operating Hours</h3>
-                <div className="space-y-1">
-                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => {
-                    const hours = provider.operatingHours[day];
-                    return (
-                      <div key={day} className="flex justify-between text-sm">
-                        <span className="text-gray-600 capitalize">{day}</span>
-                        <span className="text-gray-800">
-                          {hours ? `${hours.open} - ${hours.close}` : 'Closed'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+                <p className="text-sm text-gray-600">{operatingHoursLabel}</p>
               </div>
-            )}
+            ) : null}
+
+            {!hasOverviewContent ? (
+              <p className="text-sm text-gray-500">No overview details available yet.</p>
+            ) : null}
           </div>
         )}
 
@@ -860,7 +948,14 @@ export function HomeServiceProviderProfile({
               </div>
             ) : (
               <>
-                {profileServices.map((service) => (
+                {discoveryServiceSections(
+                  profileServices as unknown as Record<string, unknown>[]
+                ).map((sec) => (
+                  <div key={sec.title} className="space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-700">
+                      {sec.title} ({sec.list.length})
+                    </h3>
+                    {(sec.list as unknown as HomeServiceProfileService[]).map((service) => (
                   <button
                     key={service.id}
                     type="button"
@@ -874,13 +969,20 @@ export function HomeServiceProviderProfile({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <h4
-                          className={`font-medium ${
-                            selectedServiceId === service.id ? 'text-orange-900' : 'text-gray-800'
-                          }`}
-                        >
-                          {service.name}
-                        </h4>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4
+                            className={`font-medium ${
+                              selectedServiceId === service.id ? 'text-orange-900' : 'text-gray-800'
+                            }`}
+                          >
+                            {service.name}
+                          </h4>
+                          {service.isPackage ? (
+                            <span className="rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                              Package
+                            </span>
+                          ) : null}
+                        </div>
                         {service.description ? (
                           <div onClick={(e) => e.stopPropagation()}>
                             <ServiceDescriptionInline
@@ -909,6 +1011,8 @@ export function HomeServiceProviderProfile({
                       </div>
                     </div>
                   </button>
+                    ))}
+                  </div>
                 ))}
                 <DiscoveryVendorFeedSentinel
                   hasMore={hasMoreServices}

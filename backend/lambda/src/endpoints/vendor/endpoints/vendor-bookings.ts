@@ -43,6 +43,7 @@ import {
   shouldHideBookingRowFromVendorUi,
   sqlAndExcludeSuppressedBookingRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
+import { notifyBookingCancelledByVendor } from '../../../utils/booking-notifications';
 
 // Helper function to format detailed address with all fields
 function formatDetailedAddress(addr: any): string {
@@ -754,6 +755,19 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         console.error('Failed to publish booking status updated event:', error);
       }
 
+      try {
+        await notifyBookingCancelledByVendor({
+          bookingId,
+          reason: cancellation_reason,
+          refundInfo: refundInfo ?? undefined,
+        });
+      } catch (notifErr: any) {
+        console.warn(
+          '[vendor/cancel] Customer cancel notification failed:',
+          notifErr?.message || notifErr
+        );
+      }
+
       return c.json({
         success: true,
         booking: updated[0],
@@ -1002,6 +1016,20 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         });
       } catch (error) {
         console.error('Failed to publish booking status updated event:', error);
+      }
+
+      // One customer SMS + in-app/push for the declined booking (not per cascaded session)
+      try {
+        await notifyBookingCancelledByVendor({
+          bookingId,
+          reason: cancellation_reason,
+          refundInfo: refundInfo ?? undefined,
+        });
+      } catch (notifErr: any) {
+        console.warn(
+          '[vendor/decline] Customer cancel notification failed:',
+          notifErr?.message || notifErr
+        );
       }
 
       return c.json({

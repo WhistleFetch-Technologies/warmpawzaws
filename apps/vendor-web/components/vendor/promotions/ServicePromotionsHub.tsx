@@ -253,15 +253,19 @@ export function ServicePromotionsHub({
   return (
     <div className="min-h-screen bg-slate-50">
       {onBack && (
-        <div className="bg-white border-b px-4 py-3">
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-        </div>
+        <header className="sticky top-0 z-10 shrink-0 vendor-screen-safe-top border-b bg-white">
+          <div className="vendor-header-safe-x flex items-center px-4 pb-3">
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex h-11 min-w-[44px] items-center gap-2 rounded-xl px-2 text-sm font-medium text-slate-600 hover:bg-gray-100 active:bg-gray-200"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-5 w-5" aria-hidden />
+              Back
+            </button>
+          </div>
+        </header>
       )}
 
       <div className="border-b bg-white px-4 py-2">

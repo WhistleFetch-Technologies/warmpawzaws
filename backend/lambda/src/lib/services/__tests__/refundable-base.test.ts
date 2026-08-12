@@ -2,7 +2,11 @@
  * Refundable paid base: must include wallet debits for split / wallet-first bookings.
  */
 
-import { getRefundableCustomerPaidBreakdown, hasCustomerPaidCapture } from '../refundable-base';
+import {
+  getRefundableCustomerPaidBreakdown,
+  hasCustomerPaidCapture,
+  resolvePaymentCapturableGross,
+} from '../refundable-base';
 import { query } from '../../../database/rds-connection';
 
 jest.mock('../../../database/rds-connection', () => ({
@@ -10,6 +14,32 @@ jest.mock('../../../database/rds-connection', () => ({
 }));
 
 const mockedQuery = query as jest.MockedFunction<typeof query>;
+
+describe('resolvePaymentCapturableGross', () => {
+  it('prefers total_amount when present (Anannya tax-inclusive capture)', () => {
+    expect(
+      resolvePaymentCapturableGross({
+        amount: 1699,
+        total_amount: 2004.82,
+        gst_amount: 305.82,
+      })
+    ).toBe(2004.82);
+  });
+
+  it('adds gst when total_amount missing and amount is tax-exclusive', () => {
+    expect(
+      resolvePaymentCapturableGross({
+        amount: 1699,
+        total_amount: 0,
+        gst_amount: 305.82,
+      })
+    ).toBe(2004.82);
+  });
+
+  it('does not invent GST when neither total nor gst present', () => {
+    expect(resolvePaymentCapturableGross({ amount: 500 })).toBe(500);
+  });
+});
 
 describe('getRefundableCustomerPaidBreakdown', () => {
   beforeEach(() => {
@@ -53,6 +83,7 @@ describe('getRefundableCustomerPaidBreakdown', () => {
       }
       if (sql.includes('FROM payments') && sql.includes('payment_status = \'completed\'')) {
         expect(sql).toContain('COALESCE(convenience_fee, 0)');
+        expect(sql).toContain('total_amount');
         return {
           rows: [
             {
@@ -78,6 +109,41 @@ describe('getRefundableCustomerPaidBreakdown', () => {
     expect(r.platformFeeNonRefundable).toBe(20);
     expect(r.convenienceFeeNonRefundable).toBe(30);
     expect(r.nonRefundableFees).toBe(50);
+  });
+
+  it('includes GST in refundable base and still excludes platform/convenience fees', async () => {
+    mockedQuery.mockImplementation(async (sql: string) => {
+      if (
+        sql.includes('FROM payments') &&
+        sql.includes("payment_method, '')) = 'wallet'")
+      ) {
+        return { rows: [{ w: '0' }] } as any;
+      }
+      if (sql.includes('FROM payments') && sql.includes('payment_status = \'completed\'')) {
+        return {
+          rows: [
+            {
+              paid_total: '2044.82',
+              platform_fee_total: '40',
+              convenience_fee_total: '0',
+              refundable_from_payments: '2004.82',
+            },
+          ],
+        } as any;
+      }
+      if (sql.includes('wallet_transactions')) {
+        return { rows: [{ w: '0' }] } as any;
+      }
+      return { rows: [] } as any;
+    });
+
+    const r = await getRefundableCustomerPaidBreakdown('00000000-0000-4000-8000-000000000005', {
+      total_amount: 2044.82,
+      discount_amount: 0,
+    });
+    expect(r.refundableBase).toBe(2004.82);
+    expect(r.platformFeeNonRefundable).toBe(40);
+    expect(r.nonRefundableFees).toBe(40);
   });
 
   it('does not double-count wallet-only bookings (payment row + wallet debit)', async () => {

@@ -58,9 +58,27 @@ import {
   SESSION_PACKAGE_TYPE_LABEL,
   type SessionPackageType,
 } from '@/lib/session-package-normalize';
-import { resolveVendorCustomServiceSpecCategoryId } from '@/lib/vendor-custom-service-spec-category';
+import {
+  findPreferredCatalogCategoryForRole,
+  preferredSpecCategorySlugForRole,
+  resolveVendorCustomServiceSpecCategoryId,
+} from '@/lib/vendor-custom-service-spec-category';
 import { canVendorEditServicePrice, shouldHideVendorServicePrice } from '@/lib/wappt-service-pricing-lock';
 import { getActiveCommerceModelAsync } from '@/lib/commerce-switch-client';
+
+function isBrokenLegacyTrainerWalkerCategory(value: string | null | undefined): boolean {
+  const v = String(value || '').trim();
+  if (!v) return true;
+  const key = v
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/\s+/g, '_')
+    .replace(/-/g, '_')
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  return key === 'training_and_walking' || key === 'training_walking' || v === 'Training & Walking';
+}
 
 const SpecializationSelector = lazy(() =>
   import('@/components/vendor/SpecializationSelector').then((m) => ({ default: m.SpecializationSelector }))
@@ -163,9 +181,11 @@ const VENDOR_ROLE_MAPPING: Record<string, VendorRoleCategory> = {
   'pet_spa': 'grooming_center',
 };
 
-// Default categories per vendor role
+// Fallback display labels when catalogue rows are not loaded yet.
+// Walkers/trainers must not share "Training & Walking" — that slug does not exist in
+// service_categories (prod walking row is name "Dog Walker", category_id "walking").
 const DEFAULT_CATEGORIES: Record<VendorRoleCategory, string> = {
-  'trainer_walker': 'Training & Walking',
+  'trainer_walker': '',
   'vet_clinic': 'Veterinary Services',
   'grooming_center': 'Grooming & Spa',
   'diagnostics': 'Lab Tests',
@@ -352,8 +372,9 @@ export function VendorCustomServiceCreationEnhanced({
         platformCategoryId,
         categoryName,
         catalogCategories,
+        vendorRoleName: getVendorRoleName(vendorData) || getVendorRoleId(vendorData),
       }),
-    [platformCategoryId, categoryName, catalogCategories]
+    [platformCategoryId, categoryName, catalogCategories, vendorData]
   );
 
   useEffect(() => {
@@ -430,9 +451,9 @@ export function VendorCustomServiceCreationEnhanced({
     }
   }, [isSoloProvider, isTrainerWalkerSitter, isPackage, packageType]);
   
-  // Set default category based on vendor role
+  // Set fallback category label for non-walker/trainer roles (walkers/trainers wait for catalogue UUID)
   useEffect(() => {
-    if (!categoryName && vendorRoleCategory !== 'other') {
+    if (!categoryName && vendorRoleCategory !== 'other' && vendorRoleCategory !== 'trainer_walker') {
       setCategoryName(DEFAULT_CATEGORIES[vendorRoleCategory]);
     }
   }, [vendorRoleCategory, categoryName]);
@@ -463,7 +484,22 @@ export function VendorCustomServiceCreationEnhanced({
       }
     };
     loadCatalogCategories();
-  }, []);
+  }, [vendorData]);
+
+  // Dog walker / trainer: once catalogue loads, select the matching platform category UUID
+  // so GET /vendor/specializations/by-category returns walking or training specs.
+  useEffect(() => {
+    if (!catalogCategories.length) return;
+    const roleKey = getVendorRoleName(vendorData) || getVendorRoleId(vendorData);
+    if (!preferredSpecCategorySlugForRole(roleKey)) return;
+    const preferred = findPreferredCatalogCategoryForRole(catalogCategories, roleKey);
+    if (!preferred?.id) return;
+    const preferredId = String(preferred.id);
+    if (!isBrokenLegacyTrainerWalkerCategory(categoryName) && platformCategoryId) return;
+    if (!isBrokenLegacyTrainerWalkerCategory(categoryName) && categoryName) return;
+    setCategoryName(preferredId);
+    setPlatformCategoryId(preferredId);
+  }, [catalogCategories, vendorData, categoryName, platformCategoryId]);
 
   // Load micro-categories for role - use role NAME for catalog lookup (diagnostics use "Diagnostics Center" not UUID)
   const roleId = getVendorRoleId(vendorData);
