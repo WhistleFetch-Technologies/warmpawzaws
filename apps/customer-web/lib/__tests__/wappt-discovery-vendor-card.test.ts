@@ -53,6 +53,8 @@ describe('buildWapptDiscoveryVendorCardProps', () => {
         providerId: 'vendor-w-1',
         vendorId: 'vendor-w-1',
         isVerified: true,
+        rating: 0,
+        reviewCount: 0,
         nextAvailableSlot: 'Today 1:30 PM',
       },
       subtitle: 'Pet Walker',

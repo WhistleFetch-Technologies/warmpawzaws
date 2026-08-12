@@ -58,7 +58,7 @@ function CheckoutPageContent() {
           <button
             type="button"
             className="font-semibold text-orange-600 underline"
-            onClick={() => nav.goToAuth()}
+            onClick={() => nav.goToAuth('/checkout')}
           >
             Sign in
           </button>

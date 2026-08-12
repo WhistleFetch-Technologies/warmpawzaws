@@ -11,6 +11,7 @@ export type PersistedLocationV1 = {
   v: 1;
   latitude: number | null;
   longitude: number | null;
+  locality?: string;
   city?: string;
   pincode?: string;
   state?: string;

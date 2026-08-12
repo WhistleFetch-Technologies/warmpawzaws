@@ -516,7 +516,7 @@ export function BoardingVendorProfileView({
                     <h3 className="text-sm font-semibold text-gray-700">
                       {sec.title} ({sec.list.length})
                     </h3>
-                    {(sec.list as typeof publishedPlans).map((plan) => {
+                    {(sec.list as unknown as typeof publishedPlans).map((plan) => {
                   const Icon = pickIconForPublishedPlan(plan.name, plan.serviceStyle);
                   const isSel = selectedOffer?.rowId === plan.rowId;
                   return (
@@ -535,7 +535,7 @@ export function BoardingVendorProfileView({
                         <span className={`truncate font-medium ${isSel ? 'text-orange-900' : 'text-gray-800'}`}>
                           {plan.name}
                         </span>
-                        {(plan.isPackage ||
+                        {((plan as unknown as { isPackage?: boolean }).isPackage ||
                           isVendorServicePackageRow(plan as unknown as Record<string, unknown>)) && (
                           <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">
                             Package

@@ -7,8 +7,11 @@ import { registerDebugAtCenterVendorsRoute } from './routes/debug-at-center-vend
 import { registerCustomerServicesRoute } from './routes/customer-services.route';
 import { registerCustomerServicesPlatformRoute } from './routes/customer-services-platform.route';
 import { registerDiscoverServicesRoute } from './routes/discover-services.route';
+import { registerPublicDiscoverServicesRoute } from './routes/public-discover-services.route';
 import { registerVendorAvailableSlotsRoute } from './routes/vendor-available-slots.route';
+import { registerPublicVendorAvailableSlotsRoute } from './routes/public-vendor-available-slots.route';
 import { registerVendorServicesRoute } from './routes/vendor-services.route';
+import { registerPublicVendorServicesRoute } from './routes/public-vendor-services.route';
 import { registerPublicVendorProfileRoute } from './routes/public-vendor-profile.route';
 import { registerCustomerVendorProfileRoute } from './routes/customer-vendor-profile.route';
 import { registerVendorsSearchRoute } from './routes/vendors-search.route';
@@ -37,8 +40,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   registerCustomerServicesRoute(app);
   registerCustomerServicesPlatformRoute(app);
   registerDiscoverServicesRoute(app);
+  registerPublicDiscoverServicesRoute(app);
   registerVendorAvailableSlotsRoute(app);
+  registerPublicVendorAvailableSlotsRoute(app);
   registerVendorServicesRoute(app);
+  registerPublicVendorServicesRoute(app);
   registerPublicVendorProfileRoute(app);
   registerCustomerVendorProfileRoute(app);
   registerVendorsSearchRoute(app);

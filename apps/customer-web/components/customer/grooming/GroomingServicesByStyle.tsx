@@ -1522,6 +1522,8 @@ export function GroomingServicesByStyle({
                 />
                   );
                 }
+                const expanded = selectedProvider === provider.providerId;
+                const headerInteractive = expanded;
                 return (
               <Card key={provider.providerId} className="bg-white overflow-hidden">
                 <div

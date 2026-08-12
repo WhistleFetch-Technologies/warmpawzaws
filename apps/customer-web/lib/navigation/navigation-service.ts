@@ -10,6 +10,7 @@ import { shopProductDetailPath } from '../shop-product-path';
 import { CUSTOMER_ROUTES } from './route-registry';
 import { navigateCustomerTab, type TabNavigationHandlers } from './tab-policy';
 import type { CustomerTabId } from './route-registry';
+import { buildAuthUrlWithReturn } from '../auth-redirect';
 
 export type CustomerNavigation = ReturnType<typeof createCustomerNavigation>;
 
@@ -75,8 +76,13 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
       router.push(CUSTOMER_ROUTES.wishlist.path);
     },
 
-    goToAuth() {
-      router.replace(CUSTOMER_ROUTES.auth.path);
+    goToAuth(returnPath?: string) {
+      const path =
+        returnPath ||
+        (typeof window !== 'undefined'
+          ? `${window.location.pathname}${window.location.search || ''}`
+          : '/');
+      router.replace(buildAuthUrlWithReturn(path.startsWith('/') ? path : '/'));
     },
 
     /** Celebration screen after payment — hard replace clears checkout from history. */

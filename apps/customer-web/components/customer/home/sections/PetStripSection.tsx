@@ -13,6 +13,7 @@ export interface PetStripSectionProps {
   onPetClick?: (petId: string) => void;
   onAddPet: () => void;
   petsLoading?: boolean;
+  isGuest?: boolean;
 }
 
 function PetTypeFallbackIcon({
@@ -75,6 +76,7 @@ function PetStripSectionComponent({
   onPetClick,
   onAddPet,
   petsLoading = false,
+  isGuest = false,
 }: PetStripSectionProps) {
   if (petsLoading && pets.length === 0) {
     return (
@@ -97,8 +99,12 @@ function PetStripSectionComponent({
             <Heart className="w-5 h-5 text-white" />
           </div>
           <div className="text-left flex-1 min-w-0">
-            <p className="text-white text-sm font-semibold tracking-tight">Add Your Pet</p>
-            <p className="text-white/60 text-[11px] font-normal">Unlock personalized services</p>
+            <p className="text-white text-sm font-semibold tracking-tight">
+              {isGuest ? 'Sign in to add pets' : 'Add Your Pet'}
+            </p>
+            <p className="text-white/60 text-[11px] font-normal">
+              {isGuest ? 'Create a pet profile after login' : 'Unlock personalized services'}
+            </p>
           </div>
           <Plus className="w-4 h-4 text-white/80 shrink-0" />
         </button>

@@ -49,6 +49,7 @@ import {
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
+import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
 
 
 interface GroomingBookingRouterProps {
@@ -442,6 +443,33 @@ export function GroomingBookingRouter({
       setTimeSlots([]);
     }
   }, [selectedDate, vendorId, selectedServiceType, selectedServiceIds]);
+
+  /** Keep guest → auth booking draft in sync (date/slot/vendor). */
+  useEffect(() => {
+    if (!vendorId && !selectedDate && !selectedTime) return;
+    updateGuestBookingProgress({
+      vendorId: vendorId || undefined,
+      serviceId: serviceId || undefined,
+      serviceStyle: selectedServiceType || serviceStyle || undefined,
+      category: 'grooming',
+      date: selectedDate || undefined,
+      time: selectedTime || undefined,
+      wapptMode: appointmentsMode === true,
+      price: typeof price === 'number' ? price : undefined,
+      resumeScreen: 'grooming-booking',
+      returnPath: '/',
+      openAddPet: true,
+    });
+  }, [
+    vendorId,
+    serviceId,
+    selectedServiceType,
+    serviceStyle,
+    selectedDate,
+    selectedTime,
+    appointmentsMode,
+    price,
+  ]);
 
   // Scheduling policy and operating-hours are deprecated (replaced by advance availability).
   // Slots come from GET /customer/vendor/:id/available-slots only; no extra policy/hours APIs.
@@ -1479,6 +1507,19 @@ export function GroomingBookingRouter({
               selectedPet={selectedPet}
               onSelectPet={setSelectedPet}
               onAddPet={() => setShowAddPetModal(true)}
+              guestAuthContext={{
+                vendorId: vendorId || undefined,
+                serviceId: serviceId || undefined,
+                serviceStyle: selectedServiceType || serviceStyle || undefined,
+                category: 'grooming',
+                date: selectedDate || undefined,
+                time: selectedTime || undefined,
+                // This block is marketplace (!appointmentsMode) only.
+                wapptMode: false,
+                price: typeof price === 'number' ? price : undefined,
+                resumeScreen: 'grooming-booking',
+                returnPath: '/',
+              }}
             />
 
             <div className="space-y-4 border-t border-gray-100 pt-6">

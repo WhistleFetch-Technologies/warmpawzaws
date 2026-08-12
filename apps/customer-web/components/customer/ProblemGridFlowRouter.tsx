@@ -336,6 +336,7 @@ export function ProblemGridFlowRouter({
       let matchingProblem: {
         id?: string;
         problemId?: string;
+        description?: string;
         allowedServiceStyles?: ServiceStyle[];
       } | null = null;
 

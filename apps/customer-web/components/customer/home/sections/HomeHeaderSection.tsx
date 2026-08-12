@@ -1,9 +1,10 @@
 'use client';
 
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import { Bell, MapPin, MessageSquare } from 'lucide-react';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { resolveCustomerLocation } from '@/lib/customer-location';
+import { useLocationContextOptional } from '@/context/LocationContext';
 import { IconBadgeButton } from '../shared/IconBadgeButton';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -11,6 +12,7 @@ export interface HomeHeaderSectionProps {
   userName: string;
   userProfilePhoto?: string;
   phone: string;
+  isGuest?: boolean;
   onProfileClick?: () => void;
   onNavigate: HomeNavigateFn;
   onOpenNotifications: () => void;
@@ -18,37 +20,69 @@ export interface HomeHeaderSectionProps {
   combinedMessageUnreadCount: number;
 }
 
+function formatLocationLabel(parts: {
+  locality?: string;
+  city?: string;
+  state?: string;
+}): string {
+  const locality = (parts.locality || '').trim();
+  const city = (parts.city || '').trim();
+  const state = (parts.state || '').trim();
+  if (locality && city) return `${locality}, ${city}`;
+  if (city && state) return `${city}, ${state}`;
+  if (city) return city;
+  if (locality) return locality;
+  if (state) return state;
+  return '';
+}
+
 function HomeHeaderSectionComponent({
   userName,
   userProfilePhoto,
   phone,
+  isGuest = false,
   onProfileClick,
   onNavigate,
   onOpenNotifications,
   notificationUnreadCount,
   combinedMessageUnreadCount,
 }: HomeHeaderSectionProps) {
-  const initial = userName.charAt(0).toUpperCase();
-  const [locationLabel, setLocationLabel] = useState('');
+  const greetingName = isGuest ? 'there' : userName;
+  const initial = (greetingName || 'G').charAt(0).toUpperCase();
+  const locationCtx = useLocationContextOptional();
+  const [accountLocationLabel, setAccountLocationLabel] = useState('');
+
+  const contextLocationLabel = useMemo(() => {
+    if (!locationCtx) return '';
+    return formatLocationLabel({
+      locality: locationCtx.locality,
+      city: locationCtx.city,
+      state: locationCtx.state,
+    });
+  }, [locationCtx?.locality, locationCtx?.city, locationCtx?.state]);
 
   useEffect(() => {
+    // Prefer LocationContext for everyone; fall back to customer addresses when authed and context empty.
+    if (isGuest || contextLocationLabel) {
+      setAccountLocationLabel('');
+      return;
+    }
     if (!phone) {
-      setLocationLabel('');
+      setAccountLocationLabel('');
       return;
     }
     let cancelled = false;
     void resolveCustomerLocation(phone).then((loc) => {
       if (cancelled) return;
-      const { city, state } = loc;
-      if (city && state) setLocationLabel(`${city}, ${state}`);
-      else if (city) setLocationLabel(city);
-      else if (state) setLocationLabel(state);
-      else setLocationLabel('Set your location');
+      setAccountLocationLabel(formatLocationLabel(loc) || 'Set your location');
     });
     return () => {
       cancelled = true;
     };
-  }, [phone]);
+  }, [phone, isGuest, contextLocationLabel]);
+
+  const locationLabel =
+    contextLocationLabel || accountLocationLabel || (locationCtx ? 'Set location' : '');
 
   return (
     <div>
@@ -60,7 +94,7 @@ function HomeHeaderSectionComponent({
             className="w-12 h-12 shrink-0 bg-white rounded-2xl flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
             aria-label="Open profile"
           >
-            {userProfilePhoto ? (
+            {userProfilePhoto && !isGuest ? (
               <PresignableImage
                 src={userProfilePhoto}
                 alt="Profile"
@@ -75,7 +109,7 @@ function HomeHeaderSectionComponent({
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex min-w-0 items-center gap-1.5">
               <h1 className="min-w-0 truncate text-white text-xl font-bold tracking-tight">
-                Hi, {userName}!
+                Hi, {greetingName}!
               </h1>
               <span className="shrink-0 text-lg" role="img" aria-label="wave">
                 👋
@@ -98,18 +132,22 @@ function HomeHeaderSectionComponent({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <IconBadgeButton
-            icon={MessageSquare}
-            onClick={() => onNavigate('booking-messages')}
-            ariaLabel="Messages"
-            badgeCount={combinedMessageUnreadCount}
-          />
-          <IconBadgeButton
-            icon={Bell}
-            onClick={onOpenNotifications}
-            ariaLabel="Notifications"
-            badgeCount={notificationUnreadCount}
-          />
+          {!isGuest ? (
+            <>
+              <IconBadgeButton
+                icon={MessageSquare}
+                onClick={() => onNavigate('booking-messages')}
+                ariaLabel="Messages"
+                badgeCount={combinedMessageUnreadCount}
+              />
+              <IconBadgeButton
+                icon={Bell}
+                onClick={onOpenNotifications}
+                ariaLabel="Notifications"
+                badgeCount={notificationUnreadCount}
+              />
+            </>
+          ) : null}
         </div>
       </div>
     </div>

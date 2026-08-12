@@ -310,6 +310,14 @@ export async function resolveCurrentGeolocationCoords(): Promise<{
   };
 }
 
+/** Reverse-geocode known coordinates (GPS → LocationContext city/locality). */
+export async function reverseGeocodeCoordinates(
+  latitude: number,
+  longitude: number
+): Promise<AddressFromGeolocationResult> {
+  return reverseGeocodeLatLng(latitude, longitude, fetchCustomerGoogleMapsKey);
+}
+
 async function reverseGeocodeLatLng(
   latitude: number,
   longitude: number,

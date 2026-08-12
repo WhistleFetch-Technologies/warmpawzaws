@@ -37,6 +37,7 @@ import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 // Re-export type for VendorOnTheWayPopup
 import type { TrackingStatus } from '../VendorOnTheWayPopup';
 import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface';
+import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
 import { defaultBanners, defaultGroomingServices, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
 import { adoptionOptions, petFoodSpotlightBrands } from './constants/helpers';
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
@@ -274,6 +275,7 @@ function trendingRoleIdToCategorySlug(roleId: string): string {
 
 export function CustomerHomeComplete({
   phone,
+  isGuest = false,
   onNavigate,
   onProfileClick,
   onPetClick,
@@ -285,12 +287,24 @@ export function CustomerHomeComplete({
   hideHeaderFooter = false // ✅ NEW: Default to showing header/footer
 }: CustomerHomeCompleteProps) {
   const router = useRouter();
-  const [userData, setUserData] = useState<UserData>(() => hydrateInitialUserData(phone));
+
+  useEffect(() => {
+    if (!isGuest) return;
+    emitGuestAuthAnalytics('guest_home_viewed');
+  }, [isGuest]);
+
+  const [userData, setUserData] = useState<UserData>(() =>
+    isGuest ? { name: 'there', phone: '', pets: [] } : hydrateInitialUserData(phone)
+  );
   const [selectedPet, setSelectedPet] = useState<Pet | null>(() => {
+    if (isGuest) return null;
     const pets = readCachedPetsFromStorage();
     return pets[0] ?? null;
   });
-  const [petsLoading, setPetsLoading] = useState(() => readCachedPetsFromStorage().length === 0);
+  // Guests never load pets — start with loading cleared (fixes infinite "Loading pets...").
+  const [petsLoading, setPetsLoading] = useState(() =>
+    isGuest ? false : readCachedPetsFromStorage().length === 0
+  );
   const [currentView, setCurrentView] = useState<'home' | 'profile' | 'pet-details' | 'add-pet'>('home');
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [userProfilePhoto, setUserProfilePhoto] = useState<string>(() => readCachedProfileName(phone).photo || '');
@@ -1550,7 +1564,13 @@ export function CustomerHomeComplete({
   };
 
   useEffect(() => {
-    if (!phone) {
+    if (isGuest || !phone) {
+      setPetsLoading(false);
+      setUserData((prev) =>
+        isGuest
+          ? { ...prev, name: 'there', phone: '', pets: [] }
+          : { ...prev, pets: [] }
+      );
       setFilteredQuickServices(sourceQuickServices);
       setServiceLaunchTilesResolved(true);
       return;
@@ -2251,7 +2271,11 @@ export function CustomerHomeComplete({
   };
 
   const handleAddPet = () => {
-    // Show add pet modal directly instead of navigating
+    // Prefer parent shell handler (guest → auth boundary). Fallback to local modal for legacy.
+    if (onAddPet) {
+      onAddPet();
+      return;
+    }
     setShowAddPetModal(true);
     setNewPetData({ name: '', type: 'Dog', breed: '', age: '', gender: 'male' });
   };
@@ -2326,9 +2350,10 @@ export function CustomerHomeComplete({
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
       {!hideHeaderFooter && newHomeUi ? (
         <CustomerHomePageHeader
-          userName={userData.name}
+          userName={isGuest ? 'there' : userData.name}
           userProfilePhoto={userProfilePhoto}
           phone={phone}
+          isGuest={isGuest}
           onProfileClick={onProfileClick}
           onNavigate={handleNavigation}
           onOpenNotifications={() => setNotificationModalOpen(true)}

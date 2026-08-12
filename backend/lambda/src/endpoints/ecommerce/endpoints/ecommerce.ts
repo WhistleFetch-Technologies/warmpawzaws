@@ -496,7 +496,8 @@ export function registerEcommerceEndpoints(app: Hono) {
    *
    * Response: { success, products, total?, offset, limit, hasMore }
    */
-  app.get("/ecommerce/products", async (c) => {
+  /** Shared list handler — also registered under /public/ecommerce/products for guest browse. */
+  const handleListEcommerceProducts = async (c: any) => {
     /** Default and max page sizes — keep in sync with SHOP_PAGE_SIZE on the frontend. */
     const SHOP_DEFAULT_LIMIT = 10;
     const SHOP_MAX_LIMIT = 50;
@@ -670,7 +671,11 @@ export function registerEcommerceEndpoints(app: Hono) {
       console.error('Error fetching ecommerce products:', error);
       return c.json({ error: error.message }, 500);
     }
-  });
+  };
+
+  app.get("/ecommerce/products", handleListEcommerceProducts);
+  /** Guest-safe public-read alias (auth middleware allows /^\/public\//). */
+  app.get("/public/ecommerce/products", handleListEcommerceProducts);
 
   /**
    * GET /ecommerce/products/:productId
@@ -678,6 +683,9 @@ export function registerEcommerceEndpoints(app: Hono) {
    */
   app.get("/ecommerce/products/:productId", (c) =>
     handleGetPublicProductById(c, '[ecommerce/products/:productId]')
+  );
+  app.get("/public/ecommerce/products/:productId", (c) =>
+    handleGetPublicProductById(c, '[public/ecommerce/products/:productId]')
   );
 
   /**

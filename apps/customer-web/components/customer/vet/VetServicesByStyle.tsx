@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Star, MapPin, Clock, Video, Home, Building2, Filter, Loader2, Shield, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X } from 'lucide-react';
+import { Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
@@ -32,6 +33,7 @@ import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
 import { useDiscoveryProfileVendorResolve } from '@/hooks/useDiscoveryProfileVendorResolve';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
 import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 import {
@@ -138,6 +140,7 @@ export function VetServicesByStyle({
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   
   // Profile view state (when vendorId is provided)
   const [vendor, setVendor] = useState<any>(null);
@@ -311,6 +314,14 @@ export function VetServicesByStyle({
     },
     [fetchProviderServices]
   );
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const p = providers.find((x) => x.providerId === selectedProvider);
+    if (!p || p.servicesHydrated) return;
+    if (fetchingServicesFor === selectedProvider) return;
+    void fetchProviderServices(selectedProvider);
+  }, [selectedProvider, providers, fetchingServicesFor, fetchProviderServices]);
 
   useEffect(() => {
     if (!vendorId || providers.length !== 1) return;

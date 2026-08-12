@@ -41,6 +41,7 @@ import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import {
   fetchWalkerVendorCatalogMerged,
   firstServiceIdFromServicePackageRow,
@@ -232,6 +233,10 @@ function collectWalkerSearchHaystack(w: Record<string, unknown>): string {
 function resolveWalkerVendorId(walker: any): string | undefined {
   const s = pickWalkerVendorId((walker || {}) as Record<string, unknown>);
   return s || undefined;
+}
+
+function resolveWalkerRowDisplayName(walker: Record<string, unknown>): string {
+  return String(walker.name || walker.businessName || walker.business_name || 'Pet Walker').trim();
 }
 
 function walkerRowMatchesQuery(w: Record<string, unknown>, rawQuery: string): boolean {

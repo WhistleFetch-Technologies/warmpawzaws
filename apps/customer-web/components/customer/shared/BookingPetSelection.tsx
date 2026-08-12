@@ -5,6 +5,11 @@ import { Cat, Check, Dog, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { resolvePetDisplayPhotoUrl } from '@/lib/pet-display-photo';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import {
+  buildGuestAuthUrlForBooking,
+  type GuestBookingIntentV1,
+} from '@/lib/guest-booking-intent';
 
 export interface BookingPet {
   id: string;
@@ -38,6 +43,10 @@ export interface BookingPetSelectionProps<T extends BookingPet = BookingPet> {
   continueLabel?: string;
   continueDisabledLabel?: string;
   className?: string;
+  /** When guest taps Add Pet — persist booking draft and require login first. */
+  guestAuthContext?: Omit<GuestBookingIntentV1, 'v' | 'savedAt' | 'returnPath'> & {
+    returnPath?: string;
+  };
 }
 
 function getSpeciesKey(pet: BookingPet): string {
@@ -212,9 +221,30 @@ export function BookingPetSelection<T extends BookingPet = BookingPet>({
   continueLabel = 'Continue',
   continueDisabledLabel,
   className = '',
+  guestAuthContext,
 }: BookingPetSelectionProps<T>) {
   const resolvedContinueLabel =
     continueDisabled && continueDisabledLabel ? continueDisabledLabel : continueLabel;
+
+  const handleAddPetClick = () => {
+    if (!hasAuthenticatedCustomerSession()) {
+      emitGuestAuthAnalytics('pet_add_attempted');
+      emitGuestAuthAnalytics('pet_add_auth_required');
+      const returnPath =
+        guestAuthContext?.returnPath ||
+        (typeof window !== 'undefined'
+          ? `${window.location.pathname}${window.location.search || ''}` || '/'
+          : '/');
+      window.location.href = buildGuestAuthUrlForBooking({
+        ...(guestAuthContext || {}),
+        returnPath,
+        openAddPet: true,
+        resumeScreen: guestAuthContext?.resumeScreen || 'add-pet',
+      });
+      return;
+    }
+    onAddPet();
+  };
 
   const content = (
     <>
@@ -226,7 +256,7 @@ export function BookingPetSelection<T extends BookingPet = BookingPet>({
           </div>
           <button
             type="button"
-            onClick={onAddPet}
+            onClick={handleAddPetClick}
             className="flex shrink-0 items-center gap-1 rounded-full border border-[#FF8C42] px-3 py-1.5 text-xs font-medium text-[#FF8C42] transition hover:bg-orange-50 sm:px-4 sm:text-sm"
           >
             <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
@@ -253,7 +283,7 @@ export function BookingPetSelection<T extends BookingPet = BookingPet>({
           onTogglePet={onTogglePet}
         />
       ) : (
-        <EmptyPetState onAddPet={onAddPet} />
+        <EmptyPetState onAddPet={handleAddPetClick} />
       )}
 
       {showContinue && onContinue && (

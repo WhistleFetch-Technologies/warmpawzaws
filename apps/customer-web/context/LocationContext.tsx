@@ -13,6 +13,7 @@ import {
 import {
   geolocationErrorMessage,
   resolveCurrentGeolocationCoords,
+  reverseGeocodeCoordinates,
 } from '@/lib/address-from-geolocation';
 import { isGuestLocationEnabled } from '@/lib/guest-location-flag';
 import {
@@ -34,6 +35,8 @@ import {
 export type LocationState = {
   latitude: number | null;
   longitude: number | null;
+  /** Neighbourhood / sublocality when reverse-geocoded */
+  locality?: string;
   city?: string;
   pincode?: string;
   state?: string;
@@ -91,6 +94,7 @@ function fromPersisted(p: PersistedLocationV1 | null): LocationState {
   return {
     latitude: p.latitude,
     longitude: p.longitude,
+    locality: p.locality,
     city: p.city,
     pincode: p.pincode,
     state: p.state,
@@ -120,6 +124,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       v: 1,
       latitude: next.latitude,
       longitude: next.longitude,
+      locality: next.locality,
       city: next.city,
       pincode: next.pincode,
       state: next.state,
@@ -136,6 +141,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       longitude: number;
       accuracyM?: number | null;
       source: LocationSource;
+      locality?: string;
       city?: string;
       pincode?: string;
       state?: string;
@@ -171,6 +177,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       const next: LocationState = {
         latitude: coords.latitude,
         longitude: coords.longitude,
+        locality: coords.locality,
         city: coords.city,
         pincode: coords.pincode,
         state: coords.state,
@@ -211,6 +218,23 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           source: 'gps',
           permissionStatus: 'granted',
         });
+        // Best-effort reverse geocode for human-readable header (coords remain source of truth for discovery).
+        void reverseGeocodeCoordinates(latitude, longitude)
+          .then((geo) => {
+            applyCoords({
+              latitude,
+              longitude,
+              source: 'gps',
+              permissionStatus: 'granted',
+              locality: geo.addressLine2,
+              city: geo.city,
+              pincode: geo.pincode,
+              state: geo.state,
+            });
+          })
+          .catch(() => {
+            // coords already applied
+          });
         try {
           sessionStorage.removeItem('warmpawz_geolocation_denied');
         } catch {

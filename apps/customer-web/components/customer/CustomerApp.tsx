@@ -85,6 +85,7 @@ export function CustomerApp({
     <CustomerBookingMessagesModalProvider phone={session.phone}>
       <CustomerHomeWrapper
         phone={session.phone}
+        isGuest={session.isGuest === true}
         initialScreen={initialScreen}
         petBoardingVendorId={petBoardingVendorId}
         petBoardingServiceSlug={petBoardingServiceSlug}

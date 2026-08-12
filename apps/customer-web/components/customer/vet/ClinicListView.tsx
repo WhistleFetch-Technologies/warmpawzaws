@@ -2,17 +2,50 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Stethoscope } from 'lucide-react';
+import {
+  MapPin,
+  Clock,
+  Search,
+  ChevronRight,
+  Building2,
+  Stethoscope,
+  Shield,
+  Loader2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { discoveryVendorList, discoveryNextCursor } from '@/lib/discovery-list';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
-import { isVendorServicePackageRow, normalizeVendorServiceRowForPackage } from '@/lib/vendor-package-purchase-nav';
-import { filterServicesForVetHub, applyVetHubDiscoveryToProviders, isNonVetProviderRow } from '@/lib/filter-hub-services';
+import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
+import {
+  buildVendorServicesPageUrl,
+  vendorServicesNextCursor,
+  vendorServicesRowsFromResponse,
+} from '@/lib/vendor-services-page';
+import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+  normalizeVendorServiceRowForPackage,
+} from '@/lib/vendor-package-purchase-nav';
+import { toast } from 'sonner';
+import {
+  filterServicesForVetHub,
+  resolveServiceCategoryDisplayLabel,
+  applyVetHubDiscoveryToProviders,
+  isNonVetProviderRow,
+} from '@/lib/filter-hub-services';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { ServicePricingDisplay } from '../ServicePricingDisplay';
 import { pickProviderDistanceKm } from '@/lib/distance-display';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
@@ -244,8 +277,99 @@ export function ClinicListView({
   const [clinics, setClinics] = useState<ClinicProvider[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
+  const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
+  const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
   const router = useRouter();
   const launchGate = useServiceStyleLaunchGate(phone, 'vet', 'at_center');
+
+  const fetchVendorServicesForClinic = useCallback(
+    async (clinicId: string, append = false) => {
+      const clinic = clinics.find((c) => c.id === clinicId);
+      if (!clinic) return;
+      if (append) {
+        if (!clinic.servicesNextCursor || clinic.servicesLoadingMore) return;
+      } else if (clinic.servicesHydrated) {
+        return;
+      }
+      if (append) {
+        setClinics((prev) =>
+          prev.map((c) =>
+            c.id === clinicId ? { ...c, servicesLoadingMore: true } : c
+          )
+        );
+      } else {
+        setFetchingServicesFor(clinicId);
+      }
+      try {
+        const res = (await apiClient
+          .get(
+            buildVendorServicesPageUrl({
+              vendorId: clinicId,
+              serviceStyle: 'at_center',
+              category: HUB_DISCOVERY_VET.servicesApiCategory,
+              customerPhone: phone || undefined,
+              cursor: append ? clinic.servicesNextCursor : undefined,
+            })
+          )
+          .catch(() =>
+            apiClient.get(
+              buildVendorServicesPageUrl({
+                vendorId: clinicId,
+                customerPhone: phone || undefined,
+                cursor: append ? clinic.servicesNextCursor : undefined,
+              })
+            )
+          )) as any;
+        const rawRows = vendorServicesRowsFromResponse(res);
+        const vetRows = mapVendorServicesForVetHub(rawRows);
+        const rows = filterServicesForVetHub<ClinicServiceRow>(
+          vetRows.map((s, i) => mapApiServiceToRow(s, clinicId, i, clinic.warmpawzAppointments === true))
+        );
+        const nextCursor = vendorServicesNextCursor(res);
+        setClinics((prev) =>
+          prev.map((c) => {
+            if (c.id !== clinicId) return c;
+            const seen = new Set(
+              append ? c.services.map((s) => s.stableKey) : []
+            );
+            const merged = append ? [...c.services] : [];
+            for (const row of rows) {
+              if (seen.has(row.stableKey)) continue;
+              seen.add(row.stableKey);
+              merged.push(row);
+            }
+            return {
+              ...c,
+              services: merged,
+              needsServiceFetch: false,
+              servicesHydrated: true,
+              servicesNextCursor: nextCursor,
+              servicesLoadingMore: false,
+            };
+          })
+        );
+      } catch (e) {
+        console.error('[CLINIC-LIST] vendor services fetch failed', e);
+        setClinics((prev) =>
+          prev.map((c) =>
+            c.id === clinicId
+              ? { ...c, servicesHydrated: true, servicesLoadingMore: false }
+              : c
+          )
+        );
+      } finally {
+        setFetchingServicesFor(null);
+      }
+    },
+    [phone, clinics]
+  );
+
+  const loadMoreClinicServices = useCallback(
+    (clinicId: string) => {
+      void fetchVendorServicesForClinic(clinicId, true);
+    },
+    [fetchVendorServicesForClinic]
+  );
 
   useEffect(() => {
     if (!launchGate.ready || launchGate.blocked) {
@@ -457,6 +581,69 @@ export function ClinicListView({
     if (!hasMore || loadingMore || loading) return;
     void loadClinics(true);
   }, [hasMore, loadingMore, loading]);
+
+  const toggleClinic = (clinicId: string) => {
+    setSelectedClinicId((prev) => (prev === clinicId ? null : clinicId));
+  };
+
+  useEffect(() => {
+    if (!selectedClinicId) return;
+    const c = clinics.find((x) => x.id === selectedClinicId);
+    if (!c || c.servicesHydrated) return;
+    if (fetchingServicesFor === selectedClinicId) return;
+    fetchVendorServicesForClinic(selectedClinicId);
+  }, [selectedClinicId, clinics, fetchingServicesFor, fetchVendorServicesForClinic]);
+
+  const handleBookService = (clinic: ClinicProvider, row: ClinicServiceRow) => {
+    const vendorId = clinic.id;
+    const serviceIdForBooking = row.catalogServiceId || String(row.vendorServiceId);
+    const serviceObj = normalizeVendorServiceRowForPackage({
+      id: String(row.vendorServiceId),
+      serviceId: row.catalogServiceId,
+      vendorServiceId: row.vendorServiceId,
+      name: row.name,
+      price: row.price,
+      duration: row.duration,
+      isPackage: row.isPackage,
+      packageDetails: row.packageDetails,
+      metadata: row.metadata,
+    });
+    if (isVendorServicePackageRow(serviceObj)) {
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(vendorId),
+        vendorName: clinic.name,
+        serviceRow: serviceObj,
+        serviceTypeCategory: 'vet',
+        serviceStyle: 'at_center',
+      });
+      if (nav) {
+        onNavigate('purchase-package', nav);
+        return;
+      }
+      toast.error('Could not start package booking. Please try again or pick another service.');
+      return;
+    }
+    onNavigate('appointment', {
+      clinicId: vendorId,
+      vendorId,
+      vendorName: clinic.name,
+      service: serviceObj,
+      serviceId: serviceIdForBooking,
+      serviceName: row.name,
+      price: row.price,
+      duration: row.duration,
+      serviceStyle: 'at_center',
+      serviceType: 'at_center',
+      clinic: {
+        id: vendorId,
+        name: clinic.name,
+        address: clinic.address,
+        rating: clinic.rating,
+        review_count: clinic.review_count,
+        timing: clinic.timing,
+      },
+    });
+  };
 
   const openClinicDetails = (e: MouseEvent, clinicId: string) => {
     e.stopPropagation();

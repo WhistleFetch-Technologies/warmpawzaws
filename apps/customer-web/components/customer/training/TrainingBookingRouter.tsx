@@ -909,9 +909,30 @@ export function TrainingBookingRouter({
         }));
       }
     }
-    
-    };
-    const currentIdx = currentStepMap[step];
+
+    const skipServiceStep = !!(hasServiceContext && selectedVendorService);
+    const stepLabels = trainingIncludesAddressStep
+      ? skipServiceStep
+        ? ['Details', 'Address', 'Payment']
+        : ['Service', 'Details', 'Address', 'Payment']
+      : skipServiceStep
+        ? ['Details', 'Payment']
+        : ['Service', 'Details', 'Payment'];
+
+    const currentIdx =
+      step === 'service'
+        ? 0
+        : step === 'datetime' || step === 'pet'
+          ? skipServiceStep
+            ? 0
+            : 1
+          : step === 'address'
+            ? skipServiceStep
+              ? 1
+              : 2
+            : step === 'summary'
+              ? Math.max(0, stepLabels.length - 2)
+              : 0;
 
     return stepLabels.map((label, idx) => ({
       label,

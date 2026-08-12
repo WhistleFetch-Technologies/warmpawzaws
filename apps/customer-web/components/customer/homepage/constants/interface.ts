@@ -22,6 +22,8 @@ export interface UserData {
 
 export interface CustomerHomeCompleteProps {
     phone: string;
+    /** First-class guest session from GUEST_SESSION / page.tsx */
+    isGuest?: boolean;
     refreshKey?: number;
     onNavigate?: (screen: string, data?: any) => void;
     onProfileClick?: () => void;

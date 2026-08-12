@@ -39,6 +39,12 @@ import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-al
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
 import {
+  buildGuestAuthUrlForBooking,
+  clearGuestBookingIntent,
+  consumeGuestBookingIntentForRestore,
+} from '@/lib/guest-booking-intent';
+import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import {
   WARMPAWZ_HOME_RESUME_SCREENS,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
   consumeOpenAccountMenuAfterNav,
@@ -468,12 +474,15 @@ function PackageTrackingShellRedirect() {
 export function CustomerHomeWrapper({
   phone,
   onNavigate,
+  isGuest = false,
   initialScreen,
   petBoardingVendorId,
   petBoardingServiceSlug,
   initialBannerNavigation,
 }: {
   phone: string;
+  /** Explicit guest browse session — do not infer only from !phone */
+  isGuest?: boolean;
   onNavigate: (screen: string) => void;
   initialScreen?: ScreenType;
   petBoardingVendorId?: string;
@@ -903,6 +912,40 @@ export function CustomerHomeWrapper({
     navigateToScreen('boarding-booking');
   }, [navigateToScreen]);
 
+  /** After guest login: restore booking draft (vendor/date/slot) then reopen shell screen. */
+  useEffect(() => {
+    if (pathname !== '/' || typeof window === 'undefined' || isGuest) return;
+    const intent = consumeGuestBookingIntentForRestore();
+    if (!intent) return;
+    emitGuestAuthAnalytics('booking_resumed');
+    if (intent.vendorId || intent.date || intent.time || intent.serviceId) {
+      setVetServiceData((prev: any) => ({
+        ...(prev && typeof prev === 'object' ? prev : {}),
+        vendorId: intent.vendorId || prev?.vendorId,
+        serviceId: intent.serviceId || prev?.serviceId,
+        serviceStyle: intent.serviceStyle || prev?.serviceStyle,
+        serviceType: intent.category || prev?.serviceType,
+        bookingDate: intent.date || prev?.bookingDate,
+        bookingTime: intent.time || prev?.bookingTime,
+        appointmentsMode:
+          intent.wapptMode === true || prev?.appointmentsMode === true,
+        price: intent.price ?? prev?.price,
+        openAddPetAfterRestore: intent.openAddPet === true || intent.resumeScreen === 'add-pet',
+      }));
+    }
+    // Booking screens are not in WARMPAWZ_HOME_RESUME_SCREENS — navigate explicitly.
+    const resume = intent.resumeScreen;
+    if (resume === 'grooming-booking' || resume === 'vet-booking' || resume === 'training-booking' || resume === 'add-pet') {
+      try {
+        sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+      } catch {
+        /* ignore */
+      }
+      shellNav.navigateToScreen(resume as ScreenType);
+    }
+    clearGuestBookingIntent();
+  }, [pathname, isGuest, shellNav]);
+
   /** After `/shop` or `/promotions` back: restore embedded screen (same URL `/` as home). */
   useEffect(() => {
     if (pathname !== '/' || typeof window === 'undefined') return;
@@ -1301,6 +1344,15 @@ export function CustomerHomeWrapper({
   };
 
   const handleAddPet = () => {
+    if (isGuest) {
+      emitGuestAuthAnalytics('pet_add_attempted');
+      emitGuestAuthAnalytics('pet_add_auth_required');
+      window.location.href = buildGuestAuthUrlForBooking({
+        returnPath: '/?open=add-pet',
+        resumeScreen: 'add-pet',
+      });
+      return;
+    }
     navigateToScreen('add-pet');
   };
   const handleAddPetSuccess = () => {
@@ -2704,6 +2756,7 @@ export function CustomerHomeWrapper({
     userSidebarOpen ? (
       <UserAccountSidebar
         phone={phone}
+        isGuest={isGuest}
         onClose={() => setUserSidebarOpen(false)}
         onNavigateHome={goToHome}
         onRegisterOverlayBack={(handler) => {
@@ -2820,6 +2873,7 @@ export function CustomerHomeWrapper({
       >
         <CustomerHome 
           phone={phone}
+          isGuest={isGuest}
           refreshKey={refreshKey}
           onNavigate={(screen, data) => {
             // ✅ Handle order-tracking: meal vs ecommerce/pharmacy (Phase 5)
@@ -3038,7 +3092,17 @@ export function CustomerHomeWrapper({
         }}
       />
     );
-  if (currentScreen === 'add-pet')
+  if (currentScreen === 'add-pet') {
+    if (isGuest) {
+      if (typeof window !== 'undefined') {
+        emitGuestAuthAnalytics('pet_add_auth_required');
+        window.location.href = buildGuestAuthUrlForBooking({
+          returnPath: '/?open=add-pet',
+          resumeScreen: 'add-pet',
+        });
+      }
+      return null;
+    }
     return (
       <EnhancedAddPetModal
         key="screen-add-pet"
@@ -3052,6 +3116,7 @@ export function CustomerHomeWrapper({
         }}
       />
     );
+  }
   
   // Core Services
   // ✅ FIX: Walker with Frame UI (ServiceDashboardHeader only – skipHeader to avoid double header)
@@ -5559,6 +5624,8 @@ export function CustomerHomeWrapper({
     vendorName={vetServiceData?.vendorName}
     price={vetServiceData?.price}
     duration={vetServiceData?.duration}
+    bookingDate={vetServiceData?.bookingDate}
+    bookingTime={vetServiceData?.bookingTime}
     appointmentsMode={vetServiceData?.appointmentsMode === true}
     onBack={() => backFromBannerOr(handleBack, vetServiceData)} 
     onInternalBackReady={(fn) => {

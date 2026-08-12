@@ -53,6 +53,7 @@ import {
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
+import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
 
 
 interface VetBookingRouterProps {
@@ -455,6 +456,33 @@ export function VetBookingRouter({
     duration,
     serviceId,
     useWapptUnifiedUi,
+  ]);
+
+  useEffect(() => {
+    const vid = vendorId || doctorId;
+    if (!vid && !selectedDate && !selectedTime) return;
+    updateGuestBookingProgress({
+      vendorId: vid || undefined,
+      serviceId: serviceId || undefined,
+      serviceStyle: selectedServiceType || undefined,
+      category: 'vet',
+      date: selectedDate || undefined,
+      time: selectedTime || undefined,
+      wapptMode: appointmentsMode === true,
+      price: typeof price === 'number' ? price : undefined,
+      resumeScreen: 'vet-booking',
+      returnPath: '/',
+      openAddPet: true,
+    });
+  }, [
+    vendorId,
+    doctorId,
+    serviceId,
+    selectedServiceType,
+    selectedDate,
+    selectedTime,
+    appointmentsMode,
+    price,
   ]);
 
   const loadTimeSlots = async (date: string) => {
@@ -1617,6 +1645,18 @@ export function VetBookingRouter({
                   }
                 }}
                 onAddPet={() => setShowAddPetModal(true)}
+                guestAuthContext={{
+                  vendorId: vendorId || doctorId || undefined,
+                  serviceId: serviceId || undefined,
+                  serviceStyle: selectedServiceType || undefined,
+                  category: 'vet',
+                  date: selectedDate || undefined,
+                  time: selectedTime || undefined,
+                  wapptMode: !!appointmentsMode,
+                  price: typeof price === 'number' ? price : undefined,
+                  resumeScreen: 'vet-booking',
+                  returnPath: '/',
+                }}
               />
             </div>
 

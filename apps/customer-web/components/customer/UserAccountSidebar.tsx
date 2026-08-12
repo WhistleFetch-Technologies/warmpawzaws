@@ -520,6 +520,8 @@ function formatServiceTypeLabel(serviceType: string | undefined): string {
 
 interface UserAccountSidebarProps {
   phone: string;
+  /** Guest browse session — show Login / Sign Up / Help only */
+  isGuest?: boolean;
   onClose: () => void;
   /** X button: exit to app home (full shell reset). Falls back to closing the sheet if omitted. */
   onNavigateHome?: () => void;
@@ -536,6 +538,7 @@ interface UserAccountSidebarProps {
 
 export function UserAccountSidebar({
   phone,
+  isGuest = false,
   onClose,
   onNavigateHome,
   onViewBooking,
@@ -694,8 +697,10 @@ export function UserAccountSidebar({
 
   useEffect(() => {
     setTimeout(() => setIsOpen(true), 50);
-    loadProfile();
-    loadBookings();
+    if (!isGuest && phone) {
+      loadProfile();
+      loadBookings();
+    }
     try {
       const restored = consumeAccountSidebarActiveView();
       if (restored === 'bookings' || restored === 'addresses' || restored === 'help') {
@@ -704,7 +709,7 @@ export function UserAccountSidebar({
     } catch {
       /* ignore */
     }
-  }, [phone]);
+  }, [phone, isGuest]);
 
   // Reset scroll position when view changes
   useEffect(() => {
@@ -1420,6 +1425,102 @@ export function UserAccountSidebar({
 
   const displayName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ').trim() || 'Account';
   const memberSinceLabel = formatMemberSinceLabel(profile?.created_at);
+
+  // Guest account shell — no Logout / payments / customer-owned menus
+  if (isGuest) {
+    return (
+      <div
+        className={`fixed inset-x-0 top-0 bottom-0 z-50 overflow-hidden bg-[#F5F5F5] transition-transform duration-300 ${
+          isOpen ? 'translate-y-0' : 'translate-y-full'
+        }`}
+      >
+        <div className="mx-auto flex h-full w-full max-w-customer flex-col overflow-hidden">
+          <ProfileAccountHero
+            displayName="Guest User"
+            phone=""
+            photoUrl=""
+            loading={false}
+            onCloseToHome={handleHeaderCloseToHome}
+          />
+          <div className="relative z-20 min-h-0 flex-1 overflow-y-auto overscroll-contain -mt-4 bg-[#F5F5F5] pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <ProfileMenuFloatingSheet>
+              <div className="space-y-2.5 px-1">
+                <p className="px-1 pb-1 text-sm text-gray-600">
+                  You&apos;re browsing as a guest. Sign in to manage pets, bookings, and account
+                  settings.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = '/auth?login=1&redirect=' + encodeURIComponent('/');
+                  }}
+                  className="flex h-[72px] w-full items-center justify-between gap-3 rounded-[20px] border border-[#F1F1F1] bg-white px-3.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-orange-100">
+                      <User className="h-6 w-6 text-[#FF8C42]" strokeWidth={2} />
+                    </div>
+                    <span className="text-[15px] font-semibold text-gray-900">Login</span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = '/auth?login=1&redirect=' + encodeURIComponent('/');
+                  }}
+                  className="flex h-[72px] w-full items-center justify-between gap-3 rounded-[20px] border border-[#F1F1F1] bg-white px-3.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-blue-100">
+                      <Edit2 className="h-6 w-6 text-blue-600" strokeWidth={2} />
+                    </div>
+                    <span className="text-[15px] font-semibold text-gray-900">Sign Up</span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onNavigate) {
+                      onNavigate('support_help');
+                      handleClose();
+                    } else {
+                      setActiveView('help');
+                    }
+                  }}
+                  className="flex h-[72px] w-full items-center justify-between gap-3 rounded-[20px] border border-[#F1F1F1] bg-white px-3.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-gray-100">
+                      <HelpCircle className="h-6 w-6 text-gray-600" strokeWidth={2} />
+                    </div>
+                    <span className="text-[15px] font-semibold text-gray-900">Help & Support</span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                </button>
+              </div>
+            </ProfileMenuFloatingSheet>
+            {activeView === 'help' ? (
+              <div className="p-5">
+                <button
+                  type="button"
+                  className="mb-4 text-sm font-medium text-[#FF8C42]"
+                  onClick={() => setActiveView('menu')}
+                >
+                  ← Back
+                </button>
+                <h3 className="text-lg font-bold text-gray-800">Help & Support</h3>
+                <p className="mt-2 text-sm text-gray-600">
+                  Need help? Sign in for account-specific support, or contact us from the Help centre after login.
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 

@@ -424,6 +424,16 @@ export class ApiClient {
     const base = baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     let path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
 
+    // Guest browse: route discovery/shop/WPay reads through /public/* (no JWT required).
+    if (typeof window !== 'undefined') {
+      try {
+        const { resolveGuestPublicApiPath } = require('./guest-public-api-path');
+        path = resolveGuestPublicApiPath(path);
+      } catch {
+        // ignore — never block requests if helper fails to load
+      }
+    }
+
     if (typeof window !== 'undefined') {
       ensureCustomerIdStorageReconciledOnce();
       const uuidSegment = customerUuidSegmentInPath(path);

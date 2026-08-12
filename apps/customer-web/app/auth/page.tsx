@@ -37,6 +37,7 @@ import {
 } from '@/lib/forgot-password-cooldown';
 import { resolveSafeAuthReturnPath } from '@/lib/auth-redirect';
 import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
+import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -418,6 +419,8 @@ function AuthPageContent() {
         /* optional */
       }
 
+      emitGuestAuthAnalytics('login_completed');
+      emitGuestAuthAnalytics('identity_authenticated');
       const redirectPath =
         redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
       router.push(redirectPath);
@@ -818,6 +821,8 @@ function AuthPageContent() {
         const redirectPath =
           redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
 
+        emitGuestAuthAnalytics('login_completed');
+        emitGuestAuthAnalytics('identity_authenticated');
         if (!hasPassword) {
           setNeedsPasswordSetupAfterOtp();
           const profileCompleted =

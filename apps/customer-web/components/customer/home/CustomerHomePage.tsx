@@ -64,6 +64,7 @@ export interface CustomerHomePageHeaderProps {
   userName: string;
   userProfilePhoto?: string;
   phone: string;
+  isGuest?: boolean;
   onProfileClick?: () => void;
   onNavigate: HomeNavigateFn;
   onOpenNotifications: () => void;
@@ -108,6 +109,7 @@ function CustomerHomePageHeaderComponent({
   userName,
   userProfilePhoto,
   phone,
+  isGuest = false,
   onProfileClick,
   onNavigate,
   onOpenNotifications,
@@ -126,6 +128,7 @@ function CustomerHomePageHeaderComponent({
         userName={userName}
         userProfilePhoto={userProfilePhoto}
         phone={phone}
+        isGuest={isGuest}
         onProfileClick={onProfileClick}
         onNavigate={onNavigate}
         onOpenNotifications={onOpenNotifications}
@@ -139,6 +142,7 @@ function CustomerHomePageHeaderComponent({
         onPetClick={onPetClick}
         onAddPet={onAddPet}
         petsLoading={petsLoading}
+        isGuest={isGuest}
       />
     </HomeHeaderShell>
   );

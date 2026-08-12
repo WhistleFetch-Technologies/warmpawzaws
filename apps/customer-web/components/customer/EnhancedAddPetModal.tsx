@@ -38,6 +38,8 @@ import {
   extractPetImageKey,
   keysToAbandon,
 } from '@/lib/pet-photo-upload';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { buildGuestAuthUrlForBooking } from '@/lib/guest-booking-intent';
 
 // ============================================================================
 // TYPES
@@ -288,6 +290,22 @@ export function EnhancedAddPetModal({
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const prevPetTypeRef = useRef(petData.type);
+
+  /** Guests must authenticate before creating a pet — never call POST /pets unauthenticated. */
+  useEffect(() => {
+    if (!isOpen || editPet) return;
+    if (hasAuthenticatedCustomerSession()) return;
+    emitGuestAuthAnalytics('pet_add_attempted');
+    emitGuestAuthAnalytics('pet_add_auth_required');
+    const returnPath =
+      typeof window !== 'undefined'
+        ? `${window.location.pathname}${window.location.search || ''}` || '/'
+        : '/';
+    window.location.href = buildGuestAuthUrlForBooking({
+      returnPath,
+      resumeScreen: 'add-pet',
+    });
+  }, [isOpen, editPet]);
 
   /** Modal stays mounted while hidden — reset wizard when opening/closing (or when edit target changes). */
   useEffect(() => {

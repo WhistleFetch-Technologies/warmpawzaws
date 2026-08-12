@@ -742,6 +742,7 @@ export function NutritionistBookingRouter({
       datetime: skipServiceStep ? 0 : 1,
       pet: skipServiceStep ? 0 : 1,
       address: skipServiceStep ? 1 : 2,
+      summary: skipServiceStep ? (nutritionIncludesAddressStep ? 2 : 1) : nutritionIncludesAddressStep ? 3 : 2,
       payment: skipServiceStep ? (nutritionIncludesAddressStep ? 2 : 1) : nutritionIncludesAddressStep ? 3 : 2,
       confirmation: skipServiceStep ? (nutritionIncludesAddressStep ? 3 : 2) : nutritionIncludesAddressStep ? 4 : 3,
     };
@@ -1188,7 +1189,7 @@ export function NutritionistBookingRouter({
                   : 'Continue'}
             </Button>
           </div>
-        )}
+        ) : null}
 
         {/* Address Selection (not for tele) */}
         {step === 'address' && !appointmentsMode && selectedServiceType !== 'tele' && (
