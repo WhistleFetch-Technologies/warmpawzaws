@@ -380,6 +380,7 @@ export function mapWalkerApiRowToOption(
   const pd = (normalized.packageDetails || normalized.package_details || metaObj?.packageDetails) as
     | {
         totalSessions?: number;
+        total_sessions?: number;
         sessionDuration?: number;
         validityDays?: number;
         sessionsPerDay?: number;
@@ -387,6 +388,8 @@ export function mapWalkerApiRowToOption(
         sessionIntervalDays?: number;
         session_interval_days?: number;
         frequencyDays?: number;
+        price?: number;
+        packagePrice?: number;
       }
     | undefined;
   const name =
@@ -400,7 +403,7 @@ export function mapWalkerApiRowToOption(
       normalized.base_price ??
       normalized.package_price ??
       pd?.price ??
-      (pd as { packagePrice?: number } | undefined)?.packagePrice ??
+      pd?.packagePrice ??
       0
   );
   const duration = Number(
@@ -417,7 +420,7 @@ export function mapWalkerApiRowToOption(
       : bookingServiceStyle;
   const totalSessionsRaw =
     pd?.totalSessions ??
-    (pd as { total_sessions?: number } | undefined)?.total_sessions ??
+    pd?.total_sessions ??
     metaObj?.totalSessions ??
     metaObj?.total_sessions;
   const totalSessionsNum = Number(totalSessionsRaw);
