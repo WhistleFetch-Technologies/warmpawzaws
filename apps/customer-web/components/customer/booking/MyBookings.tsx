@@ -37,6 +37,12 @@ import {
   resolveBookingListAllInAmount,
 } from '@/lib/pricing/booking-financial';
 import {
+  buildRefundStripCopy,
+  cancelledByLabel,
+  humanizeCancellationReason,
+  type BookingRefundSummary,
+} from '@/lib/booking-cancel-display';
+import {
   isBookingAwaitingPayment,
   isPaymentHoldActive,
   isPaymentHoldExpired,
@@ -137,6 +143,10 @@ interface Booking {
   paymentSources?: PaymentSource[];
   /** When the booking was marked completed (for tele: aligns with video call end when backend sends it). */
   completedAt?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
+  cancelledBy?: string | null;
+  refundSummary?: BookingRefundSummary | null;
   /** True when this row is a visit booked against a package slot. */
   isPackageSession?: boolean;
   /** 1-based slot index within the package. */
@@ -499,6 +509,11 @@ export function MyBookings({
             b.video_call_ended_at ||
             b.videoCallEndedAt ||
             '',
+          cancelledAt: b.cancelled_at || b.cancelledAt || undefined,
+          cancellationReason:
+            b.cancellation_reason || b.cancellationReason || undefined,
+          cancelledBy: b.cancelled_by ?? b.cancelledBy ?? null,
+          refundSummary: b.refundSummary ?? b.refund_summary ?? null,
         };
       });
 
@@ -1212,6 +1227,35 @@ export function MyBookings({
                       </div>
                     </div>
                   )}
+
+                {booking.status === 'cancelled' && (
+                  <div className="mt-3 space-y-2">
+                    <div className="rounded-xl bg-rose-50 border border-rose-100 px-3 py-2.5">
+                      <p className="text-sm font-semibold text-rose-900">
+                        {cancelledByLabel(booking.cancelledBy)}
+                      </p>
+                      {humanizeCancellationReason(booking.cancellationReason) ? (
+                        <p className="text-xs text-rose-800/80 mt-0.5 line-clamp-2">
+                          {humanizeCancellationReason(booking.cancellationReason)}
+                        </p>
+                      ) : null}
+                    </div>
+                    {(() => {
+                      const refundCopy = buildRefundStripCopy(booking.refundSummary);
+                      if (!refundCopy) return null;
+                      return (
+                        <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5">
+                          <p className="text-sm font-semibold text-emerald-900">
+                            {refundCopy.title}
+                          </p>
+                          <p className="text-xs text-emerald-800/80 mt-0.5">
+                            {refundCopy.subtitle}
+                          </p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 {booking.isPackage &&
                   (booking.packageDetails || booking.packagePurchaseId) && (
