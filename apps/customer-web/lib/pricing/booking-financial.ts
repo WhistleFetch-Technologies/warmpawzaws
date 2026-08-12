@@ -301,20 +301,29 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
     packagingFee: feeFields.packagingFee,
   };
 
-  const resolvedFinal =
-    finalPaid > 0
-      ? finalPaid
-      : Math.max(
-          0,
-          roundMoney(
-            subtotalAfterDiscounts +
-              feeFields.totalTax +
-              feeFields.platformFee +
-              feeFields.convenienceFee +
-              feeFields.deliveryFee +
-              feeFields.packagingFee
-          )
-        );
+  const computedAllIn = Math.max(
+    0,
+    roundMoney(
+      subtotalAfterDiscounts +
+        feeFields.totalTax +
+        feeFields.platformFee +
+        feeFields.convenienceFee +
+        feeFields.deliveryFee +
+        feeFields.packagingFee
+    )
+  );
+
+  // Prefer an explicit paid/payable amount when present. If that amount equals the
+  // post-discount service subtotal while GST/fees are itemized, treat it as
+  // tax-exclusive and use the reconstructed all-in total (e.g. 1699 + 18% GST → 2004.82).
+  let resolvedFinal = finalPaid > 0 ? finalPaid : computedAllIn;
+  if (
+    finalPaid > 0.009 &&
+    feeFields.totalTax > 0.009 &&
+    Math.abs(finalPaid - subtotalAfterDiscounts) <= 0.05
+  ) {
+    resolvedFinal = computedAllIn;
+  }
 
   const promotionNames: string[] = [];
 
