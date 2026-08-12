@@ -17,6 +17,7 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import type { ClinicServiceRow } from '@/lib/clinic-service-row-mapper';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 
 export interface SearchVendorCardData {
   id: string;
@@ -177,10 +178,7 @@ export function SearchVendorExpandableCard({
 
       {expanded && (
         <div className="bg-gray-50 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h4 className="text-sm font-semibold text-gray-700">
-              Available Services ({services.length})
-            </h4>
+          <div className="flex items-center justify-end gap-2 flex-wrap">
             <button
               type="button"
               onClick={onDetails}
@@ -198,8 +196,15 @@ export function SearchVendorExpandableCard({
           ) : services.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-4">No services listed for this provider.</p>
           ) : (
-            <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-3">
-              {services.map((service) => {
+            <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-4">
+              {discoveryServiceSections(
+                services as unknown as Record<string, unknown>[]
+              ).map((sec) => (
+                <div key={sec.title} className="space-y-3">
+                  <h5 className="text-sm font-semibold text-gray-700">
+                    {sec.title} ({sec.list.length})
+                  </h5>
+                  {(sec.list as unknown as ClinicServiceRow[]).map((service) => {
                 const descTrim = service.description?.trim() ?? '';
                 const isPackage = Boolean(service.isPackage);
                 return (
@@ -264,7 +269,9 @@ export function SearchVendorExpandableCard({
                     </div>
                   </div>
                 );
-              })}
+                  })}
+                </div>
+              ))}
             </div>
           )}
         </div>

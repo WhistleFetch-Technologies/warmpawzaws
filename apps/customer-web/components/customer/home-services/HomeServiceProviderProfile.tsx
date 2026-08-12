@@ -44,6 +44,7 @@ import {
   mapHomeServiceProfileServices,
   type HomeServiceProfileService,
 } from '@/lib/customer-vendor-services-merge';
+import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 import { homeServiceProfileVendorServicesQuery, filterHomeServiceProfileVendorRows } from '@/lib/home-service-profile-vendor-services';
 import { useProviderServicesLazyLoad } from '@/hooks/useProviderServicesLazyLoad';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
@@ -947,7 +948,14 @@ export function HomeServiceProviderProfile({
               </div>
             ) : (
               <>
-                {profileServices.map((service) => (
+                {discoveryServiceSections(
+                  profileServices as unknown as Record<string, unknown>[]
+                ).map((sec) => (
+                  <div key={sec.title} className="space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-700">
+                      {sec.title} ({sec.list.length})
+                    </h3>
+                    {(sec.list as unknown as HomeServiceProfileService[]).map((service) => (
                   <button
                     key={service.id}
                     type="button"
@@ -961,13 +969,20 @@ export function HomeServiceProviderProfile({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <h4
-                          className={`font-medium ${
-                            selectedServiceId === service.id ? 'text-orange-900' : 'text-gray-800'
-                          }`}
-                        >
-                          {service.name}
-                        </h4>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4
+                            className={`font-medium ${
+                              selectedServiceId === service.id ? 'text-orange-900' : 'text-gray-800'
+                            }`}
+                          >
+                            {service.name}
+                          </h4>
+                          {service.isPackage ? (
+                            <span className="rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                              Package
+                            </span>
+                          ) : null}
+                        </div>
                         {service.description ? (
                           <div onClick={(e) => e.stopPropagation()}>
                             <ServiceDescriptionInline
@@ -996,6 +1011,8 @@ export function HomeServiceProviderProfile({
                       </div>
                     </div>
                   </button>
+                    ))}
+                  </div>
                 ))}
                 <DiscoveryVendorFeedSentinel
                   hasMore={hasMoreServices}
