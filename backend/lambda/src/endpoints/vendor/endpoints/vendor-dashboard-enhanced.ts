@@ -896,7 +896,19 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendor = vendors[0] || {};
 
       // Transform transactions (bookings + hyperlocal delivery settlements)
-      const bookingTransactions = earnings.map((e: any) => ({
+      const bookingTransactions = earnings.map((e: any) => {
+        let meta: Record<string, unknown> = {};
+        const rawMeta = e.metadata;
+        if (rawMeta && typeof rawMeta === 'object') meta = rawMeta as Record<string, unknown>;
+        else if (typeof rawMeta === 'string') {
+          try {
+            meta = JSON.parse(rawMeta) as Record<string, unknown>;
+          } catch {
+            meta = {};
+          }
+        }
+        const packageBreakdown = (meta.packageBreakdown ?? meta.package_breakdown) || null;
+        return {
         id: e.id,
         bookingId: e.booking_id,
         bookingDate: e.booking_date,
@@ -910,7 +922,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         realizedAt: e.realized_at,
         paidOutAt: e.paid_out_at,
         settlementId: e.settlement_id,
-      }));
+        packageBreakdown,
+      };
+      });
 
       const settlementTransactions = settlementRows.map((ds: any) => ({
         id: ds.id,

@@ -1,12 +1,60 @@
 import { describe, expect, test } from '@jest/globals';
 import {
   allocatePackageSessionGross,
+  allocatePackageSessionVendorNet,
   allocatedEarningsFromStored,
+  scaleGrossFromVendorNet,
   sqlPackageAllocatedEarningsAgg,
+  vendorPoolAfterCommission,
 } from '../package-session-earnings-allocation';
 import { isCanonicalPackageParentBooking, isPackageSessionChildBooking } from '../vendor-commission-rate';
 
 describe('package-session-earnings-allocation', () => {
+  test('vendor net pool 11440.80 divided by 48 sessions is 238.35', () => {
+    const pool = vendorPoolAfterCommission(12712, 10);
+    expect(pool).toBe(11440.8);
+    const slices: number[] = [];
+    let priorSum = 0;
+    for (let i = 0; i < 48; i++) {
+      const net = allocatePackageSessionVendorNet({
+        vendorPool: pool,
+        sessionCount: 48,
+        priorCount: i,
+        priorSum,
+      });
+      slices.push(net);
+      priorSum = Math.round((priorSum + net) * 100) / 100;
+    }
+    expect(slices[0]).toBe(238.35);
+    expect(slices[1]).toBe(238.35);
+    expect(slices[2]).toBe(238.35);
+    expect(slices.slice(0, 3).reduce((a, b) => Math.round((a + b) * 100) / 100, 0)).toBe(715.05);
+    expect(slices.every((s) => s === 238.35)).toBe(true);
+    expect(priorSum).toBe(11440.8);
+    const first = scaleGrossFromVendorNet({ vendorNet: 238.35, commissionRate: 10 });
+    expect(first.vendorNet).toBe(238.35);
+    expect(first.allocatedGross).toBeGreaterThan(first.vendorNet);
+  });
+
+  test('uncompleted sessions do not receive a slice', () => {
+    const pool = vendorPoolAfterCommission(12712, 10);
+    expect(
+      allocatePackageSessionVendorNet({
+        vendorPool: pool,
+        sessionCount: 48,
+        priorCount: 3,
+        priorSum: 715.05,
+      })
+    ).toBe(238.35);
+    expect(
+      allocatePackageSessionVendorNet({
+        vendorPool: pool,
+        sessionCount: 48,
+        priorCount: 48,
+        priorSum: 11440.8,
+      })
+    ).toBe(0);
+  });
   test('does not give each of 3 sessions the full package price', () => {
     const parent = 12712;
     const n = 3;

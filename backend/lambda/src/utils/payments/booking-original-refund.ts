@@ -7,7 +7,10 @@ import { query, withTransaction } from '../../database/rds-connection';
 import { getRazorpayClient } from './razorpay-client';
 import { resolveBookingPaymentSources } from './booking-payment-sources';
 import { creditCustomerWalletForBookingRefund } from '../credit-customer-wallet';
-import { resolvePaymentCapturableGross } from '../../lib/services/refundable-base';
+import {
+  resolvePaymentCapturableGross,
+  resolveRelatedPaymentBookingIds,
+} from '../../lib/services/refundable-base';
 
 export type RefundInitiator = 'customer' | 'vendor' | 'admin' | 'system' | 'support';
 
@@ -45,14 +48,15 @@ function round2(n: number): number {
 export async function bookingHasGatewayPayment(bookingId: string): Promise<boolean> {
   if (!bookingId) return false;
   try {
+    const lookupIds = await resolveRelatedPaymentBookingIds(bookingId);
     const payRes = await query(
       `SELECT id FROM payments
-       WHERE booking_id = $1::uuid
+       WHERE booking_id = ANY($1::uuid[])
          AND payment_status IN ('completed', 'partially_refunded')
          AND razorpay_payment_id IS NOT NULL
          AND COALESCE(payment_method, '') <> 'wallet'
        LIMIT 1`,
-      [bookingId]
+      [lookupIds]
     );
     if ((payRes as any).rows?.length > 0) return true;
 
@@ -72,31 +76,32 @@ async function loadGatewayPayment(bookingId: string): Promise<{
   customer_id: string;
 } | null> {
   let row: any;
+  const lookupIds = await resolveRelatedPaymentBookingIds(bookingId);
   try {
     const res = await query(
       `SELECT id, amount::text, total_amount::text, gst_amount::text,
               razorpay_payment_id, payment_status, customer_id::text
        FROM payments
-       WHERE booking_id = $1::uuid
+       WHERE booking_id = ANY($1::uuid[])
          AND payment_status IN ('completed', 'partially_refunded')
          AND razorpay_payment_id IS NOT NULL
          AND COALESCE(payment_method, '') <> 'wallet'
        ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END, created_at DESC
        LIMIT 1`,
-      [bookingId]
+      [lookupIds]
     );
     row = (res as any).rows?.[0];
   } catch {
     const res = await query(
       `SELECT id, amount::text, razorpay_payment_id, payment_status, customer_id::text
        FROM payments
-       WHERE booking_id = $1::uuid
+       WHERE booking_id = ANY($1::uuid[])
          AND payment_status IN ('completed', 'partially_refunded')
          AND razorpay_payment_id IS NOT NULL
          AND COALESCE(payment_method, '') <> 'wallet'
        ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END, created_at DESC
        LIMIT 1`,
-      [bookingId]
+      [lookupIds]
     );
     row = (res as any).rows?.[0];
   }

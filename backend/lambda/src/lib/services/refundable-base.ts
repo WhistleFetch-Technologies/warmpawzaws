@@ -154,13 +154,38 @@ async function loadWalletCapturedInPayments(bookingId: string): Promise<number> 
   }
 }
 
-async function loadCompletedPaymentTotals(bookingId: string): Promise<{
+export async function resolveRelatedPaymentBookingIds(bookingId: string): Promise<string[]> {
+  const ids = new Set<string>([bookingId]);
+  if (!bookingId) return [];
+  try {
+    const r = await query(
+      `SELECT DISTINCT p.id::text AS id
+       FROM bookings b
+       JOIN bookings p
+         ON p.package_purchase_id = b.package_purchase_id
+        AND COALESCE(p.is_package_session, false) = false
+        AND p.parent_booking_id IS NULL
+       WHERE b.id = $1::uuid
+         AND b.package_purchase_id IS NOT NULL`,
+      [bookingId]
+    );
+    for (const row of (r as { rows?: { id?: string }[] }).rows || []) {
+      if (row?.id) ids.add(String(row.id));
+    }
+  } catch {
+    /* package_purchase_id may be absent */
+  }
+  return [...ids];
+}
+
+async function loadCompletedPaymentTotals(bookingIds: string[]): Promise<{
   paidTotal: number;
   platformFeeTotal: number;
   convenienceFeeTotal: number;
   refundableFromPayments: number;
 } | null> {
-  if (!bookingId) return null;
+  const ids = [...new Set(bookingIds.filter(Boolean))];
+  if (ids.length === 0) return null;
   try {
     const paidRes = await query(
       `SELECT
@@ -176,9 +201,9 @@ async function loadCompletedPaymentTotals(bookingId: string): Promise<{
            )
          ), 0)::text AS refundable_from_payments
        FROM payments
-       WHERE booking_id = $1::uuid
+       WHERE booking_id = ANY($1::uuid[])
          AND payment_status = 'completed'`,
-      [bookingId]
+      [ids]
     );
     const row = (paidRes as any).rows?.[0];
     if (!row) return null;
@@ -193,9 +218,9 @@ async function loadCompletedPaymentTotals(bookingId: string): Promise<{
       const paidRes = await query(
         `SELECT COALESCE(SUM(amount::numeric), 0)::text AS paid_total
          FROM payments
-         WHERE booking_id = $1::uuid
+         WHERE booking_id = ANY($1::uuid[])
            AND payment_status = 'completed'`,
-        [bookingId]
+        [ids]
       );
       const row = (paidRes as any).rows?.[0];
       const paidTotal = parseFloat(String(row?.paid_total ?? '0')) || 0;
@@ -230,9 +255,14 @@ export async function getRefundableCustomerPaidBreakdown(
   const disc = parseFloat(String(br?.discount_amount ?? br?.discountAmount ?? 0)) || 0;
   const fromBookingNet = Math.max(0, gross - disc);
 
-  const paymentTotals = await loadCompletedPaymentTotals(bookingId);
-  const walletPaid = await loadWalletDebitTotalForBooking(bookingId);
-  const walletInPayments = await loadWalletCapturedInPayments(bookingId);
+  const lookupIds = await resolveRelatedPaymentBookingIds(bookingId);
+  const paymentTotals = await loadCompletedPaymentTotals(lookupIds);
+  let walletPaid = 0;
+  let walletInPayments = 0;
+  for (const id of lookupIds) {
+    walletPaid += await loadWalletDebitTotalForBooking(id);
+    walletInPayments += await loadWalletCapturedInPayments(id);
+  }
 
   if (paymentTotals && (paymentTotals.paidTotal > 0 || walletPaid > 0)) {
     const { paidTotal, platformFeeTotal, convenienceFeeTotal, refundableFromPayments } = paymentTotals;
@@ -304,16 +334,21 @@ export async function hasCustomerPaidCapture(
   const row = bookingRow as BookingMoneySnapshot & { paymentStatus?: string | null } | null | undefined;
   const ps = row?.payment_status ?? row?.paymentStatus;
   if (bookingPaymentStatusImpliesCapture(ps != null ? String(ps) : '')) return true;
-  const walletPaid = await loadWalletDebitTotalForBooking(bookingId);
+  const lookupIds = await resolveRelatedPaymentBookingIds(bookingId);
+  let walletPaid = 0;
+  for (const id of lookupIds) {
+    walletPaid += await loadWalletDebitTotalForBooking(id);
+    if (walletPaid > 0.009) break;
+  }
   if (walletPaid > 0.009) return true;
   try {
     const payRes = await query(
       `SELECT 1 FROM payments
-       WHERE booking_id = $1::uuid
+       WHERE booking_id = ANY($1::uuid[])
          AND payment_status IN ('completed', 'partially_refunded', 'processing', 'paid')
          AND COALESCE(amount::numeric, 0) > 0.009
        LIMIT 1`,
-      [bookingId]
+      [lookupIds]
     );
     const pr = payRes as { rows?: unknown[] };
     return Array.isArray(pr.rows) && pr.rows.length > 0;

@@ -209,13 +209,14 @@ async function countNonTerminalPackageSessions(
 }
 
 import {
-  allocatePackageSessionGross,
-  scaleCommissionForAllocatedGross,
+  allocatePackageSessionVendorNet,
+  scaleGrossFromVendorNet,
+  vendorPoolAfterCommission,
 } from './package-session-earnings-allocation';
 
 /**
- * One slice of parent `total_amount` per completed child session; last session absorbs paise remainder.
- * Idempotent: one `vendor_earnings` row per child `booking_id`.
+ * One slice of (base − tier commission) per completed child session.
+ * Last session absorbs paise remainder. Idempotent: one `vendor_earnings` row per child `booking_id`.
  */
 async function accrueVendorEarningsForPackageSessionChild(
   db: SqlClient,
@@ -284,7 +285,7 @@ async function accrueVendorEarningsForPackageSessionChild(
     await db.query(`SELECT id FROM package_purchases WHERE id = $1::uuid FOR UPDATE`, [packagePurchaseId]).catch(() => undefined);
 
     const priorRes = await db.query(
-      `SELECT COALESCE(SUM(ve.total_amount), 0)::numeric AS sum_gross,
+      `SELECT COALESCE(SUM(ve.amount), 0)::numeric AS sum_net,
               COUNT(*)::int AS cnt
        FROM vendor_earnings ve
        INNER JOIN bookings b ON b.id = ve.booking_id
@@ -293,45 +294,99 @@ async function accrueVendorEarningsForPackageSessionChild(
          AND (ve.status IS DISTINCT FROM 'cancelled')`,
       [packagePurchaseId]
     );
-    const sumPriorGross = Number(priorRes.rows?.[0]?.sum_gross ?? 0);
+    const sumPriorNet = Number(priorRes.rows?.[0]?.sum_net ?? 0);
     const priorCnt = Number(priorRes.rows?.[0]?.cnt ?? 0);
 
-    const perSessionGross = allocatePackageSessionGross({
-      parentServiceValue: parentTotal,
+    const commissionRate = await getVendorCommissionRate(String(parentRow.vendor_id));
+    const vendorPool = vendorPoolAfterCommission(parentTotal, commissionRate);
+    const perSessionNet = allocatePackageSessionVendorNet({
+      vendorPool,
       sessionCount: n,
       priorCount: priorCnt,
-      priorSum: sumPriorGross,
+      priorSum: sumPriorNet,
     });
 
-    if (!Number.isFinite(perSessionGross) || perSessionGross <= 0) {
+    if (!Number.isFinite(perSessionNet) || perSessionNet <= 0) {
       return;
     }
 
-    const commissionRate = await getVendorCommissionRate(String(parentRow.vendor_id));
-    const { commissionAmount, vendorNet: vendorAmount } = scaleCommissionForAllocatedGross({
-      allocatedGross: perSessionGross,
-      commissionRate,
-    });
+    const { allocatedGross: perSessionGross, commissionAmount, vendorNet: vendorAmount } =
+      scaleGrossFromVendorNet({
+        vendorNet: perSessionNet,
+        commissionRate,
+      });
     if (vendorAmount <= 0) {
       return;
     }
 
-    const insRes = await db.query(
-      `INSERT INTO vendor_earnings (
-         vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at
-       )
-       SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', NOW()
-       WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
-       RETURNING id`,
-      [
-        String(parentRow.vendor_id),
-        childBookingId,
-        vendorAmount,
-        commissionAmount,
-        perSessionGross,
-        commissionRate,
-      ]
-    );
+    const isFirstSession = priorCnt === 0;
+    const breakdown = isFirstSession
+      ? {
+          packageBreakdown: {
+            basePrice: parentTotal,
+            commissionRate,
+            vendorPool,
+            sessionCount: n,
+            sessionNumber: 1,
+            thisSession: vendorAmount,
+            remainingSessions: Math.max(0, n - 1),
+          },
+        }
+      : null;
+
+    const insRes = breakdown
+      ? await db
+          .query(
+            `INSERT INTO vendor_earnings (
+               vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at, metadata
+             )
+             SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', NOW(), $7::jsonb
+             WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
+             RETURNING id`,
+            [
+              String(parentRow.vendor_id),
+              childBookingId,
+              vendorAmount,
+              commissionAmount,
+              perSessionGross,
+              commissionRate,
+              JSON.stringify(breakdown),
+            ]
+          )
+          .catch(() =>
+            db.query(
+              `INSERT INTO vendor_earnings (
+                 vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at
+               )
+               SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', NOW()
+               WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
+               RETURNING id`,
+              [
+                String(parentRow.vendor_id),
+                childBookingId,
+                vendorAmount,
+                commissionAmount,
+                perSessionGross,
+                commissionRate,
+              ]
+            )
+          )
+      : await db.query(
+          `INSERT INTO vendor_earnings (
+             vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at
+           )
+           SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', NOW()
+           WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
+           RETURNING id`,
+          [
+            String(parentRow.vendor_id),
+            childBookingId,
+            vendorAmount,
+            commissionAmount,
+            perSessionGross,
+            commissionRate,
+          ]
+        );
 
     if ((insRes.rowCount ?? 0) > 0 && insRes.rows?.[0]?.id) {
       await db
