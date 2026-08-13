@@ -30,6 +30,11 @@ import {
   inferIsInterStateFromInvoiceRow,
   placeOfSupplyFromInvoiceRow,
 } from '../utils/invoice-row-gst';
+import {
+  financialMetaFromBookingNotes,
+  paymentTaxFromBookingRow,
+  resolveBookingInvoiceAmounts,
+} from '../utils/booking-invoice-amounts';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 const INVOICE_BUCKET = process.env.S3_INVOICES_BUCKET || process.env.S3_UPLOADS_BUCKET || 'warmpawz-invoices';
@@ -231,6 +236,18 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
         }
 
         const booking = bookingResult.rows[0];
+        const payStatus = String(booking.payment_status || '').toLowerCase();
+        const paid =
+          payStatus === 'paid' ||
+          payStatus === 'completed' ||
+          payStatus === 'refunded' ||
+          payStatus === 'partially_refunded';
+        if (!paid) {
+          return c.json(
+            { success: false, error: 'Invoice is available after payment.' },
+            409
+          );
+        }
 
         // Generate invoice number
         const invoiceNumber = await generateInvoiceNumber(booking.vendor_id);
@@ -283,6 +300,27 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
           ? JSON.parse(invoice.invoice_data)
           : invoice.invoice_data
       );
+
+      if (refreshed && Number(refreshed.totalTax) > 0.009) {
+        try {
+          await update(
+            'invoices',
+            { id: invoice.id },
+            {
+              subtotal: refreshed.subtotal,
+              tax_amount: refreshed.totalTax,
+              cgst_amount: refreshed.cgst,
+              sgst_amount: refreshed.sgst,
+              igst_amount: refreshed.igst,
+              total_amount: refreshed.total,
+              invoice_data: { ...refreshed, booking_id: bookingId },
+              updated_at: new Date().toISOString(),
+            }
+          );
+        } catch (persistErr: any) {
+          console.warn('Failed to persist rebuilt booking invoice GST:', persistErr?.message);
+        }
+      }
 
       const htmlContent = generateInvoiceHTML(invoicePayload);
       
@@ -929,13 +967,28 @@ const BOOKING_FOR_INVOICE_SQL = `
          sc.hsn_code_id as catalog_hsn_code_id,
          sc.tax_category_id as catalog_tax_category_id,
          sc.category_id as catalog_category_id,
-         sc.category_name as catalog_category_name
+         sc.category_name as catalog_category_name,
+         pay.amount as payment_amount,
+         pay.total_amount as payment_total_amount,
+         pay.gst_amount as payment_gst_amount,
+         pay.cgst_amount as payment_cgst_amount,
+         pay.sgst_amount as payment_sgst_amount,
+         pay.igst_amount as payment_igst_amount
   FROM bookings b
   LEFT JOIN vendors v ON b.vendor_id = v.id
   LEFT JOIN customers c ON b.customer_id = c.id
   LEFT JOIN vendor_services vs ON vs.id = b.service_id
   LEFT JOIN service_catalog sc ON sc.id = COALESCE(vs.service_id, b.service_id)
   LEFT JOIN services s ON s.id = b.service_id
+  LEFT JOIN LATERAL (
+    SELECT p.amount, p.total_amount, p.gst_amount, p.cgst_amount, p.sgst_amount, p.igst_amount
+    FROM payments p
+    WHERE p.booking_id = b.id
+    ORDER BY
+      CASE WHEN LOWER(TRIM(COALESCE(p.payment_status, ''))) IN ('completed', 'paid', 'success') THEN 0 ELSE 1 END,
+      p.created_at DESC
+    LIMIT 1
+  ) pay ON true
   WHERE b.id = $1
 `;
 
@@ -1056,30 +1109,23 @@ async function buildBookingInvoiceData(params: {
   const { booking, bookingId, invoiceNumber, serviceMeta } = params;
 
   const basePrice = parseFloat(booking.base_price || booking.total_amount || '0');
-  const taxAmount = parseFloat(booking.tax_amount || '0');
   const discountAmount = parseFloat(booking.discount_amount || '0');
-  const totalAmount = parseFloat(booking.total_amount || '0');
-
-  const gstRate =
-    taxAmount > 0 && basePrice > 0
-      ? (taxAmount / basePrice) * 100
-      : serviceMeta.gstRate || 0;
-
   const isInterState = Boolean(
     booking.customer_state &&
       booking.vendor_state &&
       String(booking.customer_state).toLowerCase() !== String(booking.vendor_state).toLowerCase()
   );
-
-  let cgst = 0;
-  let sgst = 0;
-  let igst = 0;
-  if (isInterState) {
-    igst = taxAmount;
-  } else {
-    cgst = taxAmount / 2;
-    sgst = taxAmount / 2;
-  }
+  const amounts = resolveBookingInvoiceAmounts({
+    basePrice,
+    bookingTaxAmount: parseFloat(booking.tax_amount || '0') || 0,
+    bookingTotalAmount: parseFloat(booking.total_amount || '0') || 0,
+    discountAmount,
+    financialMeta: financialMetaFromBookingNotes(booking.notes),
+    payment: paymentTaxFromBookingRow(booking),
+    isInterState,
+    catalogGstRate: serviceMeta.gstRate || 0,
+  });
+  const { taxAmount, cgst, sgst, igst, gstRate, total: totalAmount } = amounts;
 
   const selectedServices = parseSelectedServices(booking.selected_services);
   const items =
@@ -1599,6 +1645,55 @@ export interface GeneratedOrderInvoice {
   tax: number;
   total: number;
   isInterState: boolean;
+}
+
+/** Idempotent: persist a tax invoice as soon as the booking is paid (not after visit complete). */
+export async function ensureBookingInvoiceGenerated(bookingId: string): Promise<{
+  created: boolean;
+  skipped?: 'not_found' | 'unpaid';
+}> {
+  const existing = await query(
+    `SELECT id FROM invoices WHERE invoice_data->>'booking_id' = $1 ORDER BY created_at DESC LIMIT 1`,
+    [bookingId]
+  );
+  if (existing.rows.length > 0) {
+    return { created: false };
+  }
+
+  const bookingResult = await query(BOOKING_FOR_INVOICE_SQL, [bookingId]);
+  if (!bookingResult.rows?.length) {
+    return { created: false, skipped: 'not_found' };
+  }
+  const booking = bookingResult.rows[0];
+  const payStatus = String(booking.payment_status || '').toLowerCase();
+  const paid =
+    payStatus === 'paid' ||
+    payStatus === 'completed' ||
+    payStatus === 'refunded' ||
+    payStatus === 'partially_refunded';
+  if (!paid) {
+    return { created: false, skipped: 'unpaid' };
+  }
+
+  const invoiceNumber = await generateInvoiceNumber(booking.vendor_id);
+  const serviceMeta = await resolveBookingServiceTaxMeta(booking);
+  const invoiceData = await buildBookingInvoiceData({
+    booking,
+    bookingId,
+    invoiceNumber,
+    serviceMeta,
+  });
+  await insert(
+    'invoices',
+    buildInvoicesInsertRow({
+      vendorId: booking.vendor_id,
+      customerId: booking.customer_id,
+      invoiceNumber,
+      invoiceData: { ...invoiceData, booking_id: bookingId },
+      totalAmount: invoiceData.total,
+    })
+  );
+  return { created: true };
 }
 
 /** Idempotent: create invoice row for order if none exists. */

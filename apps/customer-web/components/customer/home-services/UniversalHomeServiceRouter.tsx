@@ -417,20 +417,21 @@ export function UniversalHomeServiceRouter({
             isVendorServicePackageRow(probe) ||
             (serviceType === 'walker' && isWalkerVendorServicePackageRow(probe));
           if (vid && asPackage) {
+            const st = String(serviceType);
             const categoryForPkg =
-              serviceType === 'walker'
+              st === 'walker'
                 ? 'walking'
-                : serviceType === 'grooming'
+                : st === 'grooming'
                   ? 'grooming'
-                  : serviceType === 'training'
+                  : st === 'training'
                     ? 'training'
-                    : serviceType === 'behaviour'
+                    : st === 'behaviour' || st === 'behaviourist'
                       ? 'behaviour'
-                      : serviceType === 'nutritionist'
+                      : st === 'nutritionist'
                         ? 'nutrition'
-                        : serviceType === 'sitter'
+                        : st === 'sitter'
                           ? 'sitting'
-                          : serviceType;
+                          : st;
             const pkgNav =
               buildWalkerServiceDataForVendorPackagePurchase({
                 vendorId: vid,

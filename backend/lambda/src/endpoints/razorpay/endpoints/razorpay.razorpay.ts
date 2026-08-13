@@ -1723,6 +1723,11 @@ class VerifyPaymentHandler extends BaseHandler {
 
       if (bookingToNotify) {
         await notifyBookingCreated(bookingToNotify, (context as HandlerContext & { requestId?: string }).requestId);
+        void import('../../tax-invoice-pdf')
+          .then(({ ensureBookingInvoiceGenerated }) =>
+            ensureBookingInvoiceGenerated(String(bookingToNotify))
+          )
+          .catch((e) => console.warn('[PAYMENT-VERIFY] booking invoice generate failed:', e));
       }
 
       if (ecommerceOrderForShipment) {
@@ -2149,6 +2154,11 @@ class RazorpayWebhookHandler extends BaseHandler {
       if (bookingToNotify) {
         await notifyBookingCreated(bookingToNotify, (context as HandlerContext & { requestId?: string }).requestId)
           .catch((e) => console.error('[RAZORPAY-WEBHOOK] Notification failed:', e));
+        void import('../../tax-invoice-pdf')
+          .then(({ ensureBookingInvoiceGenerated }) =>
+            ensureBookingInvoiceGenerated(String(bookingToNotify))
+          )
+          .catch((e) => console.warn('[RAZORPAY-WEBHOOK] booking invoice generate failed:', e));
       }
 
       if (paymentRecord?.booking_id) {
