@@ -14,6 +14,7 @@ import { useCustomerBookingMessagesModal } from './messaging/CustomerBookingMess
 import { LiveTrackingMap } from '../tracking/LiveTrackingMap';
 import { FollowUpBookingModal } from './FollowUpBookingModal';
 import { RateServiceModal } from './RateServiceModal';
+import { isPackageCustomerCancelAllowed } from '@/lib/package-cancel-eligibility';
 
 interface AppointmentDetailsProps {
   bookingId: string;
@@ -103,8 +104,8 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
     // Check if booking date hasn't passed
     const bookingDate = new Date(`${booking.scheduledDate} ${booking.scheduledTime}`);
     const now = new Date();
-    
-    return bookingDate > now;
+    if (!(bookingDate > now)) return false;
+    return isPackageCustomerCancelAllowed(booking);
   };
 
   if (loading) {

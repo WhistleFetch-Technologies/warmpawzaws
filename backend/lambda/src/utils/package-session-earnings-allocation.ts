@@ -40,6 +40,50 @@ export function scaleCommissionForAllocatedGross(params: {
   return { commissionAmount, vendorNet };
 }
 
+/** Vendor pool after tier commission: base × (1 − rate/100). */
+export function vendorPoolAfterCommission(basePrice: number, commissionRate: number): number {
+  const base = round2(Math.max(0, basePrice));
+  const rate = Math.max(0, commissionRate);
+  const commission = round2((base * rate) / 100);
+  return round2(base - commission);
+}
+
+/**
+ * One session's vendor net from the post-commission pool (11440.80 / 48 = 238.35).
+ * Same remainder rules as allocatePackageSessionGross.
+ */
+export function allocatePackageSessionVendorNet(params: {
+  vendorPool: number;
+  sessionCount: number;
+  priorCount: number;
+  priorSum: number;
+}): number {
+  return allocatePackageSessionGross({
+    parentServiceValue: params.vendorPool,
+    sessionCount: params.sessionCount,
+    priorCount: params.priorCount,
+    priorSum: params.priorSum,
+  });
+}
+
+/** Reconstruct gross + commission so stored total_amount + commission = net slice. */
+export function scaleGrossFromVendorNet(params: {
+  vendorNet: number;
+  commissionRate: number;
+}): { allocatedGross: number; commissionAmount: number; vendorNet: number } {
+  const vendorNet = round2(Math.max(0, params.vendorNet));
+  const rate = Math.max(0, params.commissionRate);
+  if (vendorNet <= 0.009) {
+    return { allocatedGross: 0, commissionAmount: 0, vendorNet: 0 };
+  }
+  if (rate >= 100) {
+    return { allocatedGross: vendorNet, commissionAmount: 0, vendorNet };
+  }
+  const allocatedGross = round2(vendorNet / (1 - rate / 100));
+  const commissionAmount = round2(allocatedGross - vendorNet);
+  return { allocatedGross, commissionAmount, vendorNet };
+}
+
 export function allocatedEarningsFromStored(params: {
   isPackageSession: boolean;
   unlimited?: boolean;

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
 import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { toast } from 'sonner';
+import { isPackageCustomerCancelAllowed } from '@/lib/package-cancel-eligibility';
 
 interface BookingActionsProps {
   booking: any;
@@ -31,7 +32,9 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
   const [cancellationReason, setCancellationReason] = useState('');
 
   // Check if booking can be modified
-  const canModify = booking.status === 'active' || booking.status === 'scheduled' || booking.status === 'pending';
+  const canModify =
+    (booking.status === 'active' || booking.status === 'scheduled' || booking.status === 'pending') &&
+    isPackageCustomerCancelAllowed(booking);
   
   // Calculate refund preview when cancel modal opens
   const fetchRefundPreview = async () => {

@@ -23,6 +23,7 @@ import {
   formatPriceWithSymbol,
   customerBookingStatusShowsCheckInOtp,
 } from '@/lib/booking-display-utils';
+import { isPackageCustomerCancelAllowed } from '@/lib/package-cancel-eligibility';
 import {
   formatIstBookingCompletedLine,
   formatIstBookingWhen,
@@ -471,8 +472,8 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
 
   // ✅ Check if booking can be cancelled/rescheduled
   const canCancelOrReschedule = (booking: Booking): boolean => {
-    // Can only cancel/reschedule pending or confirmed bookings
-    return ['pending', 'confirmed'].includes(booking.status);
+    if (!['pending', 'confirmed'].includes(booking.status)) return false;
+    return isPackageCustomerCancelAllowed(booking);
   };
 
   // ✅ FIX: Ensure pending, confirmed, in_progress, arrived, scheduled all show in "Upcoming"

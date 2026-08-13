@@ -111,6 +111,41 @@ describe('getRefundableCustomerPaidBreakdown', () => {
     expect(r.nonRefundableFees).toBe(50);
   });
 
+  it('parent package refund keeps GST in the base and excludes platform fee', async () => {
+    mockedQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM bookings b')) {
+        return { rows: [{ id: '00000000-0000-4000-8000-000000000010' }] } as any;
+      }
+      if (sql.includes('FROM payments') && sql.includes("payment_method, '')) = 'wallet'")) {
+        return { rows: [{ w: '0' }] } as any;
+      }
+      if (sql.includes('FROM payments') && sql.includes("payment_status = 'completed'")) {
+        return {
+          rows: [
+            {
+              paid_total: '15004.82',
+              platform_fee_total: '200',
+              convenience_fee_total: '0',
+              refundable_from_payments: '14804.82',
+            },
+          ],
+        } as any;
+      }
+      if (sql.includes('wallet_transactions')) {
+        return { rows: [{ w: '0' }] } as any;
+      }
+      return { rows: [] } as any;
+    });
+
+    const r = await getRefundableCustomerPaidBreakdown('00000000-0000-4000-8000-000000000010', {
+      total_amount: 0,
+      discount_amount: 0,
+    });
+    expect(r.refundableBase).toBe(14804.82);
+    expect(r.platformFeeNonRefundable).toBe(200);
+    expect(r.refundableBase).toBe(15004.82 - 200);
+  });
+
   it('includes GST in refundable base and still excludes platform/convenience fees', async () => {
     mockedQuery.mockImplementation(async (sql: string) => {
       if (

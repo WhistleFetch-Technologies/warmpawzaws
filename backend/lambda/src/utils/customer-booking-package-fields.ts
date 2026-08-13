@@ -11,7 +11,18 @@ export const SQL_PACKAGE_PURCHASE_SELECT = `
        pp.package_name AS pkg_pp_name,
        pp.total_sessions AS pkg_total_sessions,
        pp.remaining_sessions AS pkg_remaining_sessions,
-       (pp.unlimited_usage IS TRUE) AS pkg_unlimited_usage`;
+       (pp.unlimited_usage IS TRUE) AS pkg_unlimited_usage,
+       EXISTS (
+         SELECT 1 FROM bookings s1
+         WHERE s1.package_purchase_id = b.package_purchase_id
+           AND COALESCE(s1.is_package_session, false) = true
+           AND (
+             s1.started_at IS NOT NULL
+             OR LOWER(COALESCE(s1.status::text, '')) IN (
+               'in_progress', 'arrived', 'completed', 'active', 'service_started', 'started'
+             )
+           )
+       ) AS pkg_session_one_started`;
 
 /**
  * Build additive package fields for customer booking list/detail responses.
@@ -22,6 +33,7 @@ export function packageFieldsFromBookingRow(b: any) {
   const isPackageSession = Boolean(b.is_package_session);
   const isPackage = Boolean(packagePurchaseId || isPackageSession);
   const unlimited = Boolean(b.pkg_unlimited_usage);
+  const sessionOneStarted = Boolean(b.pkg_session_one_started);
   const totalSessionsNum =
     b.pkg_total_sessions != null && b.pkg_total_sessions !== ''
       ? Number(b.pkg_total_sessions)
@@ -50,6 +62,7 @@ export function packageFieldsFromBookingRow(b: any) {
             : undefined,
       completedSessions,
       unlimited,
+      sessionOneStarted,
       packageSessionNumber:
         b.package_session_number != null ? Number(b.package_session_number) : undefined,
     };
@@ -62,6 +75,15 @@ export function packageFieldsFromBookingRow(b: any) {
     isPackageSession,
     is_package: isPackage,
     isPackage,
+    packageSessionOneStarted: sessionOneStarted,
+    canCancelPackage: isPackage
+      ? !sessionOneStarted &&
+        !(
+          totalSessionsNum != null &&
+          remainingSessionsNum != null &&
+          totalSessionsNum - remainingSessionsNum > 0
+        )
+      : true,
     package_session_number:
       b.package_session_number != null ? Number(b.package_session_number) : undefined,
     packageSessionNumber:

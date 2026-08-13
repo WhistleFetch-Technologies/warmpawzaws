@@ -69,6 +69,11 @@ import {
   linkPackageScheduledSessionToBooking,
   type SqlClient,
 } from '../../../utils/package-session-sync';
+import {
+  isPackageSessionOneStarted,
+  PACKAGE_SESSION_ONE_STARTED_CUSTOMER_MESSAGE,
+} from '../../../utils/package-cancel-guard';
+import { reversePendingPackageSessionEarnings } from '../../../utils/package-session-earnings-reverse';
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
 import {
@@ -3536,6 +3541,32 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const currentBooking = existingBookings[0];
     const oldStatus = currentBooking.status;
 
+    const pkgPurchaseIdCancel = String(
+      (currentBooking as any).package_purchase_id || (currentBooking as any).packagePurchaseId || ''
+    ).trim();
+    const isPkgSessionCancel = Boolean((currentBooking as any).is_package_session);
+    if (pkgPurchaseIdCancel && isPkgSessionCancel) {
+      return this.error(
+        'Cancel the package booking (not an individual session) to request a refund.',
+        400,
+        'VALIDATION_ERROR',
+        undefined,
+        requestId
+      );
+    }
+    if (pkgPurchaseIdCancel && !isPkgSessionCancel) {
+      const started = await isPackageSessionOneStarted({ query } as SqlClient, pkgPurchaseIdCancel);
+      if (started) {
+        return this.error(
+          PACKAGE_SESSION_ONE_STARTED_CUSTOMER_MESSAGE,
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+    }
+
     // Validate that booking can be cancelled (includes pending_payment: slot held until Razorpay completes)
     const cancellableStatuses = ['pending', 'pending_payment', 'confirmed'];
     if (!cancellableStatuses.includes(oldStatus)) {
@@ -3707,6 +3738,16 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
           );
         }
       });
+
+      if (pkgPurchaseIdCancel) {
+        await reversePendingPackageSessionEarnings(
+          { query } as SqlClient,
+          pkgPurchaseIdCancel,
+          '[CUSTOMER-CANCEL-PACKAGE]'
+        ).catch((e: unknown) =>
+          console.warn('[CancelBooking] package earnings reverse:', (e as Error)?.message)
+        );
+      }
 
       // Log status change
       await logBookingStatusChange(
