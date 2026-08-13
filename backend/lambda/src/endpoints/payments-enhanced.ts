@@ -39,6 +39,7 @@ import {
   resolveLockedBookingGrossFromNotes,
 } from '../utils/booking-financial-gross';
 import { splitGstAmount } from '../utils/gst-split';
+import { scheduleBookingStartOtpIfNeeded } from '../utils/booking-start-otp';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
 import {
   finalizeCapturedPayment,
