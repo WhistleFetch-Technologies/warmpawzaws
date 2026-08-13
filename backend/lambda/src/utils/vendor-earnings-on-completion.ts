@@ -22,7 +22,7 @@ import {
 
 import { resolveVendorId } from './vendor-resolve';
 
-import { getVendorCommissionRate, isCanonicalPackageParentBooking } from './vendor-commission-rate';
+import { getVendorCommissionRate, isCanonicalPackageParentBooking, isPackageSessionChildBooking } from './vendor-commission-rate';
 
 import { applySettlementPreviewToCommissionableGross, extractSettlementPreviewFromBooking } from '../discount-engine/settlement/settlement-hook-bridge';
 
@@ -253,6 +253,7 @@ export async function ensureVendorEarningsForCompletedBooking(
 ): Promise<boolean> {
 
   if (isCanonicalPackageParentBooking(booking)) return false;
+  if (isPackageSessionChildBooking(booking)) return false;
 
 
 

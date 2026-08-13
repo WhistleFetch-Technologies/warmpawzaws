@@ -10,7 +10,6 @@ import { runInlineAddressDetect, inlineAddressCoordsPayload } from '@/lib/run-in
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
 import {
-  buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
@@ -223,13 +222,13 @@ export function RelocationBookingRouter({
       if (success && slots.length > 0) {
         setTimeSlots(slots);
       } else if (!success) {
-        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+        setTimeSlots([]);
       } else {
         setTimeSlots([]);
       }
     } catch (error) {
       console.error('Error loading time slots:', error);
-      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+      setTimeSlots([]);
     } finally {
       setLoadingSlots(false);
     }

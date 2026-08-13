@@ -326,20 +326,16 @@ export async function buildShopOrderPaymentResumeContext(
   const st = String(o.order_status || '').toLowerCase();
   const ps = String(o.payment_status || '').toLowerCase();
   const pm = String(o.payment_method || 'online').toLowerCase();
+  const holdCancelled =
+    st === 'cancelled' && String(o.cancellation_reason || '').trim() === 'payment_window_expired';
 
-  if (st !== 'pending_payment') return null;
-  if (['paid', 'completed', 'expired', 'failed', 'refunded'].includes(ps)) return null;
+  if (st !== 'pending_payment' && !holdCancelled) return null;
+  if (['paid', 'completed', 'refunded'].includes(ps)) return null;
   if (pm === 'cod' || pm === 'cash_on_delivery') return null;
 
   const expiresAt = o.payment_hold_expires_at
     ? new Date(String(o.payment_hold_expires_at)).toISOString()
     : null;
-  const canResume = isShopOrderPaymentHoldActive({
-    order_status: st,
-    payment_status: ps,
-    payment_method: pm,
-    payment_hold_expires_at: expiresAt,
-  });
   const secondsRemaining = secondsRemainingUntilHoldExpiry(expiresAt);
 
   const total = Number(o.total_amount || 0);
@@ -373,7 +369,13 @@ export async function buildShopOrderPaymentResumeContext(
     currency: String(pay?.currency || 'INR'),
     paymentHoldExpiresAt: expiresAt,
     secondsRemaining,
-    canResume,
+    canResume:
+      isShopOrderPaymentHoldActive({
+        order_status: st,
+        payment_status: ps,
+        payment_method: pm,
+        payment_hold_expires_at: expiresAt,
+      }) || Boolean(pay?.razorpay_order_id),
     razorpayOrderId: pay?.razorpay_order_id ? String(pay.razorpay_order_id) : null,
     paymentId: pay?.id ? String(pay.id) : null,
   };

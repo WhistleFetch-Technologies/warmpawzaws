@@ -13,6 +13,7 @@ import {
 } from '@/lib/customer-id-storage';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { isPackageCustomerCancelAllowed } from '@/lib/package-cancel-eligibility';
 import {
   derivePaymentSourcesFromBooking,
   bookingSourcesHasGatewayPayment,
@@ -284,8 +285,10 @@ export function AppointmentDetailsView({
     if (!appointment) return false;
     if (appointment.status === 'completed' || appointment.status === 'cancelled') return false;
     if (appointment.status === 'in_progress') return false;
-    if (appointment.isPackage && appointment.completedSessions > 0) return false;
-    return true;
+    return isPackageCustomerCancelAllowed({
+      isPackage: appointment.isPackage,
+      packageDetails: { completedSessions: appointment.completedSessions },
+    });
   };
 
   const isTeleActive =

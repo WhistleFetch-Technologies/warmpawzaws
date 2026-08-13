@@ -83,6 +83,28 @@ export function isValidCoordinates(lat?: number, lng?: number): boolean {
 /**
  * Extracts user-friendly error message from API error
  */
+export const SLOT_CONFLICT_USER_MESSAGE =
+  'This time slot is already booked. Please select a different time.';
+
+export function isSlotConflictError(error: any): boolean {
+  const errorData = error?.response?.data || error?.data || error?.response || error;
+  const code =
+    errorData?.code ||
+    errorData?.error?.code ||
+    error?.code;
+  if (code === 'SLOT_CONFLICT') return true;
+  const status = error?.statusCode ?? error?.status ?? errorData?.status;
+  const message = String(
+    errorData?.error?.message ||
+      errorData?.error ||
+      errorData?.message ||
+      error?.message ||
+      ''
+  );
+  if (status === 409 && /slot|already booked|unavailable/i.test(message)) return true;
+  if (message.includes('SLOT_CONFLICT') || /already booked/i.test(message)) return true;
+  return false;
+}
 export function extractErrorMessage(error: any): string {
   const errorData = error?.response?.data || error?.data;
   
@@ -105,8 +127,8 @@ export function extractErrorMessage(error: any): string {
   }
   
   // Handle specific error codes
-  if (errorData?.code === 'SLOT_CONFLICT') {
-    return 'This time slot is already booked. Please select a different time.';
+  if (isSlotConflictError(error)) {
+    return SLOT_CONFLICT_USER_MESSAGE;
   }
   
   if (error?.statusCode === 409 || error?.status === 409) {

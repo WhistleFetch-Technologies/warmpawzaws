@@ -15,7 +15,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query } from '../database/rds-connection';
+import { select, insert, update, query, withTransaction } from '../database/rds-connection';
 import { sendSMS } from '../utils/sms-service';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -26,6 +26,12 @@ import {
   type SqlClient,
 } from '../utils/package-session-sync';
 import { resolveCommerceModelForBookingCreate } from '../commerce-switch';
+import {
+  assertSlotAvailableInTx,
+  loadVendorServiceDurationMinutes,
+  SlotConflictError,
+  SLOT_CONFLICT_MESSAGE,
+} from '../utils/slot-occupancy';
 
 // Type-only ambient declarations (no runtime emit): getSnsClient/PublishCommand are
 // referenced below but are not imported or defined anywhere in this module — that code
@@ -373,26 +379,60 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
         console.warn('[CommerceSwitch] create-with-otp resolver failed:', commerceErr);
       }
 
-      // Create booking
-      const booking = await insert('bookings', {
-        customer_id: customerId,
-        vendor_id: vendorId,
-        service_id: serviceId,
-        staff_id: staffId || null,
-        booking_date: scheduledDate,
-        booking_time: scheduledTime,
-        status: initialStatus,
-        service_type: serviceType,
-        base_price: totalAmount,
-        total_amount: totalAmount,
-        payment_status: paymentStatus,
-        payment_id: paymentRecord?.id || null,
-        notes: notes || null,
-        otp_code: startOTP, // Store start OTP in booking
-        otp_verified: false,
-        commerce_mode: commerceMode,
-        commerce_version: commerceVersion,
-      });
+      const durationMinutes = await loadVendorServiceDurationMinutes(query, serviceId);
+      let booking: any[];
+      try {
+        booking = await withTransaction(async (client) => {
+          await assertSlotAvailableInTx(client, {
+            vendorId: String(vendorId),
+            date: String(scheduledDate),
+            startTime: String(scheduledTime),
+            durationMinutes,
+            staffId: staffId || null,
+          });
+          const inserted = await client.query(
+            `INSERT INTO bookings (
+               customer_id, vendor_id, service_id, staff_id,
+               booking_date, booking_time, status, service_type,
+               base_price, total_amount, payment_status, payment_id,
+               notes, otp_code, otp_verified, commerce_mode, commerce_version,
+               duration_minutes
+             ) VALUES (
+               $1, $2, $3, $4,
+               $5, $6, $7, $8,
+               $9, $10, $11, $12,
+               $13, $14, $15, $16, $17,
+               $18
+             ) RETURNING *`,
+            [
+              customerId,
+              vendorId,
+              serviceId,
+              staffId || null,
+              scheduledDate,
+              scheduledTime,
+              initialStatus,
+              serviceType,
+              totalAmount,
+              totalAmount,
+              paymentStatus,
+              paymentRecord?.id || null,
+              notes || null,
+              startOTP,
+              false,
+              commerceMode,
+              commerceVersion,
+              durationMinutes,
+            ]
+          );
+          return inserted.rows;
+        });
+      } catch (slotErr: any) {
+        if (slotErr instanceof SlotConflictError || slotErr?.code === 'SLOT_CONFLICT') {
+          return c.json({ error: SLOT_CONFLICT_MESSAGE, code: 'SLOT_CONFLICT' }, 409);
+        }
+        throw slotErr;
+      }
 
       if (paymentRecord?.id) {
         await update('payments', { id: paymentRecord.id }, {

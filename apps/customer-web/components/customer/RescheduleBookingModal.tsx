@@ -10,10 +10,8 @@ import { apiClient } from '@/lib/api-client';
 import { pickBookingApiMessage } from '@/lib/booking-response-message';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
-import {
-  applyPastSlotGuard,
-  normalizeAvailableSlotsResponse,
-} from '@/lib/available-slots-response';
+import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
+import { isSlotConflictError, SLOT_CONFLICT_USER_MESSAGE } from '@/lib/booking-utils';
 
 interface RescheduleBookingModalProps {
   bookingId: string;
@@ -66,11 +64,8 @@ export function RescheduleBookingModal({
       setAvailableSlots(slots);
     } catch (error) {
       console.error('Error loading slots:', error);
-      const fallback = [
-        '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00',
-      ].map((time) => ({ time, available: true }));
-      setAvailableSlots(applyPastSlotGuard(fallback, date));
-      toast.error('Failed to load available slots, showing default times');
+      setAvailableSlots([]);
+      toast.error('Failed to load available slots');
     } finally {
       setLoadingSlots(false);
     }
@@ -96,6 +91,11 @@ export function RescheduleBookingModal({
         const err = result.error;
         const errText =
           typeof err === 'string' ? err : err && typeof err === 'object' && typeof err.message === 'string' ? err.message : null;
+        if (isSlotConflictError(result) || result.code === 'SLOT_CONFLICT') {
+          toast.error(SLOT_CONFLICT_USER_MESSAGE);
+          if (selectedDate) void loadAvailableSlots(formatLocalDateYYYYMMDD(selectedDate));
+          return;
+        }
         toast.error(errText || 'Failed to reschedule');
         return;
       }
@@ -104,7 +104,12 @@ export function RescheduleBookingModal({
       onSuccess();
     } catch (error: any) {
       console.error('Error rescheduling:', error);
-      toast.error(error.message || 'Failed to reschedule');
+      if (isSlotConflictError(error)) {
+        toast.error(SLOT_CONFLICT_USER_MESSAGE);
+        if (selectedDate) void loadAvailableSlots(formatLocalDateYYYYMMDD(selectedDate));
+      } else {
+        toast.error(error.message || 'Failed to reschedule');
+      }
     } finally {
       setLoading(false);
     }

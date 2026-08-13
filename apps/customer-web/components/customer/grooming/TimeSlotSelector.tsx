@@ -5,7 +5,6 @@ import { ArrowLeft, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle } fr
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
 import {
-  buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
   formatIstDateYYYYMMDD,
   type NormalizedTimeSlot,
@@ -81,7 +80,7 @@ export function TimeSlotSelector({
 
       if (!success) {
         setVendorOffline(explicitOffline);
-        setSlots(buildDefaultSlotsWithPastGuard(date));
+        setSlots([]);
         return;
       }
 
@@ -97,7 +96,7 @@ export function TimeSlotSelector({
       setSlots(normalized);
     } catch (error) {
       console.error('Error loading slots:', error);
-      setSlots(buildDefaultSlotsWithPastGuard(date));
+      setSlots([]);
     } finally {
       setLoadingSlots(false);
     }

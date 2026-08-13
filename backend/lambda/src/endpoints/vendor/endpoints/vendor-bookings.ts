@@ -30,6 +30,8 @@ import { loadBookingServiceSnapshot, snapshotToNestedService } from '../../../ut
 import { isValidUUID } from '../../../types/entities';
 import { checkVendorCapability } from '../../../middleware/capability-enforcement';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
+import { reversePendingPackageSessionEarnings } from '../../../utils/package-session-earnings-reverse';
+import type { SqlClient } from '../../../utils/package-session-sync';
 import {
   parseVendorCancellationReason,
   vendorCancellationReasonLabel,
@@ -969,6 +971,13 @@ export function registerVendorBookingsEndpoints(app: Hono) {
              WHERE id = $1::uuid AND status = 'active'`,
             [String(pkgPidRaw)]
           ).catch(() => null);
+          await reversePendingPackageSessionEarnings(
+            { query } as SqlClient,
+            String(pkgPidRaw),
+            '[VENDOR-DECLINE-PACKAGE]'
+          ).catch((e: unknown) =>
+            console.warn('[vendor/decline] earnings reverse:', (e as Error)?.message)
+          );
         } catch (cascadeErr: any) {
           console.error('[vendor/decline] package session cascade failed:', cascadeErr?.message);
         }

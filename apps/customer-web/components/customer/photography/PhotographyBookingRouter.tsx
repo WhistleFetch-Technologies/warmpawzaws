@@ -6,7 +6,6 @@ import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import {
-  buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
@@ -194,13 +193,13 @@ export function PhotographyBookingRouter({
       if (success && slots.length > 0) {
         setTimeSlots(slots);
       } else if (!success) {
-        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+        setTimeSlots([]);
       } else {
         setTimeSlots([]);
       }
     } catch (error) {
       console.error('Error loading time slots:', error);
-      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+      setTimeSlots([]);
     } finally {
       setLoadingSlots(false);
     }

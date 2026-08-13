@@ -79,4 +79,19 @@ describe('resolveBookingInvoiceAmounts', () => {
     expect(amounts.gstRate).toBe(0);
     expect(amounts.total).toBe(500);
   });
+
+  it('infers 18% GST when charged total is base + GST and tax columns are 0 (Sara Pets)', () => {
+    const amounts = resolveBookingInvoiceAmounts({
+      basePrice: 1485,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1752.3,
+      isInterState: false,
+      payment: { amount: 1752.3, gstAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0 },
+    });
+    expect(amounts.taxAmount).toBe(267.3);
+    expect(amounts.cgst).toBe(133.65);
+    expect(amounts.sgst).toBe(133.65);
+    expect(amounts.igst).toBe(0);
+    expect(amounts.total).toBe(1752.3);
+  });
 });

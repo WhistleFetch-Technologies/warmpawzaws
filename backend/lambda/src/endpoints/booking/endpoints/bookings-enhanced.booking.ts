@@ -53,6 +53,7 @@ import {
   expirePaymentHolds,
   buildBookingPaymentResumeContext,
 } from '../../../utils/payment-hold';
+import { assertSlotAvailableInTx, acquireSlotOccupancyLock, evaluateSlotAvailability, SlotConflictError } from '../../../utils/slot-occupancy';
 import { resolveCustomerIdFromPhone } from '../../../utils/customer-coordinates';
 import {
   previewCustomerCancellationRefundByMethod,
@@ -68,6 +69,11 @@ import {
   linkPackageScheduledSessionToBooking,
   type SqlClient,
 } from '../../../utils/package-session-sync';
+import {
+  isPackageSessionOneStarted,
+  PACKAGE_SESSION_ONE_STARTED_CUSTOMER_MESSAGE,
+} from '../../../utils/package-cancel-guard';
+import { reversePendingPackageSessionEarnings } from '../../../utils/package-session-earnings-reverse';
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
 import {
@@ -986,123 +992,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             : petSittingServerBilledMinutes != null
               ? petSittingServerBilledMinutes
               : totalDurationMinutes || service?.duration_minutes || service?.custom_duration || 30;
-        
-        // Convert booking time to minutes
-        const [bookingHour, bookingMin] = bookingTime.split(':').map(Number);
-        const newBookingStartMinutes = bookingHour * 60 + bookingMin;
-        const newBookingEndMinutes = newBookingStartMinutes + bookingDuration;  // ✅ NO buffer
 
-        // ✅ FIX: Fetch existing bookings for overlap check with row-level locking
-        // FOR UPDATE locks the rows, preventing concurrent modifications during the transaction
-        // This ensures atomic slot booking: no two bookings can be created for the same slot simultaneously
-        const overlapQuery = staffId
-          ? `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
-             FROM bookings 
-             WHERE vendor_id = $1 
-             AND booking_date = $2 
-             AND staff_id = $3
-             AND ${SQL_BOOKING_BLOCKS_SLOT}
-             FOR UPDATE`
-          : `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
-             FROM bookings 
-             WHERE vendor_id = $1 
-             AND booking_date = $2 
-             AND staff_id IS NULL
-             AND ${SQL_BOOKING_BLOCKS_SLOT}
-             FOR UPDATE`;
-
-        const overlapParams = staffId
-          ? [vendorId, bookingDate, staffId]
-          : [vendorId, bookingDate];
-
-        const { rows: existingBookings } = await client.query(overlapQuery, overlapParams);
-
-        // ✅ CRITICAL FIX: Buffer time is informational only for ALL services
-        // Buffer time (travel/prep/setup) is retrieved for informational purposes but is NOT used in overlap checks
-        // ALL services (tele, at_center, at_home) use EXACT service duration for overlap calculations
-        // This ensures atomic slot behavior: booking at 2:00 PM (30min) ends at 2:30 PM
-        // Slot at 2:30 PM should be available (no overlap: 870 < 870 = false)
-        let bufferMinutes = 0;  // Retrieved for informational purposes only, not used in overlap checks
-        const normalizedServiceStyle = (serviceType === 'at_vendor' || serviceType === 'at_center') ? 'at_center' : serviceType;
-        
-        // Get buffer time for informational purposes (logging, scheduling spacing, etc.)
-        // But do NOT use it in overlap calculations
-        // ✅ CRITICAL FIX: Use SAVEPOINTs for optional queries inside transaction
-        // In PostgreSQL, a failed query inside a transaction aborts the ENTIRE transaction
-        // even if JavaScript catches the error. SAVEPOINTs allow recovery from errors.
-        try {
-          let minNoticeMinutes = 30;
-          try {
-            await client.query('SAVEPOINT sp_scheduling_policies');
-            const policiesResult = await client.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`);
-            await client.query('RELEASE SAVEPOINT sp_scheduling_policies');
-            const bufferPolicy = policiesResult.rows?.find((p: any) => p.policy_type === 'buffer_time');
-            if (bufferPolicy?.policy_config) {
-              const cfg = bufferPolicy.policy_config as any;
-              minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
-            }
-          } catch (_) {
-            await client.query('ROLLBACK TO SAVEPOINT sp_scheduling_policies').catch(() => {});
-          }
-          
-          const dayOfWeek = new Date(bookingDate).getDay();
-          try {
-            await client.query('SAVEPOINT sp_vendor_availability');
-            const va2Result = await client.query(
-              `SELECT lead_time_by_style, buffer_time
-               FROM vendor_availability_v2
-               WHERE vendor_id = $1
-                 AND day_of_week = $2
-                 AND (COALESCE(is_available, true) = true)
-               LIMIT 1`,
-              [vendorId, dayOfWeek]
-            );
-            await client.query('RELEASE SAVEPOINT sp_vendor_availability');
-            
-            if (va2Result.rows && va2Result.rows.length > 0) {
-              const row = va2Result.rows[0];
-              const leadByStyle = row.lead_time_by_style != null
-                ? (typeof row.lead_time_by_style === 'string' ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style)
-                : {};
-              bufferMinutes = (leadByStyle && typeof leadByStyle === 'object' && leadByStyle[normalizedServiceStyle] != null)
-                ? Number(leadByStyle[normalizedServiceStyle])
-                : Number(row.buffer_time) || minNoticeMinutes;
-              console.log(`[BOOKING] ${normalizedServiceStyle}: Found buffer=${bufferMinutes}min (informational only, not used in overlap check)`);
-            }
-          } catch (va2Err: any) {
-            await client.query('ROLLBACK TO SAVEPOINT sp_vendor_availability').catch(() => {});
-            // Ignore - buffer is informational only
-          }
-        } catch (err) {
-          // Ignore - buffer is informational only
-        }
-
-        console.log(
-          `[BOOKING] Checking overlap (duration-based): newBooking=${bookingTime} (${newBookingStartMinutes}-${newBookingEndMinutes}min), serviceType=${serviceType}`
-        );
-        console.log(`[BOOKING] Existing bookings: ${existingBookings.length}`);
-
-        const hasOverlap = existingBookings.some((existing: any) => {
-          const [existingHour, existingMin] = existing.booking_time.split(':').map(Number);
-          const existingStartMinutes = existingHour * 60 + existingMin;
-          const existingDuration = Math.max(15, Number(existing.duration_minutes) || 30);
-          const existingEndMinutes = existingStartMinutes + existingDuration;
-
-          const overlaps =
-            newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes > existingStartMinutes;
-
-          if (overlaps) {
-            console.log(
-              `[BOOKING] OVERLAP: newBooking ${bookingTime} blocked by existing ${existing.booking_time} (${existingStartMinutes}-${existingEndMinutes}min)`
-            );
-          }
-
-          return overlaps;
+        await assertSlotAvailableInTx(client, {
+          vendorId,
+          date: bookingDate,
+          startTime: bookingTime,
+          durationMinutes: Number(bookingDuration) || 30,
+          staffId: staffId || null,
         });
-
-        if (hasOverlap) {
-          throw new Error('SLOT_CONFLICT');
-        }
 
         // Create booking
         // ✅ CRITICAL FIX: Foreign key constraint bookings_service_id_vendor_services_fkey expects vendor_services.id
@@ -2428,7 +2325,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       const errorMessage = err?.message || 'Unknown error';
       
       // Slot conflict
-      if (errorMessage === 'SLOT_CONFLICT' || err?.code === '55P03') {
+      if (errorMessage === 'SLOT_CONFLICT' || err?.code === 'SLOT_CONFLICT' || err instanceof SlotConflictError || err?.code === '55P03') {
         // ✅ FIX: Check if this is a duplicate booking attempt (same customer/vendor/date/time)
         // If so, return a more helpful error message
         try {
@@ -3644,6 +3541,32 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const currentBooking = existingBookings[0];
     const oldStatus = currentBooking.status;
 
+    const pkgPurchaseIdCancel = String(
+      (currentBooking as any).package_purchase_id || (currentBooking as any).packagePurchaseId || ''
+    ).trim();
+    const isPkgSessionCancel = Boolean((currentBooking as any).is_package_session);
+    if (pkgPurchaseIdCancel && isPkgSessionCancel) {
+      return this.error(
+        'Cancel the package booking (not an individual session) to request a refund.',
+        400,
+        'VALIDATION_ERROR',
+        undefined,
+        requestId
+      );
+    }
+    if (pkgPurchaseIdCancel && !isPkgSessionCancel) {
+      const started = await isPackageSessionOneStarted({ query } as SqlClient, pkgPurchaseIdCancel);
+      if (started) {
+        return this.error(
+          PACKAGE_SESSION_ONE_STARTED_CUSTOMER_MESSAGE,
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+    }
+
     // Validate that booking can be cancelled (includes pending_payment: slot held until Razorpay completes)
     const cancellableStatuses = ['pending', 'pending_payment', 'confirmed'];
     if (!cancellableStatuses.includes(oldStatus)) {
@@ -3815,6 +3738,16 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
           );
         }
       });
+
+      if (pkgPurchaseIdCancel) {
+        await reversePendingPackageSessionEarnings(
+          { query } as SqlClient,
+          pkgPurchaseIdCancel,
+          '[CUSTOMER-CANCEL-PACKAGE]'
+        ).catch((e: unknown) =>
+          console.warn('[CancelBooking] package earnings reverse:', (e as Error)?.message)
+        );
+      }
 
       // Log status change
       await logBookingStatusChange(
@@ -4117,49 +4050,29 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
-      // Check if new slot is available (excludes current booking, so old slot is automatically released)
-      const conflictCheck = await query(
-        `SELECT id FROM bookings 
-         WHERE vendor_id = $1 
-           AND booking_date = $2 
-           AND booking_time = $3 
-           AND id != $4
-           AND ${SQL_BOOKING_BLOCKS_SLOT}
-         LIMIT 1`,
-        [currentBooking.vendor_id, newDate, newTime, bookingId]
+      const rescheduleDuration = Number(
+        currentBooking.total_duration_minutes || currentBooking.duration_minutes || 30
       );
+      const rescheduleStaffId = currentBooking.staff_id ? String(currentBooking.staff_id) : null;
+      let oldSlotWillBeAvailable = true;
 
-      if (conflictCheck.rows.length > 0) {
-        return this.error(
-          'This time slot is already booked. Please select a different time.',
-          409,
-          'SLOT_CONFLICT',
-          undefined,
-          requestId
-        );
-      }
-
-      // Verify old slot will be released (check if any other booking exists at old slot)
-      // This ensures the old slot is truly available after reschedule
-      const oldSlotOccupied = await query(
-        `SELECT id FROM bookings 
-         WHERE vendor_id = $1 
-           AND booking_date = $2 
-           AND booking_time = $3 
-           AND id != $4
-           AND ${SQL_BOOKING_BLOCKS_SLOT}
-         LIMIT 1`,
-        [currentBooking.vendor_id, oldDate, oldTime, bookingId]
-      );
-
-      const oldSlotWillBeAvailable = oldSlotOccupied.rows.length === 0;
-
-      // Update booking with new date/time
-      // NOTE: This automatically releases the old slot because:
-      // 1. The booking is moved from (oldDate, oldTime) to (newDate, newTime)
-      // 2. Future slot availability checks will not find this booking at the old slot
-      // 3. The old slot becomes available for other bookings
       await withTransaction(async (client) => {
+        const lockDates = [...new Set([String(oldDate), String(newDate)])].sort();
+        for (const d of lockDates) {
+          await acquireSlotOccupancyLock(client, String(currentBooking.vendor_id), d, rescheduleStaffId);
+        }
+        const newSlotFree = await evaluateSlotAvailability(client, {
+          vendorId: String(currentBooking.vendor_id),
+          date: newDate,
+          startTime: newTime,
+          durationMinutes: rescheduleDuration,
+          staffId: rescheduleStaffId,
+          excludeBookingId: bookingId,
+        });
+        if (!newSlotFree) {
+          throw new SlotConflictError();
+        }
+
         await client.query(
           `UPDATE bookings 
            SET booking_date = $1,
@@ -4173,6 +4086,15 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
            WHERE id = $4`,
           [newDate, newTime, `Rescheduled: ${reason}`, bookingId]
         );
+
+        oldSlotWillBeAvailable = await evaluateSlotAvailability(client, {
+          vendorId: String(currentBooking.vendor_id),
+          date: String(oldDate),
+          startTime: String(oldTime),
+          durationMinutes: rescheduleDuration,
+          staffId: rescheduleStaffId,
+          excludeBookingId: bookingId,
+        });
       });
 
       // Log slot release for tracking
@@ -4270,7 +4192,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
       }, requestId);
     } catch (error: unknown) {
       const err = error as any;
-      if (err?.message === 'SLOT_CONFLICT' || err?.code === '55P03') {
+      if (err?.message === 'SLOT_CONFLICT' || err?.code === 'SLOT_CONFLICT' || err?.code === '55P03') {
         return this.error(
           'This time slot is already booked. Please select a different time.',
           409,
@@ -4923,7 +4845,7 @@ export function registerBookingOTPEndpoint(app: Hono) {
         return c.json({ success: false, error: 'Booking is not awaiting payment', canResume: false }, 404);
       }
 
-      if (!ctx.canResume) {
+      if (!ctx.canResume && !ctx.razorpayOrderId) {
         await expirePaymentHolds({ limit: 5, requestId: randomUUID() });
         return c.json({
           success: false,

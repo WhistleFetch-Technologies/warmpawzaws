@@ -17,9 +17,14 @@
  *     `vendor_services.id`. This module does not synthesize one.
  */
 
-import { query, insert } from '../database/rds-connection';
+import { query, insert, withTransaction } from '../database/rds-connection';
 import { fireVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
 import type { VendorPackageComputation } from './vendor-package-razorpay-flow';
+import {
+  assertSlotAvailableInTx,
+  SlotConflictError,
+  resolveDurationMinutes,
+} from './slot-occupancy';
 
 /** Same generator used by `bookings-enhanced.booking.ts` so format matches normal bookings. */
 function generateBookingOTP(): string {
@@ -284,7 +289,18 @@ export async function createPackageBookingsAfterPayment(
       parentBookingId,
     });
 
-    const ins = await query(
+    const sessionDuration = resolveDurationMinutes(comp.vs?.duration_minutes);
+    let ins: { rows?: Array<{ id?: unknown }> };
+    try {
+      ins = await withTransaction(async (client) => {
+        await assertSlotAvailableInTx(client, {
+          vendorId: String(vendorId),
+          date: String(dateStr),
+          startTime: String(timeStr),
+          durationMinutes: sessionDuration,
+          staffId: null,
+        });
+        return client.query(
       `INSERT INTO bookings (
          customer_id, vendor_id, pet_id, service_id,
          booking_date, booking_time, service_type,
@@ -293,7 +309,7 @@ export async function createPackageBookingsAfterPayment(
          is_package, package_id, package_details, package_purchase_id,
          is_package_session, package_session_number, parent_booking_id,
          notes,
-         otp_code, otp_expires_at
+         otp_code, otp_expires_at, duration_minutes
        ) VALUES (
          $1::uuid, $2::uuid, $3::uuid, $4::uuid,
          $5::date, $6::time, $7,
@@ -302,7 +318,7 @@ export async function createPackageBookingsAfterPayment(
          true, $8::uuid, $9::jsonb, $10::uuid,
          true, $11::int, $12::uuid,
          $13,
-         $14, $15
+         $14, $15, $16
        )
        ON CONFLICT (package_purchase_id, package_session_number)
          WHERE parent_booking_id IS NOT NULL
@@ -326,8 +342,19 @@ export async function createPackageBookingsAfterPayment(
         `Session ${sessionNumber} of package "${comp.packageDisplayName}"`,
         otp,
         otp ? otpExpiresAt.toISOString() : null,
+        sessionDuration,
       ]
-    );
+        );
+      });
+    } catch (slotErr: unknown) {
+      if (slotErr instanceof SlotConflictError) {
+        console.warn(
+          `[package-bookings] session ${sessionNumber} slot conflict after payment; skipping child insert`
+        );
+        continue;
+      }
+      throw slotErr;
+    }
 
     let childId =
       ins.rows?.[0]?.id != null ? String(ins.rows[0].id) : '';

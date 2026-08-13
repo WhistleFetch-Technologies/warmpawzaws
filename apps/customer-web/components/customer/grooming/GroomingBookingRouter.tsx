@@ -5,7 +5,6 @@ import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, Chec
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import {
-  buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
 import { runInlineAddressDetect, inlineAddressCoordsPayload } from '@/lib/run-inline-address-detect';
@@ -440,13 +439,13 @@ export function GroomingBookingRouter({
       if (success && slots.length > 0) {
         setTimeSlots(slots);
       } else if (!success) {
-        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+        setTimeSlots([]);
       } else {
         setTimeSlots([]);
       }
     } catch (error) {
       console.error('Error loading time slots:', error);
-      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+      setTimeSlots([]);
     } finally {
       setLoadingSlots(false);
     }

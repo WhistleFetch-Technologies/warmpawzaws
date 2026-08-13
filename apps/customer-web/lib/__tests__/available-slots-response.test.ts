@@ -89,6 +89,16 @@ describe('normalizeAvailableSlotsResponse', () => {
     expect(slots[0].available).toBe(false);
     expect(slots[0].isPast).toBe(true);
   });
+
+  it('returns no bookable slots when availability API reports failure', () => {
+    const { success, slots } = normalizeAvailableSlotsResponse({
+      success: false,
+      slots: [{ time: '14:00', available: true }],
+      error: 'Unable to calculate slot availability',
+    });
+    expect(success).toBe(false);
+    expect(slots).toEqual([]);
+  });
 });
 
 /** 2026-06-19 18:35 IST = 2026-06-19T13:05:00.000Z */

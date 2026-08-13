@@ -50,13 +50,7 @@ import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
 import {
   discardUnpaidShopOrder,
   isShopOrderPaymentHoldActive,
-  isShopOrderPaymentHoldExpired,
 } from '../../../utils/shop-payment-hold';
-import {
-  reconcileShopOrderPayment,
-  SHOP_HOLD_EXPIRY_CANCEL_REASON,
-} from '../../../utils/payments/shop-payment-reconciliation';
-import { isPaymentAbandonCancellationReason } from '../../../utils/shop-vendor-visibility';
 import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { PaymentTransactionStatus, BookingPaymentStatus } from '../../constants';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
@@ -65,6 +59,12 @@ import { ACTIVE_REFUND_STATUS_FILTER, mapRazorpayRefundEventStatus } from '../..
 import { markShopOrderPaymentRefundedIfFull } from '../../../utils/payments/shop-order-refund';
 import { reconcileRazorpayRefundWebhook } from '../../../utils/payments/razorpay-refund-webhook-reconcile';
 import { ensureBookingStartOtpIfNeeded, scheduleBookingStartOtpIfNeeded } from '../../../utils/booking-start-otp';
+import { ensurePayableRazorpayOrder } from '../../../utils/payments/ensure-payable-razorpay-order';
+import {
+  finalizeCapturedPayment,
+  recordRazorpayWebhookEvent,
+} from '../../../utils/payments/finalize-captured-payment';
+import { isHoldExpiryCancelReason } from '../../../utils/payments/payment-attempt';
 
 // Razorpay configuration is imported from utils
 
@@ -430,14 +430,11 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           return this.error('Order is already paid', 400);
         }
         const orderSt = String(shopOrder.order_status || '').toLowerCase();
-        if (orderSt === 'cancelled' || ['failed', 'expired'].includes(payStatus)) {
+        if (
+          (orderSt === 'cancelled' && !isHoldExpiryCancelReason(shopOrder.cancellation_reason)) ||
+          ['failed'].includes(payStatus)
+        ) {
           return this.error('Order payment window has expired or order was cancelled. Please place a new order.', 410);
-        }
-        if (isShopOrderPaymentHoldExpired(shopOrder)) {
-          await discardUnpaidShopOrder(String(shopOrder.id), 'payment_window_expired', {
-            paymentStatus: 'expired',
-          });
-          return this.error('Payment window expired. Please place a new order.', 410);
         }
         const pm = String(shopOrder.payment_method || '').toLowerCase();
         if (pm === 'cod' || pm === 'cash_on_delivery') {
@@ -933,6 +930,48 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         notes: orderData.notes,
       });
 
+      const isBookingOnline =
+        Boolean(booking && bookingId) &&
+        !isPharmacyOrder &&
+        !isEcommerceOrder &&
+        !isDiagnosticsOrder &&
+        !isBookingPrepaid &&
+        !isWalletTopup;
+
+      if (isBookingOnline || isEcommerceOrder) {
+        const ensured = await ensurePayableRazorpayOrder({
+          kind: isEcommerceOrder ? 'shop' : 'booking',
+          entityId: isEcommerceOrder ? ecommerceOrderId : String(bookingId),
+          chargeAmount,
+          currency,
+          customerId: customerIdFinal,
+          vendorId: vendorIdFinal || null,
+          notes,
+          transfers: orderData.transfers,
+        });
+        if (ensured.action === 'rejected') {
+          return this.error(ensured.error, ensured.status);
+        }
+        if (ensured.action === 'already_paid') {
+          return this.success({
+            orderId: ensured.razorpayOrderId || 'already-paid',
+            amount: 0,
+            currency,
+            keyId: config.keyId,
+            paidByCapture: true,
+            reusedExistingOrder: true,
+          });
+        }
+        return this.success({
+          orderId: ensured.razorpayOrderId,
+          amount: ensured.amount,
+          currency: ensured.currency,
+          keyId: config.keyId,
+          reusedExistingOrder: ensured.reused,
+          ...(chargeWasEnforced ? { amountEnforced: true } : {}),
+        });
+      }
+
       let razorpayOrder: any;
       try {
         razorpayOrder = await razorpayRequest('/orders', 'POST', orderData, 20000) as any;
@@ -1253,11 +1292,6 @@ class VerifyPaymentHandler extends BaseHandler {
         const bookingId = payment.booking_id;
         const pharmacyOrderId = payment.pharmacy_order_id;
         const ecommerceOrderId = payment.order_id;
-        // orders.payment_method is customer-facing ('online'); payments row stores gateway ('razorpay').
-        const resolvedPaymentMethod =
-          payment.payment_method && String(payment.payment_method) !== 'razorpay'
-            ? String(payment.payment_method)
-            : 'online';
 
         // Update payment status
         await client.query(
@@ -1340,81 +1374,12 @@ class VerifyPaymentHandler extends BaseHandler {
           });
 
           const { rows: shopRows } = await client.query(
-            `SELECT id, order_status, payment_status, payment_method, payment_hold_expires_at, created_at, cancellation_reason
-             FROM orders WHERE id = $1::uuid FOR UPDATE`,
+            `SELECT id FROM orders WHERE id = $1::uuid FOR UPDATE`,
             [ecommerceOrderId]
           );
           if (shopRows.length === 0) {
             console.error('[PAYMENT-VERIFY] ❌ Ecommerce order not found:', ecommerceOrderId);
             throw new Error(`Order ${ecommerceOrderId} not found`);
-          }
-          const shopRow = shopRows[0];
-          const shopPs = String(shopRow.payment_status || '').toLowerCase();
-          const shopSt = String(shopRow.order_status || '').toLowerCase();
-          const holdCancelReconfirm =
-            shopSt === 'cancelled' &&
-            isPaymentAbandonCancellationReason(shopRow.cancellation_reason);
-          if (shopSt === 'cancelled' && !holdCancelReconfirm) {
-            throw new Error('Order payment window has expired or order was cancelled');
-          }
-          if (['failed', 'expired'].includes(shopPs) && !holdCancelReconfirm) {
-            throw new Error('Order payment window has expired or order was cancelled');
-          }
-          if (
-            isShopOrderPaymentHoldExpired(shopRow) &&
-            shopPs !== 'paid' &&
-            shopPs !== 'completed' &&
-            !holdCancelReconfirm
-          ) {
-            throw new Error('PAYMENT_HOLD_EXPIRED');
-          }
-
-          const updateResult = await client.query(
-            `UPDATE orders SET
-              payment_status = 'paid',
-              order_status = CASE
-                WHEN order_status IN ('pending_payment', 'pending') THEN 'pending'
-                WHEN order_status = 'cancelled'
-                  AND COALESCE(cancellation_reason, '') = $4
-                THEN 'pending'
-                ELSE order_status
-              END,
-              payment_method = COALESCE($3, payment_method),
-              payment_id = COALESCE(payment_id, $2),
-              payment_hold_expires_at = NULL,
-              cancellation_reason = CASE
-                WHEN order_status = 'cancelled'
-                  AND COALESCE(cancellation_reason, '') = $4
-                THEN NULL
-                ELSE cancellation_reason
-              END,
-              cancelled_at = CASE
-                WHEN order_status = 'cancelled'
-                  AND COALESCE(cancellation_reason, '') = $4
-                THEN NULL
-                ELSE cancelled_at
-              END,
-              cancelled_by = CASE
-                WHEN order_status = 'cancelled'
-                  AND COALESCE(cancellation_reason, '') = $4
-                THEN NULL
-                ELSE cancelled_by
-              END,
-              updated_at = NOW()
-            WHERE id = $1::uuid
-            RETURNING id, payment_status, order_status`,
-            [ecommerceOrderId, payment.id, resolvedPaymentMethod, SHOP_HOLD_EXPIRY_CANCEL_REASON]
-          );
-
-          if (updateResult.rows.length === 0) {
-            const { rows: existing } = await client.query(
-              `SELECT id FROM orders WHERE id = $1::uuid LIMIT 1`,
-              [ecommerceOrderId]
-            );
-            if (existing.length === 0) {
-              console.error('[PAYMENT-VERIFY] ❌ Ecommerce order not found:', ecommerceOrderId);
-              throw new Error(`Order ${ecommerceOrderId} not found`);
-            }
           }
 
           ecommerceOrderForShipment = String(ecommerceOrderId);
@@ -1455,8 +1420,6 @@ class VerifyPaymentHandler extends BaseHandler {
         );
         const bookingRow = bookingRows[0] || {};
         const previousStatus = bookingRow?.status || null;
-        const previousPaymentStatus = bookingRow?.payment_status || null;
-        const shouldNotify = previousPaymentStatus !== 'paid' || previousStatus === 'pending_payment';
 
         // Split-pay gate: if financial meta reserved a wallet slice, debit it before marking paid.
         // Razorpay amount alone (often GST) must not complete the booking without the wallet leg.
@@ -1549,21 +1512,7 @@ class VerifyPaymentHandler extends BaseHandler {
         );
 
         await client.query(
-          `UPDATE bookings SET 
-            payment_status = 'paid',
-            status = CASE
-              WHEN status IN ('pending', 'pending_payment') THEN 'confirmed'
-              WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN 'confirmed'
-              ELSE status
-            END,
-            cancellation_reason = CASE
-              WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN NULL
-              ELSE cancellation_reason
-            END,
-            cancelled_at = CASE
-              WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN NULL
-              ELSE cancelled_at
-            END,
+          `UPDATE bookings SET
             total_amount = COALESCE($2::numeric, total_amount),
             updated_at = NOW()
           WHERE id = $1`,
@@ -1573,11 +1522,9 @@ class VerifyPaymentHandler extends BaseHandler {
         if (previousStatus !== 'confirmed') {
           bookingStatusChange = { bookingId, from: previousStatus, to: 'confirmed' };
         }
-        if (shouldNotify) {
-          bookingToNotify = bookingId;
-        }
+        bookingToNotify = null;
 
-        console.log('[PAYMENT-VERIFY] ✅ Payment verified and booking confirmed:', bookingId);
+        console.log('[PAYMENT-VERIFY] Payment row completed; entity finalization runs after commit:', bookingId);
 
         Promise.resolve()
           .then(async () => {
@@ -1704,6 +1651,32 @@ class VerifyPaymentHandler extends BaseHandler {
         };
       });
 
+      if (result?.bookingId || result?.ecommerceOrderId) {
+        const fin = await finalizeCapturedPayment({
+          source: 'verify',
+          razorpayOrderId: razorpay_order_id,
+          razorpayPaymentId: razorpay_payment_id,
+        });
+        bookingToNotify = null;
+        ecommerceOrderToNotify = null;
+        ecommerceOrderForShipment = null;
+        if (fin.outcome === 'fulfilled' && fin.entityType === 'booking' && fin.entityId) {
+          bookingStatusChange = {
+            bookingId: String(fin.entityId),
+            from: fin.previousEntityStatus || null,
+            to: 'confirmed',
+          };
+          void import('../../tax-invoice-pdf')
+            .then(({ ensureBookingInvoiceGenerated }) =>
+              ensureBookingInvoiceGenerated(String(fin.entityId))
+            )
+            .catch((e) => console.warn('[PAYMENT-VERIFY] booking invoice generate failed:', e));
+        }
+        if (fin.outcome === 'refunded' || fin.outcome === 'duplicate_refunded') {
+          Object.assign(result, { refunded: true, outcome: fin.outcome });
+        }
+      }
+
       if (bookingStatusChange) {
         await logBookingStatusChange(
           (bookingStatusChange as BookingStatusChange).bookingId,
@@ -1768,138 +1741,48 @@ class VerifyPaymentHandler extends BaseHandler {
         String(error?.message || '') === 'PAYMENT_HOLD_EXPIRED' ||
         String(error?.message || '').includes('payment window has expired');
 
-      if (holdExpired) {
-        const body = this.parseBody(context.event);
-        try {
-          const { rows: paymentRows } = await query(
-            `SELECT order_id FROM payments WHERE razorpay_order_id = $1 AND order_id IS NOT NULL LIMIT 1`,
-            [body?.razorpay_order_id]
-          );
-          if (paymentRows[0]?.order_id) {
-            const orderId = String(paymentRows[0].order_id);
-            if (body?.razorpay_payment_id) {
-              const reconciled = await reconcileShopOrderPayment(orderId, {
-                source: 'verify-hold-expired',
-              }).catch(() => false);
-              if (reconciled) {
-                return this.success({
-                  success: true,
-                  message: 'Payment verified successfully',
-                  paymentId: body.razorpay_payment_id,
-                  orderId: body.razorpay_order_id,
-                  ecommerceOrderId: orderId,
-                });
-              }
-            }
-            await discardUnpaidShopOrder(orderId, 'payment_window_expired', {
-              paymentStatus: 'expired',
-            });
-          }
-        } catch (discardErr) {
-          console.warn('[PAYMENT-VERIFY] discard after hold expiry failed:', discardErr);
-        }
-        return this.error(
-          'Payment window expired. Please place a new order. If you were charged, contact support for a refund.',
-          410
-        );
-      }
-
-      // ✅ CRITICAL: This catch block runs AFTER signature verification passed.
-      // The customer has genuinely paid money on Razorpay. We must NEVER delete the
-      // booking or payment. The Razorpay webhook (payment.captured) will act as a
-      // safety net and mark the booking as paid when it fires.
       const body = this.parseBody(context.event);
       const orderId = body?.razorpay_order_id;
       const paymentId = body?.razorpay_payment_id;
 
-      if (orderId) {
+      if (orderId && paymentId) {
         try {
-          // Attempt to mark the payment as completed even if the main transaction failed.
-          // This ensures the webhook can match it and the booking won't be orphaned.
-          await query(
-            `UPDATE payments SET 
-              payment_status = 'completed',
-              razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
-              completed_at = COALESCE(completed_at, NOW()),
-              updated_at = NOW()
-            WHERE razorpay_order_id = $2 AND payment_status = 'pending'`,
-            [paymentId || null, orderId]
-          );
-
-          // Try to update the booking too (best-effort)
-          const { rows: paymentRows } = await query(
-            `SELECT booking_id, order_id FROM payments WHERE razorpay_order_id = $1 LIMIT 1`,
-            [orderId]
-          );
-          if (paymentRows.length > 0 && paymentRows[0].order_id && !paymentRows[0].booking_id) {
-            const reconciled = await reconcileShopOrderPayment(String(paymentRows[0].order_id), {
-              source: 'verify-recovery',
-            }).catch(() => false);
-            if (!reconciled) {
-              await query(
-                `UPDATE orders SET
-                  payment_status = 'paid',
-                  order_status = CASE
-                    WHEN order_status IN ('pending_payment', 'pending') THEN 'pending'
-                    WHEN order_status = 'cancelled'
-                      AND COALESCE(cancellation_reason, '') = $2
-                    THEN 'pending'
-                    ELSE order_status
-                  END,
-                  payment_hold_expires_at = NULL,
-                  cancellation_reason = CASE
-                    WHEN order_status = 'cancelled'
-                      AND COALESCE(cancellation_reason, '') = $2
-                    THEN NULL
-                    ELSE cancellation_reason
-                  END,
-                  cancelled_at = CASE
-                    WHEN order_status = 'cancelled'
-                      AND COALESCE(cancellation_reason, '') = $2
-                    THEN NULL
-                    ELSE cancelled_at
-                  END,
-                  cancelled_by = CASE
-                    WHEN order_status = 'cancelled'
-                      AND COALESCE(cancellation_reason, '') = $2
-                    THEN NULL
-                    ELSE cancelled_by
-                  END,
-                  updated_at = NOW()
-                WHERE id = $1::uuid
-                  AND payment_status != 'paid'
-                  AND LOWER(COALESCE(order_status, '')) NOT IN ('returned')`,
-                [paymentRows[0].order_id, SHOP_HOLD_EXPIRY_CANCEL_REASON]
-              );
-            }
-            console.log('[PAYMENT-VERIFY] ⚠️ Best-effort ecommerce payment update:', paymentRows[0].order_id);
-          } else if (paymentRows.length > 0 && paymentRows[0].booking_id) {
-            await query(
-              `UPDATE bookings SET 
-                payment_status = 'paid',
-                status = CASE
-                  WHEN status IN ('pending', 'pending_payment') THEN 'confirmed'
-                  WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN 'confirmed'
-                  ELSE status
-                END,
-                cancellation_reason = CASE
-                  WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN NULL
-                  ELSE cancellation_reason
-                END,
-                cancelled_at = CASE
-                  WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN NULL
-                  ELSE cancelled_at
-                END,
-                updated_at = NOW()
-              WHERE id = $1 AND payment_status != 'paid'`,
-              [paymentRows[0].booking_id]
-            );
-            console.log('[PAYMENT-VERIFY] ⚠️ Main transaction failed but best-effort update succeeded for booking:', paymentRows[0].booking_id);
+          const fin = await finalizeCapturedPayment({
+            source: 'verify',
+            razorpayOrderId: orderId,
+            razorpayPaymentId: paymentId,
+          });
+          if (fin.outcome === 'fulfilled' || fin.outcome === 'already_final') {
+            return this.success({
+              success: true,
+              message: 'Payment verified successfully',
+              paymentId,
+              orderId,
+              bookingId: fin.entityType === 'booking' ? fin.entityId : null,
+              ecommerceOrderId: fin.entityType === 'shop_order' ? fin.entityId : null,
+              outcome: fin.outcome,
+            });
+          }
+          if (fin.outcome === 'refunded' || fin.outcome === 'duplicate_refunded') {
+            return this.success({
+              success: true,
+              message: 'Payment captured; refund initiated because the purchase could not be fulfilled.',
+              paymentId,
+              orderId,
+              refunded: true,
+              outcome: fin.outcome,
+            });
           }
         } catch (recoveryError: any) {
-          // Recovery also failed — the webhook will handle it
-          console.error('[PAYMENT-VERIFY] ⚠️ Recovery update also failed (webhook will handle):', recoveryError?.message);
+          console.error('[PAYMENT-VERIFY] Finalize recovery failed (webhook will handle):', recoveryError?.message);
         }
+      }
+
+      if (holdExpired) {
+        return this.error(
+          'Payment window expired. If you were charged, the payment will be confirmed or refunded automatically.',
+          410
+        );
       }
 
       if (error.message) {
@@ -1949,189 +1832,86 @@ class RazorpayWebhookHandler extends BaseHandler {
     if (event === 'payment.captured') {
       const paymentEntity = payload_data.payment.entity;
       const razorpayPaymentId = paymentEntity.id;
-      const razorpayOrderId = paymentEntity.order_id; // Always present in Razorpay payment entity
+      const razorpayOrderId = paymentEntity.order_id;
+      const webhookEventId =
+        body.id || `payment.captured_${razorpayPaymentId || razorpayOrderId || ''}`;
 
       let paymentRecord: any = null;
-      let bookingToNotify: string | null = null;
-      let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
-      let ecommerceOrderForShipment: string | null = null;
-      let ecommerceOrderToNotify: string | null = null;
-      let ecommerceVendorIdForCommission: string | null = null;
-      let cancelledShopOrderLateRefund: {
-        orderId: string;
-        amount: number;
-        customerId?: string;
-        vendorId?: string;
-      } | null = null;
+      let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null =
+        null;
 
-      // ✅ FIX: Use transaction with fallback lookup (razorpay_payment_id → razorpay_order_id)
-      // Previously only looked up by razorpay_payment_id, which is NULL until verify-payment runs.
-      // If verify-payment never fires (user closes browser, network error), the webhook must still work.
       await withTransaction(async (client) => {
-        // Try razorpay_payment_id first (set by verify-payment if it ran)
         let result = await client.query(
           `SELECT * FROM payments WHERE razorpay_payment_id = $1 FOR UPDATE`,
           [razorpayPaymentId]
         );
-
-        // Fallback: razorpay_order_id (always set by /razorpay/create-order)
         if (result.rows.length === 0 && razorpayOrderId) {
           result = await client.query(
             `SELECT * FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
             [razorpayOrderId]
           );
         }
-
         if (result.rows.length === 0) {
-          console.warn(`[RAZORPAY-WEBHOOK] Payment not found for payment_id=${razorpayPaymentId}, order_id=${razorpayOrderId}`);
+          console.warn(
+            `[RAZORPAY-WEBHOOK] Payment not found for payment_id=${razorpayPaymentId}, order_id=${razorpayOrderId}`
+          );
           return;
         }
-
         paymentRecord = result.rows[0];
-
-        // Update payment: mark completed, fill razorpay_payment_id if missing
-        await client.query(
-          `UPDATE payments SET 
-            payment_status = 'completed',
-            razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
-            completed_at = COALESCE(completed_at, NOW()),
-            updated_at = NOW()
-          WHERE id = $2`,
-          [razorpayPaymentId, paymentRecord.id]
-        );
-
-        // Update booking if linked
-        if (paymentRecord.booking_id) {
-          const { rows: bookingRows } = await client.query(
-            `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
-            [paymentRecord.booking_id]
-          );
-
-          if (bookingRows.length > 0) {
-            const booking = bookingRows[0];
-            const previousStatus = booking.status || null;
-            const shouldNotify = booking.payment_status !== 'paid' || previousStatus === 'pending_payment';
-
-            await client.query(
-              `UPDATE bookings SET 
-                payment_status = 'paid',
-                status = 'confirmed',
-                updated_at = NOW()
-              WHERE id = $1`,
-              [paymentRecord.booking_id]
-            );
-
-            if (previousStatus !== 'confirmed') {
-              bookingStatusChange = { bookingId: paymentRecord.booking_id, from: previousStatus, to: 'confirmed' };
-            }
-            if (shouldNotify) {
-              bookingToNotify = paymentRecord.booking_id;
-            }
-          }
-        }
-
-        // Update pharmacy order if linked
         if (paymentRecord.pharmacy_order_id) {
           await client.query(
-            `UPDATE pharmacy_orders SET 
-              payment_status = 'paid',
-              razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
-              status = 'payment_confirmed',
-              updated_at = NOW()
-            WHERE id = $2 AND payment_status != 'paid'`,
+            `UPDATE payments SET
+               payment_status = 'completed',
+               razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
+               completed_at = COALESCE(completed_at, NOW()),
+               updated_at = NOW()
+             WHERE id = $2`,
+            [razorpayPaymentId, paymentRecord.id]
+          );
+          await client.query(
+            `UPDATE pharmacy_orders SET
+               payment_status = 'paid',
+               razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
+               status = 'payment_confirmed',
+               updated_at = NOW()
+             WHERE id = $2 AND payment_status != 'paid'`,
             [razorpayPaymentId, paymentRecord.pharmacy_order_id]
           );
         }
-
-        if (paymentRecord.order_id && !paymentRecord.booking_id && !paymentRecord.pharmacy_order_id) {
-          const orderUpdate = await client.query(
-            `UPDATE orders SET
-              payment_status = 'paid',
-              order_status = CASE
-                WHEN order_status IN ('pending_payment', 'pending') THEN 'pending'
-                WHEN order_status = 'cancelled'
-                  AND COALESCE(cancellation_reason, '') = $3
-                THEN 'pending'
-                ELSE order_status
-              END,
-              payment_id = COALESCE(payment_id, $2),
-              payment_hold_expires_at = NULL,
-              cancellation_reason = CASE
-                WHEN order_status = 'cancelled'
-                  AND COALESCE(cancellation_reason, '') = $3
-                THEN NULL
-                ELSE cancellation_reason
-              END,
-              cancelled_at = CASE
-                WHEN order_status = 'cancelled'
-                  AND COALESCE(cancellation_reason, '') = $3
-                THEN NULL
-                ELSE cancelled_at
-              END,
-              cancelled_by = CASE
-                WHEN order_status = 'cancelled'
-                  AND COALESCE(cancellation_reason, '') = $3
-                THEN NULL
-                ELSE cancelled_by
-              END,
-              updated_at = NOW()
-            WHERE id = $1::uuid
-              AND payment_status != 'paid'
-              AND (
-                LOWER(COALESCE(order_status, '')) NOT IN ('cancelled', 'returned')
-                OR (
-                  order_status = 'cancelled'
-                  AND COALESCE(cancellation_reason, '') = $3
-                )
-              )
-            RETURNING id, vendor_id, order_status`,
-            [paymentRecord.order_id, paymentRecord.id, SHOP_HOLD_EXPIRY_CANCEL_REASON]
-          );
-          if (orderUpdate.rows.length > 0) {
-            const orderId = String(paymentRecord.order_id);
-            const vendorId = String(
-              orderUpdate.rows[0].vendor_id ?? paymentRecord.vendor_id ?? ''
-            );
-            ecommerceOrderForShipment = orderId;
-            ecommerceOrderToNotify = orderId;
-            if (vendorId) {
-              ecommerceVendorIdForCommission = vendorId;
-            }
-          } else {
-            const { rows: lateCancelRows } = await client.query(
-              `SELECT o.id::text, o.customer_id::text, o.vendor_id::text, p.amount::text,
-                      o.cancellation_reason
-               FROM orders o
-               JOIN payments p ON p.id = $2::uuid
-               WHERE o.id = $1::uuid
-                 AND o.order_status = 'cancelled'
-                 AND LOWER(COALESCE(o.order_type, 'ecommerce')) IN ('ecommerce', 'shop', 'shop_order')
-                 AND p.razorpay_payment_id IS NOT NULL
-                 AND NOT EXISTS (
-                   SELECT 1 FROM refunds r
-                   WHERE r.order_id = o.id
-                     AND r.refund_status NOT IN ('failed', 'rejected')
-                 )
-               LIMIT 1`,
-              [paymentRecord.order_id, paymentRecord.id],
-            );
-            const lateRow = lateCancelRows[0];
-            if (
-              lateRow &&
-              !isPaymentAbandonCancellationReason(lateRow.cancellation_reason)
-            ) {
-              cancelledShopOrderLateRefund = {
-                orderId: String(lateRow.id),
-                amount: parseFloat(String(lateRow.amount)) || 0,
-                customerId: lateRow.customer_id ? String(lateRow.customer_id) : undefined,
-                vendorId: lateRow.vendor_id ? String(lateRow.vendor_id) : undefined,
-              };
-            }
-          }
-        }
       });
 
-      // Post-transaction: logging, notifications, settlements
+      if (paymentRecord && !paymentRecord.pharmacy_order_id) {
+        const fin = await finalizeCapturedPayment({
+          source: 'webhook',
+          razorpayOrderId,
+          razorpayPaymentId,
+          paymentRowId: paymentRecord.id ? String(paymentRecord.id) : null,
+        });
+        await recordRazorpayWebhookEvent(
+          String(webhookEventId),
+          'payment.captured',
+          fin.paymentId
+        );
+        if (fin.outcome === 'fulfilled' && fin.entityType === 'booking' && fin.entityId) {
+          bookingStatusChange = {
+            bookingId: String(fin.entityId),
+            from: fin.previousEntityStatus || null,
+            to: 'confirmed',
+          };
+          void import('../../tax-invoice-pdf')
+            .then(({ ensureBookingInvoiceGenerated }) =>
+              ensureBookingInvoiceGenerated(String(fin.entityId))
+            )
+            .catch((e) => console.warn('[RAZORPAY-WEBHOOK] booking invoice generate failed:', e));
+        }
+      } else {
+        await recordRazorpayWebhookEvent(
+          String(webhookEventId),
+          'payment.captured',
+          paymentRecord?.id ? String(paymentRecord.id) : undefined
+        );
+      }
+
       if (bookingStatusChange) {
         await logBookingStatusChange(
           (bookingStatusChange as BookingStatusChange).bookingId,
@@ -2145,32 +1925,19 @@ class RazorpayWebhookHandler extends BaseHandler {
           const { publishVendorReferralBookingConfirmedAction } = await import(
             '../../../lib/services/loyalty-action-publisher'
           );
-          await publishVendorReferralBookingConfirmedAction((bookingStatusChange as BookingStatusChange).bookingId).catch((e) =>
+          await publishVendorReferralBookingConfirmedAction(
+            (bookingStatusChange as BookingStatusChange).bookingId
+          ).catch((e) =>
             console.error('[RAZORPAY-WEBHOOK] Loyalty action publish failed:', e)
           );
         }
       }
 
-      if (bookingToNotify) {
-        await notifyBookingCreated(bookingToNotify, (context as HandlerContext & { requestId?: string }).requestId)
-          .catch((e) => console.error('[RAZORPAY-WEBHOOK] Notification failed:', e));
-        void import('../../tax-invoice-pdf')
-          .then(({ ensureBookingInvoiceGenerated }) =>
-            ensureBookingInvoiceGenerated(String(bookingToNotify))
-          )
-          .catch((e) => console.warn('[RAZORPAY-WEBHOOK] booking invoice generate failed:', e));
-      }
-
       if (paymentRecord?.booking_id) {
         scheduleBookingStartOtpIfNeeded(String(paymentRecord.booking_id), '[RAZORPAY-WEBHOOK]');
-      }
-
-      // ✅ Trigger automatic settlement if marketplace mode is enabled
-      if (paymentRecord?.booking_id) {
         try {
           const vendors = await select('vendors', { id: paymentRecord.vendor_id });
           const vendor = vendors.length > 0 ? vendors[0] : null;
-          
           if (vendor?.razorpay_account_id && vendor.bank_verified) {
             const { sendToSQS } = await import('../../../utils/aws/aws-clients');
             await sendToSQS('settlement-queue', {
@@ -2184,63 +1951,6 @@ class RazorpayWebhookHandler extends BaseHandler {
           console.error('Failed to queue automatic settlement from webhook:', error);
         }
       }
-
-      if (ecommerceOrderForShipment) {
-        triggerAutoShipment(ecommerceOrderForShipment, 'ecommerce').catch((e) =>
-          console.error('[RAZORPAY-WEBHOOK] Auto-shipment trigger failed:', e)
-        );
-        // After commit only — avoid pool UPDATE racing the txn row lock.
-        const orderIdForPostCommit = ecommerceOrderForShipment;
-        const vendorIdForPostCommit = ecommerceVendorIdForCommission;
-        const writeSettlement = () =>
-          writeEcommerceOrderSettlementLedgerRow(orderIdForPostCommit).catch((e) =>
-            console.warn('[RAZORPAY-WEBHOOK] Settlement ledger write failed:', e)
-          );
-        if (vendorIdForPostCommit) {
-          void applyOrderCommissionAudit(orderIdForPostCommit, vendorIdForPostCommit)
-            .then(() => writeSettlement())
-            .catch((e) => {
-              console.warn('[RAZORPAY-WEBHOOK] Commission audit failed (settlement still attempted):', e);
-              return writeSettlement();
-            });
-        } else {
-          void writeSettlement();
-        }
-      }
-
-      if (ecommerceOrderToNotify) {
-        void notifyShopOrderPaid(ecommerceOrderToNotify).catch((e) =>
-          console.error('[RAZORPAY-WEBHOOK] Shop order notification failed:', e)
-        );
-      }
-
-      if (
-        paymentRecord?.order_id &&
-        !paymentRecord.booking_id &&
-        !paymentRecord.pharmacy_order_id &&
-        !ecommerceOrderForShipment &&
-        !cancelledShopOrderLateRefund
-      ) {
-        await reconcileShopOrderPayment(String(paymentRecord.order_id), {
-          source: 'webhook-capture-fallback',
-        }).catch((e) =>
-          console.warn('[RAZORPAY-WEBHOOK] Shop reconcile fallback failed:', e)
-        );
-      }
-
-      if (cancelledShopOrderLateRefund && cancelledShopOrderLateRefund.amount > 0.009) {
-        const late = cancelledShopOrderLateRefund;
-        const { initiateShopOrderRazorpayRefund } = await import('../../../utils/payments/shop-order-refund');
-        void initiateShopOrderRazorpayRefund({
-          orderId: late.orderId,
-          amount: late.amount,
-          reason: 'Late payment capture on cancelled shop order',
-          customerId: late.customerId,
-          vendorId: late.vendorId,
-        }).catch((e) =>
-          console.error('[RAZORPAY-WEBHOOK] Late-cancel shop refund failed:', late.orderId, e),
-        );
-      }
     } else if (event === 'payment.failed') {
       const payment = payload_data.payment.entity;
       const failedRazorpayOrderId = payment.order_id;
@@ -2248,11 +1958,11 @@ class RazorpayWebhookHandler extends BaseHandler {
 
       await withTransaction(async (client) => {
         await client.query(
-          `UPDATE payments SET 
-            payment_status = 'failed',
+          `UPDATE payments SET
             failure_reason = $1,
             updated_at = NOW()
-          WHERE razorpay_payment_id = $2 OR razorpay_order_id = $3`,
+          WHERE (razorpay_payment_id = $2 OR razorpay_order_id = $3)
+            AND LOWER(COALESCE(payment_status, '')) IN ('pending', 'processing')`,
           [
             payment.error_description || 'Payment failed',
             payment.id,
@@ -2271,32 +1981,6 @@ class RazorpayWebhookHandler extends BaseHandler {
           const row = payments[0];
           if (row.order_id && !row.booking_id) {
             shopOrderToDiscard = String(row.order_id);
-          } else if (row.booking_id) {
-            const bookingId = row.booking_id;
-
-            const { rows: bookingRows } = await client.query(
-              `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
-              [bookingId]
-            );
-
-            if (bookingRows.length > 0) {
-              const booking = bookingRows[0];
-              if (
-                booking.payment_status !== 'paid' &&
-                (booking.status === 'pending' || booking.status === 'pending_payment')
-              ) {
-                await client.query(
-                  `UPDATE bookings SET 
-                    status = 'cancelled', 
-                    payment_status = 'failed',
-                    cancelled_at = NOW(),
-                    updated_at = NOW()
-                  WHERE id = $1`,
-                  [bookingId]
-                );
-                console.log('[PAYMENT-FAILED] ✅ Booking cancelled and slot released:', bookingId);
-              }
-            }
           }
         }
       });
