@@ -1,27 +1,10 @@
-'use client';
+import AdminOrderDetailPageClient from './AdminOrderDetailPageClient';
 
-import { Suspense } from 'react';
-import { useParams } from 'next/navigation';
-import { AdminLayout } from '@/components/admin/layout/AdminLayout';
-import { AdminOrderDetailView } from '@/components/admin/ecommerce/orderManagementAdmin/AdminOrderDetailView';
-
-function OrderDetailInner() {
-  const params = useParams();
-  const orderId = String(params.orderId || '');
-
-  if (!orderId) {
-    return <div className="p-8 text-slate-500">Invalid order ID</div>;
-  }
-
-  return <AdminOrderDetailView orderId={orderId} />;
+/** Non-empty list required for `output: 'export'` (Next treats `[]` as missing). Real IDs load client-side. */
+export async function generateStaticParams() {
+  return [{ orderId: 'placeholder' }];
 }
 
 export default function AdminEcommerceOrderDetailPage() {
-  return (
-    <AdminLayout>
-      <Suspense fallback={<div className="p-8 text-slate-500">Loading order…</div>}>
-        <OrderDetailInner />
-      </Suspense>
-    </AdminLayout>
-  );
+  return <AdminOrderDetailPageClient />;
 }
