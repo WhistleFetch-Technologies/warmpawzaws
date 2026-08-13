@@ -13,6 +13,8 @@ import {
   getStoredCustomerJwtForSession,
   needsPasswordSetupAfterOtp,
 } from '@/lib/session-utils';
+import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
+import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -24,7 +26,7 @@ export default function ProfilePage() {
     const storedPhone = localStorage.getItem('customerPhone');
     const token = getStoredCustomerJwtForSession();
     if (!storedPhone || !token) {
-      router.push('/auth');
+      redirectWithHardFallback(router, '/auth', { method: 'push' });
       return;
     }
     setPhone(storedPhone);
@@ -91,7 +93,7 @@ export default function ProfilePage() {
   }
 
   if (!phone) {
-    return null;
+    return <AuthGateLoadingShell />;
   }
 
   return (

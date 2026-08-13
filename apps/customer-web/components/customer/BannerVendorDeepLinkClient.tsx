@@ -23,6 +23,8 @@ import {
 } from '@/lib/customer-flow-guards';
 import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
 import { customerPathToScreen } from '@/lib/promotion-navigation';
+import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
+import { buildAuthUrlWithNext, redirectWithHardFallback } from '@/lib/auth-gate-redirect';
 
 interface CustomerSession {
   phone: string;
@@ -136,8 +138,7 @@ function BannerVendorDeepLinkInner({ persona, vendorSlug }: BannerVendorDeepLink
   useEffect(() => {
     if (!isLoading && !session && !hasRedirected.current) {
       hasRedirected.current = true;
-      const next = encodeURIComponent(ctaLink);
-      router.replace(`/auth?next=${next}`);
+      redirectWithHardFallback(router, buildAuthUrlWithNext(ctaLink));
     }
   }, [isLoading, session, router, ctaLink]);
 
@@ -219,7 +220,7 @@ function BannerVendorDeepLinkInner({ persona, vendorSlug }: BannerVendorDeepLink
   }
 
   if (!session) {
-    return null;
+    return <AuthGateLoadingShell />;
   }
 
   if (!gateReady) {

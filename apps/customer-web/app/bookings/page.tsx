@@ -3,6 +3,8 @@
 import { MyBookings } from '@/components/customer/booking/MyBookings';
 import { goBackFromBookingsPage } from '@/lib/go-back-or-replace';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
+import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
+import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
@@ -22,9 +24,9 @@ function BookingsPageInner() {
 
   useEffect(() => {
     if (sessionChecked && !phone) {
-      nav.goToAuth();
+      redirectWithHardFallback(router, '/auth');
     }
-  }, [sessionChecked, phone, nav]);
+  }, [sessionChecked, phone, router]);
 
   if (!sessionChecked) {
     return (
@@ -38,7 +40,7 @@ function BookingsPageInner() {
   }
 
   if (!phone) {
-    return null;
+    return <AuthGateLoadingShell />;
   }
 
   const backToPrevious = () => goBackFromBookingsPage(router);

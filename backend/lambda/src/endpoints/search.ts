@@ -700,7 +700,8 @@ class UniversalSearchHandler extends BaseHandler {
       vendors: mappedVendors,
       services: mappedServices,
       category,
-      searchQuery,
+      // When taxonomy stripped all residual tokens, treat as hub browse (same as empty q + category chip).
+      searchQuery: keywordTokens.length > 0 ? searchQuery : '',
       queryString: qs,
     });
 

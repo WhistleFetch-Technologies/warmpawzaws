@@ -174,7 +174,7 @@ describe('resolveSpecializationDetail', () => {
     const reproductive = resolveSpecializationDetail('reproductive');
     expect(isVetSpecializationDetail(reproductive)).toBe(true);
     if (!isVetSpecializationDetail(reproductive)) return;
-    expect(reproductive.title).toBe('Reproductive & Breeding');
+    expect(reproductive.title).toBe('Reproductive');
     expect(reproductive.heroImage).toBe('/images/home/Vet/reproductive-breeding.webp');
     expect(reproductive.heroImagePosition).toBe('center top');
 
