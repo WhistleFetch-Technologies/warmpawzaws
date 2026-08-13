@@ -1,4 +1,5 @@
 import { parseJsonMetaFromNotes } from './booking-notes-meta';
+import { inferExclusiveGstFromChargedDelta, splitGstAmount } from './gst-split';
 
 function num(raw: unknown): number {
   const n = parseFloat(String(raw ?? '').replace(/,/g, ''));
@@ -65,13 +66,28 @@ export function resolveBookingInvoiceAmounts(input: BookingInvoiceAmountInput): 
   let sgst = num(meta?.sgst) || num(pay?.sgstAmount);
   let igst = num(meta?.igst) || num(pay?.igstAmount);
 
-  if (taxAmount > 0.009 && cgst + sgst + igst <= 0.009) {
-    if (input.isInterState) {
-      igst = taxAmount;
-    } else {
-      cgst = Math.round((taxAmount / 2) * 100) / 100;
-      sgst = Math.round((taxAmount - cgst) * 100) / 100;
+  if (taxAmount <= 0.009) {
+    const taxableAfterDiscount = Math.max(0, num(taxableValue - discount));
+    const charged = num(pay?.totalAmount) || num(pay?.amount) || num(input.bookingTotalAmount);
+    const inferred = inferExclusiveGstFromChargedDelta({
+      taxableValue: taxableAfterDiscount,
+      chargedTotal: charged,
+      catalogGstRate: input.catalogGstRate,
+      isInterState: input.isInterState,
+    });
+    if (inferred.gstTotal > 0.009) {
+      taxAmount = inferred.gstTotal;
+      cgst = inferred.cgstAmount;
+      sgst = inferred.sgstAmount;
+      igst = inferred.igstAmount;
     }
+  }
+
+  if (taxAmount > 0.009 && cgst + sgst + igst <= 0.009) {
+    const split = splitGstAmount(taxAmount, input.isInterState);
+    cgst = split.cgst;
+    sgst = split.sgst;
+    igst = split.igst;
   }
 
   const gstRate =

@@ -38,6 +38,7 @@ import {
   computeWalletBookingSplit,
   resolveLockedBookingGrossFromNotes,
 } from '../utils/booking-financial-gross';
+import { splitGstAmount } from '../utils/gst-split';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
 import {
   finalizeCapturedPayment,
@@ -504,6 +505,18 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         }
         if (fullyWallet) {
           paymentData.completed_at = new Date().toISOString();
+        }
+
+        if (gstAmount > 0.009 && cgstAmount + sgstAmount + igstAmount <= 0.009) {
+          const custState = customerLocation?.state;
+          const vendState = vendorLocation?.state;
+          const isInterState =
+            Boolean(custState && vendState) &&
+            String(custState).toLowerCase() !== String(vendState).toLowerCase();
+          const split = splitGstAmount(gstAmount, isInterState);
+          cgstAmount = split.cgst;
+          sgstAmount = split.sgst;
+          igstAmount = split.igst;
         }
 
         // Add tax fields if calculated

@@ -208,7 +208,10 @@ async function countNonTerminalPackageSessions(
   return Number(r.rows?.[0]?.c ?? 0);
 }
 
-const round2Money = (x: number): number => Math.round(x * 100) / 100;
+import {
+  allocatePackageSessionGross,
+  scaleCommissionForAllocatedGross,
+} from './package-session-earnings-allocation';
 
 /**
  * One slice of parent `total_amount` per completed child session; last session absorbs paise remainder.
@@ -248,8 +251,9 @@ async function accrueVendorEarningsForPackageSessionChild(
 
     const parentRes = await db.query(
       `SELECT b.vendor_id::text AS vendor_id, b.total_amount::numeric AS total_amount,
+              b.base_price::numeric AS base_price,
               b.notes,
-              COALESCE(pp.total_with_tax, pp.amount, pp.package_price, 0)::numeric AS purchase_amount
+              COALESCE(pp.amount, pp.package_price, 0)::numeric AS purchase_amount
        FROM bookings b
        LEFT JOIN package_purchases pp ON pp.id = b.package_purchase_id
        WHERE b.package_purchase_id = $1::uuid
@@ -265,6 +269,9 @@ async function accrueVendorEarningsForPackageSessionChild(
 
     let parentTotal = Number(parentRow.total_amount);
     if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
+      parentTotal = Number(parentRow.base_price);
+    }
+    if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
       parentTotal = Number(parentRow.purchase_amount);
     }
     if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
@@ -274,33 +281,37 @@ async function accrueVendorEarningsForPackageSessionChild(
     const settlementPreview = extractSettlementPreviewFromBooking(parentRow as Record<string, unknown>);
     parentTotal = applySettlementPreviewToCommissionableGross(parentTotal, settlementPreview);
 
+    await db.query(`SELECT id FROM package_purchases WHERE id = $1::uuid FOR UPDATE`, [packagePurchaseId]).catch(() => undefined);
+
     const priorRes = await db.query(
       `SELECT COALESCE(SUM(ve.total_amount), 0)::numeric AS sum_gross,
               COUNT(*)::int AS cnt
        FROM vendor_earnings ve
        INNER JOIN bookings b ON b.id = ve.booking_id
        WHERE b.package_purchase_id = $1::uuid
-         AND COALESCE(b.is_package_session, false) = true`,
+         AND COALESCE(b.is_package_session, false) = true
+         AND (ve.status IS DISTINCT FROM 'cancelled')`,
       [packagePurchaseId]
     );
     const sumPriorGross = Number(priorRes.rows?.[0]?.sum_gross ?? 0);
     const priorCnt = Number(priorRes.rows?.[0]?.cnt ?? 0);
-    if (priorCnt >= n) {
-      return;
-    }
 
-    const isLast = priorCnt === n - 1;
-    const perSessionGross = isLast
-      ? round2Money(parentTotal - sumPriorGross)
-      : round2Money(parentTotal / n);
+    const perSessionGross = allocatePackageSessionGross({
+      parentServiceValue: parentTotal,
+      sessionCount: n,
+      priorCount: priorCnt,
+      priorSum: sumPriorGross,
+    });
 
     if (!Number.isFinite(perSessionGross) || perSessionGross <= 0) {
       return;
     }
 
     const commissionRate = await getVendorCommissionRate(String(parentRow.vendor_id));
-    const commissionAmount = round2Money((perSessionGross * commissionRate) / 100);
-    const vendorAmount = round2Money(perSessionGross - commissionAmount);
+    const { commissionAmount, vendorNet: vendorAmount } = scaleCommissionForAllocatedGross({
+      allocatedGross: perSessionGross,
+      commissionRate,
+    });
     if (vendorAmount <= 0) {
       return;
     }

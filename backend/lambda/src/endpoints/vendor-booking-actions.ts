@@ -301,8 +301,9 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const refreshedRows = await select('bookings', { id: bookingId });
       const refreshedBooking = (refreshedRows[0] || { ...booking, status: 'completed', completed_at: new Date().toISOString() }) as Record<string, unknown>;
       if (!isCanonicalPackageParentBooking(refreshedBooking)) {
-        const { ensureVendorEarningsForCompletedBooking } = await import('../utils/vendor-earnings-on-completion');
+        const { ensureVendorEarningsForCompletedBooking, syncPackageSessionEarningsAfterBookingComplete } = await import('../utils/vendor-earnings-on-completion');
         await ensureVendorEarningsForCompletedBooking(refreshedBooking, bookingId, '[COMPLETE-BOOKING]');
+        await syncPackageSessionEarningsAfterBookingComplete(bookingId, '[COMPLETE-BOOKING]');
       }
 
       return c.json({

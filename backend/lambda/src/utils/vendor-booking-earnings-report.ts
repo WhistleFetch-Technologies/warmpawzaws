@@ -9,11 +9,14 @@ import {
   breakdownFromPaymentColumns,
   hasMeaningfulCustomerPaidBreakdown,
   resolveBookingCustomerPaidFeeBreakdownWithSource,
+  shouldAttributeCustomerPaidBreakdown,
+  SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL,
   type BookingAccrualResolveContext,
   type CustomerPaidFeeBreakdownSource,
   type PaymentAccrualSnapshot,
   type VendorAccrualFeeBreakdown,
 } from './vendor-accrual-fee-breakdown';
+import { allocatedEarningsFromStored } from './package-session-earnings-allocation';
 import {
   istDayEndExclusiveYmd,
   istMonthEndExclusiveYmd,
@@ -23,9 +26,6 @@ import {
   resolveSettlementBreakdownForReport,
   type SettlementBreakdownForReport,
 } from './resolve-settlement-breakdown-for-report';
-
-const PAYMENT_OK = `LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'success', 'paid', 'partially_refunded')`;
-const PAYMENT_PREFERRED = `LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'paid')`;
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -125,6 +125,16 @@ type RawEarningsRow = {
   payout_status?: unknown;
   booking_notes?: unknown;
   booking_financial_meta?: unknown;
+  payment_id?: unknown;
+  parent_booking_id?: unknown;
+  gst_identity?: unknown;
+  gst_attribute_booking_id?: unknown;
+  is_package_session?: unknown;
+  package_purchase_id?: unknown;
+  parent_service?: unknown;
+  session_n?: unknown;
+  session_seq?: unknown;
+  unlimited_usage?: unknown;
 };
 
 function rowToResolveContext(row: RawEarningsRow): BookingAccrualResolveContext {
@@ -132,6 +142,7 @@ function rowToResolveContext(row: RawEarningsRow): BookingAccrualResolveContext 
     bookingId: String(row.booking_id),
     basePrice: row.base_price,
     totalAmount: row.total_amount,
+    discountAmount: row.discount_amount,
     earningTotalAmount: row.earning_total_amount,
     taxAmount: row.tax_amount,
     serviceId: row.service_id,
@@ -145,7 +156,12 @@ function rowToResolveContext(row: RawEarningsRow): BookingAccrualResolveContext 
     taxCategoryId: row.tax_category_id,
     hsnCodeId: row.hsn_code_id,
     bookingNotes: row.booking_notes,
+    parentBookingId: row.parent_booking_id,
+    gstIdentity: row.gst_identity != null ? String(row.gst_identity) : undefined,
+    gstAttributeBookingId:
+      row.gst_attribute_booking_id != null ? String(row.gst_attribute_booking_id) : undefined,
     payment: {
+      id: row.payment_id,
       platform_fee: row.platform_fee,
       convenience_fee: row.convenience_fee,
       delivery_fee: row.delivery_fee,
@@ -290,8 +306,9 @@ async function fetchRawEarningsRowsForIstRange(
        SELECT
          (to_timestamp($1::text || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS start_ts,
          (to_timestamp($2::text || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS end_ts
-     )
-     SELECT ve.vendor_id::text AS vendor_id,
+     ),
+     in_window AS (
+       SELECT ve.vendor_id::text AS vendor_id,
             ve.booking_id::text AS booking_id,
             v.business_name,
             v.owner_name,
@@ -299,7 +316,10 @@ async function fetchRawEarningsRowsForIstRange(
             b.total_amount,
             b.discount_amount,
             b.coupon_code,
-            b.tax_amount,
+            CASE
+              WHEN COALESCE(b.is_package_session, false) THEN COALESCE(parent_b.tax_amount, b.tax_amount)
+              ELSE b.tax_amount
+            END AS tax_amount,
             b.booking_date::text AS booking_date,
             b.status AS booking_status,
             COALESCE(vs.service_name, sc.service_name) AS service_name,
@@ -309,12 +329,16 @@ async function fetchRawEarningsRowsForIstRange(
             ve.amount AS earning_net_amount,
             ve.commission_rate,
             ve.realized_at::text AS realized_at,
+            ve.realized_at AS realized_at_ts,
             ve.metadata AS earnings_metadata,
             ve.settlement_id::text AS settlement_id,
             ve.payout_id::text AS payout_id,
             s.settlement_status,
             po.payout_status,
-            b.notes AS booking_notes,
+            CASE
+              WHEN COALESCE(b.is_package_session, false) THEN COALESCE(parent_b.notes, b.notes)
+              ELSE b.notes
+            END AS booking_notes,
             b.service_id::text AS service_id,
             b.service_style,
             b.service_type,
@@ -324,6 +348,29 @@ async function fetchRawEarningsRowsForIstRange(
             v.role_id::text AS vendor_role_id,
             sc.tax_category_id::text AS tax_category_id,
             sc.hsn_code_id::text AS hsn_code_id,
+            p.id::text AS payment_id,
+            b.parent_booking_id::text AS parent_booking_id,
+            COALESCE(b.is_package_session, false) AS is_package_session,
+            b.package_purchase_id::text AS package_purchase_id,
+            COALESCE(pp.unlimited_usage, false) AS unlimited_usage,
+            COALESCE(
+              NULLIF(parent_b.total_amount, 0),
+              NULLIF(parent_b.base_price, 0),
+              NULLIF(pp.amount, 0),
+              NULLIF(pp.package_price, 0),
+              0
+            ) AS parent_service,
+            GREATEST(
+              COALESCE(
+                NULLIF(pp.total_sessions, 0),
+                NULLIF((
+                  SELECT COUNT(*)::int FROM package_scheduled_sessions pss
+                  WHERE pss.package_purchase_id = b.package_purchase_id
+                ), 0),
+                1
+              ),
+              1
+            ) AS session_n,
             p.platform_fee,
             p.convenience_fee,
             p.delivery_fee,
@@ -333,7 +380,8 @@ async function fetchRawEarningsRowsForIstRange(
             p.gst_amount,
             p.total_amount AS payment_total_amount,
             p.amount AS payment_amount,
-            p.fee_breakdown
+            p.fee_breakdown,
+            COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text) AS gst_identity
      FROM vendor_earnings ve
      CROSS JOIN bounds bnd
      INNER JOIN bookings b ON b.id = ve.booking_id
@@ -343,22 +391,48 @@ async function fetchRawEarningsRowsForIstRange(
      LEFT JOIN customers c ON c.id = b.customer_id
      LEFT JOIN vendor_services vs ON vs.id = b.service_id
      LEFT JOIN service_catalog sc ON sc.id = vs.service_id
-     LEFT JOIN LATERAL (
-       SELECT platform_fee, convenience_fee, delivery_fee,
-              cgst_amount, sgst_amount, igst_amount, gst_amount,
-              total_amount, amount, fee_breakdown, payment_status
-       FROM payments
-       WHERE booking_id = ve.booking_id
-         AND ${PAYMENT_OK}
-       ORDER BY CASE WHEN ${PAYMENT_PREFERRED} THEN 0 ELSE 1 END,
-                COALESCE(completed_at, created_at) DESC NULLS LAST
-       LIMIT 1
-     ) p ON true
+     LEFT JOIN package_purchases pp ON pp.id = b.package_purchase_id
+     ${SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL}
      WHERE ve.realized_at >= bnd.start_ts
        AND ve.realized_at < bnd.end_ts
        AND (ve.status IS DISTINCT FROM 'cancelled')
        ${vendorFilter}
-     ORDER BY v.business_name ASC NULLS LAST, ve.realized_at ASC NULLS LAST`,
+     ),
+     session_seq AS (
+       SELECT ve.booking_id::text AS booking_id,
+              ROW_NUMBER() OVER (
+                PARTITION BY b.package_purchase_id
+                ORDER BY ve.realized_at, ve.booking_id
+              ) AS session_seq
+       FROM vendor_earnings ve
+       INNER JOIN bookings b ON b.id = ve.booking_id
+       WHERE COALESCE(b.is_package_session, false) = true
+         AND b.package_purchase_id IS NOT NULL
+         AND (ve.status IS DISTINCT FROM 'cancelled')
+         AND b.package_purchase_id::text IN (
+           SELECT package_purchase_id FROM in_window WHERE package_purchase_id IS NOT NULL
+         )
+     ),
+     first_attr AS (
+       SELECT DISTINCT ON (COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text))
+              COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text) AS gst_identity,
+              ve.booking_id::text AS gst_attribute_booking_id
+       FROM vendor_earnings ve
+       INNER JOIN bookings b ON b.id = ve.booking_id
+       ${SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL}
+       WHERE (ve.status IS DISTINCT FROM 'cancelled')
+         AND COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text) IN (
+           SELECT gst_identity FROM in_window
+         )
+       ORDER BY COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text),
+                ve.realized_at,
+                ve.booking_id
+     )
+     SELECT iw.*, ss.session_seq, fa.gst_attribute_booking_id
+     FROM in_window iw
+     LEFT JOIN session_seq ss ON ss.booking_id = iw.booking_id
+     LEFT JOIN first_attr fa ON fa.gst_identity = iw.gst_identity
+     ORDER BY iw.business_name ASC NULLS LAST, iw.realized_at_ts ASC NULLS LAST`,
     params,
   ).catch((err) => {
     console.error('[vendor-booking-earnings-report] fetchRawEarningsRowsForIstRange failed:', err);
@@ -372,15 +446,42 @@ export async function buildVendorBookingEarningsLine(
   row: RawEarningsRow,
 ): Promise<VendorBookingEarningsLine> {
   const ctx = rowToResolveContext(row);
-  const { breakdown, source } = await resolveBookingCustomerPaidFeeBreakdownWithSource(ctx);
-  const serviceBase = resolveServiceBase(row);
+  const attributed = shouldAttributeCustomerPaidBreakdown(
+    String(row.booking_id),
+    ctx.gstAttributeBookingId,
+  );
+  const { breakdown: resolvedBreakdown, source } = await resolveBookingCustomerPaidFeeBreakdownWithSource(ctx);
+  const emptyFees: VendorAccrualFeeBreakdown = {
+    platformFee: 0,
+    convenienceFee: 0,
+    deliveryFee: 0,
+    cgstAmount: 0,
+    sgstAmount: 0,
+    igstAmount: 0,
+    gstTotal: 0,
+  };
+  const breakdown = attributed ? resolvedBreakdown : emptyFees;
+  const allocated = allocatedEarningsFromStored({
+    isPackageSession: row.is_package_session === true || row.is_package_session === 't',
+    unlimited: row.unlimited_usage === true || row.unlimited_usage === 't',
+    parentService: safeMoneyAmount(row.parent_service),
+    sessionCount: Number(row.session_n || 0),
+    sessionSeq: row.session_seq == null ? null : Number(row.session_seq),
+    storedGross: safeMoneyAmount(row.earning_total_amount),
+    storedCommission: safeMoneyAmount(row.earning_commission_amount),
+    storedNet: safeMoneyAmount(row.earning_net_amount),
+    commissionRate: safeMoneyAmount(row.commission_rate) || null,
+  });
+  const serviceBase = allocated.gross > 0.009 && (row.is_package_session === true || row.is_package_session === 't')
+    ? allocated.gross
+    : resolveServiceBase(row);
   const discountAmount = resolveDiscountAmount(row);
-  const payment = ctx.payment;
+  const payment = attributed ? ctx.payment : null;
 
   const customerPaidTotal = computeCustomerPaidTotal(serviceBase, discountAmount, breakdown, payment);
-  const vendorGross = round2(safeMoneyAmount(row.earning_total_amount));
-  const commissionAmount = round2(safeMoneyAmount(row.earning_commission_amount));
-  const vendorNet = round2(safeMoneyAmount(row.earning_net_amount));
+  const vendorGross = allocated.gross;
+  const commissionAmount = allocated.commission;
+  const vendorNet = allocated.net;
   const commissionRateRaw = safeMoneyAmount(row.commission_rate);
   const commissionRate = commissionRateRaw > 0 ? commissionRateRaw : null;
 

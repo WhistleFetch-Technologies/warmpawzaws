@@ -27,6 +27,7 @@ import {
   sumAccrualFeeBreakdowns,
 } from '../../../utils/vendor-accrual-fee-breakdown';
 import { fetchFundingDiscountTotalsForIstRange } from '../../../utils/resolve-settlement-breakdown-for-report';
+import { sqlPackageAllocatedEarningsAgg } from '../../../utils/package-session-earnings-allocation';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -199,18 +200,30 @@ function dailyAccrualUpsertSql(): string {
             (to_timestamp($1::text || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS start_ts,
             (to_timestamp((($1::date + INTERVAL '1 day')::date::text) || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS end_ts
         ),
+        ${sqlPackageAllocatedEarningsAgg()},
         earnings_agg AS (
-          SELECT ve.vendor_id,
-                 COALESCE(SUM(ve.total_amount), 0)::numeric(14,2) AS gross_amount,
-                 COALESCE(SUM(ve.commission_amount), 0)::numeric(14,2) AS commission_amount,
-                 COALESCE(SUM(ve.amount), 0)::numeric(14,2) AS net_amount,
+          SELECT ae.vendor_id,
+                 COALESCE(SUM(ae.alloc_gross), 0)::numeric(14,2) AS gross_amount,
+                 COALESCE(SUM(
+                   CASE
+                     WHEN COALESCE(ae.stored_gross, 0) > 0.009
+                       THEN ROUND(ae.stored_commission * ae.alloc_gross / ae.stored_gross, 2)
+                     ELSE ROUND(ae.alloc_gross * COALESCE(ae.commission_rate, 0) / 100, 2)
+                   END
+                 ), 0)::numeric(14,2) AS commission_amount,
+                 COALESCE(SUM(
+                   ae.alloc_gross - CASE
+                     WHEN COALESCE(ae.stored_gross, 0) > 0.009
+                       THEN ROUND(ae.stored_commission * ae.alloc_gross / ae.stored_gross, 2)
+                     ELSE ROUND(ae.alloc_gross * COALESCE(ae.commission_rate, 0) / 100, 2)
+                   END
+                 ), 0)::numeric(14,2) AS net_amount,
                  COUNT(*)::int AS earnings_line_count
-          FROM vendor_earnings ve
+          FROM allocated_earnings ae
           CROSS JOIN bounds b
-          WHERE ve.realized_at >= b.start_ts
-            AND ve.realized_at < b.end_ts
-            AND (ve.status IS DISTINCT FROM 'cancelled')
-          GROUP BY ve.vendor_id
+          WHERE ae.realized_at >= b.start_ts
+            AND ae.realized_at < b.end_ts
+          GROUP BY ae.vendor_id
         ),
         delivery_agg AS (
           SELECT ds.vendor_id,
