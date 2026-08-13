@@ -12,7 +12,6 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import {
-  buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
 import { toast } from 'sonner';
@@ -554,13 +553,13 @@ export function UniversalProviderProfile({
       if (success && slots.length > 0) {
         setTimeSlots(slots);
       } else if (!success) {
-        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+        setTimeSlots([]);
       } else {
         setTimeSlots([]);
       }
     } catch (error) {
       console.error('Error loading time slots:', error);
-      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+      setTimeSlots([]);
     } finally {
       setLoadingSlots(false);
     }

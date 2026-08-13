@@ -21,7 +21,6 @@ import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { BookingPetSelection } from './BookingPetSelection';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 import {
-  buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
 import { ServiceBookingPromoSummary } from '../booking/ServiceBookingPromoSummary';
@@ -341,7 +340,7 @@ export function UniversalBookingRouter({
       if (success && slots.length > 0) {
         setTimeSlots(slots);
       } else if (!success) {
-        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+        setTimeSlots([]);
       } else {
         setTimeSlots([]);
         if (message && process.env.NODE_ENV === 'development') {
@@ -350,7 +349,7 @@ export function UniversalBookingRouter({
       }
     } catch (error) {
       console.error('Error loading time slots:', error);
-      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+      setTimeSlots([]);
     } finally {
       setLoadingSlots(false);
     }

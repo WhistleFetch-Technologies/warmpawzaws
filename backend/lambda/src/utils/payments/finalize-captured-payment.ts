@@ -8,7 +8,10 @@
 
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../database/rds-connection';
-import { SQL_BOOKING_BLOCKS_SLOT } from '../payment-hold';
+import {
+  acquireSlotOccupancyLock,
+  evaluateSlotAvailability,
+} from '../slot-occupancy';
 import { notifyBookingCreated } from '../booking-notifications';
 import { notifyShopOrderPaid } from '../shop-order-notifications';
 import { scheduleBookingStartOtpIfNeeded } from '../booking-start-otp';
@@ -39,11 +42,6 @@ export type FinalizeCapturedPaymentResult = {
   newEntityStatus?: string | null;
 };
 
-function parseMinutes(time: string | null | undefined): number {
-  const [h, m] = String(time || '00:00').split(':').map((x) => parseInt(x, 10) || 0);
-  return h * 60 + m;
-}
-
 async function bookingSlotAvailable(
   client: PoolClient,
   booking: {
@@ -56,33 +54,14 @@ async function bookingSlotAvailable(
     total_duration_minutes?: number | null;
   }
 ): Promise<boolean> {
-  const duration = Number(booking.duration_minutes || booking.total_duration_minutes || 30);
-  const start = parseMinutes(String(booking.booking_time));
-  const end = start + Math.max(1, duration);
-  const staffId = booking.staff_id ? String(booking.staff_id) : null;
-  const sql = staffId
-    ? `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) AS duration_minutes
-       FROM bookings
-       WHERE vendor_id = $1 AND booking_date = $2 AND staff_id = $3
-         AND id <> $4::uuid
-         AND ${SQL_BOOKING_BLOCKS_SLOT}`
-    : `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) AS duration_minutes
-       FROM bookings
-       WHERE vendor_id = $1 AND booking_date = $2 AND staff_id IS NULL
-         AND id <> $3::uuid
-         AND ${SQL_BOOKING_BLOCKS_SLOT}`;
-  const { rows } = await client.query(
-    sql,
-    staffId
-      ? [booking.vendor_id, booking.booking_date, staffId, booking.id]
-      : [booking.vendor_id, booking.booking_date, booking.id]
-  );
-  for (const row of rows) {
-    const otherStart = parseMinutes(String(row.booking_time));
-    const otherEnd = otherStart + Math.max(1, Number(row.duration_minutes || 30));
-    if (start < otherEnd && end > otherStart) return false;
-  }
-  return true;
+  return evaluateSlotAvailability(client, {
+    vendorId: String(booking.vendor_id),
+    date: String(booking.booking_date),
+    startTime: String(booking.booking_time),
+    durationMinutes: Number(booking.total_duration_minutes || booking.duration_minutes || 30),
+    staffId: booking.staff_id ? String(booking.staff_id) : null,
+    excludeBookingId: booking.id,
+  });
 }
 
 async function tryReserveOrderInventory(client: PoolClient, orderId: string): Promise<boolean> {
@@ -270,12 +249,11 @@ export async function finalizeCapturedPayment(
       }
 
       if (holdCancel) {
-        await client.query(
-          `SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))`,
-          [
-            `${String(b.vendor_id)}|${String(b.booking_date)}|${b.staff_id ? String(b.staff_id) : 'nostaff'}`,
-            'booking-slot-revive',
-          ]
+        await acquireSlotOccupancyLock(
+          client,
+          String(b.vendor_id),
+          String(b.booking_date),
+          b.staff_id ? String(b.staff_id) : null
         );
         const free = await bookingSlotAvailable(client, {
           id: bookingId,

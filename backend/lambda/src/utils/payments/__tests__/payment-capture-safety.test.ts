@@ -65,7 +65,8 @@ describe('single payment finalization path', () => {
     expect(file).toContain("refundReason = 'duplicate_capture'");
     expect(file).toContain("refundReason = 'late_capture_slot_unavailable'");
     expect(file).toContain("refundReason = 'late_capture_inventory_unavailable'");
-    expect(file).toContain('pg_advisory_xact_lock');
+    expect(file).toContain('acquireSlotOccupancyLock');
+    expect(file).toContain('evaluateSlotAvailability');
     expect(file).toContain('bookingSlotAvailable');
     expect(file).toContain('tryReserveOrderInventory');
     expect(file).toContain('SAVEPOINT inv_reserve');

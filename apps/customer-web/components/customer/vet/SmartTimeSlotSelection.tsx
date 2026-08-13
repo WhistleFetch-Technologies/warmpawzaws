@@ -5,7 +5,6 @@ import { ArrowLeft, Calendar, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import {
-  buildDefaultSlotsWithPastGuard,
   formatIstDateYYYYMMDD,
   normalizeAvailableSlotsResponse,
   type NormalizedTimeSlot,
@@ -90,13 +89,13 @@ export function SmartTimeSlotSelection({
       );
       const { slots: normalized, success } = normalizeAvailableSlotsResponse(data, date);
       if (!success || normalized.length === 0) {
-        setSlots(buildDefaultSlotsWithPastGuard(date));
+        setSlots([]);
       } else {
         setSlots(normalized);
       }
     } catch (error) {
       console.error('Error loading available slots:', error);
-      setSlots(buildDefaultSlotsWithPastGuard(date));
+      setSlots([]);
     } finally {
       setLoading(false);
     }

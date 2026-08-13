@@ -58,6 +58,7 @@ import {
   normalizeServiceStyle,
   vendorRowIsOnline,
 } from '../repos/legacy-helpers.repo';
+import { countOverlappingBookings } from '../../../../utils/slot-occupancy';
 
 export async function executevendorAvailableSlots(c: Context) {
 
@@ -397,20 +398,28 @@ export async function executevendorAvailableSlots(c: Context) {
         });
 
         if (staffSlotsResult.rows.length > 0) {
-          // Get existing bookings to mark booked slots
-          const existingBookingsResult = await vendor_available_slotsRepo.dbVendorAvailableSlots16(resolvedVendorId, date).catch(() => ({ rows: [] }));
+          let existingBookingsResult: { rows: any[] };
+          try {
+            existingBookingsResult = await vendor_available_slotsRepo.dbVendorAvailableSlots16(resolvedVendorId, date);
+          } catch (occErr: any) {
+            console.error('[SLOTS] Staff occupancy calculation failed:', occErr?.message);
+            return c.json({
+              success: false,
+              slots: [],
+              date,
+              vendorId: canonicalVendorId,
+              error: 'Unable to calculate slot availability',
+            }, 503);
+          }
 
-          // Group bookings by staff
-          const bookedByStaff: Record<string, Set<string>> = {};
+          const occupyingByStaff: Record<string, { booking_time: string; duration_minutes: number }[]> = {};
           for (const booking of existingBookingsResult.rows) {
             const sid = booking.staff_id || 'general';
-            if (!bookedByStaff[sid]) {
-              bookedByStaff[sid] = new Set();
-            }
-            const time = typeof booking.booking_time === 'string'
-              ? booking.booking_time.substring(0, 5)
-              : booking.booking_time;
-            bookedByStaff[sid].add(time);
+            if (!occupyingByStaff[sid]) occupyingByStaff[sid] = [];
+            occupyingByStaff[sid].push({
+              booking_time: String(booking.booking_time || '00:00'),
+              duration_minutes: Math.max(1, Number(booking.duration_minutes) || 30),
+            });
           }
 
           // Slots stepped by service duration + staff buffer/lead (same idea as vendor_availability_v2 grid)
@@ -429,7 +438,7 @@ export async function executevendorAvailableSlots(c: Context) {
               Number(staffSlot.lead_time_minutes) || 0
             );
             const stepMin = Math.max(5, totalDuration + staffSetupGap);
-            const staffBookedTimes = bookedByStaff[staffSlot.staff_id] || new Set();
+            const staffOccupying = occupyingByStaff[staffSlot.staff_id] || occupyingByStaff['general'] || [];
 
             let cur = winStartMin;
             while (cur + totalDuration <= winEndMin) {
@@ -450,8 +459,12 @@ export async function executevendorAvailableSlots(c: Context) {
                 isPast = (slotMinutesFromMidnight + minNoticeMinutes) <= currentISTMinutesFromMidnight;
               }
 
-              // Check if booked for this staff
-              const isBooked = staffBookedTimes.has(timeStr);
+              const overlapCount = countOverlappingBookings(
+                staffOccupying,
+                cur,
+                cur + totalDuration
+              );
+              const isBooked = overlapCount >= 1;
 
               slots.push({
                 time: timeStr,
@@ -855,14 +868,21 @@ export async function executevendorAvailableSlots(c: Context) {
       };
       let existingBookings: { booking_time: string; duration_minutes: number }[] = [];
       try {
-        // ✅ CRITICAL: Use total_duration_minutes if available (for multi-service bookings), otherwise duration_minutes
-        // This ensures we use the actual booking duration, not just the base service duration
-        const bookResult = await vendor_available_slotsRepo.dbVendorAvailableSlots28(duration_minutes).catch(() => ({ rows: [] }));
+        const bookResult = await vendor_available_slotsRepo.dbVendorAvailableSlots28(resolvedVendorId, date);
         existingBookings = bookResult.rows.map((b: any) => ({
           booking_time: normalizeBookingTime(b.booking_time),
           duration_minutes: Number(b.duration_minutes) || 30,
         }));
-      } catch (_) { /* ignore */ }
+      } catch (occErr: any) {
+        console.error('[SLOTS] Occupancy calculation failed:', occErr?.message);
+        return c.json({
+          success: false,
+          slots: [],
+          date,
+          vendorId: canonicalVendorId,
+          error: 'Unable to calculate slot availability',
+        }, 503);
+      }
 
       if (va2Slots.length > 0) {
         console.log(`[SLOTS] ========== GENERATING SLOTS FROM ${va2Slots.length} AVAILABILITY RECORDS ==========`);
@@ -1008,35 +1028,17 @@ export async function executevendorAvailableSlots(c: Context) {
 
             // 3) Overlap with existing bookings: block service time + vendor setup after each booking
             const candidateEnd = currentMinutes + totalDuration;
-            const overlapsBooking = existingBookings.some((b: { booking_time: string; duration_minutes: number }) => {
-              const bStart = timeToMinutes(b.booking_time);
-              const bDur = Math.max(15, Number(b.duration_minutes) || totalDuration);
-              const bBlockEnd = bStart + bDur + setupMinutes;
-
-              const overlaps = currentMinutes < bBlockEnd && candidateEnd > bStart;
-
-              if (overlaps) {
-                console.log(`[SLOTS] OVERLAP: slot ${timeStr} blocked by booking at ${b.booking_time} (block until ${bBlockEnd}min)`);
-              }
-
-              return overlaps;
-            });
-
-            // ✅ FIX: Check max capacity first to determine availability
-            let available = true;
-            let booked = false;
-            if (maxCapacity != null && maxCapacity > 0) {
-              const norm = (t: string) => (typeof t === 'string' ? t.substring(0, 5) : String(t));
-              const sameStartCount = existingBookings.filter(
-                (b: { booking_time: string }) => norm(b.booking_time) === timeStr
-              ).length;
-              available = sameStartCount < maxCapacity;
-              booked = !available;
-            } else {
-              // ✅ FIX: If overlaps booking (buffer conflict), mark as booked but still return slot
-              booked = overlapsBooking;
-              available = !booked;
-            }
+            const overlapCount = countOverlappingBookings(
+              existingBookings,
+              currentMinutes,
+              candidateEnd
+            );
+            const capacity =
+              maxCapacity != null && Number.isFinite(maxCapacity) && maxCapacity > 0
+                ? maxCapacity
+                : 1;
+            let booked = overlapCount >= capacity;
+            let available = !booked;
 
             // ✅ FIX: For today, mark past slots as unavailable (but still include them)
             if (isPastSlot) {

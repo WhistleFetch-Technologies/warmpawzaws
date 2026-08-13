@@ -17,7 +17,7 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Hono } from 'hono';
-import { query, insert, update, select } from '../database/rds-connection';
+import { query, insert, update, select, withTransaction } from '../database/rds-connection';
 import { resolvePostgresCustomerIdFromAuthHeaders } from './customer/customerEndpoint/customer-password';
 import { resolveVendorsTableIdFromAuthHeaders } from './vendor/vendor-auth-password';
 import {
@@ -62,6 +62,7 @@ import {
   isPackageSlotUniqueViolation,
   validatePackagePurchaseSchedule,
 } from '../utils/package-slot-validation';
+import { assertSlotAvailableInTx, SlotConflictError, SLOT_CONFLICT_MESSAGE, resolveDurationMinutes, loadVendorServiceDurationMinutes } from '../utils/slot-occupancy';
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
   if (!raw) return null;
@@ -1295,51 +1296,59 @@ export function registerPackageBookingEndpoints(app: Hono) {
         nextSessionNumber = slot;
       }
 
-      // Check for slot conflicts
-      const conflictCheck = await query(`
-        SELECT id FROM bookings
-        WHERE vendor_id = $1
-        AND booking_date = $2
-        AND booking_time = $3
-        AND status NOT IN ('cancelled', 'rejected')
-      `, [vendorId, scheduledDate, scheduledTime]);
-
-      if (conflictCheck.rows.length > 0) {
-        return c.json({ 
-          error: 'This time slot is already booked',
-          code: 'SLOT_CONFLICT'
-        }, 409);
-      }
-
-      // Create the booking
-      const bookingResult = await query(`
+      let booking: any;
+      try {
+        booking = await withTransaction(async (client) => {
+          const durationMinutes = await loadVendorServiceDurationMinutes(client, serviceId);
+          await assertSlotAvailableInTx(client, {
+            vendorId: String(vendorId),
+            date: String(scheduledDate),
+            startTime: String(scheduledTime),
+            durationMinutes,
+            staffId: null,
+          });
+          const bookingResult = await client.query(
+            `
         INSERT INTO bookings (
           customer_id, vendor_id, pet_id, service_id,
           booking_date, booking_time, service_type,
           notes, address,
           package_purchase_id, is_package_session, package_session_number,
           subscription_id, subscription_booking,
-          status, payment_status, total_amount
+          status, payment_status, total_amount, duration_minutes
         ) VALUES (
           $1, $2, $3, $4,
           $5, $6, $7,
           $8, $9,
           $10, true, $11,
           $12, $13,
-          'confirmed', $14, $15
+          'confirmed', $14, $15, $16
         )
         RETURNING *
-      `, [
-        customerId, vendorId, petId, serviceId,
-        scheduledDate, scheduledTime, serviceType,
-        notes, address ? JSON.stringify(address) : null,
-        packagePurchaseId, nextSessionNumber,
-        subscriptionId, isSubscriptionBooking,
-        isSubscriptionBooking ? 'paid' : 'completed', // ✅ Mark as paid for subscription
-        finalAmount // ✅ Zero payment for subscription
-      ]);
-
-      const booking = bookingResult.rows[0];
+      `,
+            [
+              customerId, vendorId, petId, serviceId,
+              scheduledDate, scheduledTime, serviceType,
+              notes, address ? JSON.stringify(address) : null,
+              packagePurchaseId, nextSessionNumber,
+              subscriptionId, isSubscriptionBooking,
+              isSubscriptionBooking ? 'paid' : 'completed',
+              finalAmount,
+              durationMinutes,
+            ]
+          );
+          return bookingResult.rows[0];
+        });
+      } catch (slotErr: any) {
+        if (
+          slotErr instanceof SlotConflictError ||
+          slotErr?.code === 'SLOT_CONFLICT' ||
+          slotErr?.message === 'SLOT_CONFLICT'
+        ) {
+          return c.json({ error: SLOT_CONFLICT_MESSAGE, code: 'SLOT_CONFLICT' }, 409);
+        }
+        throw slotErr;
+      }
 
       if (!pkg.unlimited_usage) {
         const linked = await linkPackageScheduledSessionToBooking(db, {
@@ -1733,6 +1742,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
           totalSessionsForPurchase: comp.totalSessionsForPurchase,
           sessionsPerDay: comp.sessionsPerDay,
           sessionIntervalDays: comp.sessionIntervalDays,
+          durationMinutes: resolveDurationMinutes(comp.vs?.duration_minutes),
         });
         if (!scheduleCheck.ok) {
           return c.json(
@@ -2282,7 +2292,16 @@ export function registerPackageBookingEndpoints(app: Hono) {
       }
       const vendorIdForSchedule = String(pkg.vendor_id || '');
       if (vendorIdForSchedule) {
-        const conflictCheck = await assertNoVendorSlotConflicts(vendorIdForSchedule, scheduleSlots);
+        const canonicalServiceId = await resolveCanonicalServiceIdForPackage(db, pkg as Record<string, unknown>).catch(
+          () => ''
+        );
+        const sessionDuration = await loadVendorServiceDurationMinutes(query, canonicalServiceId || null);
+        const conflictCheck = await assertNoVendorSlotConflicts(
+          vendorIdForSchedule,
+          scheduleSlots,
+          query,
+          sessionDuration
+        );
         if (!conflictCheck.ok) {
           return c.json(
             { error: conflictCheck.message, code: conflictCheck.code },

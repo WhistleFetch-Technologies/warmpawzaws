@@ -1,4 +1,5 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
+import { loadOccupyingBookings } from '../../../../utils/slot-occupancy';
 
 export async function dbVendorAvailableSlots0(vendorId) {
   return await query(
@@ -134,13 +135,11 @@ export async function dbVendorAvailableSlots15(staffQuery, params) {
 }
 
 export async function dbVendorAvailableSlots16(resolvedVendorId, date) {
-  return await query(
-            `SELECT booking_time, staff_id FROM bookings 
-             WHERE vendor_id = $1 
-             AND booking_date = $2 
-             AND status NOT IN ('cancelled', 'rejected')`,
-            [resolvedVendorId, date]
-          );
+  const occupying = await loadOccupyingBookings(query, {
+    vendorId: resolvedVendorId,
+    date,
+  });
+  return { rows: occupying };
 }
 
 export async function dbVendorAvailableSlots17(availabilityIdsForQuery) {
@@ -356,14 +355,12 @@ export async function dbVendorAvailableSlots27(resolvedVendorId, dayOfWeek, date
         );
 }
 
-export async function dbVendorAvailableSlots28(resolvedVendorId, date, duration_minutes) {
-  return await query(
-          `SELECT booking_time, 
-                  COALESCE(total_duration_minutes, duration_minutes, 30) as duration_minutes
-           FROM bookings
-           WHERE vendor_id = $1 AND booking_date = $2
-             AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
-          [resolvedVendorId, date]
-        );
+export async function dbVendorAvailableSlots28(resolvedVendorId, date) {
+  const occupying = await loadOccupyingBookings(query, {
+    vendorId: resolvedVendorId,
+    date,
+    staffId: null,
+  });
+  return { rows: occupying };
 }
 

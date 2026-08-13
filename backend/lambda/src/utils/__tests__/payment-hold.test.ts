@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import {
   PAYMENT_HOLD_TTL_SECONDS,
   SQL_BOOKING_BLOCKS_SLOT,
+  bookingConsumesCapacity,
   paymentHoldExpiresAt,
   secondsRemainingUntilHoldExpiry,
   isPaymentHoldActive,
@@ -18,9 +19,18 @@ describe('payment-hold utility', () => {
     expect(exp.toISOString()).toBe('2026-06-01T10:05:00.000Z');
   });
 
-  test('SQL_BOOKING_BLOCKS_SLOT excludes expired pending_payment', () => {
+  test('SQL_BOOKING_BLOCKS_SLOT excludes expired pending_payment and rejected', () => {
     expect(SQL_BOOKING_BLOCKS_SLOT).toContain('pending_payment');
     expect(SQL_BOOKING_BLOCKS_SLOT).toContain('payment_hold_expires_at');
+    expect(SQL_BOOKING_BLOCKS_SLOT).toContain('rejected');
+  });
+
+  test('bookingConsumesCapacity matches the status-to-capacity map', () => {
+    expect(bookingConsumesCapacity({ status: 'pending' })).toBe(true);
+    expect(bookingConsumesCapacity({ status: 'confirmed' })).toBe(true);
+    expect(bookingConsumesCapacity({ status: 'completed' })).toBe(true);
+    expect(bookingConsumesCapacity({ status: 'cancelled' })).toBe(false);
+    expect(bookingConsumesCapacity({ status: 'rejected' })).toBe(false);
   });
 
   test('isPaymentHoldActive respects expiry', () => {

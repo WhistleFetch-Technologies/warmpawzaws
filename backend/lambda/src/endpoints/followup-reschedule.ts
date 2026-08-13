@@ -13,11 +13,20 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, query } from '../database/rds-connection';
+import { query, withTransaction } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor/endpoints/vendorProfile.vendor';
 import { getCompletedPayment, resolvePaymentPolicy } from '../utils/payment-policy';
+import {
+  assertSlotAvailableInTx,
+  countOverlappingBookings,
+  loadOccupyingBookings,
+  parseBookingTimeMinutes,
+  resolveDurationMinutes,
+  SlotConflictError,
+  SLOT_CONFLICT_MESSAGE,
+} from '../utils/slot-occupancy';
 
 export function registerFollowupRescheduleEndpoints(app: Hono) {
   /**
@@ -80,20 +89,6 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Check slot availability
-      const existingBookings = await query(
-        `SELECT id FROM bookings 
-         WHERE vendor_id::text = $1::text 
-         AND booking_date = $2 
-         AND booking_time = $3 
-         AND status NOT IN ('cancelled', 'no_show', 'rescheduled')`,
-        [vendorId, selectedDate, selectedTime]
-      );
-
-      if (existingBookings.rows.length > 0) {
-        return c.json({ error: 'Time slot is already booked' }, 409);
-      }
-
       const followupAmount = parseFloat(originalBooking.total_amount || '0');
       const vendorType = vendorResult.rows[0]?.category || vendorResult.rows[0]?.vendor_type || vendorResult.rows[0]?.vendorType || null;
       const policy = await resolvePaymentPolicy({
@@ -149,8 +144,10 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
           ? 'partial'
           : 'paid';
 
-      // Create follow-up booking
-      const newBooking = await insert('bookings', {
+      const followupDuration = Number(
+        originalBooking.total_duration_minutes || originalBooking.duration_minutes || 30
+      );
+      const bookingPayload: Record<string, unknown> = {
         customer_id: customerId,
         vendor_id: vendorId,
         service_id: serviceId || originalBooking.service_id,
@@ -163,12 +160,43 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
         base_price: originalBooking.base_price || 0,
         total_amount: followupAmount,
         payment_id: paymentRecord?.id || null,
+        duration_minutes: followupDuration,
         notes: `Follow-up appointment for booking ${originalBookingId}`,
         metadata: {
           is_followup: true,
-          original_booking_id: originalBookingId
+          original_booking_id: originalBookingId,
+        },
+      };
+
+      let newBooking: any[];
+      try {
+        newBooking = await withTransaction(async (client) => {
+          await assertSlotAvailableInTx(client, {
+            vendorId: String(vendorId),
+            date: selectedDate,
+            startTime: selectedTime,
+            durationMinutes: followupDuration,
+            staffId: null,
+          });
+          const columns = Object.keys(bookingPayload);
+          const values = columns.map((k) => bookingPayload[k]);
+          const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+          const inserted = await client.query(
+            `INSERT INTO bookings (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+            values
+          );
+          return inserted.rows;
+        });
+      } catch (slotErr: any) {
+        if (
+          slotErr instanceof SlotConflictError ||
+          slotErr?.code === 'SLOT_CONFLICT' ||
+          slotErr?.message === 'SLOT_CONFLICT'
+        ) {
+          return c.json({ error: SLOT_CONFLICT_MESSAGE, code: 'SLOT_CONFLICT' }, 409);
         }
-      });
+        throw slotErr;
+      }
 
       if (paymentRecord?.id) {
         await query(
@@ -269,6 +297,7 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
       const vendorId = c.req.query('vendorId');
       const date = c.req.query('date');
       const rawStyle = (c.req.query('serviceStyle') || 'at_center').toString().toLowerCase();
+      const requestedDuration = resolveDurationMinutes(c.req.query('totalDuration'));
 
       if (!vendorId || !date) {
         return c.json({ error: 'vendorId and date are required' }, 400);
@@ -298,7 +327,8 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
           try {
             const va2Result = await query(
                 `SELECT time_window_start, time_window_end, start_time, end_time,
-                        COALESCE(slot_duration_minutes, 30) as slot_duration_minutes
+                        COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
+                        COALESCE(max_capacity, 1) as max_capacity
                  FROM vendor_availability_v2
                  WHERE vendor_id::text = ANY($1::text[])
                    AND day_of_week = $2
@@ -338,24 +368,45 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
               const endTime = row.time_window_end || row.end_time;
               if (!startTime || !endTime) continue;
               const slotDuration = Number(row.slot_duration_minutes) || 30;
+              const cap = Number(row.max_capacity) > 0 ? Number(row.max_capacity) : 1;
               const winStart = timeToMinutes(startTime);
               const winEnd = timeToMinutes(endTime);
               let current = winStart;
               while (current + slotDuration <= winEnd) {
                 const timeStr = `${String(Math.floor(current / 60)).padStart(2, '0')}:${String(current % 60).padStart(2, '0')}`;
-                slots.push({ time: timeStr, available: true });
+                slots.push({ time: timeStr, available: true, maxCapacity: cap });
                 current += slotDuration;
               }
             }
 
           slots = slots.sort((a: any, b: any) => (a.time || '').localeCompare(b.time || ''));
+
+          try {
+            const occupying = await loadOccupyingBookings(query, {
+              vendorId: String(vendor.id),
+              date,
+              staffId: null,
+            });
+            slots = slots.map((s: any) => {
+              const start = parseBookingTimeMinutes(s.time);
+              const duration = requestedDuration;
+              const cap = Number(s.maxCapacity) > 0 ? Number(s.maxCapacity) : 1;
+              const booked = countOverlappingBookings(occupying, start, start + duration) >= cap;
+              return { ...s, available: !booked, booked };
+            });
+          } catch (occErr: any) {
+            console.error('[bookings/available-slots] occupancy failed:', occErr?.message);
+            return c.json({
+              success: false,
+              slots: [],
+              date,
+              vendorId,
+              error: 'Unable to calculate slot availability',
+            }, 503);
+          }
         } catch (va2Err: any) {
           console.warn('[bookings/available-slots] vendor_availability_v2 failed:', va2Err?.message);
         }
-      }
-
-      if (slots.length === 0) {
-        slots = generateDefaultSlots();
       }
 
       return c.json({
@@ -456,31 +507,42 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
           );
         }
 
-        const existingBookings = await query(
-          `SELECT booking_time FROM bookings
-           WHERE vendor_id::text = $1::text
-           AND booking_date = $2
-           AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
-           AND id::text != $3::text`,
-          [resolvedVendorId, checkDate, bookingId]
-        );
+        let occupying: Awaited<ReturnType<typeof loadOccupyingBookings>> = [];
+        try {
+          occupying = await loadOccupyingBookings(query, {
+            vendorId: String(resolvedVendorId),
+            date: checkDate,
+            excludeBookingId: bookingId,
+          });
+        } catch (occErr: any) {
+          console.error('[vendor/available-slots] occupancy failed:', occErr?.message);
+          return c.json({
+            success: false,
+            slots: [],
+            error: 'Unable to calculate slot availability',
+          }, 503);
+        }
 
-        const bookedTimes = new Set(existingBookings.rows.map((b: any) => b.booking_time));
-
-        // Generate available slots (support time_window_* or start_time/end_time)
         for (const slot of scheduleSlots.rows) {
           const startTime = slot.time_window_start ?? slot.start_time;
           const endTime = slot.time_window_end ?? slot.end_time;
           if (!startTime || !endTime) continue;
 
-          const slots = generateTimeSlots(startTime, endTime, 30);
-          
-          for (const timeSlot of slots) {
-            if (!bookedTimes.has(timeSlot)) {
+          const generated = generateTimeSlots(startTime, endTime, 30);
+          const cap = Number(slot.max_capacity) > 0 ? Number(slot.max_capacity) : 1;
+          const duration = resolveDurationMinutes(
+            booking.total_duration_minutes,
+            booking.duration_minutes
+          );
+
+          for (const timeSlot of generated) {
+            const start = parseBookingTimeMinutes(timeSlot);
+            const overlapCount = countOverlappingBookings(occupying, start, start + duration);
+            if (overlapCount < cap) {
               allSlots.push({
                 date: checkDate,
                 time: timeSlot,
-                available: true
+                available: true,
               });
             }
           }
@@ -497,19 +559,6 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
-}
-
-/**
- * Generate default time slots (9 AM to 6 PM, 30-minute intervals)
- */
-function generateDefaultSlots(): string[] {
-  const slots: string[] = [];
-  for (let hour = 9; hour < 18; hour++) {
-    for (let minute = 0; minute < 60; minute += 30) {
-      slots.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
-    }
-  }
-  return slots;
 }
 
 /**

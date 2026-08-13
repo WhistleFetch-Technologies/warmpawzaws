@@ -11,9 +11,21 @@ import { razorpayRequest } from './payments/razorpay-client';
 
 export const PAYMENT_HOLD_TTL_SECONDS = 300;
 
+/**
+ * Status → capacity (existing state machine; do not invent statuses):
+ *   pending_payment + active hold     → consumes (5-minute resource reservation)
+ *   pending_payment + expired hold    → does not consume (row may still exist until expiry job)
+ *   pending | confirmed               → consumes
+ *   completed                         → consumes on that booking_date only (query is date-scoped)
+ *   cancelled (incl. payment_window_expired / vendor decline reasons) → does not consume
+ *   no_show | rescheduled | rejected  → does not consume
+ * payment_window_expired is a cancellation_reason, not a status.
+ */
+export const STATUSES_THAT_RELEASE_CAPACITY = ['cancelled', 'no_show', 'rescheduled', 'rejected'] as const;
+
 /** Bookings in these states block slot overlap checks (excluding expired pending_payment). */
 export const SQL_BOOKING_BLOCKS_SLOT = `
-  status NOT IN ('cancelled', 'no_show', 'rescheduled')
+  status NOT IN ('cancelled', 'no_show', 'rescheduled', 'rejected')
   AND NOT (
     status = 'pending_payment'
     AND payment_hold_expires_at IS NOT NULL
@@ -39,6 +51,17 @@ export function isPaymentHoldActive(row: {
   const exp = row.payment_hold_expires_at;
   if (!exp) return true;
   return new Date(exp).getTime() > Date.now();
+}
+
+/** JS equivalent of SQL_BOOKING_BLOCKS_SLOT for tests and docs. Date-scoped occupancy still applies. */
+export function bookingConsumesCapacity(row: {
+  status?: string | null;
+  payment_hold_expires_at?: Date | string | null;
+}): boolean {
+  const status = String(row.status || '').toLowerCase();
+  if ((STATUSES_THAT_RELEASE_CAPACITY as readonly string[]).includes(status)) return false;
+  if (status === 'pending_payment') return isPaymentHoldActive(row);
+  return true;
 }
 
 export interface ExpirePaymentHoldsResult {

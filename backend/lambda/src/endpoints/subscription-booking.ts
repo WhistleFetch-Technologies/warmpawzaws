@@ -17,7 +17,13 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query, select, insert, update } from '../database/rds-connection';
+import { query, select, insert, update, withTransaction } from '../database/rds-connection';
+import {
+  assertSlotAvailableInTx,
+  resolveDurationMinutes,
+  SlotConflictError,
+  SLOT_CONFLICT_MESSAGE,
+} from '../utils/slot-occupancy';
 
 // ============================================================================
 // TYPES
@@ -246,11 +252,15 @@ class CreateSubscriptionBookingHandler extends BaseHandler {
 
       // Get service details for booking
       const { rows: services } = await query(
-        `SELECT name, duration, price FROM vendor_services WHERE id = $1`,
+        `SELECT name, duration_minutes, price FROM vendor_services WHERE id = $1`,
         [serviceId]
       );
 
       const service = services.length > 0 ? services[0] : { name: 'Service', duration: 30, price: 0 };
+      const durationMinutes = resolveDurationMinutes(
+        service.duration_minutes,
+        service.duration
+      );
 
       // Generate booking OTP
       const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
@@ -276,21 +286,43 @@ class CreateSubscriptionBookingHandler extends BaseHandler {
         is_subscription_booking: true,
         otp_code: otpCode,
         otp_expires_at: otpExpiresAt,
-        duration: service.duration || 30,
+        duration_minutes: durationMinutes,
         created_at: new Date(),
         updated_at: new Date(),
       };
 
-      const [newBooking] = await insert('bookings', bookingData);
-
-      // Increment subscription usage count
-      await query(
-        `UPDATE customer_subscriptions 
-         SET usage_count = COALESCE(usage_count, 0) + 1,
-             updated_at = NOW()
-         WHERE id = $1`,
-        [subscriptionId]
-      );
+      let newBooking: any;
+      try {
+        newBooking = await withTransaction(async (client) => {
+          await assertSlotAvailableInTx(client, {
+            vendorId: String(vendorId),
+            date: String(bookingDate),
+            startTime: String(bookingTime),
+            durationMinutes,
+            staffId: staffId || null,
+          });
+          const columns = Object.keys(bookingData);
+          const values = Object.values(bookingData);
+          const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+          const inserted = await client.query(
+            `INSERT INTO bookings (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+            values
+          );
+          await client.query(
+            `UPDATE customer_subscriptions 
+             SET usage_count = COALESCE(usage_count, 0) + 1,
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [subscriptionId]
+          );
+          return inserted.rows[0];
+        });
+      } catch (slotErr: any) {
+        if (slotErr instanceof SlotConflictError || slotErr?.code === 'SLOT_CONFLICT') {
+          return this.error(SLOT_CONFLICT_MESSAGE, 409);
+        }
+        throw slotErr;
+      }
 
       // Log subscription usage
       await insert('subscription_usage_logs', {
