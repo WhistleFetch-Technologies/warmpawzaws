@@ -15,8 +15,8 @@ describe('shop-payment-reconciliation', () => {
     expect(isPaymentAbandonCancellationReason(SHOP_HOLD_EXPIRY_CANCEL_REASON)).toBe(true);
   });
 
-  test('confirm path re-confirms payment_window_expired cancelled orders', () => {
-    expect(reconciliationSource).toContain('canReconfirmShopOrderFromHoldCancel');
+  test('confirm path re-confirms payment_window_expired cancelled orders via finalizer', () => {
+    expect(reconciliationSource).toContain('finalizeCapturedPayment');
     expect(reconciliationSource).toContain('SHOP_HOLD_EXPIRY_CANCEL_REASON');
     expect(reconciliationSource).toContain('runShopOrderPaidSideEffects');
   });

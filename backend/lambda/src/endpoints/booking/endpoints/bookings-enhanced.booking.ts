@@ -4923,7 +4923,7 @@ export function registerBookingOTPEndpoint(app: Hono) {
         return c.json({ success: false, error: 'Booking is not awaiting payment', canResume: false }, 404);
       }
 
-      if (!ctx.canResume) {
+      if (!ctx.canResume && !ctx.razorpayOrderId) {
         await expirePaymentHolds({ limit: 5, requestId: randomUUID() });
         return c.json({
           success: false,

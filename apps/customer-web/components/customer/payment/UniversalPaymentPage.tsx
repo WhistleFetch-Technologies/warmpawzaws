@@ -3152,6 +3152,18 @@ export function UniversalPaymentPage({
         : finalAmount;
 
       let orderRes: any;
+      if (resumeRazorpayOrderId && isPaymentResume) {
+        console.log('[PAYMENT] Reusing resume Razorpay order (skip create-order)', {
+          resumeRazorpayOrderId: `${String(resumeRazorpayOrderId).substring(0, 20)}...`,
+        });
+        orderRes = {
+          orderId: resumeRazorpayOrderId,
+          keyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+          amount: amountToCharge,
+          currency: 'INR',
+          reusedExistingOrder: true,
+        };
+      }
       const razorpayCreateOrderBody =
         type === 'order' && currentOrderId
           ? buildRazorpayEcommerceCreateOrderPayload(
@@ -3180,12 +3192,14 @@ export function UniversalPaymentPage({
                 : {}),
             };
       try {
-        orderRes = await apiClient.post<any>(
-          '/razorpay/create-order',
-          razorpayCreateOrderBody,
-          undefined,
-          45000
-        );
+        if (!orderRes) {
+          orderRes = await apiClient.post<any>(
+            '/razorpay/create-order',
+            razorpayCreateOrderBody,
+            undefined,
+            45000
+          );
+        }
       } catch (orderError: any) {
         console.error('âŒ [PAYMENT] Razorpay create-order API call failed:', {
           error: orderError.message,
@@ -3215,6 +3229,16 @@ export function UniversalPaymentPage({
           : orderRes.error?.message || 'Failed to create payment order';
         console.error('âŒ [PAYMENT] Error in response:', errorMsg);
         throw new Error(errorMsg);
+      }
+
+      if (orderRes?.paidByCapture) {
+        toast.success(type === 'booking' ? 'Booking confirmed!' : 'Order confirmed!');
+        const otpCode =
+          type === 'booking' && serviceStyle !== 'tele'
+            ? await generateBookingOTP(currentBookingId || '', customerId)
+            : undefined;
+        onSuccess(currentBookingId || '', currentOrderId, otpCode, getPaymentSuccessMeta());
+        return;
       }
 
       // Extract orderId from all possible locations

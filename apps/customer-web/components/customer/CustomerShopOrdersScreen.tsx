@@ -383,6 +383,7 @@ export function CustomerShopOrdersScreen({
         canResume?: boolean;
         payableAmount?: number;
         amount?: number;
+        razorpayOrderId?: string | null;
         error?: string;
       };
 
@@ -404,6 +405,7 @@ export function CustomerShopOrdersScreen({
         customerId,
         phone: order.shipping_address.phone,
         prefillName: order.shipping_address.name,
+        razorpayOrderId: res.razorpayOrderId,
         onSuccess: (paidOrderId) => {
           toast.success('Payment successful!');
           nav.afterCheckoutSuccess(paidOrderId);

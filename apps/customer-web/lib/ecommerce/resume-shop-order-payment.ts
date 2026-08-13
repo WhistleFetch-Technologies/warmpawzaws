@@ -133,6 +133,7 @@ export type ResumeShopOrderPaymentOptions = {
   customerId: string;
   phone?: string;
   prefillName?: string;
+  razorpayOrderId?: string | null;
   onSuccess?: (orderId: string) => void;
   onDismiss?: () => void;
 };
@@ -141,7 +142,7 @@ export type ResumeShopOrderPaymentOptions = {
  * Opens Razorpay for an existing shop order (resume pay). Does not create a new ecommerce order.
  */
 export async function resumeShopOrderPayment(options: ResumeShopOrderPaymentOptions): Promise<void> {
-  const { orderId, payableAmount, customerId, phone, prefillName, onSuccess, onDismiss } = options;
+  const { orderId, payableAmount, customerId, phone, prefillName, razorpayOrderId, onSuccess, onDismiss } = options;
 
   installShopPaymentReturnPoll((paidOrderId) => {
     onSuccess?.(paidOrderId);
@@ -153,13 +154,30 @@ export async function resumeShopOrderPayment(options: ResumeShopOrderPaymentOpti
     customerId
   );
 
-  const razorpayOrder = await apiClient.post<{
+  let razorpayOrder: {
     orderId: string;
     keyId: string;
     amount: number;
     currency: string;
     fullyCoveredByWallet?: boolean;
-  }>('/razorpay/create-order', razorpayPayload);
+  };
+
+  if (razorpayOrderId && process.env.NEXT_PUBLIC_RAZORPAY_KEY) {
+    razorpayOrder = {
+      orderId: razorpayOrderId,
+      keyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+      amount: payableAmount,
+      currency: 'INR',
+    };
+  } else {
+    razorpayOrder = await apiClient.post<{
+      orderId: string;
+      keyId: string;
+      amount: number;
+      currency: string;
+      fullyCoveredByWallet?: boolean;
+    }>('/razorpay/create-order', razorpayPayload);
+  }
 
   if (razorpayOrder?.fullyCoveredByWallet) {
     clearShopPendingOrderId();

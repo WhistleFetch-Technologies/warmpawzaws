@@ -3,13 +3,13 @@
  * Confirms paid Razorpay captures as placed orders; re-confirms hold-expiry cancels when paid.
  */
 
-import type { PoolClient } from 'pg';
-import { query, withTransaction } from '../../database/rds-connection';
-import { isPaymentAbandonCancellationReason } from '../shop-vendor-visibility';
+import { query } from '../../database/rds-connection';
 import { notifyShopOrderPaid } from '../shop-order-notifications';
 import { triggerAutoShipment } from '../logistics/trigger-auto-shipment';
 import { applyOrderCommissionAudit } from '../resolve-ecommerce-commission-rate';
 import { writeEcommerceOrderSettlementLedgerRow } from '../write-ecommerce-order-settlement';
+import { finalizeCapturedPayment } from './finalize-captured-payment';
+import type { PaymentFinalizationSource } from './payment-attempt';
 
 export const SHOP_HOLD_EXPIRY_CANCEL_REASON = 'payment_window_expired';
 
@@ -31,15 +31,6 @@ export interface ReconcilePendingShopPaymentsResult {
 function isShopOrderPaidStatus(ps: string | null | undefined): boolean {
   const s = String(ps || '').toLowerCase();
   return s === 'paid' || s === 'completed';
-}
-
-function canReconfirmShopOrderFromHoldCancel(row: {
-  order_status?: string | null;
-  cancellation_reason?: string | null;
-}): boolean {
-  const st = String(row.order_status || '').toLowerCase();
-  if (st !== 'cancelled') return false;
-  return isPaymentAbandonCancellationReason(row.cancellation_reason);
 }
 
 /** Post-commit side effects after shop order is marked paid (idempotent). */
@@ -73,9 +64,18 @@ export async function runShopOrderPaidSideEffects(
   );
 }
 
+function mapCaptureSource(source: string): PaymentFinalizationSource {
+  const s = String(source || '').toLowerCase();
+  if (s.includes('expire')) return 'expiry';
+  if (s.includes('webhook')) return 'webhook';
+  if (s.includes('verify')) return 'verify';
+  return 'reconciliation';
+}
+
 /**
  * Idempotent: mark shop order paid + placed from a Razorpay capture.
  * Re-confirms orders auto-cancelled for payment_window_expired when payment was captured.
+ * Inventory is re-reserved inside finalizeCapturedPayment when the hold was released.
  */
 export async function confirmShopOrderPaidFromCapture(params: {
   orderId: string;
@@ -87,160 +87,21 @@ export async function confirmShopOrderPaidFromCapture(params: {
 }): Promise<ConfirmShopOrderPaidResult> {
   const orderId = String(params.orderId);
   const source = params.source || 'capture';
-  let confirmed = false;
-  let alreadyPaid = false;
-  let reconfirmedFromHoldCancel = false;
-  let vendorId: string | null = null;
-  let paymentId: string | null = params.paymentRowId ? String(params.paymentRowId) : null;
-
-  const resolvedPaymentMethod =
-    params.resolvedPaymentMethod && String(params.resolvedPaymentMethod) !== 'razorpay'
-      ? String(params.resolvedPaymentMethod)
-      : 'online';
-
-  await withTransaction(async (client: PoolClient) => {
-    let paymentRow: Record<string, unknown> | null = null;
-
-    if (params.paymentRowId) {
-      const { rows } = await client.query(
-        `SELECT * FROM payments WHERE id = $1::uuid FOR UPDATE`,
-        [params.paymentRowId]
-      );
-      paymentRow = rows[0] ?? null;
-    } else if (params.razorpayOrderId) {
-      const { rows } = await client.query(
-        `SELECT * FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
-        [params.razorpayOrderId]
-      );
-      paymentRow = rows[0] ?? null;
-    } else if (params.razorpayPaymentId) {
-      const { rows } = await client.query(
-        `SELECT * FROM payments WHERE razorpay_payment_id = $1 FOR UPDATE`,
-        [params.razorpayPaymentId]
-      );
-      if (rows.length === 0 && params.razorpayOrderId) {
-        const fallback = await client.query(
-          `SELECT * FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
-          [params.razorpayOrderId]
-        );
-        paymentRow = fallback.rows[0] ?? null;
-      } else {
-        paymentRow = rows[0] ?? null;
-      }
-    }
-
-    if (!paymentRow) {
-      const { rows } = await client.query(
-        `SELECT * FROM payments WHERE order_id = $1::uuid AND booking_id IS NULL AND pharmacy_order_id IS NULL
-         ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
-        [orderId]
-      );
-      paymentRow = rows[0] ?? null;
-    }
-
-    if (!paymentRow || !paymentRow.order_id) {
-      return;
-    }
-
-    paymentId = String(paymentRow.id);
-
-    const { rows: shopRows } = await client.query(
-      `SELECT id, order_status, payment_status, payment_method, cancellation_reason, vendor_id
-       FROM orders WHERE id = $1::uuid FOR UPDATE`,
-      [orderId]
-    );
-    if (shopRows.length === 0) return;
-
-    const shopRow = shopRows[0];
-    const shopSt = String(shopRow.order_status || '').toLowerCase();
-    const shopPs = String(shopRow.payment_status || '').toLowerCase();
-
-    if (shopSt === 'returned' || shopSt === 'delivered') return;
-
-    if (isShopOrderPaidStatus(shopPs) && shopSt !== 'cancelled') {
-      alreadyPaid = true;
-      vendorId = shopRow.vendor_id ? String(shopRow.vendor_id) : null;
-      return;
-    }
-
-    const holdCancelReconfirm = canReconfirmShopOrderFromHoldCancel(shopRow);
-    if (shopSt === 'cancelled' && !holdCancelReconfirm) {
-      return;
-    }
-
-    if (shopSt !== 'pending_payment' && shopSt !== 'pending' && !holdCancelReconfirm) {
-      return;
-    }
-
-    const rzpPayId = params.razorpayPaymentId
-      ? String(params.razorpayPaymentId)
-      : paymentRow.razorpay_payment_id
-        ? String(paymentRow.razorpay_payment_id)
-        : null;
-
-    await client.query(
-      `UPDATE payments SET
-         payment_status = 'completed',
-         razorpay_payment_id = COALESCE($1, razorpay_payment_id),
-         razorpay_order_id = COALESCE(razorpay_order_id, $2),
-         completed_at = COALESCE(completed_at, NOW()),
-         updated_at = NOW()
-       WHERE id = $3::uuid`,
-      [rzpPayId, params.razorpayOrderId || paymentRow.razorpay_order_id || null, paymentId]
-    );
-
-    await client.query(
-      `UPDATE orders SET
-         payment_status = 'paid',
-         order_status = CASE
-           WHEN order_status IN ('pending_payment', 'pending') THEN 'pending'
-           WHEN order_status = 'cancelled'
-             AND COALESCE(cancellation_reason, '') = $1
-           THEN 'pending'
-           ELSE order_status
-         END,
-         payment_method = COALESCE($2, payment_method),
-         payment_id = COALESCE(payment_id, $3::uuid),
-         payment_hold_expires_at = NULL,
-         cancellation_reason = CASE
-           WHEN order_status = 'cancelled'
-             AND COALESCE(cancellation_reason, '') = $1
-           THEN NULL
-           ELSE cancellation_reason
-         END,
-         cancelled_at = CASE
-           WHEN order_status = 'cancelled'
-             AND COALESCE(cancellation_reason, '') = $1
-           THEN NULL
-           ELSE cancelled_at
-         END,
-         cancelled_by = CASE
-           WHEN order_status = 'cancelled'
-             AND COALESCE(cancellation_reason, '') = $1
-           THEN NULL
-           ELSE cancelled_by
-         END,
-         updated_at = NOW()
-       WHERE id = $4::uuid`,
-      [SHOP_HOLD_EXPIRY_CANCEL_REASON, resolvedPaymentMethod, paymentId, orderId]
-    );
-
-    confirmed = true;
-    reconfirmedFromHoldCancel = holdCancelReconfirm;
-    vendorId = shopRow.vendor_id ? String(shopRow.vendor_id) : null;
+  const result = await finalizeCapturedPayment({
+    source: mapCaptureSource(source),
+    razorpayOrderId: params.razorpayOrderId,
+    razorpayPaymentId: params.razorpayPaymentId,
+    paymentRowId: params.paymentRowId,
   });
 
-  if (confirmed && !alreadyPaid) {
-    await runShopOrderPaidSideEffects(orderId, vendorId, `[SHOP-RECONCILE:${source}]`);
-  }
-
   return {
-    confirmed,
+    confirmed: result.outcome === 'fulfilled',
     orderId,
-    alreadyPaid,
-    reconfirmedFromHoldCancel,
-    vendorId,
-    paymentId,
+    alreadyPaid: result.outcome === 'already_final',
+    reconfirmedFromHoldCancel:
+      result.previousEntityStatus === 'cancelled' && result.outcome === 'fulfilled',
+    vendorId: null,
+    paymentId: result.paymentId || null,
   };
 }
 

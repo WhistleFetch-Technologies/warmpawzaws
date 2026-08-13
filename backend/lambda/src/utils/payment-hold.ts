@@ -6,6 +6,8 @@
 import { query, withTransaction } from '../database/rds-connection';
 import { logAuditEntry, logBookingStatusChange } from './audit-log';
 import { parseJsonMetaFromNotes } from './booking-notes-meta';
+import { finalizeCapturedPayment } from './payments/finalize-captured-payment';
+import { razorpayRequest } from './payments/razorpay-client';
 
 export const PAYMENT_HOLD_TTL_SECONDS = 300;
 
@@ -47,7 +49,8 @@ export interface ExpirePaymentHoldsResult {
 
 /**
  * Cancel unpaid pending_payment bookings whose hold window has elapsed.
- * Does not notify vendors (payment_window_expired).
+ * Does not treat hold expiry as a Razorpay deadline: captured payments are
+ * finalized first; still-payable Razorpay orders are left pending for reuse.
  */
 export async function expirePaymentHolds(options?: {
   limit?: number;
@@ -86,19 +89,68 @@ export async function expirePaymentHolds(options?: {
     const bookingId = String(row.id);
     const oldStatus = String(row.status || 'pending_payment');
     try {
+      const pays = await query(
+        `SELECT id, razorpay_order_id, razorpay_payment_id, payment_status
+         FROM payments
+         WHERE booking_id = $1::uuid
+         ORDER BY created_at DESC
+         LIMIT 5`,
+        [bookingId]
+      );
+
+      let captured = false;
+      for (const pay of pays.rows) {
+        const localPaid = ['completed', 'paid'].includes(
+          String(pay.payment_status || '').toLowerCase()
+        );
+        let rzpPaid = localPaid;
+        if (!rzpPaid && pay.razorpay_order_id) {
+          try {
+            const rzp = await razorpayRequest(
+              `/orders/${pay.razorpay_order_id}`,
+              'GET',
+              undefined,
+              5000
+            );
+            rzpPaid = rzp?.status === 'paid';
+          } catch (rzpErr) {
+            console.warn('[payment-hold] Razorpay lookup failed before expiry', bookingId, rzpErr);
+          }
+        }
+        if (rzpPaid) {
+          await finalizeCapturedPayment({
+            source: 'expiry',
+            paymentRowId: String(pay.id),
+            razorpayOrderId: pay.razorpay_order_id ? String(pay.razorpay_order_id) : null,
+            razorpayPaymentId: pay.razorpay_payment_id ? String(pay.razorpay_payment_id) : null,
+          });
+          captured = true;
+          break;
+        }
+      }
+      if (captured) continue;
+
+      let released = false;
       await withTransaction(async (client) => {
         const locked = await client.query(
-          `SELECT id, status FROM bookings WHERE id = $1::uuid FOR UPDATE`,
+          `SELECT id, status, payment_status FROM bookings WHERE id = $1::uuid FOR UPDATE`,
           [bookingId]
         );
         if (locked.rows.length === 0) return;
         if (String(locked.rows[0].status) !== 'pending_payment') return;
+        if (['paid', 'completed'].includes(String(locked.rows[0].payment_status || '').toLowerCase())) {
+          return;
+        }
 
-        // payments_payment_status_check allows only pending/processing/completed/failed/refunded/
-        // partially_refunded — 'expired' violated it and rolled back every expiry attempt.
+        // Release the slot. Do NOT mark a still-payable Razorpay attempt failed —
+        // that would allow a second active order while the first can still capture.
         await client.query(
           `UPDATE payments
            SET payment_status = CASE
+             WHEN razorpay_order_id IS NOT NULL
+               AND BTRIM(razorpay_order_id) <> ''
+               AND LOWER(COALESCE(payment_status, '')) IN ('pending', 'processing')
+             THEN payment_status
              WHEN LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed') THEN payment_status
              ELSE 'failed'
            END,
@@ -116,7 +168,10 @@ export async function expirePaymentHolds(options?: {
            WHERE id = $1::uuid`,
           [bookingId, reason]
         );
+        released = true;
       });
+
+      if (!released) continue;
 
       await logBookingStatusChange(bookingId, oldStatus, 'cancelled', 'system', 'system', reason);
       await logAuditEntry({
@@ -239,14 +294,18 @@ export async function buildBookingPaymentResumeContext(
   const paidLike = paymentStatus === 'paid' || paymentStatus === 'completed';
   const unpaidPending =
     status === 'pending_payment' || (status === 'confirmed' && !paidLike && paymentStatus === 'pending');
+  const holdCancelledUnpaid =
+    status === 'cancelled' &&
+    String(b.cancellation_reason || '').trim() === 'payment_window_expired' &&
+    !paidLike;
 
-  if (!unpaidPending) return null;
+  if (!unpaidPending && !holdCancelledUnpaid) return null;
 
   const expiresAt = b.payment_hold_expires_at
     ? new Date(String(b.payment_hold_expires_at)).toISOString()
     : null;
   const secondsRemaining = secondsRemainingUntilHoldExpiry(expiresAt);
-  const canResume = isPaymentHoldActive({ status, payment_hold_expires_at: expiresAt });
+  const holdActive = isPaymentHoldActive({ status, payment_hold_expires_at: expiresAt });
 
   const payRes = await query(
     `SELECT id, razorpay_order_id, amount, currency, payment_status
@@ -363,7 +422,7 @@ export async function buildBookingPaymentResumeContext(
     currency: String(pay?.currency || 'INR'),
     paymentHoldExpiresAt: expiresAt,
     secondsRemaining,
-    canResume,
+    canResume: holdActive || Boolean(pay?.razorpay_order_id),
     razorpayOrderId: pay?.razorpay_order_id ? String(pay.razorpay_order_id) : null,
     paymentId: pay?.id ? String(pay.id) : null,
   };

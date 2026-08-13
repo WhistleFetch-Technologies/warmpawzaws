@@ -49,16 +49,13 @@ describe('shop/payment visibility guards', () => {
     expect(file).toContain('assertShopCheckoutPaymentAllowed');
   });
 
-  test('razorpay paths promote pending_payment on pay; hold-aware discard on fail', () => {
+  test('razorpay paths promote pending_payment on pay via finalizeCapturedPayment', () => {
     const file = read('src/endpoints/razorpay/endpoints/razorpay.razorpay.ts');
     expect(file).toContain('discardUnpaidShopOrder');
-    expect(file).toContain("WHEN order_status = 'pending_payment' THEN 'pending'");
-    expect(file).toContain('PAYMENT_HOLD_EXPIRED');
+    expect(file).toContain('finalizeCapturedPayment');
+    expect(file).toContain('ensurePayableRazorpayOrder');
     expect(file).toContain('isShopOrderPaymentHoldActive');
     expect(file).toContain('hold still active');
-    expect(file).toContain('SHOP_HOLD_EXPIRY_CANCEL_REASON');
-    expect(file).toContain('reconcileShopOrderPayment');
-    expect(file).toContain('isPaymentAbandonCancellationReason');
   });
 
   test('meal vendor fetch uses payment-confirmed visibility only', () => {

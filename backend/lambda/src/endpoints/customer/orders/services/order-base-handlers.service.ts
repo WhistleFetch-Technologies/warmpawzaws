@@ -988,6 +988,13 @@ export class ShopOrderPaymentResumeHandler extends BaseHandler {
             message: 'Payment confirmed — order placed',
           });
         }
+        if (ctx.razorpayOrderId) {
+          return this.success({
+            success: true,
+            canResume: true,
+            ...ctx,
+          });
+        }
 
         await discardUnpaidShopOrder(orderId, 'payment_window_expired', {
           requestId: randomUUID(),
