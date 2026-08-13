@@ -627,6 +627,12 @@ export async function realignPendingVendorEarningsForBooking(
   booking: Record<string, unknown>,
   logPrefix = '[EARNINGS-REALIGN]'
 ): Promise<boolean> {
+  // Package children store a 1/N slice. Realigning to parent settlement / list price
+  // rewrites ₹238.35 back to ₹11,440.80 every time the vendor opens Earnings.
+  if (isPackageSessionChildBooking(booking) || isCanonicalPackageParentBooking(booking)) {
+    return false;
+  }
+
   const veRes = await query(
     `SELECT id, vendor_id, amount, commission_amount, total_amount, commission_rate, status, metadata
      FROM vendor_earnings WHERE booking_id = $1::uuid LIMIT 1`,
@@ -790,6 +796,7 @@ export async function realignPendingVendorEarningsForVendorIds(
      WHERE ve.vendor_id = ANY($1::uuid[])
        AND ve.status = 'pending'
        AND b.status = 'completed'
+       AND b.package_purchase_id IS NULL
      ORDER BY ve.realized_at DESC NULLS LAST
      LIMIT $2`,
     [unique, Math.min(Math.max(1, limit), 200)]

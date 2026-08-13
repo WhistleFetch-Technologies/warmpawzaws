@@ -84,6 +84,68 @@ export function scaleGrossFromVendorNet(params: {
   return { allocatedGross, commissionAmount, vendorNet };
 }
 
+/** Vendor portal / ledger display: reslice inflated stored child rows (11440.80 → 238.35). */
+export function vendorEarningsAmountsForDisplay(params: {
+  isPackageSession?: unknown;
+  unlimited?: unknown;
+  parentService?: unknown;
+  sessionCount?: unknown;
+  sessionSeq?: unknown;
+  storedGross?: unknown;
+  storedCommission?: unknown;
+  storedNet?: unknown;
+  commissionRate?: unknown;
+}): { amount: number; commission: number; totalAmount: number } {
+  const toNum = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const allocated = allocatedEarningsFromStored({
+    isPackageSession: params.isPackageSession === true || params.isPackageSession === 't',
+    unlimited: params.unlimited === true || params.unlimited === 't',
+    parentService: toNum(params.parentService),
+    sessionCount: toNum(params.sessionCount),
+    sessionSeq: params.sessionSeq == null || params.sessionSeq === '' ? null : toNum(params.sessionSeq),
+    storedGross: toNum(params.storedGross),
+    storedCommission: toNum(params.storedCommission),
+    storedNet: toNum(params.storedNet),
+    commissionRate: params.commissionRate == null || params.commissionRate === '' ? null : toNum(params.commissionRate),
+  });
+  return { amount: allocated.net, commission: allocated.commission, totalAmount: allocated.gross };
+}
+
+export function firstSessionPackageBreakdown(params: {
+  sessionSeq: unknown;
+  parentService: unknown;
+  sessionCount: unknown;
+  commissionRate: unknown;
+  thisSession: number;
+}): {
+  basePrice: number;
+  commissionRate: number;
+  vendorPool: number;
+  sessionCount: number;
+  sessionNumber: number;
+  thisSession: number;
+  remainingSessions: number;
+} | null {
+  const seq = Number(params.sessionSeq);
+  const n = Math.floor(Number(params.sessionCount) || 0);
+  const base = Math.round(Math.max(0, Number(params.parentService) || 0) * 100) / 100;
+  const rate = Number(params.commissionRate) || 0;
+  if (seq !== 1 || n <= 0 || !(base > 0)) return null;
+  const vendorPool = vendorPoolAfterCommission(base, rate);
+  return {
+    basePrice: base,
+    commissionRate: rate,
+    vendorPool,
+    sessionCount: n,
+    sessionNumber: 1,
+    thisSession: params.thisSession,
+    remainingSessions: Math.max(0, n - 1),
+  };
+}
+
 export function allocatedEarningsFromStored(params: {
   isPackageSession: boolean;
   unlimited?: boolean;

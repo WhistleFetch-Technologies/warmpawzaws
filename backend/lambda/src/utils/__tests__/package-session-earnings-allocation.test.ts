@@ -3,8 +3,10 @@ import {
   allocatePackageSessionGross,
   allocatePackageSessionVendorNet,
   allocatedEarningsFromStored,
+  firstSessionPackageBreakdown,
   scaleGrossFromVendorNet,
   sqlPackageAllocatedEarningsAgg,
+  vendorEarningsAmountsForDisplay,
   vendorPoolAfterCommission,
 } from '../package-session-earnings-allocation';
 import { isCanonicalPackageParentBooking, isPackageSessionChildBooking } from '../vendor-commission-rate';
@@ -112,6 +114,59 @@ describe('package-session-earnings-allocation', () => {
         priorSum: 38136,
       }),
     ).toBe(0);
+  });
+
+  test('vendor earnings display reslices 11440.80 to 238.35 per walk', () => {
+    const shown = vendorEarningsAmountsForDisplay({
+      isPackageSession: true,
+      parentService: 12712,
+      sessionCount: 48,
+      sessionSeq: 1,
+      storedGross: 12712,
+      storedCommission: 1271.2,
+      storedNet: 11440.8,
+      commissionRate: 10,
+    });
+    expect(shown.amount).toBe(238.35);
+    const second = vendorEarningsAmountsForDisplay({
+      isPackageSession: true,
+      parentService: 12712,
+      sessionCount: 48,
+      sessionSeq: 2,
+      storedGross: 12712,
+      storedCommission: 1271.2,
+      storedNet: 11440.8,
+      commissionRate: 10,
+    });
+    const third = vendorEarningsAmountsForDisplay({
+      isPackageSession: true,
+      parentService: 12712,
+      sessionCount: 48,
+      sessionSeq: 3,
+      storedGross: 12712,
+      storedCommission: 1271.2,
+      storedNet: 11440.8,
+      commissionRate: 10,
+    });
+    expect(second.amount).toBe(238.35);
+    expect(third.amount).toBe(238.35);
+    expect(Math.round((shown.amount + second.amount + third.amount) * 100) / 100).toBe(715.05);
+    const breakdown = firstSessionPackageBreakdown({
+      sessionSeq: 1,
+      parentService: 12712,
+      sessionCount: 48,
+      commissionRate: 10,
+      thisSession: shown.amount,
+    });
+    expect(breakdown?.vendorPool).toBe(11440.8);
+    expect(breakdown?.thisSession).toBe(238.35);
+    expect(firstSessionPackageBreakdown({
+      sessionSeq: 2,
+      parentService: 12712,
+      sessionCount: 48,
+      commissionRate: 10,
+      thisSession: second.amount,
+    })).toBeNull();
   });
 
   test('allocatedEarningsFromStored reslices historical full-price child rows', () => {
