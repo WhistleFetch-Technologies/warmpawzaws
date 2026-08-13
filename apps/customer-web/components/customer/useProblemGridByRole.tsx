@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { problemIconTextColorToBgClass } from '@/lib/problem-grid-icon-bg';
 import { DynamicProblemIcon } from '@/lib/problem-grid-dynamic-icon';
+import { resolveProblemGridDisplayName } from '@/lib/problem-grid-catalog-fallback';
 import { PROBLEM_GRID_ALIASES_BY_ROLE } from '@/lib/problem-grid-role-aliases';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 
@@ -65,9 +66,10 @@ export function useProblemGridByRole(roleKey: keyof typeof ROLE_ALIASES): Proble
                 const iconColor = p.iconColor ?? p.icon_color;
                 const iconBg = problemIconTextColorToBgClass(iconColor);
                 const id = String(p.id ?? p.problemId ?? p.name);
+                const rawName = (p.displayName || p.name) as string;
                 return {
                   id,
-                  name: (p.displayName || p.name) as string,
+                  name: resolveProblemGridDisplayName(id, rawName),
                   icon: (
                     <DynamicProblemIcon iconName={p.iconName ?? p.icon_name} iconColor={iconColor} />
                   ),

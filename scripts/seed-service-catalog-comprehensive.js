@@ -58,7 +58,7 @@ const BEHAVIORIST_ROLES = ['pet_behaviorist', 'trainer_solo', 'trainer_center', 
 // New specializations to add for vet (diagnostics, reproductive, palliative)
 const NEW_SPECIALIZATIONS = [
   { specialization_id: 'diagnostics', name: 'Lab & Diagnostics', display_name: 'Lab & Diagnostics', description: 'Lab tests, imaging, and diagnostic procedures', category_id: 'veterinary', applicable_roles: ['vet_solo', 'vet_clinic', 'veterinarian'], icon_name: 'Microscope', icon_color: 'text-slate-500' },
-  { specialization_id: 'reproductive', name: 'Reproductive Care', display_name: 'Reproductive & Breeding', description: 'Pregnancy, breeding, and neonatal care', category_id: 'veterinary', applicable_roles: ['vet_solo', 'vet_clinic', 'veterinarian'], icon_name: 'Heart', icon_color: 'text-pink-500' },
+  { specialization_id: 'reproductive', name: 'Reproductive Care', display_name: 'Reproductive', description: 'Pregnancy and reproductive health care', category_id: 'veterinary', applicable_roles: ['vet_solo', 'vet_clinic', 'veterinarian'], icon_name: 'Heart', icon_color: 'text-pink-500' },
   { specialization_id: 'palliative', name: 'Palliative & End-of-Life', display_name: 'Palliative & End-of-Life Care', description: 'Euthanasia, palliative care, and grief support', category_id: 'veterinary', applicable_roles: ['vet_solo', 'vet_clinic', 'veterinarian'], icon_name: 'Flower2', icon_color: 'text-gray-500' },
 ];
 

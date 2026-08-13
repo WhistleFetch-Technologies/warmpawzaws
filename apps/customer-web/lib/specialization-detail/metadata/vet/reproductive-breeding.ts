@@ -3,12 +3,12 @@ import { DEFAULT_VET_SERVICE_MODE_INFORMATION } from './vet-service-mode-default
 
 export const reproductiveMetadata = defineVetSpecialization({
   id: 'reproductive',
-  title: 'Reproductive & Breeding',
+  title: 'Reproductive',
   description:
-    'Veterinary guidance for reproductive health, breeding planning, pregnancy support, and related assessments for dogs and cats.',
+    'Veterinary guidance for reproductive health, pregnancy support, and related assessments for dogs and cats.',
   heroImage: '/images/home/Vet/reproductive-breeding.webp',
   heroImagePosition: 'center top',
-  highlightChips: ['Reproductive Health', 'Vet Guided', 'Breeding Support'],
+  highlightChips: ['Reproductive Health', 'Vet Guided', 'Pregnancy Support'],
   serviceModeInformation: DEFAULT_VET_SERVICE_MODE_INFORMATION,
   sections: [
     {
