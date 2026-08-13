@@ -68,4 +68,34 @@ describe('buildResidualSearchText', () => {
     expect(r.searchText).toBe('vet');
     expect(r.tokens).toEqual(['vet']);
   });
+
+  it('best trainers for my dog → hub browse only (intent taxonomy, no phrase)', () => {
+    const r = buildResidualSearchText('best trainers for my dog', {
+      categorySource: 'taxonomy',
+      topHubSlug: 'training',
+      topMatchedPhrase: null,
+    });
+    expect(r.searchText).toBe('');
+    expect(r.tokens).toEqual([]);
+  });
+
+  it('my dog is overweight → residual symptom tokens (nutrition intent)', () => {
+    const r = buildResidualSearchText('my dog is overweight', {
+      categorySource: 'taxonomy',
+      topHubSlug: 'nutritionist',
+      topMatchedPhrase: null,
+    });
+    expect(r.searchText).toBe('is overweight');
+    expect(r.tokens).toEqual(['is', 'overweight']);
+  });
+
+  it('walk my dog keeps walk token when not taxonomy-only noise', () => {
+    const r = buildResidualSearchText('walk my dog', {
+      categorySource: 'taxonomy',
+      topHubSlug: 'walker',
+      topMatchedPhrase: 'walk my dog',
+    });
+    expect(r.searchText).toBe('');
+    expect(r.tokens).toEqual([]);
+  });
 });

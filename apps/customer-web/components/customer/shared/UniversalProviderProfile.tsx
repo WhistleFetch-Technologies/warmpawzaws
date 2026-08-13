@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowLeft, Star, Clock, MapPin, Phone, Video, Home, Building2,
   Shield, Award, GraduationCap, Heart, Share2, Check, X, Calendar,
-  ChevronRight, Plus, User, MessageCircle, Image as ImageIcon, Sparkles, Loader2
+  ChevronRight, Plus, User, MessageCircle, Image as ImageIcon, Sparkles, Loader2,
+  Navigation, Stethoscope, Search, Filter,
 } from 'lucide-react';
 import { AmenitiesSection } from './AmenitiesSection';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,7 @@ import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
-import { resolveCustomerVendorAmenities, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
+import { resolveCustomerVendorAmenities, shouldShowVendorAmenities, resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { shareVendorProfile, universalCategoryToSharePersona } from '@/lib/vendor-profile-share';
 import { useProviderServicesLazyLoad } from '@/hooks/useProviderServicesLazyLoad';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
@@ -38,6 +39,10 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
+import { VendorProfileDashboardHeader } from './VendorProfileDashboardHeader';
+import { VendorHeroPhotoCarousel } from './VendorHeroPhotoCarousel';
+import { ServicePricingDisplay } from '@/components/customer/ServicePricingDisplay';
+import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 
 // ============================================================================
 // TYPES
@@ -263,6 +268,12 @@ export function UniversalProviderProfile({
   );
   const [loadingProfileEnrichment, setLoadingProfileEnrichment] = useState(false);
   const [displayName, setDisplayName] = useState(provider.name);
+  const isVetProfile = category === 'vet';
+  const [vetActiveTab, setVetActiveTab] = useState<'overview' | 'services' | 'reviews'>('services');
+  const [serviceSearchQuery, setServiceSearchQuery] = useState('');
+  const [serviceSortBy, setServiceSortBy] = useState<'popular' | 'price' | 'name'>('popular');
+  const [profileFacility, setProfileFacility] = useState<Record<string, unknown> | null>(null);
+  const [profileVendorRaw, setProfileVendorRaw] = useState<Record<string, unknown> | null>(null);
 
   const vendorAccountId = String(provider.vendorId || provider.providerId || '').trim();
 
@@ -425,6 +436,12 @@ export function UniversalProviderProfile({
         if (cancelled || res?.success === false) return;
 
         setProfileAbout(mergeProviderAboutFromFacility(provider, res));
+        if (res.facility && typeof res.facility === 'object') {
+          setProfileFacility(res.facility as Record<string, unknown>);
+        }
+        if (res.vendor && typeof res.vendor === 'object') {
+          setProfileVendorRaw(res.vendor as Record<string, unknown>);
+        }
         const facilityReviews = mapFacilityRecentReviews(res.recentReviews);
         if (facilityReviews.length > 0) {
           setReviews(facilityReviews);
@@ -636,6 +653,59 @@ export function UniversalProviderProfile({
   const totalAmount = selectedServicesList.reduce((sum, s) => sum + s.price, 0);
   const totalDuration = selectedServicesList.reduce((sum, s) => sum + s.duration, 0);
 
+  const vetServiceStyleLabel =
+    serviceStyle === 'tele'
+      ? 'Tele Consultation'
+      : serviceStyle === 'at_home'
+        ? 'Home Visit'
+        : 'Clinic Visit';
+
+  const vetProfileHeaderTitle =
+    serviceStyle === 'at_center'
+      ? 'Vet Clinic'
+      : serviceStyle === 'at_home'
+        ? 'Home Visit'
+        : serviceStyle === 'tele'
+          ? 'Tele Consultation'
+          : 'Veterinary Services';
+
+  const vetProfileHeaderSubtitle =
+    serviceStyle === 'at_center'
+      ? 'Visit our veterinary clinics'
+      : serviceStyle === 'at_home'
+        ? 'Vet comes to you'
+        : serviceStyle === 'tele'
+          ? 'Video consultation with vet'
+          : 'Professional pet healthcare';
+
+  const vetHeroPhotos = useMemo(
+    () =>
+      resolveVendorProfileHeroGallery({
+        facility: profileFacility,
+        vendor: profileVendorRaw,
+        profileProvider: provider,
+      }),
+    [profileFacility, profileVendorRaw, provider]
+  );
+
+  const sortedVetServices = useMemo(() => {
+    let list = [...services];
+    if (serviceSearchQuery.trim()) {
+      const q = serviceSearchQuery.toLowerCase();
+      list = list.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          (s.description?.toLowerCase().includes(q) ?? false)
+      );
+    }
+    list.sort((a, b) => {
+      if (serviceSortBy === 'price') return a.price - b.price;
+      if (serviceSortBy === 'name') return a.name.localeCompare(b.name);
+      return 0;
+    });
+    return list;
+  }, [services, serviceSearchQuery, serviceSortBy]);
+
   // Proceed to booking
   const handleProceedToBooking = () => {
     if (selectedServices.size === 0) {
@@ -731,6 +801,608 @@ export function UniversalProviderProfile({
     onProceedToPayment(bookingData);
   };
 
+  const handleShareProfile = () => {
+    const shareVendorId = String(provider.vendorId || provider.providerId || '').trim();
+    if (!shareVendorId) return;
+    void shareVendorProfile({
+      title: displayName || provider.name,
+      text: `Check out ${displayName || provider.name} on Warmpawz`,
+      vendorId: shareVendorId,
+      persona: universalCategoryToSharePersona(category),
+      vendorName: displayName || provider.name,
+      serviceStyle,
+    });
+  };
+
+  const profilePhone = String(provider.phone || '').trim();
+  const profileAddress = String(
+    profileAbout.address || provider.address || provider.city || ''
+  ).trim();
+
+  if (isVetProfile) {
+    return (
+      <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden bg-gray-50">
+        <VendorProfileDashboardHeader
+          fullWidth
+          className="!z-0 isolation-auto"
+          serviceName={vetProfileHeaderTitle}
+          serviceSubtitle={vetProfileHeaderSubtitle}
+          serviceIcon={Stethoscope}
+          iconColor="text-white"
+          onBack={handleInternalBack}
+          showBackButton
+          bottomEdge="flat"
+        />
+
+        {showBookingForm ? (
+          <div className="relative z-0 flex-1 px-4 pt-4 pb-36 cw-scroll-pad-tabbar-sticky-cta">
+            <h2 className="mb-4 text-lg font-bold">Complete Your Booking</h2>
+            <Card className="mb-4 border-orange-200 bg-orange-50 p-4">
+              <h3 className="mb-2 text-sm font-medium">Selected Services</h3>
+              {selectedServicesList.map((service) => (
+                <div key={service.id} className="mb-3 last:mb-0">
+                  <div className="flex items-start justify-between gap-2 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2 font-medium">{service.name}</span>
+                      {service.duration > 0 && (
+                        <div className="mt-1 flex items-center gap-1 text-xs text-gray-500">
+                          <Clock className="h-3 w-3" />
+                          {service.duration} mins
+                        </div>
+                      )}
+                    </div>
+                    <span className="whitespace-nowrap font-medium">
+                      {formatPriceWithSymbol(service.price)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              <div className="mt-2 flex justify-between border-t border-orange-200 pt-2 font-bold">
+                <span>Total</span>
+                <span className="text-orange-600">{formatPriceWithSymbol(totalAmount)}</span>
+              </div>
+            </Card>
+            <div className="mb-4">
+              <h3 className="mb-2 text-sm font-medium">Select Date</h3>
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {dates.map((d) => (
+                  <button
+                    key={d.date}
+                    type="button"
+                    onClick={() => setSelectedDate(d.date)}
+                    className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
+                      selectedDate === d.date
+                        ? 'bg-orange-500 text-white'
+                        : 'border border-gray-200 bg-white hover:border-orange-300'
+                    }`}
+                  >
+                    <p className="text-xs opacity-75">{d.day}</p>
+                    <p className="text-xl font-bold">{d.dayNum}</p>
+                    <p className="text-xs opacity-75">{d.month}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {selectedDate && (
+              <div className="mb-4">
+                <h3 className="mb-1 text-sm font-medium">Select Time</h3>
+                {loadingSlots ? (
+                  <div className="py-4 text-center">
+                    <div className="mx-auto h-6 w-6 animate-spin rounded-full border-b-2 border-orange-500" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2">
+                    {timeSlots.map((slot) => (
+                      <button
+                        key={slot.time}
+                        type="button"
+                        onClick={() => slot.available && setSelectedTime(slot.time)}
+                        disabled={!slot.available}
+                        className={`rounded-lg p-2 text-center text-sm transition-all ${
+                          selectedTime === slot.time
+                            ? 'bg-orange-500 text-white'
+                            : slot.available
+                              ? 'border border-gray-200 bg-white hover:border-orange-300'
+                              : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                        }`}
+                      >
+                        {formatTime12Hour(slot.time)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <BookingPetSelection
+              variant="embedded"
+              pets={pets}
+              selectedPet={selectedPet}
+              onSelectPet={setSelectedPet}
+              onAddPet={() => onNavigate('add-pet')}
+            />
+            {serviceStyle === 'at_home' && (
+              <div className="mb-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-medium">Delivery Address</h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="flex items-center gap-1 text-sm text-orange-500"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Address
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {addresses.map((addr) => (
+                    <button
+                      key={addr.id}
+                      type="button"
+                      onClick={() => setSelectedAddress(addr)}
+                      className={`w-full max-w-full overflow-hidden rounded-xl p-3 text-left transition-all ${
+                        selectedAddress?.id === addr.id
+                          ? 'bg-orange-500 text-white'
+                          : 'border border-gray-200 bg-white hover:border-orange-300'
+                      }`}
+                    >
+                      <p className="truncate font-medium">{addr.label}</p>
+                      <p className="line-clamp-2 break-words text-sm opacity-80">{addr.address}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="mb-4">
+              <h3 className="mb-2 text-sm font-medium">Additional Notes (Optional)</h3>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Any special instructions or concerns..."
+                className="w-full resize-none rounded-xl border border-gray-200 p-3 focus:border-orange-400 focus:outline-none"
+                rows={3}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="relative z-0 w-full flex-1">
+            {vetHeroPhotos.length > 0 ? (
+              <div className="relative w-full -mt-3">
+                <div className="overflow-hidden rounded-t-[24px] bg-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+                  <VendorHeroPhotoCarousel
+                    photos={vetHeroPhotos}
+                    name={displayName || provider.name}
+                    frameClassName="relative aspect-[5/4] w-full max-h-[420px] overflow-hidden sm:aspect-auto sm:h-[280px] sm:max-h-none"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="relative w-full -mt-3">
+                <div className="overflow-hidden rounded-t-[24px]">
+                  <div className="relative flex aspect-[5/4] w-full max-h-[420px] items-center justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF7029] sm:aspect-auto sm:h-[280px] sm:max-h-none">
+                    <div className="text-center text-white">
+                      {serviceStyle === 'tele' ? (
+                        <Video className="mx-auto mb-3 h-20 w-20 opacity-50" />
+                      ) : serviceStyle === 'at_home' ? (
+                        <Home className="mx-auto mb-3 h-20 w-20 opacity-50" />
+                      ) : (
+                        <Building2 className="mx-auto mb-3 h-20 w-20 opacity-50" />
+                      )}
+                      <p className="text-sm opacity-75">No photos available</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="px-4 pb-32">
+              <div className="relative z-10 -mt-6 mb-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h1 className="mb-2 text-2xl font-bold text-gray-900">{displayName || provider.name}</h1>
+                <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <VendorRatingDisplay
+                    row={{
+                      vendorId: provider.vendorId ?? provider.providerId,
+                      vendorRating: provider.rating,
+                      vendorReviewCount: provider.reviewCount,
+                    }}
+                    vendorId={String(provider.vendorId ?? provider.providerId ?? '')}
+                    starsClassName="h-5 w-5"
+                    textClassName="text-sm text-gray-700"
+                  />
+                  {provider.isVerified && (
+                    <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                      <Shield className="h-3.5 w-3.5" />
+                      Verified
+                    </span>
+                  )}
+                </div>
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5">
+                    {serviceStyle === 'tele' ? (
+                      <Video className="h-4 w-4 text-[#FF8C42]" />
+                    ) : serviceStyle === 'at_home' ? (
+                      <Home className="h-4 w-4 text-[#FF8C42]" />
+                    ) : (
+                      <Building2 className="h-4 w-4 text-[#FF8C42]" />
+                    )}
+                    <span className="text-sm font-medium text-gray-700">{vetServiceStyleLabel}</span>
+                  </div>
+                </div>
+                <div className="mb-4 grid grid-cols-3 gap-2 border-t border-gray-100 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => profilePhone && window.open(`tel:${profilePhone}`, '_self')}
+                    className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100"
+                  >
+                    <Phone className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />
+                    <span className="text-xs font-medium text-gray-700">Call</span>
+                  </button>
+                  {profileAddress && serviceStyle !== 'tele' && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.open(
+                          `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profileAddress)}`,
+                          '_blank'
+                        )
+                      }
+                      className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100"
+                    >
+                      <Navigation className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />
+                      <span className="text-xs font-medium text-gray-700">Directions</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleShareProfile}
+                    className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100"
+                  >
+                    <Share2 className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />
+                    <span className="text-xs font-medium text-gray-700">Share</span>
+                  </button>
+                </div>
+                <div className="space-y-2.5 border-t border-gray-100 pt-4">
+                  {profileAddress && serviceStyle !== 'tele' && (
+                    <div className="flex items-start gap-3 text-sm">
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                      <span className="leading-relaxed text-gray-700">{profileAddress}</span>
+                    </div>
+                  )}
+                  {serviceStyle === 'tele' && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <Video className="h-4 w-4 shrink-0 text-gray-400" />
+                      <span className="text-gray-700">Video Consultation Available</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="sticky top-0 z-40 flex overflow-hidden rounded-t-2xl border-b-2 border-gray-200 bg-white shadow-sm">
+                {(['overview', 'services', 'reviews'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => {
+                      setVetActiveTab(tab);
+                      if (tab === 'reviews' && reviews.length === 0) void loadReviews();
+                    }}
+                    className={`relative flex-1 py-4 text-sm font-semibold capitalize transition-all ${
+                      vetActiveTab === tab ? 'text-[#FF8C42]' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {tab === 'services'
+                      ? `Services (${services.length}${hasMoreServices ? '+' : ''})`
+                      : tab}
+                    {vetActiveTab === tab && (
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF8C42]" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mb-4 min-h-[400px] rounded-b-2xl bg-white p-5">
+                {vetActiveTab === 'overview' && (
+                  <div className="space-y-6">
+                    {profileAbout.bio && (
+                      <div>
+                        <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-900">
+                          <Stethoscope className="h-5 w-5 text-[#FF8C42]" />
+                          About
+                        </h3>
+                        <p className="text-sm leading-relaxed text-gray-700">{profileAbout.bio}</p>
+                      </div>
+                    )}
+                    {profileAbout.qualifications && (
+                      <div>
+                        <h3 className="mb-3 text-lg font-bold text-gray-900">Qualifications</h3>
+                        <p className="text-sm text-gray-600">{profileAbout.qualifications}</p>
+                      </div>
+                    )}
+                    {showFacilitiesAmenitiesOnAbout &&
+                      (profileAmenities.length > 0 || profileCustomAmenities.length > 0) && (
+                        <AmenitiesSection
+                          amenities={profileAmenities}
+                          customAmenities={profileCustomAmenities}
+                          compact
+                        />
+                      )}
+                  </div>
+                )}
+
+                {vetActiveTab === 'services' && (
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Search vet services..."
+                          value={serviceSearchQuery}
+                          onChange={(e) => setServiceSearchQuery(e.target.value)}
+                          className="w-full rounded-lg border border-gray-200 py-2.5 pl-10 pr-10 focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+                        />
+                        {serviceSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setServiceSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          >
+                            <X className="h-5 w-5" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Filter className="h-4 w-4 text-gray-400" />
+                        <select
+                          value={serviceSortBy}
+                          onChange={(e) =>
+                            setServiceSortBy(e.target.value as 'popular' | 'price' | 'name')
+                          }
+                          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+                        >
+                          <option value="popular">Popular First</option>
+                          <option value="price">Price: Low to High</option>
+                          <option value="name">Name: A to Z</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <h3 className="font-bold text-gray-900">
+                      Available Services ({sortedVetServices.length}
+                      {hasMoreServices ? '+' : ''})
+                    </h3>
+
+                    {servicesLoading ? (
+                      <div className="py-16 text-center">
+                        <Loader2 className="mx-auto mb-3 h-10 w-10 animate-spin text-[#FF8C42]" />
+                        <p className="text-gray-600">Loading services…</p>
+                      </div>
+                    ) : sortedVetServices.length === 0 ? (
+                      <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 py-16 text-center">
+                        <Stethoscope className="mx-auto mb-4 h-16 w-16 text-gray-300" />
+                        <p className="font-medium text-gray-600">No services available</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-5">
+                        {discoveryServiceSections(
+                          sortedVetServices as unknown as Record<string, unknown>[]
+                        ).map((sec) => (
+                          <div key={sec.title} className="space-y-3">
+                            <h4 className="text-sm font-semibold text-gray-700">
+                              {sec.title} ({sec.list.length})
+                            </h4>
+                            {(sec.list as unknown as Service[]).map((service) => {
+                              const isSelected =
+                                selectedServices.has(service.id) ||
+                                (service.serviceId
+                                  ? selectedServices.has(service.serviceId)
+                                  : false);
+                              return (
+                                <div
+                                  key={service.id}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => toggleService(service.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      toggleService(service.id);
+                                    }
+                                  }}
+                                  className={`cursor-pointer rounded-xl border-2 p-4 transition-all hover:shadow-md ${
+                                    isSelected
+                                      ? 'border-[#FF8C42] bg-gradient-to-br from-orange-50 to-orange-100 shadow-md'
+                                      : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                                  }`}
+                                >
+                                  <div className="flex w-full min-w-0 items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                                        <h4 className="break-words text-base font-bold text-gray-900">
+                                          {service.name}
+                                        </h4>
+                                        {service.isPackage && (
+                                          <span className="rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                                            Package
+                                          </span>
+                                        )}
+                                      </div>
+                                      {service.description?.trim() && (
+                                        <ServiceDescriptionInline
+                                          description={service.description}
+                                          title={service.name}
+                                          className="m-0 mb-3 text-sm leading-5 text-gray-600"
+                                        />
+                                      )}
+                                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                        <span className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-2.5 py-1">
+                                          <Clock className="h-3.5 w-3.5 text-gray-600" />
+                                          {service.duration} mins
+                                        </span>
+                                        {resolveServiceCategoryDisplayLabel(service) && (
+                                          <span className="rounded-lg bg-gray-100 px-2.5 py-1 text-gray-600">
+                                            {resolveServiceCategoryDisplayLabel(service)}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="ml-2 flex w-[7.25rem] shrink-0 flex-col items-end text-right">
+                                      <ServicePricingDisplay
+                                        basePrice={service.price}
+                                        usePromoQuote
+                                        vendorId={vendorAccountId || undefined}
+                                        serviceId={String(service.id || service.serviceId || '')}
+                                        customerId={phone}
+                                        serviceStyle={serviceStyle}
+                                        serviceCategory="vet"
+                                        className="mb-1"
+                                      />
+                                      <p className="mt-0.5 w-full break-words text-[11px] leading-4 text-gray-500">
+                                        {INDICATIVE_PRICING_NOTE}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                        <DiscoveryVendorFeedSentinel
+                          hasMore={hasMoreServices}
+                          loading={servicesLoading}
+                          loadingMore={servicesLoadingMore}
+                          onLoadMore={loadMoreServices}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {vetActiveTab === 'reviews' && (
+                  <div className="space-y-4">
+                    {loadingReviews ? (
+                      <div className="py-8 text-center">
+                        <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#FF8C42]" />
+                      </div>
+                    ) : reviews.length === 0 ? (
+                      <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 py-16 text-center">
+                        <Star className="mx-auto mb-4 h-16 w-16 text-gray-300" />
+                        <p className="font-medium text-gray-600">No reviews yet</p>
+                      </div>
+                    ) : (
+                      reviews.map((review) => (
+                        <div
+                          key={review.id}
+                          className="rounded-xl border border-gray-200 bg-gray-50 p-5"
+                        >
+                          <div className="mb-2 flex items-center justify-between">
+                            <h4 className="font-bold text-gray-900">{review.customerName}</h4>
+                            <span className="text-xs text-gray-500">{review.date}</span>
+                          </div>
+                          <div className="mb-3 flex items-center gap-1">
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`h-4 w-4 ${
+                                  i < review.rating
+                                    ? 'fill-amber-500 text-amber-500'
+                                    : 'text-gray-300'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <p className="text-sm leading-relaxed text-gray-700">{review.comment}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Vet sticky footer — matches common Business/Veterinary Clinic profile */}
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
+          <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+            {selectedServices.size > 0 && !showBookingForm && (
+              <div className="border-b border-orange-100 bg-orange-50 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">
+                      {serviceStyle === 'tele'
+                        ? 'Selected service'
+                        : `${selectedServices.size} service${selectedServices.size > 1 ? 's' : ''} selected`}
+                    </p>
+                    <p className="text-lg font-bold text-orange-600">
+                      {formatPriceWithSymbol(totalAmount)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedServices(new Set())}
+                    className="text-sm font-medium text-orange-600 hover:text-orange-700"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="p-4">
+              {showBookingForm ? (
+                <Button
+                  className="h-12 w-full rounded-xl bg-[#FF8C42] text-base font-semibold text-white hover:bg-[#E67A35] disabled:cursor-not-allowed disabled:bg-gray-300"
+                  onClick={handleProceedToPayment}
+                  disabled={
+                    selectedServices.size === 0 ||
+                    !selectedPet ||
+                    !selectedDate ||
+                    !selectedTime ||
+                    (serviceStyle === 'at_home' && !selectedAddress)
+                  }
+                >
+                  Proceed to Payment • {formatPriceWithSymbol(totalAmount)}
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleProceedToBooking}
+                  disabled={services.length === 0}
+                  className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] disabled:cursor-not-allowed disabled:bg-gray-300 sm:text-lg"
+                >
+                  {selectedServices.size === 0
+                    ? services.length === 0
+                      ? 'No Services Available'
+                      : 'Select Services to Book'
+                    : serviceStyle === 'tele'
+                      ? `Continue • ${formatPriceWithSymbol(totalAmount)}`
+                      : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalAmount)})`}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <AddAddressModal
+          phone={phone}
+          isOpen={showAddAddressModal}
+          onClose={() => setShowAddAddressModal(false)}
+          onSuccess={(savedAddress) => {
+            setShowAddAddressModal(false);
+            if (savedAddress) {
+              const normalized = normalizeAddress(savedAddress);
+              setSelectedAddress(normalized);
+              setAddresses((prev) => {
+                const exists = prev.some((a) => a.id && a.id === normalized.id);
+                if (exists) return prev.map((a) => (a.id === normalized.id ? normalized : a));
+                return [...prev, normalized];
+              });
+            }
+            refreshAddresses();
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header with Provider Photo */}
@@ -767,18 +1439,7 @@ export function UniversalProviderProfile({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const shareVendorId = String(provider.vendorId || provider.providerId || '').trim();
-                  if (!shareVendorId) return;
-                  void shareVendorProfile({
-                    title: displayName || provider.name,
-                    text: `Check out ${displayName || provider.name} on Warmpawz`,
-                    vendorId: shareVendorId,
-                    persona: universalCategoryToSharePersona(category),
-                    vendorName: displayName || provider.name,
-                    serviceStyle,
-                  });
-                }}
+                onClick={handleShareProfile}
                 className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white shadow-lg"
                 aria-label="Share"
               >

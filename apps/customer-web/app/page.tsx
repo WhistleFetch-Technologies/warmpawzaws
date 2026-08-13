@@ -12,6 +12,8 @@ import {
   ensureCustomerProfileAndPets,
   resetHomeBootstrapForPhone,
 } from '@/lib/customer-home-bootstrap';
+import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
+import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
 
 interface CustomerSession {
   phone: string;
@@ -99,7 +101,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!isLoading && !session && !hasRedirected.current) {
       hasRedirected.current = true;
-      router.replace('/auth');
+      redirectWithHardFallback(router, '/auth');
     }
   }, [isLoading, session, router]);
 
@@ -140,7 +142,7 @@ export default function HomePage() {
   }
 
   if (!session) {
-    return null; 
+    return <AuthGateLoadingShell />;
   }
 
   const skipGateSpinner =
