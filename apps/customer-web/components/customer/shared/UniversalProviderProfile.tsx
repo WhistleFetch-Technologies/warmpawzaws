@@ -1322,8 +1322,8 @@ export function UniversalProviderProfile({
           </div>
         )}
 
-        {/* Vet sticky footer — matches common Business/Veterinary Clinic profile */}
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
+        {/* Vet sticky footer — cw-fixed-above-customer-tabbar keeps CTA above BottomNavigation */}
+        <div className="pointer-events-none fixed inset-x-0 z-50 flex justify-center cw-fixed-above-customer-tabbar">
           <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
             {selectedServices.size > 0 && !showBookingForm && (
               <div className="border-b border-orange-100 bg-orange-50 px-4 py-3">
