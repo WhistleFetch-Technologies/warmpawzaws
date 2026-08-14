@@ -22,6 +22,7 @@ import { checkVendorCapability } from '../../../middleware/capability-enforcemen
 import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../../../utils/entity-extractor';
 import { isValidUUID, normalizeVendorService } from '../../../types/entities';
 import { resolveVendorById } from './vendorProfile.vendor';
+import { buildVendorServiceUpdateData } from '../../../utils/vendor-service-publish-sync';
 
 // ----------------------------------------------------------------------------
 // Category normalization helpers
@@ -1188,40 +1189,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
       const serviceData = await c.req.json();
 
-      // ✅ FIX: Build update data object, only including defined values
-      // Support multiple field name variations from frontend
-      const updateData: any = {};
-
-      if (serviceData.price !== undefined || serviceData.customPrice !== undefined) {
-        updateData.price = serviceData.price || serviceData.customPrice;
-      }
-      if (serviceData.customPrice !== undefined) {
-        updateData.custom_price = serviceData.customPrice;
-      }
-      // ✅ FIX: duration_minutes is NOT NULL - never set null/undefined; coerce to 5–1440, default 30
-      if (serviceData.duration !== undefined || serviceData.customDuration !== undefined) {
-        const raw = serviceData.duration ?? serviceData.customDuration;
-        const mins = (raw != null && raw !== '') ? (Number(raw) || 30) : 30;
-        updateData.duration_minutes = Math.max(5, Math.min(1440, mins));
-      }
-      if (serviceData.customDuration !== undefined) {
-        const raw = serviceData.customDuration;
-        updateData.custom_duration = (raw != null && raw !== '') ? (Number(raw) || 30) : null;
-      }
-      if (serviceData.isEnabled !== undefined || serviceData.is_enabled !== undefined) {
-        updateData.is_enabled = serviceData.isEnabled !== undefined ? serviceData.isEnabled : serviceData.is_enabled;
-      }
-      if (serviceData.publishStatus !== undefined || serviceData.publish_status !== undefined) {
-        updateData.publish_status = serviceData.publishStatus || serviceData.publish_status;
-      }
-      if (serviceData.description !== undefined) {
-        updateData.custom_description = serviceData.description;
-      }
-      // ✅ Allow updating service name (for custom services; only when unpublished in app)
-      if (serviceData.serviceName !== undefined || serviceData.service_name !== undefined) {
-        const name = String(serviceData.serviceName ?? serviceData.service_name ?? '').trim();
-        if (name) updateData.service_name = name;
-      }
+      const updateData = buildVendorServiceUpdateData(serviceData as Record<string, unknown>);
 
       // ✅ FIX: Validate that at least one field is being updated
       if (Object.keys(updateData).length === 0) {
@@ -2231,33 +2199,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
       const serviceData = await c.req.json();
 
-      const updateData: any = {};
-
-      if (serviceData.price !== undefined || serviceData.customPrice !== undefined) {
-        updateData.price = serviceData.price || serviceData.customPrice;
-      }
-      if (serviceData.customPrice !== undefined) {
-        updateData.custom_price = serviceData.customPrice;
-      }
-      // ✅ FIX: duration_minutes is NOT NULL - never set null/undefined; coerce to 5–1440, default 30
-      if (serviceData.duration !== undefined || serviceData.customDuration !== undefined) {
-        const raw = serviceData.duration ?? serviceData.customDuration;
-        const mins = (raw != null && raw !== '') ? (Number(raw) || 30) : 30;
-        updateData.duration_minutes = Math.max(5, Math.min(1440, mins));
-      }
-      if (serviceData.customDuration !== undefined) {
-        const raw = serviceData.customDuration;
-        updateData.custom_duration = (raw != null && raw !== '') ? (Number(raw) || 30) : null;
-      }
-      if (serviceData.isEnabled !== undefined || serviceData.is_enabled !== undefined) {
-        updateData.is_enabled = serviceData.isEnabled !== undefined ? serviceData.isEnabled : serviceData.is_enabled;
-      }
-      if (serviceData.publishStatus !== undefined || serviceData.publish_status !== undefined) {
-        updateData.publish_status = serviceData.publishStatus || serviceData.publish_status;
-      }
-      if (serviceData.description !== undefined) {
-        updateData.custom_description = serviceData.description;
-      }
+      const updateData = buildVendorServiceUpdateData(serviceData as Record<string, unknown>);
 
       if (Object.keys(updateData).length === 0) {
         return c.json({ error: 'No valid fields to update. Please provide at least one field: price, duration, isEnabled, or publishStatus' }, 400);
