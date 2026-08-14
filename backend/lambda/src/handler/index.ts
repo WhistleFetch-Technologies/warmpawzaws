@@ -54,6 +54,7 @@ import { registerVendorScheduleEndpoints } from '../endpoints/vendor/endpoints/v
 import { registerPrescriptionEndpoints } from '../endpoints/prescription/endpoints/prescriptions';
 import { registerMedicalRecordsEndpoints } from '../endpoints/medical-records';
 import { registerEcommerceEndpoints } from '../endpoints/ecommerce/endpoints/ecommerce';
+import { registerEcommerceCategoryRulesEndpoints } from '../endpoints/ecommerce/endpoints/ecommerce-category-rules';
 import { registerAnalyticsEndpoints } from '../endpoints/admin/endpoints/analytics.admin';
 import { registerProductAnalyticsEndpoints } from '../endpoints/product-analytics';
 import { registerLoyaltyEndpoints } from '../endpoints/loyalty&reward/endpoints/loyalty';
@@ -713,6 +714,7 @@ registerDeliveryOtpEndpoints(app); // Delivery OTP verification for pharmacy and
 registerMedicalRecordsEndpoints(app);
 registerAdsRecommendationEndpoints(app); // Before ecommerce — /products/similar must register before /products/:productId
 registerEcommerceEndpoints(app);
+registerEcommerceCategoryRulesEndpoints(app);
 registerAnalyticsEndpoints(app);
 registerDiscountAnalyticsEndpoints(app);
 registerDiscountPolicyEndpoints(app);

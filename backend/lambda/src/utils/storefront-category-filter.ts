@@ -1,13 +1,9 @@
 /**
- * Storefront product list category filter — parent rollup + Pet Food subcategory text matching.
+ * Storefront product list category filter — parent canonical category + subcategory membership links.
  */
 
 import { query } from '../database/rds-connection';
 import { isValidUUID } from './uuid-validation';
-import {
-  isPetFoodSubcategoryName,
-  petFoodSubcategoryParentProductMatchSql,
-} from './pet-food-subcategory-classifier';
 
 export type StorefrontCategoryFilter = {
   clause: string;
@@ -15,29 +11,17 @@ export type StorefrontCategoryFilter = {
   nextParamIndex: number;
 };
 
-const PET_FOOD_CATEGORY_NAME = 'Pet Food';
+let linksTableAvailable: boolean | undefined;
 
-/** In-process cache — Pet Food parent id is stable for the Lambda lifetime. */
-let cachedPetFoodParentId: string | null | undefined;
-
-async function resolvePetFoodParentCategoryId(
-  explicitParentId: string | null | undefined
-): Promise<string | null> {
-  if (explicitParentId) return explicitParentId;
-  if (cachedPetFoodParentId !== undefined) return cachedPetFoodParentId;
-
+async function hasProductCategoryLinksTable(): Promise<boolean> {
+  if (linksTableAvailable !== undefined) return linksTableAvailable;
   try {
-    const res = await query(
-      `SELECT id::text AS id FROM ecommerce_categories
-       WHERE name = $1 AND (is_active = true OR is_active IS NULL)
-       LIMIT 1`,
-      [PET_FOOD_CATEGORY_NAME]
-    );
-    cachedPetFoodParentId = (res.rows[0] as { id: string } | undefined)?.id ?? null;
+    await query(`SELECT 1 FROM product_category_links LIMIT 0`);
+    linksTableAvailable = true;
   } catch {
-    cachedPetFoodParentId = null;
+    linksTableAvailable = false;
   }
-  return cachedPetFoodParentId;
+  return linksTableAvailable;
 }
 
 export async function buildStorefrontCategoryFilter(
@@ -91,29 +75,44 @@ export async function buildStorefrontCategoryFilter(
     };
   }
 
-  // Pet Food subcategory (Dry/Wet/Puppy/Adult/Treats): include parent-tagged products
-  // matched by name/description even when parent_category_id was not persisted in DB.
-  if (isPetFoodSubcategoryName(catRow.name)) {
-    const parentMatchSql = petFoodSubcategoryParentProductMatchSql(catRow.name);
-    const petFoodParentId = await resolvePetFoodParentCategoryId(catRow.parent_category_id);
-    if (parentMatchSql && petFoodParentId) {
+  const useLinks = await hasProductCategoryLinksTable();
+
+  // Subcategory: membership links (preferred) with legacy category_id fallback.
+  if (catRow.parent_category_id) {
+    if (useLinks) {
       return {
         clause: ` AND (
           p.category_id = $${paramIndex}::uuid
-          OR (
-            p.category_id = $${paramIndex + 1}::uuid
-            AND (${parentMatchSql})
+          OR EXISTS (
+            SELECT 1 FROM product_category_links pcl
+            WHERE pcl.product_id = p.id AND pcl.subcategory_id = $${paramIndex}::uuid
           )
         )`,
-        params: [raw, petFoodParentId],
-        nextParamIndex: paramIndex + 2,
+        params: [raw],
+        nextParamIndex: paramIndex + 1,
       };
     }
-  }
-
-  if (catRow.parent_category_id) {
     return {
       clause: ` AND p.category_id = $${paramIndex}::uuid`,
+      params: [raw],
+      nextParamIndex: paramIndex + 1,
+    };
+  }
+
+  // Parent: canonical category_id (products normalized to parent) + legacy children IN + links under children.
+  if (useLinks) {
+    return {
+      clause: ` AND (
+        p.category_id = $${paramIndex}::uuid
+        OR p.category_id IN (
+          SELECT id FROM ecommerce_categories WHERE parent_category_id = $${paramIndex}::uuid
+        )
+        OR EXISTS (
+          SELECT 1 FROM product_category_links pcl
+          INNER JOIN ecommerce_categories child ON child.id = pcl.subcategory_id
+          WHERE pcl.product_id = p.id AND child.parent_category_id = $${paramIndex}::uuid
+        )
+      )`,
       params: [raw],
       nextParamIndex: paramIndex + 1,
     };

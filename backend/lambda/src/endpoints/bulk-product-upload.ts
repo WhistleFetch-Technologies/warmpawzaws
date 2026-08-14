@@ -20,6 +20,10 @@ import {
   resolveEcommerceCategoryByName,
 } from '../utils/ecommerce-category-resolve';
 import {
+  applyProductSubcategoryClassification,
+  resolveCanonicalParentCategory,
+} from '../utils/product-subcategory-classifier';
+import {
   buildBulkProductTemplateBuffer,
   getBulkProductTitle,
   parseBulkProductXlsxBuffer,
@@ -136,7 +140,9 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
   app.get('/vendor/:vendorId/products/bulk/template', async (c) => {
     void c.req.param('vendorId');
     const catResult = await query(
-      `SELECT name FROM ecommerce_categories WHERE is_active = true ORDER BY display_order NULLS LAST, name ASC`
+      `SELECT name FROM ecommerce_categories
+       WHERE is_active = true AND parent_category_id IS NULL
+       ORDER BY display_order NULLS LAST, name ASC`
     );
     const seen = new Set<string>();
     const categoryNames: string[] = [];
@@ -193,7 +199,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       const warnings: ValidationWarning[] = [];
       const validProducts: BulkProductRow[] = [];
 
-      // Get valid categories
+      // Get valid categories (parents + children accepted for legacy sheets; upload coerces to parent)
       const categories = await select('ecommerce_categories', { is_active: true });
       const validCategories = new Set(
         categories.map((c: any) => String(c.name ?? '').trim().toLowerCase()).filter(Boolean)
@@ -403,13 +409,18 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             );
           }
 
+          const canonical = await resolveCanonicalParentCategory(resolvedCategory.id);
+          const parentCategory = canonical
+            ? { id: canonical.categoryId, name: canonical.categoryName }
+            : resolvedCategory;
+
           const productTitle = group.name.trim();
           const groupKey =
             resolveBulkGroupKey(vendorId, {
               product_group_id: group.product_group_id,
               name: productTitle,
               brand: group.parent.brand,
-              category_id: resolvedCategory.id,
+              category_id: parentCategory.id,
             }) ?? group.groupKey;
 
           let existingProduct: {
@@ -422,7 +433,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
           if (
             existingProduct?.category_id &&
-            String(existingProduct.category_id) !== String(resolvedCategory.id)
+            String(existingProduct.category_id) !== String(parentCategory.id)
           ) {
             throw new Error(
               'Category cannot change for an existing Product Group ID — create a new group ID for a different category',
@@ -461,8 +472,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             vendor_id: vendorId,
             name: productTitle,
             description: group.parent.description || null,
-            category_id: resolvedCategory.id,
-            category: resolvedCategory.name,
+            category_id: parentCategory.id,
+            category: parentCategory.name,
             price: listingPricing.price,
             stock: stockValue,
             hsn_code: group.parent.hsn_code || null,
@@ -552,6 +563,16 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             const skuInputs = buildSkuInputsFromGroup(group);
             await syncProductSkus(vendorId, savedProductId, skuInputs, undefined, {
               skipImageIngest: true,
+            });
+          }
+
+          if (savedProductId) {
+            await applyProductSubcategoryClassification({
+              productId: savedProductId,
+              categoryId: parentCategory.id,
+              name: productTitle,
+              description: group.parent.description,
+              brand: group.parent.brand,
             });
           }
         } catch (error: any) {

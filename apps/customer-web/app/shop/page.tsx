@@ -47,10 +47,6 @@ import {
   readCheckoutAddressId,
   writeCheckoutAddressId,
 } from '@/lib/ecommerce/checkout-address-storage';
-import {
-  productMatchesPetFoodSubcategory,
-  resolvePetFoodSubcategoryProductQuery,
-} from '@/lib/pet-food-subcategory-classifier';
 import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
 
 /** Shop listing cart line: parent id, or parent::listingSku when product has variants. */
@@ -133,8 +129,6 @@ function ShopPageContent() {
 
   const selectedDeliveryAddressRef = useRef<DeliveryAddress | null>(null);
   const loadProductsGenRef = useRef(0);
-  /** Parent-catalog offset when client-filtering Pet Food subcategories (API still on parent id). */
-  const parentCatalogOffsetRef = useRef(0);
   /** Last ?category= value applied from Next searchParams (skip chip/local changes). */
   const lastAppliedUrlCategoryRef = useRef<string | null>(null);
   /** UUID after slug resolve — used to ignore stale slug still held by useSearchParams. */
@@ -285,8 +279,7 @@ function ShopPageContent() {
 
   /**
    * Fetch one page of products and either replace (reset=true) or append (reset=false).
-   * Pet Food subcategories query the parent category and filter client-side until the
-   * backend classifier filter is deployed.
+   * Pass selected category UUID directly (parent or subcategory) — server filters + paginates.
    */
   const loadProducts = useCallback(
     async (reset: boolean, currentOffset: number, currentCategory: string) => {
@@ -295,26 +288,18 @@ function ShopPageContent() {
       if (reset) {
         setLoading(true);
         setError(null);
-        parentCatalogOffsetRef.current = 0;
       } else {
         setLoadingMore(true);
       }
 
       try {
-        const { apiCategoryId, subcategoryName } = resolvePetFoodSubcategoryProductQuery(
-          currentCategory,
-          categories
-        );
-        const useSubcategoryFilter = Boolean(subcategoryName);
-        const parentBatchLimit = 50;
-
-        const buildParams = (offset: number, limit: number) => {
+        const buildParams = (pageOffset: number, limit: number) => {
           const params = new URLSearchParams();
-          if (apiCategoryId) params.set('category', apiCategoryId);
+          if (currentCategory) params.set('category', currentCategory);
           params.set('sort', sortBy);
           params.set('view', 'card');
           params.set('limit', String(limit));
-          params.set('offset', String(offset));
+          params.set('offset', String(pageOffset));
           if (debouncedSearch) params.set('search', debouncedSearch);
           if (priceRange[0] > 0) params.set('min_price', String(priceRange[0]));
           if (priceRange[1] < 10000) params.set('max_price', String(priceRange[1]));
@@ -323,51 +308,18 @@ function ShopPageContent() {
           return params;
         };
 
-        const fetchPage = async (offset: number, limit: number) => {
-          const productsRes = await apiClient.get<{
-            products?: unknown[];
-            hasMore?: boolean;
-            total?: number;
-          }>(`/ecommerce/products?${buildParams(offset, limit).toString()}`);
-          const rawList = productsRes?.products || [];
-          return {
-            products: mapApiProductsList(rawList),
-            hasMore: productsRes?.hasMore ?? rawList.length >= limit,
-          };
-        };
-
-        let newProducts: ShopProduct[] = [];
-        let more = false;
-
-        if (useSubcategoryFilter && subcategoryName) {
-          let parentOffset = reset ? 0 : parentCatalogOffsetRef.current;
-          let parentHasMore = true;
-
-          while (newProducts.length < SHOP_PAGE_SIZE && parentHasMore) {
-            const page = await fetchPage(parentOffset, parentBatchLimit);
-            if (gen !== loadProductsGenRef.current) return;
-
-            parentOffset += page.products.length;
-            parentHasMore = page.hasMore && page.products.length > 0;
-
-            const matched = page.products.filter((p) =>
-              productMatchesPetFoodSubcategory(p, subcategoryName)
-            );
-            newProducts = [...newProducts, ...matched];
-
-            if (page.products.length === 0) break;
-          }
-
-          parentCatalogOffsetRef.current = parentOffset;
-          more = parentHasMore;
-        } else {
-          const page = await fetchPage(reset ? 0 : currentOffset, SHOP_PAGE_SIZE);
-          if (gen !== loadProductsGenRef.current) return;
-          newProducts = page.products;
-          more = page.hasMore;
-        }
-
+        const productsRes = await apiClient.get<{
+          products?: unknown[];
+          hasMore?: boolean;
+          total?: number;
+        }>(
+          `/ecommerce/products?${buildParams(reset ? 0 : currentOffset, SHOP_PAGE_SIZE).toString()}`
+        );
         if (gen !== loadProductsGenRef.current) return;
+
+        const rawList = productsRes?.products || [];
+        const newProducts = mapApiProductsList(rawList);
+        const more = productsRes?.hasMore ?? rawList.length >= SHOP_PAGE_SIZE;
 
         if (reset) {
           setProducts(newProducts);
@@ -387,7 +339,7 @@ function ShopPageContent() {
         else setLoadingMore(false);
       }
     },
-    [sortBy, debouncedSearch, priceRange, SHOP_PAGE_SIZE, categories],
+    [sortBy, debouncedSearch, priceRange, SHOP_PAGE_SIZE],
   );
 
   const loadMoreProducts = useCallback(() => {

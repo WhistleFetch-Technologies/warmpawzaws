@@ -35,25 +35,39 @@ export function petTypeSelectValueFromInput(input: string): string {
   return PET_TYPE_SELECT_OTHER;
 }
 
-export type VendorCategoryOption = { id: string; name: string };
+export type VendorCategoryOption = {
+  id: string;
+  name: string;
+  parent_category_id?: string | null;
+};
 
-/** Resolve category_id for form select (trim UUID, fallback from legacy name fields). */
+/** Resolve category_id for form select (trim UUID, fallback from legacy name fields). Coerces child → parent. */
 export function categoryIdForForm(
   product: Record<string, unknown> | null | undefined,
   categories: VendorCategoryOption[] = [],
 ): string {
+  const coerceToParent = (id: string): string => {
+    const cat = categories.find((c) => String(c.id) === id);
+    if (cat?.parent_category_id) {
+      const parent = categories.find((c) => String(c.id) === String(cat.parent_category_id));
+      if (parent) return String(parent.id);
+      return String(cat.parent_category_id);
+    }
+    return id;
+  };
+
   const rawId = String(product?.category_id ?? '').trim();
   if (rawId && categories.some((c) => String(c.id) === rawId)) {
-    return rawId;
+    return coerceToParent(rawId);
   }
   const nameHint = String(product?.category_name ?? product?.category ?? '')
     .trim()
     .toLowerCase();
   if (nameHint) {
     const match = categories.find((c) => c.name.trim().toLowerCase() === nameHint);
-    if (match) return String(match.id);
+    if (match) return coerceToParent(String(match.id));
   }
-  return rawId;
+  return rawId ? coerceToParent(rawId) : '';
 }
 
 export type SpecKvRow = { id: string; key: string; value: string };

@@ -82,6 +82,10 @@ import {
   getVariantSuggestionsForCategory,
 } from '@warmpawz/shared-types';
 import { PRODUCT_STATUS } from '../../../utils/product-status-constants';
+import {
+  applyProductSubcategoryClassification,
+  resolveCanonicalParentCategory,
+} from '../../../utils/product-subcategory-classifier';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 /** Cached information_schema snapshot so we avoid hitting metadata column when it is not migrated yet */
@@ -686,11 +690,21 @@ class CreateVendorProductHandler extends BaseHandler {
       const resolvedVendorId = vendor.id;
 
       const categoryId = body.category_id ? String(body.category_id).trim() : '';
-      const resolvedCategoryName = categoryId
+      let resolvedCategoryName = categoryId
         ? await resolveActiveCategoryName(categoryId)
         : null;
       if (categoryId && !resolvedCategoryName) {
         return this.error('Category is required and must be an active catalog category', 400);
+      }
+
+      // Vendor selects parent only; coerce child → parent if a subcategory id is sent.
+      let canonicalCategoryId = categoryId;
+      if (categoryId) {
+        const canonical = await resolveCanonicalParentCategory(categoryId);
+        if (canonical) {
+          canonicalCategoryId = canonical.categoryId;
+          resolvedCategoryName = canonical.categoryName;
+        }
       }
 
       let imagesNormForValidation =
@@ -728,7 +742,7 @@ class CreateVendorProductHandler extends BaseHandler {
         vendor_id: resolvedVendorId,
         name: normalized.name,
         description: body.description || null,
-        category_id: normalized.category_id || categoryId || null,
+        category_id: canonicalCategoryId || normalized.category_id || null,
         category: body.category ?? resolvedCategoryName ?? null,
         stock: normalized.stock,
         sku,
@@ -874,6 +888,17 @@ class CreateVendorProductHandler extends BaseHandler {
       if (newProductId && skuInputs && skuInputs.length > 0) {
         await syncProductSkus(resolvedVendorId, newProductId, skuInputs);
       }
+
+      if (newProductId && (canonicalCategoryId || productData.category_id)) {
+        await applyProductSubcategoryClassification({
+          productId: newProductId,
+          categoryId: String(canonicalCategoryId || productData.category_id),
+          name: productData.name,
+          description: productData.description,
+          brand: (productData as { brand?: string }).brand ?? body.brand,
+        });
+      }
+
       const productOut = await enrichProductRowWithSkus(newProduct[0] as Record<string, unknown>);
 
       return this.success({
@@ -1035,8 +1060,23 @@ class UpdateVendorProductHandler extends BaseHandler {
 
       if (body.name !== undefined) updateData.name = body.name;
       if (body.description !== undefined) updateData.description = body.description;
-      if (body.category_id !== undefined) updateData.category_id = body.category_id;
-      if (body.category !== undefined) updateData.category = body.category;
+      if (body.category_id !== undefined) {
+        const rawCat = body.category_id ? String(body.category_id).trim() : '';
+        if (rawCat) {
+          const canonical = await resolveCanonicalParentCategory(rawCat);
+          if (canonical) {
+            updateData.category_id = canonical.categoryId;
+            updateData.category = canonical.categoryName;
+          } else {
+            updateData.category_id = body.category_id;
+          }
+        } else {
+          updateData.category_id = body.category_id;
+        }
+      }
+      if (body.category !== undefined && updateData.category === undefined) {
+        updateData.category = body.category;
+      }
       // Pricing: accept price/selling_price/sp/mrp/original_price — all map to the single price field.
       // compare_at_price is NOT accepted from vendor input; it is managed by the promotion engine.
       const pricingTouched =
@@ -1276,6 +1316,17 @@ class UpdateVendorProductHandler extends BaseHandler {
         nextSkus,
       );
       await cleanupRemovedProductS3Images(prevImageUrls, nextImageUrls, resolvedVendorId);
+
+      const classifiedRow = (nextProductRows[0] ?? updated[0]) as Record<string, unknown>;
+      if (classifiedRow?.category_id) {
+        await applyProductSubcategoryClassification({
+          productId,
+          categoryId: String(classifiedRow.category_id),
+          name: classifiedRow.name as string,
+          description: classifiedRow.description as string,
+          brand: classifiedRow.brand as string,
+        });
+      }
 
       // Auto-draft / auto-restore: recalculate total stock after update and SKU sync.
       if (cols.has('status')) {

@@ -143,19 +143,12 @@ export function ProductFormModal({
     ];
   }, [categories, form.category_id, product?.category, product?.category_name]);
 
-  /** Group into <optgroup>s so vendors can pick a subcategory (e.g. Pet Food > Dry Pet Food). */
+  /** Group into top-level parents only — subcategory membership is assigned by the backend. */
   const categoryOptionGroups = useMemo(() => {
     const topLevel = categorySelectOptions.filter((c) => !c.parent_category_id);
-    const childrenByParent = new Map<string, typeof categorySelectOptions>();
-    for (const c of categorySelectOptions) {
-      if (!c.parent_category_id) continue;
-      const list = childrenByParent.get(c.parent_category_id) ?? [];
-      list.push(c);
-      childrenByParent.set(c.parent_category_id, list);
-    }
     return topLevel.map((parent) => ({
       parent,
-      children: childrenByParent.get(parent.id) ?? [],
+      children: [] as typeof categorySelectOptions,
     }));
   }, [categorySelectOptions]);
 
@@ -595,22 +588,11 @@ export function ProductFormModal({
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
                 >
                   <option value="">Select Category</option>
-                  {categoryOptionGroups.map(({ parent, children }) =>
-                    children.length > 0 ? (
-                      <optgroup key={parent.id} label={parent.name}>
-                        <option value={parent.id}>{parent.name} (all)</option>
-                        {children.map((child) => (
-                          <option key={child.id} value={child.id}>
-                            {child.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : (
-                      <option key={parent.id} value={parent.id}>
-                        {parent.name}
-                      </option>
-                    )
-                  )}
+                  {categoryOptionGroups.map(({ parent }) => (
+                    <option key={parent.id} value={parent.id}>
+                      {parent.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               {product?.id ? (
