@@ -81,6 +81,11 @@ import {
   resolveBookingFinancialDiscountBuckets,
   resolveLockedBookingGrossFromNotes,
 } from '../../../utils/booking-financial-gross';
+import {
+  resolveBookingListPrice,
+  resolvePersistedBookingBasePrice,
+  resolvePromoValidationAmount,
+} from '../../../utils/resolve-booking-list-price';
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 import { notifyBookingCreated, notifyBookingCancelled, notifyBookingRescheduled } from '../../../utils/booking-notifications';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
@@ -1165,13 +1170,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 : petSittingServerTotalRupee != null
                   ? petSittingServerTotalRupee
                   : (amount || 0);
-        const listedServerPrice =
-          (!selectedServices || selectedServices.length === 0) &&
-          petSittingServerTotalRupee == null &&
-          swimmingServerTotalRupee == null &&
-          boardingServerTotalRupee == null
-            ? Number((service as any)?.custom_price ?? (service as any)?.price ?? 0) || 0
-            : 0;
+        const bookingListPrice = resolveBookingListPrice({
+          stayOrServerBilledTotal:
+            boardingServerTotalRupee ?? swimmingServerTotalRupee ?? petSittingServerTotalRupee,
+          vendorCustomPrice: (service as any)?.custom_price,
+          vendorPrice: (service as any)?.price,
+          selectedServices,
+        });
+        const listedServerPrice = bookingListPrice;
         const grossPayableBeforeWallet =
           isPackageBooking || isSubscriptionBooking
             ? 0
@@ -1201,23 +1207,24 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
           try {
             const fmForPromo = body.financialMeta ?? body.financial_meta;
-            let promoValidationAmount = grossPayableBeforeWallet;
+            let clientServicePriceForPromo: number | null = null;
             if (fmForPromo && typeof fmForPromo === 'object') {
-              const fm = fmForPromo as Record<string, unknown>;
-              const servicePrice = parseFloat(
-                String(fm.servicePrice ?? fm.service_price ?? '')
+              const parsed = parseFloat(
+                String(
+                  (fmForPromo as Record<string, unknown>).servicePrice ??
+                    (fmForPromo as Record<string, unknown>).service_price ??
+                    ''
+                )
               );
-              if (Number.isFinite(servicePrice) && servicePrice > 0) {
-                promoValidationAmount = servicePrice;
+              if (Number.isFinite(parsed) && parsed > 0) {
+                clientServicePriceForPromo = parsed;
               }
             }
-            if (
-              listedServerPrice > 0 &&
-              promoValidationAmount !== grossPayableBeforeWallet &&
-              !(fmForPromo && typeof fmForPromo === 'object')
-            ) {
-              promoValidationAmount = Math.max(promoValidationAmount, listedServerPrice);
-            }
+            const promoValidationAmount = resolvePromoValidationAmount({
+              listPrice: bookingListPrice,
+              clientServicePrice: clientServicePriceForPromo,
+              grossPayableBeforeWallet,
+            });
 
             resolvedBookingPromotions = await resolveBookingPromotions({
               vendorId: String(vendorId),
@@ -1528,7 +1535,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           booking_time: bookingTime,
           service_type: serviceType || 'at_vendor',
           address: fullAddressText,
-          base_price: calculatedBasePrice,
+          base_price: resolvePersistedBookingBasePrice({
+            listPrice: bookingListPrice,
+            clientServicePrice: null,
+            calculatedBasePrice,
+          }),
           total_amount: calculatedFinalAmount, // ✅ 0 for package or subscription
           // Slot validated in-tx: confirmed once paid (or immediately if no online payment due).
           // Note: omit confirmed_at / confirmed_by here — many RDS schemas lack these columns; INSERT retry budget is limited.
@@ -1664,10 +1675,13 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           if (Number.isFinite(finalPaid) && finalPaid >= 0) {
             bookingData.total_amount = Math.round(finalPaid * 100) / 100;
           }
-          if (Number.isFinite(servicePrice) && servicePrice >= 0) {
-            bookingData.base_price = Math.round(servicePrice * 100) / 100;
-          }
-          const servicePriceForMeta = Number.isFinite(servicePrice) ? servicePrice : calculatedBasePrice;
+          const persistedBase = resolvePersistedBookingBasePrice({
+            listPrice: bookingListPrice,
+            clientServicePrice: Number.isFinite(servicePrice) ? servicePrice : null,
+            calculatedBasePrice,
+          });
+          bookingData.base_price = persistedBase;
+          const servicePriceForMeta = persistedBase;
           const couponOffer = resolvedBookingPromotions?.applied.find(
             (offer) => offer.promotionType === 'coupon'
           );
