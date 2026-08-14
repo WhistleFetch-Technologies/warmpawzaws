@@ -116,3 +116,84 @@ export function inferExclusiveGstFromChargedDelta(params: {
 
   return { ...EMPTY_SPLIT };
 }
+
+/**
+ * Recover GST baked into a GST-inclusive list price when checkout stored tax_amount=0.
+ * July 2026: Pawsome 1350 × 1.18 = 1593; K9 boarding paid 1800 inclusive.
+ * Does not invent GST for explicit 0% catalogue (veterinary).
+ */
+export function inferInclusiveGstFromListedPrice(params: {
+  taxableValue: number;
+  chargedTotal?: number;
+  vendorGross?: number;
+  catalogGstRate?: number;
+  isInterState?: boolean;
+  zeroRated?: boolean;
+}): GstSplitParts {
+  if (params.zeroRated) return { ...EMPTY_SPLIT };
+
+  const taxable = money(params.taxableValue);
+  if (taxable <= 0.009) return { ...EMPTY_SPLIT };
+
+  const catalogPresent =
+    params.catalogGstRate !== undefined && params.catalogGstRate !== null && !Number.isNaN(Number(params.catalogGstRate));
+  const catalog = money(params.catalogGstRate);
+  if (catalogPresent && catalog <= 0.009) return { ...EMPTY_SPLIT };
+
+  const rates: number[] = [];
+  if (catalog > 0.009) rates.push(catalog);
+  else rates.push(18);
+
+  const gross = money(params.vendorGross);
+  const charged = money(params.chargedTotal);
+  const isInterState = Boolean(params.isInterState);
+  const chargedLooksInclusive = charged <= 0.009 || Math.abs(charged - taxable) <= 0.05;
+
+  for (const rate of rates) {
+    if (gross > 0.009) {
+      const expectedListed = round2(gross * (1 + rate / 100));
+      if (Math.abs(expectedListed - taxable) <= 0.05) {
+        const fromGross = round2(taxable - gross);
+        if (fromGross > 0.009) {
+          return reconstructGstSplit({ gstTotal: fromGross, isInterState });
+        }
+      }
+    }
+  }
+
+  if (!chargedLooksInclusive) return { ...EMPTY_SPLIT };
+
+  for (const rate of rates) {
+    const gst = round2((taxable * rate) / (100 + rate));
+    if (gst <= 0.009) continue;
+    const exclusive = round2(taxable - gst);
+    if (Math.abs(round2(exclusive * (1 + rate / 100)) - taxable) <= 0.05) {
+      return reconstructGstSplit({ gstTotal: gst, isInterState });
+    }
+  }
+
+  return { ...EMPTY_SPLIT };
+}
+
+/** Veterinary / healthcare 0% — do not extract inclusive GST from the list price. */
+export function isZeroRatedHealthcareHint(params: {
+  catalogGstRate?: unknown;
+  categoryName?: unknown;
+  vsCategory?: unknown;
+  serviceType?: unknown;
+}): boolean {
+  if (params.catalogGstRate !== undefined && params.catalogGstRate !== null && params.catalogGstRate !== '') {
+    const n = parseFloat(String(params.catalogGstRate).replace(/,/g, ''));
+    if (Number.isFinite(n) && n <= 0.009) return true;
+  }
+  const blob = [params.categoryName, params.vsCategory, params.serviceType]
+    .map((v) => String(v || '').toLowerCase())
+    .join(' ');
+  if (!blob.trim()) return false;
+  const isNonVetService = /\b(groom|board|walk|train|nutrition|swim)/.test(blob);
+  if (isNonVetService) return false;
+  return (
+    /\b(vet|veterinary|veterinarian|vet_clinic|vet_solo|healthcare)\b/.test(blob) ||
+    blob.includes('veterinary')
+  );
+}

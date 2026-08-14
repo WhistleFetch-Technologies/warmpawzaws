@@ -1,5 +1,12 @@
 import { describe, expect, test } from '@jest/globals';
-import { gstFinancialIdentity, inferExclusiveGstFromChargedDelta, reconstructGstSplit, splitGstAmount } from '../gst-split';
+import {
+  gstFinancialIdentity,
+  inferExclusiveGstFromChargedDelta,
+  inferInclusiveGstFromListedPrice,
+  isZeroRatedHealthcareHint,
+  reconstructGstSplit,
+  splitGstAmount,
+} from '../gst-split';
 
 describe('gst-split', () => {
   test('splits intra-state GST into CGST/SGST (ed864719)', () => {
@@ -68,5 +75,44 @@ describe('gst-split', () => {
       chargedTotal: 1620,
     });
     expect(split.gstTotal).toBe(0);
+  });
+
+  test('inferInclusiveGstFromListedPrice extracts Pawsome inclusive GST from vendor gross', () => {
+    const split = inferInclusiveGstFromListedPrice({
+      taxableValue: 1593,
+      vendorGross: 1350,
+    });
+    expect(split.gstTotal).toBe(243);
+    expect(split.cgstAmount).toBe(121.5);
+    expect(split.sgstAmount).toBe(121.5);
+  });
+
+  test('inferInclusiveGstFromListedPrice extracts K9 inclusive GST from listed 1800', () => {
+    const split = inferInclusiveGstFromListedPrice({
+      taxableValue: 1800,
+    });
+    expect(split.gstTotal).toBe(274.58);
+  });
+
+  test('inferInclusiveGstFromListedPrice stays 0 for veterinary 0% catalogue', () => {
+    expect(
+      inferInclusiveGstFromListedPrice({
+        taxableValue: 350,
+        catalogGstRate: 0,
+      }).gstTotal,
+    ).toBe(0);
+    expect(
+      inferInclusiveGstFromListedPrice({
+        taxableValue: 350,
+        zeroRated: true,
+      }).gstTotal,
+    ).toBe(0);
+  });
+
+  test('isZeroRatedHealthcareHint skips vet consults but not grooming under a vet vendor', () => {
+    expect(isZeroRatedHealthcareHint({ categoryName: 'Veterinary' })).toBe(true);
+    expect(isZeroRatedHealthcareHint({ catalogGstRate: 0 })).toBe(true);
+    expect(isZeroRatedHealthcareHint({ categoryName: 'Grooming', vsCategory: 'vet_clinic' })).toBe(false);
+    expect(isZeroRatedHealthcareHint({ categoryName: 'Boarding' })).toBe(false);
   });
 });
