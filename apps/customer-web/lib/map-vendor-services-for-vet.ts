@@ -15,8 +15,11 @@ export type VetHubServiceRow = {
   metadata?: unknown;
 };
 
-/** Map GET /customer/vendor/:id/services rows (card or legacy) for vet hub UI. */
-export function mapVendorServicesForVetHub(rows: unknown[]): VetHubServiceRow[] {
+/** Map vendor service rows for vet hub list/search (excludes grooming catalog rows). */
+export function mapVendorServicesForVetHub(
+  rows: unknown[],
+  options?: { vendorProfile?: boolean }
+): VetHubServiceRow[] {
   const mapped = (rows || []).map((raw) => {
     const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
     const meta =
@@ -49,5 +52,5 @@ export function mapVendorServicesForVetHub(rows: unknown[]): VetHubServiceRow[] 
       catalogServiceSlug: s.catalogServiceSlug as string | undefined,
     };
   });
-  return filterServicesForVetHub(mapped);
+  return options?.vendorProfile ? mapped : filterServicesForVetHub(mapped);
 }

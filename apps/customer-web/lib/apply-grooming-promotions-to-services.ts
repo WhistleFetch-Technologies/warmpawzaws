@@ -71,7 +71,8 @@ export function applyGroomingPromotionsToServices(
 
     return {
       ...s,
-      price: finalPrice,
+      // Keep catalog/list in `price` so checkout baseAmount is not promo-baked.
+      price: basePrice,
       originalPrice: originalPrice !== finalPrice ? originalPrice : undefined,
       discountPercentage,
       discountAmount,

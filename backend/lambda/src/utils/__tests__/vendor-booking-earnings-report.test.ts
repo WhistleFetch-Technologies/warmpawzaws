@@ -145,4 +145,64 @@ describe('vendor-booking-earnings-report', () => {
     expect(line.vendorGross).toBe(1650);
     expect(line.customerPaidTotal).toBe(1752.3);
   });
+
+  test('July Pawsome inclusive list shows extracted GST', async () => {
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'pawsome',
+      booking_id: 'e1652035',
+      base_price: 1593,
+      total_amount: 1620,
+      discount_amount: 0,
+      tax_amount: 0,
+      earning_total_amount: 1350,
+      earning_commission_amount: 135,
+      earning_net_amount: 1215,
+      payment_amount: 1620,
+      gst_amount: 0,
+      category_name: 'Grooming',
+      is_package_session: false,
+    });
+    expect(line.gstTotal).toBe(243);
+    expect(line.vendorGross).toBe(1350);
+    expect(line.serviceBase).toBe(1593);
+  });
+
+  test('July K9 inclusive boarding shows extracted GST', async () => {
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'k9',
+      booking_id: 'k9-july',
+      base_price: 1800,
+      total_amount: 1800,
+      discount_amount: 0,
+      tax_amount: 0,
+      earning_total_amount: 1800,
+      earning_commission_amount: 180,
+      earning_net_amount: 1620,
+      payment_amount: 1800,
+      gst_amount: 0,
+      category_name: 'Boarding',
+      is_package_session: false,
+    });
+    expect(line.gstTotal).toBe(274.58);
+    expect(line.vendorGross).toBe(1800);
+  });
+
+  test('July vet consult stays 0 GST', async () => {
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'healing-tails',
+      booking_id: 'ht-july',
+      base_price: 350,
+      total_amount: 350,
+      discount_amount: 0,
+      tax_amount: 0,
+      earning_total_amount: 350,
+      earning_commission_amount: 35,
+      earning_net_amount: 315,
+      payment_amount: 350,
+      gst_amount: 0,
+      category_name: 'Veterinary',
+      is_package_session: false,
+    });
+    expect(line.gstTotal).toBe(0);
+  });
 });

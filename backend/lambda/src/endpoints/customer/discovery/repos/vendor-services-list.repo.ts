@@ -50,6 +50,10 @@ async function appendCategoryFilter(
   category: string,
   options?: { vendorDetailListing?: boolean }
 ): Promise<string> {
+  // Vendor profile: return full published catalog; hub category filters are for search/list only.
+  if (options?.vendorDetailListing) {
+    return servicesQuery;
+  }
   const catLower = String(category).toLowerCase().trim().replace(/-/g, '_');
   const sittingBookingCategoryRequest =
     catLower === 'sitting' ||
@@ -71,9 +75,7 @@ async function appendCategoryFilter(
     const likeP = queryParams.length;
     const hubSql = sqlVendorServicesHubCategoryFilter(category, 'vs', exactP, likeP);
     let out = servicesQuery + (hubSql || '');
-    // Vendor profile (GET /customer/vendor/:id/services): show full published catalog for this
-    // vendor — do not strip grooming/training rows. Hub search/by-style keeps the exclude.
-    if (isVetHubCategoryRequest(category) && !options?.vendorDetailListing) {
+    if (isVetHubCategoryRequest(category)) {
       out += sqlVetHubExcludeNonVetServices('vs');
     }
     return out;

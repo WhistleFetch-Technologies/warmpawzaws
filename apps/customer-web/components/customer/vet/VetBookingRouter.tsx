@@ -517,8 +517,9 @@ export function VetBookingRouter({
       // ✅ FIX: Include serviceStyle parameter to filter services correctly
       const vendorServicesParams = new URLSearchParams();
       if (serviceStyle) vendorServicesParams.set('serviceStyle', serviceStyle);
-      vendorServicesParams.set('category', HUB_DISCOVERY_VET.servicesApiCategory);
-      const serviceStyleParam = `?${vendorServicesParams.toString()}`;
+      const serviceStyleParam = vendorServicesParams.toString()
+        ? `?${vendorServicesParams.toString()}`
+        : '';
       let servicesResponse: any = null;
       const endpoints = [
         `/customer/vendor/${vid}/services${serviceStyleParam}`,

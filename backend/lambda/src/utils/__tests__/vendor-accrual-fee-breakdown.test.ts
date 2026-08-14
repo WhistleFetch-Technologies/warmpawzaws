@@ -422,14 +422,46 @@ describe('vendor-accrual-fee-breakdown', () => {
     expect(b.sgstAmount).toBe(19.8);
   });
 
-  test('does not treat a non-GST delta as GST', async () => {
+  test('Pawsome inclusive list extracts GST even when paid has a non-rate delta', async () => {
     const b = await resolveBookingCustomerPaidFeeBreakdown({
       bookingId: 'e1652035',
       basePrice: 1593,
       totalAmount: 1620,
       taxAmount: 0,
+      earningTotalAmount: 1350,
+      categoryName: 'Grooming',
       payment: { amount: 1620, gst_amount: 0 },
     });
+    expect(b.gstTotal).toBe(243);
+    expect(b.cgstAmount).toBe(121.5);
+    expect(b.sgstAmount).toBe(121.5);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
+  });
+
+  test('K9 inclusive boarding list extracts 18% GST when charged equals listed', async () => {
+    const b = await resolveBookingCustomerPaidFeeBreakdown({
+      bookingId: 'k9-july',
+      basePrice: 1800,
+      totalAmount: 1800,
+      taxAmount: 0,
+      earningTotalAmount: 1800,
+      categoryName: 'Boarding',
+      payment: { amount: 1800, gst_amount: 0 },
+    });
+    expect(b.gstTotal).toBe(274.58);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
+  });
+
+  test('does not invent inclusive GST on veterinary 0% consults', async () => {
+    const b = await resolveBookingCustomerPaidFeeBreakdown({
+      bookingId: 'healing-tails-july',
+      basePrice: 350,
+      totalAmount: 350,
+      taxAmount: 0,
+      categoryName: 'Veterinary',
+      payment: { amount: 350, gst_amount: 0 },
+    });
     expect(b.gstTotal).toBe(0);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
 });

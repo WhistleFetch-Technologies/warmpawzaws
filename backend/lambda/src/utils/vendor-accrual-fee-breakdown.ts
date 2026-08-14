@@ -14,7 +14,13 @@ import {
 import { calculateFinalFees, mapCatalogCategoryToBusinessType } from './feeCalculator';
 import { resolveLockedBookingGrossFromNotes } from './booking-financial-gross';
 import { resolveServiceBookingTaxItem } from './resolve-service-booking-tax-item';
-import { gstFinancialIdentity, inferExclusiveGstFromChargedDelta, reconstructGstSplit } from './gst-split';
+import {
+  gstFinancialIdentity,
+  inferExclusiveGstFromChargedDelta,
+  inferInclusiveGstFromListedPrice,
+  isZeroRatedHealthcareHint,
+  reconstructGstSplit,
+} from './gst-split';
 
 export type VendorAccrualFeeBreakdown = {
   platformFee: number;
@@ -284,6 +290,28 @@ async function resolveGstForAccrual(
     });
     if (inferred.gstTotal > 0.009) {
       return inferred;
+    }
+  }
+
+  const zeroRated = isZeroRatedHealthcareHint({
+    catalogGstRate: ctx.catalogGstRate,
+    categoryName: ctx.categoryName,
+    vsCategory: ctx.vsCategory,
+    serviceType: ctx.serviceType,
+  });
+  if (!lockedZeroTax && !zeroRated) {
+    const inclusive = inferInclusiveGstFromListedPrice({
+      taxableValue: resolveTaxableValue(ctx),
+      chargedTotal: resolveChargedCustomerTotal(ctx),
+      vendorGross: safeMoneyAmount(ctx.earningTotalAmount),
+      catalogGstRate: ctx.catalogGstRate != null && ctx.catalogGstRate !== ''
+        ? safeMoneyAmount(ctx.catalogGstRate)
+        : undefined,
+      isInterState,
+      zeroRated,
+    });
+    if (inclusive.gstTotal > 0.009) {
+      return inclusive;
     }
   }
 
