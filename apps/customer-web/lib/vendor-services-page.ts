@@ -3,6 +3,19 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 
 export const VENDOR_SERVICES_PAGE_SIZE = 5;
 
+/** Full vendor catalog on profile/booking — no hub category filter, no card pagination. */
+export function buildVendorProfileServicesUrl(opts: {
+  vendorId: string;
+  serviceStyle?: string;
+  customerPhone?: string;
+}): string {
+  const q = new URLSearchParams();
+  if (opts.serviceStyle) q.set('serviceStyle', opts.serviceStyle);
+  if (opts.customerPhone) q.set('customerPhone', opts.customerPhone);
+  const qs = q.toString();
+  return `/customer/vendor/${encodeURIComponent(opts.vendorId)}/services${qs ? `?${qs}` : ''}`;
+}
+
 export function buildVendorServicesPageUrl(opts: {
   vendorId: string;
   serviceStyle?: string;
