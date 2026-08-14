@@ -31,6 +31,7 @@ import {
 } from '@/lib/ecommerce-category-admin';
 import { getShopCategoryStaticImageUrl } from '@/lib/shop-category-static-images';
 import { toast, Toaster } from 'sonner';
+import { SubcategoryRulesPanel } from './SubcategoryRulesPanel';
 
 interface Category extends EcommerceCategoryForm {
   createdAt?: string;
@@ -768,6 +769,14 @@ function CategoryEditorModal({
               shop page (e.g. "Dry Pet Food" under "Pet Food").
             </p>
           </div>
+
+          {editedCategory.parentId &&
+            !String(editedCategory.id).startsWith('cat_') && (
+              <SubcategoryRulesPanel
+                subcategoryId={editedCategory.id}
+                subcategoryName={editedCategory.name}
+              />
+            )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>

@@ -1453,13 +1453,24 @@ export function registerEcommerceEndpoints(app: Hono) {
   app.get("/products/:productId", (c) => handleGetPublicProductById(c, '[products/:productId]'));
 
 /**
- * Product count per category, rolled up to include child (sub)category products.
- * e.g. selecting "Pet Food" (parent) still counts products tagged directly under
- * "Dry Pet Food" / "Wet Pet Food" / etc so the parent chip stays visible and accurate.
+ * Product count per category:
+ * - parent: products with category_id = parent (canonical) or legacy child ids or links under children
+ * - subcategory: membership links (and legacy direct category_id)
  */
-async function storefrontCategoryProductCountLateral(): Promise<string> {
-  const exclude = await storefrontExcludeMealProductsSql();
-  return `
+  async function storefrontCategoryProductCountLateral(): Promise<string> {
+    const exclude = await storefrontExcludeMealProductsSql();
+    let linksClause = '';
+    try {
+      await query(`SELECT 1 FROM product_category_links LIMIT 0`);
+      linksClause = `
+        OR EXISTS (
+          SELECT 1 FROM product_category_links pcl
+          WHERE pcl.product_id = p.id AND pcl.subcategory_id = ec.id
+        )`;
+    } catch {
+      /* migration not applied yet */
+    }
+    return `
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS product_count
       FROM products p
@@ -1468,11 +1479,12 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
         OR p.category_id IN (
           SELECT id FROM ecommerce_categories WHERE parent_category_id = ec.id
         )
+        ${linksClause}
       )
         AND ${STOREFRONT_ACTIVE_STATUS_SQL}
         ${exclude}
     ) pc ON true`;
-}
+  }
 
   /**
    * GET /ecommerce/categories
