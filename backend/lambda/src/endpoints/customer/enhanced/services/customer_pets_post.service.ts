@@ -167,6 +167,7 @@ export async function executecustomerPetsPost(c: Context) {
             recordPetInsertLoyalty(
               loyaltyState,
               String(newPet.id),
+              newPet as Record<string, unknown>,
               pet as Record<string, unknown>
             );
             savedPets.push(newPet);

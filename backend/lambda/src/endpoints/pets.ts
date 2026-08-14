@@ -380,6 +380,7 @@ export function registerPetEndpoints(app: Hono) {
       const loyaltyFields = buildSinglePetCreateLoyaltyFields(
         String(customerId),
         String(created.id),
+        created,
         petData as Record<string, unknown>
       );
 
