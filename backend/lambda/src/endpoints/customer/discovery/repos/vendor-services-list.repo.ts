@@ -47,7 +47,8 @@ const VENDOR_SERVICES_SELECT = `
 async function appendCategoryFilter(
   servicesQuery: string,
   queryParams: unknown[],
-  category: string
+  category: string,
+  options?: { vendorDetailListing?: boolean }
 ): Promise<string> {
   const catLower = String(category).toLowerCase().trim().replace(/-/g, '_');
   const sittingBookingCategoryRequest =
@@ -70,7 +71,11 @@ async function appendCategoryFilter(
     const likeP = queryParams.length;
     const hubSql = sqlVendorServicesHubCategoryFilter(category, 'vs', exactP, likeP);
     let out = servicesQuery + (hubSql || '');
-    if (isVetHubCategoryRequest(category)) out += sqlVetHubExcludeNonVetServices('vs');
+    // Vendor profile (GET /customer/vendor/:id/services): show full published catalog for this
+    // vendor — do not strip grooming/training rows. Hub search/by-style keeps the exclude.
+    if (isVetHubCategoryRequest(category) && !options?.vendorDetailListing) {
+      out += sqlVetHubExcludeNonVetServices('vs');
+    }
     return out;
   }
   if (sittingBookingCategoryRequest) {
@@ -142,13 +147,17 @@ export async function dbFetchVendorServicesList(args: {
   vendorId: string;
   category?: string | null;
   serviceStyle?: string | null;
+  /** True for GET /customer/vendor/:vendorId/services — full vendor catalog on profile. */
+  vendorDetailListing?: boolean;
 }) {
-  const { vendorId, category, serviceStyle } = args;
+  const { vendorId, category, serviceStyle, vendorDetailListing } = args;
   let servicesQuery = VENDOR_SERVICES_SELECT;
   const queryParams: unknown[] = [vendorId];
 
   if (category) {
-    servicesQuery = await appendCategoryFilter(servicesQuery, queryParams, category);
+    servicesQuery = await appendCategoryFilter(servicesQuery, queryParams, category, {
+      vendorDetailListing,
+    });
   }
   if (serviceStyle && serviceStyle !== 'all') {
     const acceptableStyles = acceptableStylesForService(serviceStyle);

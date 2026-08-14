@@ -13,8 +13,6 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
-import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
-import { filterServicesForVetHub } from '@/lib/filter-hub-services';
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { VendorServicePromotions } from '../services/VendorServicePromotions';
@@ -99,7 +97,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       // ✅ FIX: Include serviceStyle=at_center for clinic profile (clinics offer at_center services)
       const [vendorResponse, servicesResponse, facilityResponse] = await Promise.all([
         apiClient.get(`/customer/vendor/${clinicId}`),
-        apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center&category=${HUB_DISCOVERY_VET.servicesApiCategory}`).catch(() => apiClient.get(`/vendor/${clinicId}/services`)),
+        apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center`).catch(() => apiClient.get(`/vendor/${clinicId}/services`)),
         apiClient.get(`/customer/facility/${clinicId}`).catch(() => null),
       ]);
       
@@ -132,8 +130,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         services = servicesData;
       }
       
-      const mappedServices = filterServicesForVetHub(
-        services.map((s: any, idx: number) => {
+      const mappedServices = services.map((s: any, idx: number) => {
         const catalogId = s.serviceId || s.service_id;
         const vendorServiceId = s.id;
         const selectionKey = String(
@@ -155,8 +152,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           packageDetails: s.packageDetails,
           metadata: s.metadata,
         };
-      })
-      );
+      });
       
       console.log('✅ Loaded clinic data:', {
         vendorId: vendorData.id || clinicId,
