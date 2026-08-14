@@ -217,7 +217,9 @@ export function AIChatbotWidget({
 }: AIChatbotWidgetProps) {
   const router = useRouter();
   useVisualViewport();
+  const viewportAnchorRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const updateLayoutRef = useRef<(() => void) | null>(null);
   const lastBookingUrlRef = useRef<string | null>(null);
   const lastBookingCategoryRef = useRef<string | null>(null);
   const lastBookingIntentRef = useRef<BookingAssistIntent>('discover');
@@ -1325,26 +1327,53 @@ export function AIChatbotWidget({
     }
   };
 
-  // Keep the floating panel above the virtual keyboard on mobile.
+  // Bind a viewport anchor to visualViewport (same pattern as CommunicationHub) so the
+  // chat panel stays above the virtual keyboard on mobile WebViews.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return;
     const vv = window.visualViewport;
-    const basePx = presentation === 'modal' ? 16 : 104; // 1rem vs 6.5rem
+    const closedBottomPx = presentation === 'modal' ? 16 : 104; // 1rem vs tab-bar clearance
+    const keyboardBottomGapPx = 10;
+    const topMarginPx = 16;
+    /** Ignore small visualViewport deltas from browser chrome / safe-area jitter. */
+    const keyboardOpenThresholdPx = 48;
 
-    function updatePanel() {
-      const el = panelRef.current;
-      if (!el) return;
-      const kbHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      el.style.bottom = `${Math.max(basePx, kbHeight + basePx)}px`;
-      el.style.maxHeight = `${vv.height - basePx - 16}px`;
+    function readKeyboardHeight(): number {
+      const fromViewport = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      if (fromViewport >= keyboardOpenThresholdPx) return fromViewport;
+      const cssVar = getComputedStyle(document.documentElement)
+        .getPropertyValue('--keyboard-height')
+        .trim();
+      const parsed = parseInt(cssVar, 10);
+      return Number.isFinite(parsed) ? parsed : fromViewport;
     }
 
-    updatePanel();
-    vv.addEventListener('resize', updatePanel);
-    vv.addEventListener('scroll', updatePanel);
+    function updateLayout() {
+      const anchor = viewportAnchorRef.current;
+      const panel = panelRef.current;
+      if (!anchor || !panel) return;
+
+      const keyboardOpen = readKeyboardHeight() >= keyboardOpenThresholdPx;
+      const bottomGapPx = keyboardOpen ? keyboardBottomGapPx : closedBottomPx;
+
+      anchor.style.top = `${vv.offsetTop}px`;
+      anchor.style.height = `${vv.height}px`;
+
+      panel.style.bottom = `${bottomGapPx}px`;
+      panel.style.maxHeight = `${Math.max(180, vv.height - bottomGapPx - topMarginPx)}px`;
+      panel.style.minHeight = keyboardOpen ? '0' : '';
+    }
+
+    updateLayoutRef.current = updateLayout;
+    updateLayout();
+    vv.addEventListener('resize', updateLayout);
+    vv.addEventListener('scroll', updateLayout);
+    window.addEventListener('orientationchange', updateLayout);
     return () => {
-      vv.removeEventListener('resize', updatePanel);
-      vv.removeEventListener('scroll', updatePanel);
+      updateLayoutRef.current = null;
+      vv.removeEventListener('resize', updateLayout);
+      vv.removeEventListener('scroll', updateLayout);
+      window.removeEventListener('orientationchange', updateLayout);
     };
   }, [presentation]);
 
@@ -1355,15 +1384,15 @@ export function AIChatbotWidget({
   const panelShell =
     presentation === 'modal'
       ? [
-          'fixed z-[56] flex min-h-0 flex-col bg-white rounded-lg shadow-2xl border border-gray-200',
-          'left-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom,0px))]',
-          'max-h-[min(600px,calc(100dvh-2rem-env(safe-area-inset-bottom,0px)-env(safe-area-inset-top,0px)))]',
+          'absolute flex min-h-0 flex-col overflow-hidden bg-white rounded-lg shadow-2xl border border-gray-200',
+          'left-3 right-3 bottom-4',
+          'max-h-[min(600px,calc(var(--vvh,100dvh)-2rem-env(safe-area-inset-bottom,0px)-env(safe-area-inset-top,0px)))]',
           'sm:left-auto sm:right-6 sm:w-96',
         ].join(' ')
       : [
-          'fixed z-[56] flex flex-col min-h-[min(22rem,58dvh)] bg-white rounded-lg shadow-2xl border border-gray-200',
+          'absolute flex flex-col min-h-[min(22rem,58dvh)] overflow-hidden bg-white rounded-lg shadow-2xl border border-gray-200',
           'left-3 right-3 bottom-[max(6.5rem,calc(5.5rem+env(safe-area-inset-bottom,0px)))]',
-          'max-h-[min(600px,calc(100dvh-7.5rem-env(safe-area-inset-bottom,0px)-env(safe-area-inset-top,0px)))]',
+          'max-h-[min(600px,calc(var(--vvh,100dvh)-7.5rem-env(safe-area-inset-bottom,0px)-env(safe-area-inset-top,0px)))]',
           'sm:left-auto sm:right-6 sm:w-96',
         ].join(' ');
 
@@ -1383,7 +1412,12 @@ export function AIChatbotWidget({
           }}
         />
       )}
-      <div ref={panelRef} className={panelShell}>
+      <div
+        ref={viewportAnchorRef}
+        className="fixed left-0 right-0 z-[56] pointer-events-none"
+        style={{ top: 0, height: 'var(--vvh, 100dvh)' }}
+      >
+      <div ref={panelRef} className={`pointer-events-auto ${panelShell}`}>
       {/* Header — match home FAB / Help gradient */}
       <div className="flex flex-col gap-2 p-4 border-b border-gray-200 shrink-0 rounded-t-lg bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white">
         <div className="flex items-start justify-between gap-2">
@@ -1907,7 +1941,7 @@ export function AIChatbotWidget({
 
       {/* Input — after assistant choice */}
       {botEntry === 'active' && (
-        <div className="p-4 border-t border-gray-200">
+        <div className="shrink-0 p-4 border-t border-gray-200">
           <div className="flex gap-2">
             <input
               ref={inputRef}
@@ -1921,8 +1955,16 @@ export function AIChatbotWidget({
                 }
               }}
               onFocus={() => {
+                const scrollMessages = () => {
+                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                };
+                requestAnimationFrame(() => {
+                  updateLayoutRef.current?.();
+                  scrollMessages();
+                });
                 setTimeout(() => {
-                  inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  updateLayoutRef.current?.();
+                  scrollMessages();
                 }, 350);
               }}
               placeholder={
@@ -1953,6 +1995,7 @@ export function AIChatbotWidget({
           </div>
         </div>
       )}
+    </div>
     </div>
     </>
   );
