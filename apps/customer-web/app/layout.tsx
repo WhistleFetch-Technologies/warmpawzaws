@@ -177,26 +177,127 @@ export default function RootLayout({
             `,
           }}
         />
-        {/* Error handler for chunk load errors */}
+        {/* Error handler for chunk / JS load failures (works before React mounts) */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
-                var hasReloaded = sessionStorage.getItem('chunkErrorReloaded');
-                function handleChunkError(e) {
-                  var msg = e.message || '';
-                  if ((msg.includes('ChunkLoadError') || msg.includes('Loading chunk') || msg.includes('Failed to fetch dynamically imported module')) && !hasReloaded) {
-                    sessionStorage.setItem('chunkErrorReloaded', 'true');
+                'use strict';
+                var COUNT_KEY = 'chunkErrorReloadCount';
+                var LEGACY_KEY = 'chunkErrorReloaded';
+                var MAX_RETRIES = 3;
+                var FALLBACK_ID = 'warmpawz-chunk-fallback-ui';
+
+                try {
+                  if (sessionStorage.getItem(LEGACY_KEY) === 'true' && !sessionStorage.getItem(COUNT_KEY)) {
+                    sessionStorage.setItem(COUNT_KEY, '1');
+                  }
+                  sessionStorage.removeItem(LEGACY_KEY);
+                } catch (e) {}
+
+                function getReloadCount() {
+                  try {
+                    var n = parseInt(sessionStorage.getItem(COUNT_KEY) || '0', 10);
+                    return isNaN(n) ? 0 : n;
+                  } catch (e) {
+                    return 0;
+                  }
+                }
+
+                function bumpReloadCount() {
+                  try {
+                    sessionStorage.setItem(COUNT_KEY, String(getReloadCount() + 1));
+                  } catch (e) {}
+                }
+
+                function isRecoverableMessage(msg) {
+                  if (!msg) return false;
+                  var m = String(msg);
+                  return m.indexOf('ChunkLoadError') >= 0
+                    || m.indexOf('Loading chunk') >= 0
+                    || m.indexOf('Failed to fetch dynamically imported module') >= 0
+                    || m.indexOf('SyntaxError') >= 0
+                    || m.indexOf('Unexpected token') >= 0
+                    || m.indexOf('Invalid or unexpected token') >= 0
+                    || m.indexOf('Unexpected identifier') >= 0;
+                }
+
+                function cacheBustReload() {
+                  try {
+                    var u = new URL(window.location.href);
+                    u.searchParams.delete('__cw_reload');
+                    u.searchParams.set('__cw_reload', String(Date.now()));
+                    window.location.replace(u.toString());
+                  } catch (e) {
                     window.location.reload();
                   }
                 }
-                window.addEventListener('error', handleChunkError);
-                window.addEventListener('unhandledrejection', function(e) {
-                  var msg = e.reason?.message || String(e.reason || '');
-                  if ((msg.includes('ChunkLoadError') || msg.includes('Loading chunk')) && !hasReloaded) {
-                    sessionStorage.setItem('chunkErrorReloaded', 'true');
-                    window.location.reload();
+
+                function showFallbackUi() {
+                  if (document.getElementById(FALLBACK_ID)) return;
+                  try {
+                    document.body.innerHTML = '';
+                  } catch (e) {}
+                  var root = document.createElement('div');
+                  root.id = FALLBACK_ID;
+                  root.setAttribute(
+                    'style',
+                    'min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,sans-serif;background:#fff;'
+                  );
+                  root.innerHTML =
+                    '<p style="font-size:18px;font-weight:600;color:#111;margin:0 0 8px;">Unable to load Warmpawz</p>' +
+                    '<p style="font-size:14px;color:#666;margin:0 0 24px;max-width:320px;">The app could not load the latest version. Try again or open the login page.</p>' +
+                    '<div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px;">' +
+                    '<button type="button" id="warmpawz-chunk-reload" style="padding:12px 16px;border-radius:12px;border:none;background:#FF8C42;color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Reload page</button>' +
+                    '<button type="button" id="warmpawz-chunk-auth" style="padding:12px 16px;border-radius:12px;border:1px solid #FF8C42;background:#fff;color:#FF8C42;font-size:16px;font-weight:600;cursor:pointer;">Open login</button>' +
+                    '</div>';
+                  document.body.appendChild(root);
+                  var reloadBtn = document.getElementById('warmpawz-chunk-reload');
+                  var authBtn = document.getElementById('warmpawz-chunk-auth');
+                  if (reloadBtn) {
+                    reloadBtn.onclick = function() {
+                      try { sessionStorage.removeItem(COUNT_KEY); } catch (e) {}
+                      cacheBustReload();
+                    };
                   }
+                  if (authBtn) {
+                    authBtn.onclick = function() {
+                      window.location.assign('/auth');
+                    };
+                  }
+                }
+
+                function attemptRecovery(sourceMsg) {
+                  if (!isRecoverableMessage(sourceMsg)) return;
+                  var count = getReloadCount();
+                  if (count >= MAX_RETRIES) {
+                    showFallbackUi();
+                    return;
+                  }
+                  bumpReloadCount();
+                  cacheBustReload();
+                }
+
+                window.addEventListener(
+                  'error',
+                  function(ev) {
+                    if (ev.target && ev.target !== window) {
+                      var tag = ev.target.tagName;
+                      if (tag === 'SCRIPT' || tag === 'LINK') {
+                        attemptRecovery(ev.message || 'Failed to load script');
+                      }
+                      return;
+                    }
+                    attemptRecovery(ev.message || '');
+                  },
+                  true
+                );
+
+                window.addEventListener('unhandledrejection', function(ev) {
+                  var reason = ev.reason;
+                  var msg =
+                    reason && reason.message ? reason.message : String(reason || '');
+                  attemptRecovery(msg);
                 });
               })();
             `,

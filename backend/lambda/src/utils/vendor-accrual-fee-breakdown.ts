@@ -14,6 +14,13 @@ import {
 import { calculateFinalFees, mapCatalogCategoryToBusinessType } from './feeCalculator';
 import { resolveLockedBookingGrossFromNotes } from './booking-financial-gross';
 import { resolveServiceBookingTaxItem } from './resolve-service-booking-tax-item';
+import {
+  gstFinancialIdentity,
+  inferExclusiveGstFromChargedDelta,
+  inferInclusiveGstFromListedPrice,
+  isZeroRatedHealthcareHint,
+  reconstructGstSplit,
+} from './gst-split';
 
 export type VendorAccrualFeeBreakdown = {
   platformFee: number;
@@ -47,6 +54,7 @@ const PAYMENT_OK = `LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', '
 const PAYMENT_PREFERRED = `LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'paid')`;
 
 export type PaymentAccrualSnapshot = {
+  id?: unknown;
   platform_fee?: unknown;
   convenience_fee?: unknown;
   delivery_fee?: unknown;
@@ -63,8 +71,10 @@ export type BookingAccrualResolveContext = {
   bookingId: string;
   basePrice?: unknown;
   totalAmount?: unknown;
+  discountAmount?: unknown;
   earningTotalAmount?: unknown;
   taxAmount?: unknown;
+  catalogGstRate?: unknown;
   serviceId?: unknown;
   serviceStyle?: unknown;
   serviceType?: unknown;
@@ -77,6 +87,10 @@ export type BookingAccrualResolveContext = {
   hsnCodeId?: unknown;
   bookingNotes?: unknown;
   payment?: PaymentAccrualSnapshot | null;
+  parentBookingId?: unknown;
+  isInterState?: boolean;
+  gstIdentity?: string;
+  gstAttributeBookingId?: string;
 };
 
 function round2(n: number): number {
@@ -101,19 +115,26 @@ function gstTotalFromParts(cgst: number, sgst: number, igst: number, gstOther: n
 }
 
 /** gst_total stores full GST when CGST/SGST/IGST are not split on the source row. */
-function rowToBreakdown(row: Record<string, unknown>): VendorAccrualFeeBreakdown {
+function rowToBreakdown(row: Record<string, unknown>, isInterState = false): VendorAccrualFeeBreakdown {
   const cgst = safeMoneyAmount(row.cgst_amount);
   const sgst = safeMoneyAmount(row.sgst_amount);
   const igst = safeMoneyAmount(row.igst_amount);
   const gstOther = safeMoneyAmount(row.gst_other ?? row.gst_amount);
+  const split = reconstructGstSplit({
+    cgstAmount: cgst,
+    sgstAmount: sgst,
+    igstAmount: igst,
+    gstTotal: gstTotalFromParts(cgst, sgst, igst, gstOther),
+    isInterState,
+  });
   return {
     platformFee: safeMoneyAmount(row.platform_fee),
     convenienceFee: safeMoneyAmount(row.convenience_fee),
     deliveryFee: safeMoneyAmount(row.delivery_fee),
-    cgstAmount: round2(cgst),
-    sgstAmount: round2(sgst),
-    igstAmount: round2(igst),
-    gstTotal: gstTotalFromParts(cgst, sgst, igst, gstOther),
+    cgstAmount: split.cgstAmount,
+    sgstAmount: split.sgstAmount,
+    igstAmount: split.igstAmount,
+    gstTotal: split.gstTotal,
   };
 }
 
@@ -127,14 +148,17 @@ function pickJsonNumber(obj: Record<string, unknown>, keys: string[]): number {
   return 0;
 }
 
-/** Primary resolver: payment fee/GST columns. */
-export function breakdownFromPaymentColumns(payment: PaymentAccrualSnapshot | null | undefined): VendorAccrualFeeBreakdown {
+/** Primary resolver: payment fee/GST columns. Reconstructs CGST/SGST when only gst_amount is stored. */
+export function breakdownFromPaymentColumns(
+  payment: PaymentAccrualSnapshot | null | undefined,
+  isInterState = false,
+): VendorAccrualFeeBreakdown {
   if (!payment) return { ...EMPTY_BREAKDOWN };
-  return rowToBreakdown(payment as Record<string, unknown>);
+  return rowToBreakdown(payment as Record<string, unknown>, isInterState);
 }
 
 /** Secondary resolver: payments.fee_breakdown JSONB (camelCase or snake_case). */
-export function breakdownFromFeeBreakdownJson(raw: unknown): VendorAccrualFeeBreakdown {
+export function breakdownFromFeeBreakdownJson(raw: unknown, isInterState = false): VendorAccrualFeeBreakdown {
   if (raw == null) return { ...EMPTY_BREAKDOWN };
   let obj: Record<string, unknown>;
   if (typeof raw === 'string') {
@@ -153,15 +177,22 @@ export function breakdownFromFeeBreakdownJson(raw: unknown): VendorAccrualFeeBre
   const sgst = pickJsonNumber(obj, ['sgstAmount', 'sgst_amount', 'totalSGST', 'total_sgst']);
   const igst = pickJsonNumber(obj, ['igstAmount', 'igst_amount', 'totalIGST', 'total_igst']);
   const gstOther = pickJsonNumber(obj, ['gstAmount', 'gst_amount', 'totalTax', 'total_tax', 'gstTotal', 'gst_total']);
+  const split = reconstructGstSplit({
+    cgstAmount: cgst,
+    sgstAmount: sgst,
+    igstAmount: igst,
+    gstTotal: gstTotalFromParts(cgst, sgst, igst, gstOther),
+    isInterState,
+  });
 
   return {
     platformFee: pickJsonNumber(obj, ['platformFee', 'platform_fee']),
     convenienceFee: pickJsonNumber(obj, ['convenienceFee', 'convenience_fee']),
     deliveryFee: pickJsonNumber(obj, ['deliveryFee', 'delivery_fee']),
-    cgstAmount: round2(cgst),
-    sgstAmount: round2(sgst),
-    igstAmount: round2(igst),
-    gstTotal: gstTotalFromParts(cgst, sgst, igst, gstOther),
+    cgstAmount: split.cgstAmount,
+    sgstAmount: split.sgstAmount,
+    igstAmount: split.igstAmount,
+    gstTotal: split.gstTotal,
   };
 }
 
@@ -185,6 +216,29 @@ function resolveFeeBaseAmount(ctx: BookingAccrualResolveContext): number {
   return safeMoneyAmount(ctx.earningTotalAmount);
 }
 
+function resolveTaxableValue(ctx: BookingAccrualResolveContext): number {
+  const base = safeMoneyAmount(ctx.basePrice);
+  const discount = safeMoneyAmount(ctx.discountAmount);
+  return round2(Math.max(0, base - discount));
+}
+
+function resolveChargedCustomerTotal(ctx: BookingAccrualResolveContext): number {
+  const payTotal = safeMoneyAmount(ctx.payment?.total_amount);
+  if (payTotal > 0.009) return payTotal;
+  const payAmount = safeMoneyAmount(ctx.payment?.amount);
+  if (payAmount > 0.009) return payAmount;
+  return safeMoneyAmount(ctx.totalAmount);
+}
+
+function paymentKnownFees(payment: PaymentAccrualSnapshot | null | undefined): number {
+  if (!payment) return 0;
+  return round2(
+    safeMoneyAmount(payment.platform_fee) +
+      safeMoneyAmount(payment.convenience_fee) +
+      safeMoneyAmount(payment.delivery_fee),
+  );
+}
+
 function resolveBusinessServiceType(ctx: BookingAccrualResolveContext): string {
   const categoryHint = String(
     ctx.categoryName || ctx.vsCategory || ctx.serviceType || ctx.categoryId || '',
@@ -197,16 +251,8 @@ async function resolveGstForAccrual(
   feeBase: number,
   payment: PaymentAccrualSnapshot | null | undefined,
 ): Promise<Pick<VendorAccrualFeeBreakdown, 'cgstAmount' | 'sgstAmount' | 'igstAmount' | 'gstTotal'>> {
-  const fromPayment = breakdownFromPaymentColumns(payment);
-  if (fromPayment.cgstAmount + fromPayment.sgstAmount + fromPayment.igstAmount > 0.009) {
-    return {
-      cgstAmount: fromPayment.cgstAmount,
-      sgstAmount: fromPayment.sgstAmount,
-      igstAmount: fromPayment.igstAmount,
-      gstTotal: fromPayment.gstTotal,
-    };
-  }
-
+  const isInterState = Boolean(ctx.isInterState);
+  const fromPayment = breakdownFromPaymentColumns(payment, isInterState);
   if (fromPayment.gstTotal > 0.009) {
     return {
       cgstAmount: fromPayment.cgstAmount,
@@ -217,18 +263,64 @@ async function resolveGstForAccrual(
   }
 
   const lockedGross = ctx.bookingNotes != null ? resolveLockedBookingGrossFromNotes(ctx.bookingNotes) : null;
-  if (lockedGross && lockedGross.grossTotal > 0) {
-    return {
-      cgstAmount: round2(lockedGross.cgst),
-      sgstAmount: round2(lockedGross.sgst),
-      igstAmount: round2(lockedGross.igst),
-      gstTotal: round2(lockedGross.totalTax),
-    };
+  if (lockedGross && lockedGross.grossTotal > 0 && lockedGross.totalTax > 0.009) {
+    return reconstructGstSplit({
+      cgstAmount: lockedGross.cgst,
+      sgstAmount: lockedGross.sgst,
+      igstAmount: lockedGross.igst,
+      gstTotal: lockedGross.totalTax,
+      isInterState,
+    });
   }
 
-  if (ctx.taxAmount !== undefined && ctx.taxAmount !== null && ctx.taxAmount !== '') {
-    const bookingTax = safeMoneyAmount(ctx.taxAmount);
-    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: round2(bookingTax) };
+  const taxAmountPresent = ctx.taxAmount !== undefined && ctx.taxAmount !== null && ctx.taxAmount !== '';
+  const bookingTax = taxAmountPresent ? safeMoneyAmount(ctx.taxAmount) : 0;
+  if (taxAmountPresent && bookingTax > 0.009) {
+    return reconstructGstSplit({ gstTotal: bookingTax, isInterState });
+  }
+
+  const lockedZeroTax = Boolean(lockedGross && lockedGross.grossTotal > 0 && lockedGross.totalTax <= 0.009);
+  if (!lockedZeroTax) {
+    const inferred = inferExclusiveGstFromChargedDelta({
+      taxableValue: resolveTaxableValue(ctx),
+      chargedTotal: resolveChargedCustomerTotal(ctx),
+      knownFees: paymentKnownFees(payment),
+      catalogGstRate: safeMoneyAmount(ctx.catalogGstRate),
+      isInterState,
+    });
+    if (inferred.gstTotal > 0.009) {
+      return inferred;
+    }
+  }
+
+  const zeroRated = isZeroRatedHealthcareHint({
+    catalogGstRate: ctx.catalogGstRate,
+    categoryName: ctx.categoryName,
+    vsCategory: ctx.vsCategory,
+    serviceType: ctx.serviceType,
+  });
+  if (!lockedZeroTax && !zeroRated) {
+    const inclusive = inferInclusiveGstFromListedPrice({
+      taxableValue: resolveTaxableValue(ctx),
+      chargedTotal: resolveChargedCustomerTotal(ctx),
+      vendorGross: safeMoneyAmount(ctx.earningTotalAmount),
+      catalogGstRate: ctx.catalogGstRate != null && ctx.catalogGstRate !== ''
+        ? safeMoneyAmount(ctx.catalogGstRate)
+        : undefined,
+      isInterState,
+      zeroRated,
+    });
+    if (inclusive.gstTotal > 0.009) {
+      return inclusive;
+    }
+  }
+
+  if (lockedGross && lockedGross.grossTotal > 0) {
+    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
+  }
+
+  if (taxAmountPresent) {
+    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
   }
 
   if (feeBase <= 0.009) {
@@ -304,22 +396,44 @@ export async function recomputeBookingCustomerPaidFeeBreakdown(
 }
 
 /** Full per-booking fallback chain for accrual fee columns. */
+function dropInventedFeesWhenChargedIsTaxablePlusGst(
+  ctx: BookingAccrualResolveContext,
+  storedFees: VendorAccrualFeeBreakdown,
+  recomputed: VendorAccrualFeeBreakdown,
+): VendorAccrualFeeBreakdown {
+  const charged = resolveChargedCustomerTotal(ctx);
+  const taxable = resolveTaxableValue(ctx);
+  if (charged <= 0.009) return recomputed;
+  const expected = round2(taxable + recomputed.gstTotal);
+  if (Math.abs(charged - expected) > 0.05) return recomputed;
+  return {
+    platformFee: storedFees.platformFee,
+    convenienceFee: storedFees.convenienceFee,
+    deliveryFee: storedFees.deliveryFee,
+    cgstAmount: recomputed.cgstAmount,
+    sgstAmount: recomputed.sgstAmount,
+    igstAmount: recomputed.igstAmount,
+    gstTotal: recomputed.gstTotal,
+  };
+}
+
 export async function resolveBookingCustomerPaidFeeBreakdown(
   ctx: BookingAccrualResolveContext,
 ): Promise<VendorAccrualFeeBreakdown> {
   const payment = ctx.payment;
 
-  const fromColumns = breakdownFromPaymentColumns(payment);
+  const fromColumns = breakdownFromPaymentColumns(payment, Boolean(ctx.isInterState));
   if (hasMeaningfulCustomerPaidBreakdown(fromColumns)) {
     return fromColumns;
   }
 
-  const fromJson = breakdownFromFeeBreakdownJson(payment?.fee_breakdown);
+  const fromJson = breakdownFromFeeBreakdownJson(payment?.fee_breakdown, Boolean(ctx.isInterState));
   if (hasMeaningfulCustomerPaidBreakdown(fromJson)) {
     return fromJson;
   }
 
-  return recomputeBookingCustomerPaidFeeBreakdown(ctx);
+  const recomputed = await recomputeBookingCustomerPaidFeeBreakdown(ctx);
+  return dropInventedFeesWhenChargedIsTaxablePlusGst(ctx, fromColumns, recomputed);
 }
 
 export type CustomerPaidFeeBreakdownSource = 'payment_columns' | 'fee_breakdown_json' | 'recomputed';
@@ -329,18 +443,21 @@ export async function resolveBookingCustomerPaidFeeBreakdownWithSource(
 ): Promise<{ breakdown: VendorAccrualFeeBreakdown; source: CustomerPaidFeeBreakdownSource }> {
   const payment = ctx.payment;
 
-  const fromColumns = breakdownFromPaymentColumns(payment);
+  const fromColumns = breakdownFromPaymentColumns(payment, Boolean(ctx.isInterState));
   if (hasMeaningfulCustomerPaidBreakdown(fromColumns)) {
     return { breakdown: fromColumns, source: 'payment_columns' };
   }
 
-  const fromJson = breakdownFromFeeBreakdownJson(payment?.fee_breakdown);
+  const fromJson = breakdownFromFeeBreakdownJson(payment?.fee_breakdown, Boolean(ctx.isInterState));
   if (hasMeaningfulCustomerPaidBreakdown(fromJson)) {
     return { breakdown: fromJson, source: 'fee_breakdown_json' };
   }
 
-  const breakdown = await recomputeBookingCustomerPaidFeeBreakdown(ctx);
-  return { breakdown, source: 'recomputed' };
+  const recomputed = await recomputeBookingCustomerPaidFeeBreakdown(ctx);
+  return {
+    breakdown: dropInventedFeesWhenChargedIsTaxablePlusGst(ctx, fromColumns, recomputed),
+    source: 'recomputed',
+  };
 }
 
 type BookingAccrualRow = {
@@ -348,6 +465,7 @@ type BookingAccrualRow = {
   booking_id: string;
   base_price?: unknown;
   total_amount?: unknown;
+  discount_amount?: unknown;
   earning_total_amount?: unknown;
   tax_amount?: unknown;
   service_id?: unknown;
@@ -370,13 +488,48 @@ type BookingAccrualRow = {
   payment_total_amount?: unknown;
   payment_amount?: unknown;
   fee_breakdown?: unknown;
+  payment_id?: unknown;
+  parent_booking_id?: unknown;
+  gst_identity?: unknown;
+  gst_attribute_booking_id?: unknown;
+  is_inter_state?: unknown;
 };
 
+/** Payment row for the booking, or the package parent when this row is a session child. */
+export const SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL = `
+     LEFT JOIN bookings parent_b ON parent_b.id = b.parent_booking_id
+     LEFT JOIN LATERAL (
+       SELECT p.id, p.platform_fee, p.convenience_fee, p.delivery_fee,
+              p.cgst_amount, p.sgst_amount, p.igst_amount, p.gst_amount,
+              p.total_amount, p.amount, p.fee_breakdown, p.payment_status
+       FROM payments p
+       WHERE p.booking_id = COALESCE(
+               CASE WHEN COALESCE(b.is_package_session, false) THEN parent_b.id END,
+               b.id
+             )
+         AND ${PAYMENT_OK}
+       ORDER BY CASE WHEN ${PAYMENT_PREFERRED} THEN 0 ELSE 1 END,
+                COALESCE(p.completed_at, p.created_at) DESC NULLS LAST
+       LIMIT 1
+     ) p ON true
+`.trim();
+
+export function shouldAttributeCustomerPaidBreakdown(
+  bookingId: string,
+  gstAttributeBookingId?: string | null,
+): boolean {
+  if (!gstAttributeBookingId) return true;
+  return String(bookingId) === String(gstAttributeBookingId);
+}
+
 function rowToResolveContext(row: BookingAccrualRow): BookingAccrualResolveContext {
+  const bookingId = String(row.booking_id);
+  const parentBookingId = row.parent_booking_id != null ? String(row.parent_booking_id) : undefined;
   return {
-    bookingId: String(row.booking_id),
+    bookingId,
     basePrice: row.base_price,
     totalAmount: row.total_amount,
+    discountAmount: row.discount_amount,
     earningTotalAmount: row.earning_total_amount,
     taxAmount: row.tax_amount,
     serviceId: row.service_id,
@@ -390,7 +543,18 @@ function rowToResolveContext(row: BookingAccrualRow): BookingAccrualResolveConte
     taxCategoryId: row.tax_category_id,
     hsnCodeId: row.hsn_code_id,
     bookingNotes: row.booking_notes,
+    parentBookingId,
+    isInterState: row.is_inter_state === true || row.is_inter_state === 't' || row.is_inter_state === 'true',
+    gstIdentity:
+      String(row.gst_identity || '') ||
+      gstFinancialIdentity({
+        paymentId: row.payment_id,
+        parentBookingId,
+        bookingId,
+      }),
+    gstAttributeBookingId: row.gst_attribute_booking_id != null ? String(row.gst_attribute_booking_id) : undefined,
     payment: {
+      id: row.payment_id,
       platform_fee: row.platform_fee,
       convenience_fee: row.convenience_fee,
       delivery_fee: row.delivery_fee,
@@ -405,85 +569,135 @@ function rowToResolveContext(row: BookingAccrualRow): BookingAccrualResolveConte
   };
 }
 
-async function aggregateBookingFeeBreakdownsForIstRange(
-  periodStartYmd: string,
-  periodEndExclusiveYmd: string,
+export async function foldBookingFeeBreakdownsByVendor(
+  rows: BookingAccrualRow[],
 ): Promise<Map<string, VendorAccrualFeeBreakdown>> {
   const out = new Map<string, VendorAccrualFeeBreakdown>();
-  const bookingRes = await query(
-    `WITH bounds AS (
-       SELECT
-         (to_timestamp($1::text || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS start_ts,
-         (to_timestamp($2::text || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS end_ts
-     )
-     SELECT ve.vendor_id::text AS vendor_id,
-            ve.booking_id::text AS booking_id,
-            b.base_price,
-            b.total_amount,
-            ve.total_amount AS earning_total_amount,
-            b.tax_amount,
-            b.service_id::text AS service_id,
-            b.service_style,
-            b.service_type,
-            sc.category_name,
-            sc.category_id::text AS category_id,
-            vs.category AS vs_category,
-            v.role_id::text AS vendor_role_id,
-            sc.tax_category_id::text AS tax_category_id,
-            sc.hsn_code_id::text AS hsn_code_id,
-            b.notes AS booking_notes,
-            p.platform_fee,
-            p.convenience_fee,
-            p.delivery_fee,
-            p.cgst_amount,
-            p.sgst_amount,
-            p.igst_amount,
-            p.gst_amount,
-            p.total_amount AS payment_total_amount,
-            p.amount AS payment_amount,
-            p.fee_breakdown
-     FROM vendor_earnings ve
-     CROSS JOIN bounds bnd
-     INNER JOIN bookings b ON b.id = ve.booking_id
-     LEFT JOIN vendors v ON v.id = ve.vendor_id
-     LEFT JOIN vendor_services vs ON vs.id = b.service_id
-     LEFT JOIN service_catalog sc ON sc.id = vs.service_id
-     LEFT JOIN LATERAL (
-       SELECT platform_fee, convenience_fee, delivery_fee,
-              cgst_amount, sgst_amount, igst_amount, gst_amount,
-              total_amount, amount, fee_breakdown, payment_status
-       FROM payments
-       WHERE booking_id = ve.booking_id
-         AND ${PAYMENT_OK}
-       ORDER BY CASE WHEN ${PAYMENT_PREFERRED} THEN 0 ELSE 1 END,
-                COALESCE(completed_at, created_at) DESC NULLS LAST
-       LIMIT 1
-     ) p ON true
-     WHERE ve.realized_at >= bnd.start_ts
-       AND ve.realized_at < bnd.end_ts
-       AND (ve.status IS DISTINCT FROM 'cancelled')`,
-    [periodStartYmd, periodEndExclusiveYmd],
-  ).catch(() => ({ rows: [] }));
-
-  const rows = (bookingRes.rows || []) as BookingAccrualRow[];
   const breakdownByBooking = new Map<string, VendorAccrualFeeBreakdown>();
+  const attributedIdentity = new Set<string>();
 
   for (const row of rows) {
     const bookingId = String(row.booking_id || '');
     if (!bookingId) continue;
 
-    if (!breakdownByBooking.has(bookingId)) {
-      breakdownByBooking.set(bookingId, await resolveBookingCustomerPaidFeeBreakdown(rowToResolveContext(row)));
+    const ctx = rowToResolveContext(row);
+    const identity = ctx.gstIdentity || gstFinancialIdentity({
+      paymentId: row.payment_id,
+      parentBookingId: row.parent_booking_id,
+      bookingId,
+    });
+    const attributeHere = shouldAttributeCustomerPaidBreakdown(bookingId, ctx.gstAttributeBookingId);
+
+    let piece: VendorAccrualFeeBreakdown;
+    if (!attributeHere || attributedIdentity.has(identity)) {
+      piece = { ...EMPTY_BREAKDOWN };
+    } else if (breakdownByBooking.has(bookingId)) {
+      piece = breakdownByBooking.get(bookingId)!;
+      attributedIdentity.add(identity);
+    } else {
+      piece = await resolveBookingCustomerPaidFeeBreakdown(ctx);
+      breakdownByBooking.set(bookingId, piece);
+      attributedIdentity.add(identity);
     }
 
     const vendorId = String(row.vendor_id || '');
     if (!vendorId) continue;
-
-    const piece = breakdownByBooking.get(bookingId)!;
     out.set(vendorId, out.has(vendorId) ? addBreakdown(out.get(vendorId)!, piece) : piece);
   }
 
   return out;
+}
+
+async function aggregateBookingFeeBreakdownsForIstRange(
+  periodStartYmd: string,
+  periodEndExclusiveYmd: string,
+): Promise<Map<string, VendorAccrualFeeBreakdown>> {
+  const bookingRes = await query(
+    `WITH bounds AS (
+       SELECT
+         (to_timestamp($1::text || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS start_ts,
+         (to_timestamp($2::text || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS end_ts
+     ),
+     in_window AS (
+       SELECT ve.vendor_id::text AS vendor_id,
+              ve.booking_id::text AS booking_id,
+              ve.realized_at,
+              CASE
+                WHEN COALESCE(b.is_package_session, false) THEN COALESCE(parent_b.base_price, b.base_price)
+                ELSE b.base_price
+              END AS base_price,
+              CASE
+                WHEN COALESCE(b.is_package_session, false) THEN COALESCE(parent_b.total_amount, b.total_amount)
+                ELSE b.total_amount
+              END AS total_amount,
+              CASE
+                WHEN COALESCE(b.is_package_session, false) THEN COALESCE(parent_b.discount_amount, b.discount_amount)
+                ELSE b.discount_amount
+              END AS discount_amount,
+              ve.total_amount AS earning_total_amount,
+              CASE
+                WHEN COALESCE(b.is_package_session, false) THEN COALESCE(parent_b.tax_amount, b.tax_amount)
+                ELSE b.tax_amount
+              END AS tax_amount,
+              b.service_id::text AS service_id,
+              b.service_style,
+              b.service_type,
+              sc.category_name,
+              sc.category_id::text AS category_id,
+              vs.category AS vs_category,
+              v.role_id::text AS vendor_role_id,
+              sc.tax_category_id::text AS tax_category_id,
+              sc.hsn_code_id::text AS hsn_code_id,
+              CASE
+                WHEN COALESCE(b.is_package_session, false) THEN COALESCE(parent_b.notes, b.notes)
+                ELSE b.notes
+              END AS booking_notes,
+              p.id::text AS payment_id,
+              b.parent_booking_id::text AS parent_booking_id,
+              p.platform_fee,
+              p.convenience_fee,
+              p.delivery_fee,
+              p.cgst_amount,
+              p.sgst_amount,
+              p.igst_amount,
+              p.gst_amount,
+              p.total_amount AS payment_total_amount,
+              p.amount AS payment_amount,
+              p.fee_breakdown,
+              COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text) AS gst_identity
+       FROM vendor_earnings ve
+       CROSS JOIN bounds bnd
+       INNER JOIN bookings b ON b.id = ve.booking_id
+       LEFT JOIN vendors v ON v.id = ve.vendor_id
+       LEFT JOIN vendor_services vs ON vs.id = b.service_id
+       LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+       ${SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL}
+       WHERE ve.realized_at >= bnd.start_ts
+         AND ve.realized_at < bnd.end_ts
+         AND (ve.status IS DISTINCT FROM 'cancelled')
+     ),
+     first_attr AS (
+       SELECT DISTINCT ON (COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text))
+              COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text) AS gst_identity,
+              ve.booking_id::text AS gst_attribute_booking_id
+       FROM vendor_earnings ve
+       INNER JOIN bookings b ON b.id = ve.booking_id
+       ${SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL}
+       WHERE (ve.status IS DISTINCT FROM 'cancelled')
+         AND COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text) IN (
+           SELECT gst_identity FROM in_window
+         )
+       ORDER BY COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text),
+                ve.realized_at,
+                ve.booking_id
+     )
+     SELECT iw.*, fa.gst_attribute_booking_id
+     FROM in_window iw
+     LEFT JOIN first_attr fa ON fa.gst_identity = iw.gst_identity`,
+    [periodStartYmd, periodEndExclusiveYmd],
+  ).catch(() => ({ rows: [] }));
+
+  return foldBookingFeeBreakdownsByVendor((bookingRes.rows || []) as BookingAccrualRow[]);
 }
 
 /**

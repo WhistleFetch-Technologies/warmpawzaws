@@ -317,6 +317,15 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         booking: refreshedBooking,
         logPrefix: '[COMPLETE-BOOKING]',
       });
+      {
+        const { isCanonicalPackageParentBooking } = await import('../utils/vendor-commission-rate');
+        if (!isCanonicalPackageParentBooking(refreshedBooking)) {
+          const { syncPackageSessionEarningsAfterBookingComplete } = await import(
+            '../utils/vendor-earnings-on-completion'
+          );
+          await syncPackageSessionEarningsAfterBookingComplete(bookingId, '[COMPLETE-BOOKING]');
+        }
+      }
 
       return c.json({
         success: true,

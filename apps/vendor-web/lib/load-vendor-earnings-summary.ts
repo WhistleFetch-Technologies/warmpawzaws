@@ -5,6 +5,16 @@
 import { apiClient } from './api-client';
 import { clearLedgerVendorIdCache, resolveLedgerVendorId } from './vendor-ledger-id';
 
+export type VendorPackageEarningsBreakdown = {
+  basePrice: number;
+  commissionRate: number;
+  vendorPool: number;
+  sessionCount: number;
+  sessionNumber: number;
+  thisSession: number;
+  remainingSessions: number;
+};
+
 export type VendorEarningsTransaction = {
   id: string;
   date: string;
@@ -15,6 +25,7 @@ export type VendorEarningsTransaction = {
   flowType?: string;
   quotedAmount?: number;
   paidAmount?: number;
+  packageBreakdown?: VendorPackageEarningsBreakdown | null;
 };
 
 export type VendorEarningsSummary = {
@@ -85,6 +96,27 @@ function buildDailyTrendFromEarningTransactions(
   return out;
 }
 
+function parsePackageBreakdown(raw: unknown): VendorPackageEarningsBreakdown | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const sessionNumber = Number(o.sessionNumber ?? o.session_number ?? 0);
+  if (sessionNumber !== 1) return null;
+  const basePrice = Number(o.basePrice ?? o.base_price ?? 0);
+  const vendorPool = Number(o.vendorPool ?? o.vendor_pool ?? 0);
+  const sessionCount = Number(o.sessionCount ?? o.session_count ?? 0);
+  const thisSession = Number(o.thisSession ?? o.this_session ?? 0);
+  if (!(basePrice > 0) || !(sessionCount > 0)) return null;
+  return {
+    basePrice,
+    commissionRate: Number(o.commissionRate ?? o.commission_rate ?? 0),
+    vendorPool,
+    sessionCount,
+    sessionNumber: 1,
+    thisSession,
+    remainingSessions: Number(o.remainingSessions ?? o.remaining_sessions ?? Math.max(0, sessionCount - 1)),
+  };
+}
+
 function mapTransactionsFromEarningsApi(txSource: unknown[]): VendorEarningsTransaction[] {
   return txSource.map((t: unknown) => {
     const row = t as Record<string, unknown>;
@@ -109,6 +141,7 @@ function mapTransactionsFromEarningsApi(txSource: unknown[]): VendorEarningsTran
       quotedAmount:
         row.quotedAmount != null ? Number(row.quotedAmount) : undefined,
       paidAmount: row.paidAmount != null ? Number(row.paidAmount) : undefined,
+      packageBreakdown: parsePackageBreakdown(row.packageBreakdown ?? row.package_breakdown),
     };
   });
 }

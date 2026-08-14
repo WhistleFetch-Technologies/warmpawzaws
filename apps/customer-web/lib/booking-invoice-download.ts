@@ -20,6 +20,19 @@ export function getBookingInvoiceDownloadMessage(saveResult: BookingInvoiceSaveR
   return getDownloadMessage(saveResult, 'invoice');
 }
 
+/** Tax invoice is available once payment is collected — not only after the visit is completed. */
+export function isBookingPaidForInvoice(booking: {
+  paymentStatus?: string | null;
+  payment_status?: string | null;
+  isPaid?: boolean | null;
+}): boolean {
+  if (booking.isPaid === true) return true;
+  const ps = String(booking.paymentStatus ?? booking.payment_status ?? '')
+    .toLowerCase()
+    .trim();
+  return ps === 'paid' || ps === 'completed' || ps === 'refunded' || ps === 'partially_refunded';
+}
+
 /**
  * Booking invoices are HTML from the API. On mobile we convert to PDF before share/save
  * so Files/Preview opens them reliably (raw .html is awkward on iOS/Android).

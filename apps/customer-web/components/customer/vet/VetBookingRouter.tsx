@@ -6,7 +6,6 @@ import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import {
-  buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
 import { toast } from 'sonner';
@@ -522,13 +521,13 @@ export function VetBookingRouter({
       if (success && slots.length > 0) {
         setTimeSlots(slots);
       } else if (!success) {
-        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+        setTimeSlots([]);
       } else {
         setTimeSlots([]);
       }
     } catch (error) {
       console.error('Error loading time slots:', error);
-      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+      setTimeSlots([]);
     } finally {
       setLoadingSlots(false);
     }
@@ -619,8 +618,9 @@ export function VetBookingRouter({
       // ✅ FIX: Include serviceStyle parameter to filter services correctly
       const vendorServicesParams = new URLSearchParams();
       if (serviceStyle) vendorServicesParams.set('serviceStyle', serviceStyle);
-      vendorServicesParams.set('category', HUB_DISCOVERY_VET.servicesApiCategory);
-      const serviceStyleParam = `?${vendorServicesParams.toString()}`;
+      const serviceStyleParam = vendorServicesParams.toString()
+        ? `?${vendorServicesParams.toString()}`
+        : '';
       let servicesResponse: any = null;
       const endpoints = [
         `/customer/vendor/${vid}/services${serviceStyleParam}`,

@@ -30,11 +30,11 @@ describe('razorpay refund webhook reconciliation', () => {
     expect(file).toContain('ACTIVE_REFUND_STATUS_FILTER');
   });
 
-  test('payment.captured auto-refunds cancelled shop orders with no active refund', () => {
+  test('payment.captured finalizes via single captured-payment service', () => {
     const file = read('src/endpoints/razorpay/endpoints/razorpay.razorpay.ts');
-    expect(file).toContain('cancelledShopOrderLateRefund');
-    expect(file).toContain('initiateShopOrderRazorpayRefund');
-    expect(file).toContain('Late payment capture on cancelled shop order');
+    expect(file).toContain('finalizeCapturedPayment');
+    expect(file).toContain("source: 'webhook'");
+    expect(file).toContain('recordRazorpayWebhookEvent');
   });
 
   test('reconcile helper is idempotent when refund already completed', () => {

@@ -522,9 +522,19 @@ export async function validateRazorpayVpa(vpa: string): Promise<{
  */
 export function getRazorpayClient() {
   const payments = {
-    async refund(params: { payment_id: string; amount?: number }) {
-      const { payment_id, amount } = params;
-      return razorpayRequest(`/payments/${payment_id}/refund`, 'POST', amount ? { amount } : undefined);
+    async refund(params: { payment_id: string; amount?: number; idempotencyKey?: string }) {
+      const { payment_id, amount, idempotencyKey } = params;
+      const extraHeaders: Record<string, string> = {};
+      if (idempotencyKey && String(idempotencyKey).length >= 10) {
+        extraHeaders['X-Refund-Idempotency'] = String(idempotencyKey).slice(0, 36);
+      }
+      return razorpayRequest(
+        `/payments/${payment_id}/refund`,
+        'POST',
+        amount ? { amount } : undefined,
+        20000,
+        Object.keys(extraHeaders).length ? extraHeaders : undefined
+      );
     },
   };
 

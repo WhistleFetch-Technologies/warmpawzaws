@@ -2,6 +2,7 @@
  * Shared loyalty response fields for pet save handlers (action_sources middleware).
  */
 
+import { isPetProfileComplete } from './pet-profile-completeness';
 import {
   petPayloadHasVaccinations,
   petVaccinationsMeaningfullyUpdated,
@@ -10,12 +11,14 @@ import {
 export type PetLoyaltyPetRef = { petId: string };
 
 export type PetLoyaltyBatchState = {
+  insertedPets: PetLoyaltyPetRef[];
   loyaltyEligibleCreates: PetLoyaltyPetRef[];
   loyaltyEligibleVaccinationUpdates: PetLoyaltyPetRef[];
 };
 
 export function createEmptyPetLoyaltyBatchState(): PetLoyaltyBatchState {
   return {
+    insertedPets: [],
     loyaltyEligibleCreates: [],
     loyaltyEligibleVaccinationUpdates: [],
   };
@@ -24,10 +27,14 @@ export function createEmptyPetLoyaltyBatchState(): PetLoyaltyBatchState {
 export function recordPetInsertLoyalty(
   state: PetLoyaltyBatchState,
   petId: string,
+  createdPet: Record<string, unknown>,
   payload: Record<string, unknown>
 ): void {
   const id = String(petId);
-  state.loyaltyEligibleCreates.push({ petId: id });
+  state.insertedPets.push({ petId: id });
+  if (isPetProfileComplete(createdPet)) {
+    state.loyaltyEligibleCreates.push({ petId: id });
+  }
   if (petPayloadHasVaccinations(payload)) {
     state.loyaltyEligibleVaccinationUpdates.push({ petId: id });
   }
@@ -40,6 +47,9 @@ export function recordPetUpdateLoyalty(
   afterPet: Record<string, unknown>,
   payload: Record<string, unknown>
 ): void {
+  if (!isPetProfileComplete(beforePet) && isPetProfileComplete(afterPet)) {
+    state.loyaltyEligibleCreates.push({ petId: String(petId) });
+  }
   const payloadHadVac = petPayloadHasVaccinations(payload);
   if (
     petVaccinationsMeaningfullyUpdated(beforePet, afterPet, payloadHadVac)
@@ -52,10 +62,11 @@ export function recordPetUpdateLoyalty(
 export function buildSinglePetCreateLoyaltyFields(
   customerId: string,
   petId: string,
+  createdPet: Record<string, unknown>,
   payload: Record<string, unknown>
 ): Record<string, unknown> {
   const state = createEmptyPetLoyaltyBatchState();
-  recordPetInsertLoyalty(state, petId, payload);
+  recordPetInsertLoyalty(state, petId, createdPet, payload);
   return buildPetLoyaltyResponseFields(state, customerId, petId);
 }
 
@@ -81,6 +92,7 @@ export function buildPetLoyaltyResponseFields(
   const vacUpdates = state.loyaltyEligibleVaccinationUpdates;
   const petId =
     primaryPetId ??
+    state.insertedPets[0]?.petId ??
     creates[0]?.petId ??
     vacUpdates[0]?.petId ??
     null;
@@ -88,7 +100,8 @@ export function buildPetLoyaltyResponseFields(
   return {
     customerId,
     petId,
-    petCreated: creates.length > 0,
+    petCreated: state.insertedPets.length > 0,
+    petProfileCompleted: creates.length > 0,
     vaccinationUpdated: vacUpdates.length > 0,
     loyaltyEligibleCreates: creates,
     loyaltyEligibleVaccinationUpdates: vacUpdates,

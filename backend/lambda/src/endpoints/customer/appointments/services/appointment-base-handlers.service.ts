@@ -23,6 +23,7 @@ import {
 import { hasCustomerPaidCapture } from '../../../../lib/services/refundable-base';
 import { computeHoursUntilBookingStart } from '../../../../lib/utils/booking-start-wall-time';
 import { creditCustomerWalletForBookingRefund } from '../../../../utils/credit-customer-wallet';
+import { SlotConflictError, SLOT_CONFLICT_MESSAGE } from '../../../../utils/slot-occupancy';
 import * as appointment_base_handlersRepo from '../repos/appointment-base-handlers.repo';
 import { mapAppointmentRowForCustomer } from './map-appointment-row-for-customer.service';
 
@@ -186,16 +187,31 @@ export class RescheduleAppointmentHandler extends BaseHandler {
         return this.error('Appointment cannot be rescheduled in current status', 400);
       }
 
-      const updated = await appointment_base_handlersRepo.dbAppointmentBaseHandlers6(
-        appointment_date,
-        appointment_time,
-        reason || 'No reason provided',
-        appointmentId,
-        customerId
-      ).catch((err) => {
+      const current = appointmentResult.rows[0] as {
+        vendor_id?: string;
+        staff_id?: string | null;
+        booking_date?: string;
+        duration_minutes?: number;
+        total_duration_minutes?: number;
+      };
+
+      let updated: { rows: Record<string, unknown>[] };
+      try {
+        updated = await appointment_base_handlersRepo.dbAppointmentBaseHandlers6(
+          appointment_date,
+          appointment_time,
+          reason || 'No reason provided',
+          appointmentId,
+          customerId,
+          current
+        );
+      } catch (err: any) {
+        if (err instanceof SlotConflictError || err?.code === 'SLOT_CONFLICT') {
+          return this.error(SLOT_CONFLICT_MESSAGE, 409);
+        }
         console.warn('[appointments] reschedule update failed:', err);
-        return { rows: [] as Record<string, unknown>[] };
-      });
+        return this.error('Appointment not found', 404);
+      }
 
       if (updated.rows.length === 0) {
         return this.error('Appointment not found', 404);

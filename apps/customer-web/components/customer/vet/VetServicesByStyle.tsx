@@ -38,6 +38,7 @@ import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
 import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 import {
   buildVendorServicesPageUrl,
+  buildVendorProfileServicesUrl,
   vendorServicesNextCursor,
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
@@ -257,18 +258,25 @@ export function VetServicesByStyle({
         setFetchingServicesFor(providerId);
       }
       try {
-        const url = buildVendorServicesPageUrl({
-          vendorId: vid,
-          serviceStyle,
-          category,
-          customerPhone: phone || undefined,
-          cursor: append ? p.servicesNextCursor : undefined,
-        });
+        const profileFetch = Boolean(vendorId);
+        const url = profileFetch
+          ? buildVendorProfileServicesUrl({
+              vendorId: vid,
+              serviceStyle,
+              customerPhone: phone || undefined,
+            })
+          : buildVendorServicesPageUrl({
+              vendorId: vid,
+              serviceStyle,
+              category,
+              customerPhone: phone || undefined,
+              cursor: append ? p.servicesNextCursor : undefined,
+            });
         const res = await apiClient.get(url);
         const rows = vendorServicesRowsFromResponse(
           res as { services?: unknown[]; packages?: unknown[] }
         );
-        const services = mapVendorServicesForVetHub(rows);
+        const services = mapVendorServicesForVetHub(rows, { vendorProfile: profileFetch });
         const nextCursor = vendorServicesNextCursor(res);
         setProviders((prev) =>
           prev.map((v) => {
@@ -305,7 +313,7 @@ export function VetServicesByStyle({
         setFetchingServicesFor(null);
       }
     },
-    [phone, serviceStyle, category]
+    [phone, serviceStyle, category, vendorId]
   );
 
   const loadMoreProviderServices = useCallback(

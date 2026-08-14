@@ -20,6 +20,7 @@ import {
 import { BookingListCardPricing } from '@/components/customer/pricing/BookingListCardPricing';
 import { MarketplaceStatus } from '@/components/customer/marketplace/MarketplaceStatus';
 import { mapBookingStatusTone } from '@/lib/marketplace/map-status';
+import { isPackageCustomerCancelAllowed } from '@/lib/package-cancel-eligibility';
 import {
   formatIstBookingCompletedLine,
   formatIstBookingWhen,
@@ -130,6 +131,7 @@ interface Booking {
     unlimited?: boolean;
     remainingSessions?: number | string;
     packagePurchaseId?: string;
+    sessionOneStarted?: boolean;
   };
   occurrences?: BookingOccurrence[];
   createdAt: string;
@@ -153,6 +155,8 @@ interface Booking {
   refundSummary?: BookingRefundSummary | null;
   /** True when this row is a visit booked against a package slot. */
   isPackageSession?: boolean;
+  packageSessionOneStarted?: boolean;
+  canCancelPackage?: boolean;
   /** 1-based slot index within the package. */
   packageSessionNumber?: number;
 }
@@ -490,6 +494,10 @@ export function MyBookings({
             b.packageDetails?.packagePurchaseId,
           packageDetails: b.package_details || b.packageDetails,
           isPackageSession: Boolean(b.is_package_session ?? b.isPackageSession),
+          packageSessionOneStarted: Boolean(
+            b.packageSessionOneStarted ?? b.package_details?.sessionOneStarted ?? b.packageDetails?.sessionOneStarted
+          ),
+          canCancelPackage: b.canCancelPackage !== false,
           packageSessionNumber:
             b.package_session_number != null
               ? Number(b.package_session_number)
@@ -717,7 +725,8 @@ export function MyBookings({
   // ✅ Check if booking can be cancelled/rescheduled
   const canCancelOrReschedule = (booking: Booking): boolean => {
     if (isPaymentHoldExpired(booking) || booking.status === 'cancelled') return false;
-    return ['pending', 'pending_payment', 'confirmed'].includes(booking.status);
+    if (!['pending', 'pending_payment', 'confirmed'].includes(booking.status)) return false;
+    return isPackageCustomerCancelAllowed(booking);
   };
 
   const getBookingStatusText = (booking: Booking): string => {

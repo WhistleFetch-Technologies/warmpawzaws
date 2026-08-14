@@ -35,6 +35,7 @@ export async function executevendorServices(c: Context) {
       vendorId: resolvedVendorId,
       category,
       serviceStyle,
+      vendorDetailListing: true,
     });
 
     let combined = mapVendorServiceRows(

@@ -75,6 +75,7 @@ import {
   buildRazorpayEcommerceCreateOrderPayload,
   extractEcommerceOrderIdFromResponse,
 } from '@/lib/ecommerce/ecommerce-razorpay-payload';
+import { isSlotConflictError, SLOT_CONFLICT_USER_MESSAGE } from '@/lib/booking-utils';
 
 // Razorpay type declaration
 declare global {
@@ -2661,8 +2662,17 @@ export function UniversalPaymentPage({
               return;
             }
           } catch (subError: any) {
-            console.warn('âš ï¸ Subscription booking failed, proceeding with normal payment:', subError);
-            // Fall through to normal payment flow
+            if (isSlotConflictError(subError)) {
+              toast.error(SLOT_CONFLICT_USER_MESSAGE);
+              try {
+                onPaymentAbandoned?.();
+              } catch (cbErr) {
+                console.warn('[PAYMENT] onPaymentAbandoned failed:', cbErr);
+              }
+              setProcessing(false);
+              return;
+            }
+            console.warn('Subscription booking failed, proceeding with normal payment:', subError);
             setSubscriptionCovered(false);
           }
         }
@@ -2853,6 +2863,14 @@ export function UniversalPaymentPage({
             }
 
             {
+              if (isSlotConflictError(error)) {
+                try {
+                  onPaymentAbandoned?.();
+                } catch (cbErr) {
+                  console.warn('[PAYMENT] onPaymentAbandoned failed:', cbErr);
+                }
+                throw new Error(SLOT_CONFLICT_USER_MESSAGE);
+              }
               // Not a 404, might be validation error - log details and throw
               const err = error as any;
               console.error(`âŒ ${endpoint} failed with non-404 error:`, error);
@@ -3187,8 +3205,21 @@ export function UniversalPaymentPage({
                 }
               : {}),
           } as Record<string, unknown>;
-          console.log('ðŸ”„ Creating booking after wallet payment:', createPayload);
-          const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
+          console.log('Creating booking after wallet payment:', createPayload);
+          let bookingRes: any;
+          try {
+            bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
+          } catch (createErr: any) {
+            if (isSlotConflictError(createErr)) {
+              try {
+                onPaymentAbandoned?.();
+              } catch (cbErr) {
+                console.warn('[PAYMENT] onPaymentAbandoned failed:', cbErr);
+              }
+              throw new Error(SLOT_CONFLICT_USER_MESSAGE);
+            }
+            throw createErr;
+          }
           const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After wallet payment');
           if (!bookingIdValue) {
             console.error('âŒ No booking ID after wallet payment:', bookingRes);
@@ -3242,6 +3273,18 @@ export function UniversalPaymentPage({
         : finalAmount;
 
       let orderRes: any;
+      if (resumeRazorpayOrderId && isPaymentResume) {
+        console.log('[PAYMENT] Reusing resume Razorpay order (skip create-order)', {
+          resumeRazorpayOrderId: `${String(resumeRazorpayOrderId).substring(0, 20)}...`,
+        });
+        orderRes = {
+          orderId: resumeRazorpayOrderId,
+          keyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+          amount: amountToCharge,
+          currency: 'INR',
+          reusedExistingOrder: true,
+        };
+      }
       const razorpayCreateOrderBody =
         type === 'order' && currentOrderId
           ? buildRazorpayEcommerceCreateOrderPayload(
@@ -3270,12 +3313,14 @@ export function UniversalPaymentPage({
                 : {}),
             };
       try {
-        orderRes = await apiClient.post<any>(
-          '/razorpay/create-order',
-          razorpayCreateOrderBody,
-          undefined,
-          45000
-        );
+        if (!orderRes) {
+          orderRes = await apiClient.post<any>(
+            '/razorpay/create-order',
+            razorpayCreateOrderBody,
+            undefined,
+            45000
+          );
+        }
       } catch (orderError: any) {
         console.error('âŒ [PAYMENT] Razorpay create-order API call failed:', {
           error: orderError.message,
@@ -3305,6 +3350,16 @@ export function UniversalPaymentPage({
           : orderRes.error?.message || 'Failed to create payment order';
         console.error('âŒ [PAYMENT] Error in response:', errorMsg);
         throw new Error(errorMsg);
+      }
+
+      if (orderRes?.paidByCapture) {
+        toast.success(type === 'booking' ? 'Booking confirmed!' : 'Order confirmed!');
+        const otpCode =
+          type === 'booking' && serviceStyle !== 'tele'
+            ? await generateBookingOTP(currentBookingId || '', customerId)
+            : undefined;
+        onSuccess(currentBookingId || '', currentOrderId, otpCode, getPaymentSuccessMeta());
+        return;
       }
 
       // Extract orderId from all possible locations
@@ -3518,8 +3573,21 @@ export function UniversalPaymentPage({
                   }
                 : {}),
             };
-            console.log('ðŸ”„ Creating booking after payment:', createPayload);
-            const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
+            console.log('Creating booking after payment:', createPayload);
+            let bookingRes: any;
+            try {
+              bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
+            } catch (createErr: any) {
+              if (isSlotConflictError(createErr)) {
+                try {
+                  onPaymentAbandoned?.();
+                } catch (cbErr) {
+                  console.warn('[PAYMENT] onPaymentAbandoned failed:', cbErr);
+                }
+                throw new Error(SLOT_CONFLICT_USER_MESSAGE);
+              }
+              throw createErr;
+            }
             const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After Razorpay payment');
             if (!bookingIdValue) {
               console.error('âŒ No booking ID after payment:', bookingRes);
@@ -3759,7 +3827,14 @@ export function UniversalPaymentPage({
       const errorData = error?.response?.data || error?.data;
       let errorMessage = error.message || 'Payment failed';
 
-      if (errorData?.data?.errors && Array.isArray(errorData.data.errors)) {
+      if (isSlotConflictError(error)) {
+        errorMessage = SLOT_CONFLICT_USER_MESSAGE;
+        try {
+          onPaymentAbandoned?.();
+        } catch (cbErr) {
+          console.warn('[PAYMENT] onPaymentAbandoned failed:', cbErr);
+        }
+      } else if (errorData?.data?.errors && Array.isArray(errorData.data.errors)) {
         const validationErrors = errorData.data.errors.map((e: any) => {
           const path = e.path?.join('.') || e.path || 'unknown';
           return `${path}: ${e.message}`;

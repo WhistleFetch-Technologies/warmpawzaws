@@ -1,10 +1,10 @@
-import OrderDetailPageClient from './OrderDetailPageClient';
+import AdminOrderDetailPageClient from './AdminOrderDetailPageClient';
 
-/** Placeholder for static export; real order IDs load client-side. */
+/** Non-empty list required for `output: 'export'` (Next treats `[]` as missing). Real IDs load client-side. */
 export async function generateStaticParams() {
-  return [{ orderId: '__' }];
+  return [{ orderId: 'placeholder' }];
 }
 
 export default function AdminEcommerceOrderDetailPage() {
-  return <OrderDetailPageClient />;
+  return <AdminOrderDetailPageClient />;
 }

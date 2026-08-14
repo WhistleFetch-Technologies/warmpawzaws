@@ -308,6 +308,15 @@ export function VendorBookingManagement({
       amount: number;
       status: string;
       customer: string;
+      packageBreakdown?: {
+        basePrice: number;
+        commissionRate: number;
+        vendorPool: number;
+        sessionCount: number;
+        sessionNumber: number;
+        thisSession: number;
+        remainingSessions: number;
+      } | null;
     }>;
     dailyTrend: Array<{
       day: string;
@@ -1899,6 +1908,13 @@ export function VendorBookingManagement({
                               </div>
                             </div>
                           </div>
+                          {transaction.packageBreakdown && (
+                            <div className="mt-2 text-[11px] text-gray-600 bg-gray-50 rounded-lg p-2 space-y-0.5">
+                              <p className="font-medium text-gray-800">Package earnings (session 1 of {transaction.packageBreakdown.sessionCount})</p>
+                              <p>Base ₹{transaction.packageBreakdown.basePrice.toLocaleString('en-IN')} − {transaction.packageBreakdown.commissionRate}% commission = ₹{transaction.packageBreakdown.vendorPool.toLocaleString('en-IN')}</p>
+                              <p>÷ {transaction.packageBreakdown.sessionCount} sessions = ₹{transaction.packageBreakdown.thisSession.toLocaleString('en-IN')} this walk. Remaining {transaction.packageBreakdown.remainingSessions} sessions credit the same way when completed.</p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

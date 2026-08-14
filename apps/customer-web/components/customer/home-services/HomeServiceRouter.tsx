@@ -26,7 +26,6 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import {
-  applyPastSlotGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
 import { toast } from 'sonner';
@@ -555,23 +554,7 @@ export function HomeServiceRouter({
       );
 
       const { success, slots } = normalizeAvailableSlotsResponse(raw, date);
-
-      if (success && slots.length > 0) {
-        setTimeSlots(slots);
-      } else {
-        const homeDefault = [
-          '08:00', '09:00', '10:00', '11:00',
-          '14:00', '15:00', '16:00', '17:00', '18:00',
-        ].map((time) => ({ time, available: true }));
-        setTimeSlots(applyPastSlotGuard(homeDefault, date));
-      }
-    } catch (error) {
-      console.error('Error loading slots:', error);
-      const homeDefault = [
-        '08:00', '09:00', '10:00', '11:00',
-        '14:00', '15:00', '16:00', '17:00', '18:00',
-      ].map((time) => ({ time, available: true }));
-      setTimeSlots(applyPastSlotGuard(homeDefault, date));
+      setTimeSlots(success ? slots : []);
     } finally {
       setLoadingSlots(false);
     }

@@ -13,6 +13,8 @@ import {
   resetHomeBootstrapForPhone,
 } from '@/lib/customer-home-bootstrap';
 import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
+import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
+import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
 
 interface CustomerSession {
   phone: string;
@@ -132,7 +134,7 @@ export default function HomePage() {
       return;
     }
     hasRedirected.current = true;
-    router.replace('/auth');
+    redirectWithHardFallback(router, '/auth');
   }, [isLoading, session, router]);
 
   useEffect(() => {
@@ -177,14 +179,7 @@ export default function HomePage() {
 
   if (!session) {
     // Guest flag resolution / auth redirect in flight
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
+    return <AuthGateLoadingShell />;
   }
 
   const skipGateSpinner =

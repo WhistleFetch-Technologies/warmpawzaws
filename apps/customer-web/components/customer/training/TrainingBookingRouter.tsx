@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax, formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatLocalDateYYYYMMDD, parseYYYYMMDDToLocalDate } from '@/lib/local-calendar-date';
-import { normalizeAvailableSlotsResponse, buildDefaultSlotsWithPastGuard } from '@/lib/available-slots-response';
+import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
@@ -432,7 +432,7 @@ export function TrainingBookingRouter({
       }
 
       if (!success) {
-        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+        setTimeSlots([]);
         return;
       }
 
@@ -443,7 +443,7 @@ export function TrainingBookingRouter({
     } catch (error) {
       if (seq !== slotFetchSeq.current) return;
       console.error('Error loading time slots:', error);
-      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+      setTimeSlots([]);
     } finally {
       if (seq === slotFetchSeq.current) {
         setLoadingSlots(false);

@@ -1,4 +1,10 @@
-import { query, select } from '../../../../database/rds-connection';
+import { query, select, withTransaction } from '../../../../database/rds-connection';
+import {
+  acquireSlotOccupancyLock,
+  evaluateSlotAvailability,
+  resolveDurationMinutes,
+  SlotConflictError,
+} from '../../../../utils/slot-occupancy';
 
 export async function dbAppointmentBaseHandlers0(customerId: string) {
   return await query(
@@ -113,7 +119,8 @@ export async function dbAppointmentBaseHandlers5(appointmentId: string, customer
   return await query(
     `
         SELECT b.id, b.customer_id, b.status AS booking_status,
-               b.booking_date, b.booking_time
+               b.booking_date, b.booking_time, b.vendor_id, b.staff_id,
+               b.duration_minutes, b.total_duration_minutes
         FROM bookings b
         WHERE b.id = $1 AND b.customer_id = $2
       `,
@@ -126,12 +133,27 @@ export async function dbAppointmentBaseHandlers6(
   appointment_time: string,
   reason: string,
   appointmentId: string,
-  customerId: string
+  customerId: string,
+  current?: {
+    vendor_id?: string | null;
+    staff_id?: string | null;
+    booking_date?: string | null;
+    duration_minutes?: number | null;
+    total_duration_minutes?: number | null;
+  }
 ) {
-  return await query(
-    `
+  const vendorId = current?.vendor_id ? String(current.vendor_id) : '';
+  const durationMinutes = resolveDurationMinutes(
+    current?.total_duration_minutes,
+    current?.duration_minutes
+  );
+  const staffId = current?.staff_id ? String(current.staff_id) : null;
+
+  if (!vendorId) {
+    return await query(
+      `
         UPDATE bookings
-        SET 
+        SET
           booking_date = $1::date,
           booking_time = $2::time,
           notes = COALESCE(notes || E'\n', '') || 'Rescheduled: ' || $3,
@@ -139,14 +161,40 @@ export async function dbAppointmentBaseHandlers6(
         WHERE id = $4 AND customer_id = $5
         RETURNING *
       `,
-    [
-      appointment_date,
-      appointment_time,
-      reason || 'No reason provided',
-      appointmentId,
-      customerId,
-    ]
-  );
+      [appointment_date, appointment_time, reason || 'No reason provided', appointmentId, customerId]
+    );
+  }
+
+  return withTransaction(async (client) => {
+    const lockDates = [...new Set([String(current?.booking_date || ''), String(appointment_date)])]
+      .filter(Boolean)
+      .sort();
+    for (const d of lockDates) {
+      await acquireSlotOccupancyLock(client, vendorId, d, staffId);
+    }
+    const free = await evaluateSlotAvailability(client, {
+      vendorId,
+      date: String(appointment_date),
+      startTime: String(appointment_time),
+      durationMinutes,
+      staffId,
+      excludeBookingId: appointmentId,
+    });
+    if (!free) throw new SlotConflictError();
+    return client.query(
+      `
+        UPDATE bookings
+        SET
+          booking_date = $1::date,
+          booking_time = $2::time,
+          notes = COALESCE(notes || E'\n', '') || 'Rescheduled: ' || $3,
+          updated_at = NOW()
+        WHERE id = $4 AND customer_id = $5
+        RETURNING *
+      `,
+      [appointment_date, appointment_time, reason || 'No reason provided', appointmentId, customerId]
+    );
+  });
 }
 
 export async function dbAppointmentBaseHandlers7(

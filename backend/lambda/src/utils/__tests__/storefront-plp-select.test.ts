@@ -21,4 +21,8 @@ describe('storefront-plp-select', () => {
     expect(STOREFRONT_PLP_CARD_SELECT).not.toContain('vendor_name');
     expect(STOREFRONT_PLP_CARD_SELECT).not.toContain('description');
   });
+
+  it('card select includes listing_ownership for admin promo targeting', () => {
+    expect(STOREFRONT_PLP_CARD_SELECT).toContain('p.listing_ownership');
+  });
 });

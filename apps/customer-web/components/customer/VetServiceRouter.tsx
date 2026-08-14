@@ -24,6 +24,7 @@ import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { resolveProblemGridDisplayName } from '@/lib/problem-grid-catalog-fallback';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import { resolveBoardingListVendorProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import {
@@ -337,7 +338,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     if (bootstrapProblems.length > 0) {
       const mapped: ProblemGridItem[] = bootstrapProblems.map((p) => ({
         id: p.id,
-        name: p.title,
+        name: resolveProblemGridDisplayName(p.id, p.title),
         icon: <Stethoscope className="w-6 h-6 text-orange-600" />,
       }));
       const viewAll = legacyProblems.find((x) => x.id === 'view_all');

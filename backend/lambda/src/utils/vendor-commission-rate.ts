@@ -7,6 +7,12 @@ export function isCanonicalPackageParentBooking(booking: Record<string, unknown>
   return Boolean(pp) && !isChild;
 }
 
+/** Package session child: fulfillment row. Vendor earnings must be a slice, not full parent price. */
+export function isPackageSessionChildBooking(booking: Record<string, unknown>): boolean {
+  const pp = booking.package_purchase_id ?? booking.packagePurchaseId;
+  return Boolean(pp) && Boolean(booking.is_package_session ?? booking.isPackageSession);
+}
+
 /**
  * Commission rate for a vendor from active tier (`vendor_tiers` matched by `vendors.tier`).
  * Delegates to resolveVendorCommissionPolicy (Finance S2 authoritative resolver).

@@ -89,7 +89,9 @@ export function normalizeAvailableSlotsResponse(
   message?: string;
 } {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const success = r.success !== false;
+  if (r.success === false) {
+    return { success: false, slots: [], message: typeof r.message === 'string' ? r.message : typeof r.error === 'string' ? r.error : undefined };
+  }
   const rawSlots = r.slots;
   const list = Array.isArray(rawSlots) ? rawSlots : [];
   let slots: NormalizedTimeSlot[] = list
@@ -117,7 +119,7 @@ export function normalizeAvailableSlotsResponse(
   }
 
   const message = typeof r.message === 'string' ? r.message : undefined;
-  return { success, slots, message };
+  return { success: true, slots, message };
 }
 
 export type NextAvailableSlot = {

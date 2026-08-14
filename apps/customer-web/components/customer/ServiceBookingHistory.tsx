@@ -4,7 +4,11 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Package, Download, FileText, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { downloadBookingInvoice, getBookingInvoiceDownloadMessage } from '@/lib/booking-invoice-download';
+import {
+  downloadBookingInvoice,
+  getBookingInvoiceDownloadMessage,
+  isBookingPaidForInvoice,
+} from '@/lib/booking-invoice-download';
 import { toast } from 'sonner';
 import { BookingDetailModal } from './BookingDetailModal';
 
@@ -27,6 +31,8 @@ interface Booking {
   petId: string;
   vendorName: string;
   price: number;
+  paymentStatus?: string;
+  payment_status?: string;
   completionOTP?: string;
   requiresOTP: boolean;
   otpVerifiedAt?: string;
@@ -51,9 +57,12 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
       const data = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${cleanPhone}&serviceType=${serviceType}`);
       
       // Filter bookings by service type
-      const serviceBookings = (data.bookings || []).filter((b: Booking) => 
-        b.serviceType === serviceType
-      );
+      const serviceBookings = (data.bookings || [])
+        .map((b: Booking & { payment_status?: string }) => ({
+          ...b,
+          paymentStatus: b.paymentStatus || b.payment_status,
+        }))
+        .filter((b: Booking) => b.serviceType === serviceType);
       
       // Sort by date (newest first)
       serviceBookings.sort((a: Booking, b: Booking) => {
@@ -264,7 +273,7 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
 
                   {/* Action Buttons */}
                   <div className="flex gap-2 pt-2 border-t border-gray-100">
-                    {booking.status === 'completed' && (
+                    {isBookingPaidForInvoice(booking) && (
                       <Button
                         onClick={(e) => {
                           e.stopPropagation();

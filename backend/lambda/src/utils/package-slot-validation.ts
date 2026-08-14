@@ -7,6 +7,7 @@ import {
   expandVendorPackageSessionSchedule,
   type VendorPackageSessionScheduleItem,
 } from './vendor-package-razorpay-flow';
+import { assertNoVendorSlotConflictsForSchedule } from './slot-occupancy';
 
 export type PackageScheduleSlot = {
   date: string;
@@ -63,42 +64,13 @@ export function assertDistinctScheduleSlots(
   return { ok: true };
 }
 
-function toPgTimeValue(timeKey: string): string {
-  return timeKey.length === 5 ? `${timeKey}:00` : timeKey;
-}
-
 export async function assertNoVendorSlotConflicts(
   vendorId: string,
   schedule: PackageScheduleSlot[],
-  runQuery: QueryFn = query
+  runQuery: QueryFn = query,
+  durationMinutes?: number
 ): Promise<PackageScheduleValidationResult> {
-  for (const slot of schedule) {
-    const date = String(slot.date || '').trim();
-    const timeKey = normalizeSlotTimeKey(slot.time);
-    if (!date || !timeKey) continue;
-
-    const conflictCheck = await runQuery(
-      `
-      SELECT id FROM bookings
-      WHERE vendor_id = $1::uuid
-        AND booking_date = $2::date
-        AND booking_time = $3::time
-        AND status NOT IN ('cancelled', 'rejected')
-      LIMIT 1
-      `,
-      [vendorId, date, toPgTimeValue(timeKey)]
-    );
-
-    if ((conflictCheck.rows?.length ?? 0) > 0) {
-      return {
-        ok: false,
-        status: 409,
-        code: 'SLOT_CONFLICT',
-        message: 'This time slot is already booked',
-      };
-    }
-  }
-  return { ok: true };
+  return assertNoVendorSlotConflictsForSchedule(vendorId, schedule, runQuery, durationMinutes);
 }
 
 export async function validatePackagePurchaseSchedule(params: {
@@ -109,6 +81,7 @@ export async function validatePackagePurchaseSchedule(params: {
   sessionsPerDay: number;
   sessionIntervalDays: number;
   queryFn?: QueryFn;
+  durationMinutes?: number;
 }): Promise<PackageScheduleValidationResult> {
   if (params.unlimitedPurchase || params.totalSessionsForPurchase <= 0) {
     return { ok: true };
@@ -134,7 +107,12 @@ export async function validatePackagePurchaseSchedule(params: {
   const distinct = assertDistinctScheduleSlots(schedule);
   if (!distinct.ok) return distinct;
 
-  return assertNoVendorSlotConflicts(params.vendorId, schedule, params.queryFn ?? query);
+  return assertNoVendorSlotConflicts(
+    params.vendorId,
+    schedule,
+    params.queryFn ?? query,
+    params.durationMinutes
+  );
 }
 
 export function isPackageSlotUniqueViolation(error: unknown): boolean {

@@ -7,6 +7,8 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
 import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
+import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
+import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
 
 interface CustomerSession {
   phone: string;
@@ -107,7 +109,7 @@ export default function AllServicesCatalogPage() {
   useEffect(() => {
     if (!isLoading && !session && !hasRedirected.current) {
       hasRedirected.current = true;
-      router.replace('/auth');
+      redirectWithHardFallback(router, '/auth');
     }
   }, [isLoading, session, router]);
 
@@ -140,7 +142,7 @@ export default function AllServicesCatalogPage() {
   }
 
   if (!session) {
-    return null;
+    return <AuthGateLoadingShell />;
   }
 
   if (!gateReady) {

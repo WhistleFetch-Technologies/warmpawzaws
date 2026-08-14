@@ -18,7 +18,11 @@ import { FollowUpBookingModal } from './FollowUpBookingModal';
 import { RateServiceModal } from './RateServiceModal';
 import { PaymentSourcesDisplay } from './payment/PaymentSourcesDisplay';
 import { normalizePaymentSources } from '@/lib/payment-display-utils';
-import { downloadBookingInvoice, getBookingInvoiceDownloadMessage } from '@/lib/booking-invoice-download';
+import {
+  downloadBookingInvoice,
+  getBookingInvoiceDownloadMessage,
+  isBookingPaidForInvoice,
+} from '@/lib/booking-invoice-download';
 import {
   resolveCustomerBookingDisplayName,
   shouldHideWarmpawzAppointmentDuration,
@@ -1559,8 +1563,11 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </>
               )}
 
-              {/* Download Invoice Button - For completed bookings */}
-              {booking.status === 'completed' && (
+              {/* Download Invoice — available as soon as payment is collected */}
+              {isBookingPaidForInvoice({
+                paymentStatus: booking.paymentStatus ?? booking.payment_status,
+                isPaid: bookingFinancial?.isPaid,
+              }) && (
                 <Button
                   onClick={async () => {
                     try {

@@ -116,10 +116,56 @@ const NUTRITIONIST_ROUTING_TOKENS = new Set([
   'wellness',
 ]);
 
+const TRAINING_ROUTING_TOKENS = new Set([
+  'train',
+  'trainer',
+  'training',
+  'obedience',
+  'behaviorist',
+  'behaviourist',
+  'coach',
+  'agility',
+]);
+
+const WALKER_ROUTING_TOKENS = new Set([
+  'walk',
+  'walker',
+  'walking',
+]);
+
+/** Filler words in natural-language hub queries — not used as strict ILIKE filters. */
+const SEARCH_QUALIFIER_NOISE_TOKENS = new Set([
+  'a',
+  'an',
+  'the',
+  'i',
+  'my',
+  'our',
+  'your',
+  'for',
+  'to',
+  'best',
+  'good',
+  'great',
+  'top',
+  'find',
+  'need',
+  'want',
+  'looking',
+  'please',
+  'help',
+  'some',
+  'any',
+  'recommend',
+  'recommended',
+]);
+
 function isHubRoutingToken(token: string, hubSlug: string): boolean {
   if (hubSlug === 'vet') return VET_ROUTING_TOKENS.has(token);
   if (hubSlug === 'grooming') return false;
   if (hubSlug === 'nutritionist') return NUTRITIONIST_ROUTING_TOKENS.has(token);
+  if (hubSlug === 'training') return TRAINING_ROUTING_TOKENS.has(token);
+  if (hubSlug === 'walker') return WALKER_ROUTING_TOKENS.has(token);
   return false;
 }
 
@@ -135,6 +181,9 @@ function filterSearchTokens(
   return rawTokens.filter((token) => {
     if (PET_QUALIFIER_TOKENS.has(token)) return false;
     if (SEARCH_INTENT_TOKENS.has(token)) return false;
+    if (opts.categorySource === 'taxonomy' && SEARCH_QUALIFIER_NOISE_TOKENS.has(token)) {
+      return false;
+    }
     if (opts.categorySource === 'taxonomy' && opts.topHubSlug) {
       if (isHubRoutingToken(token, opts.topHubSlug)) return false;
     }

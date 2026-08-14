@@ -5,7 +5,6 @@ import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, Chec
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import {
-  buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
 import { runInlineAddressDetect, inlineAddressCoordsPayload } from '@/lib/run-inline-address-detect';
@@ -51,6 +50,16 @@ import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
 
+
+function groomingCheckoutListPrice(
+  service: { originalPrice?: number; price?: number } | null | undefined,
+  fallback = 0
+): number {
+  const orig = Number(service?.originalPrice);
+  if (Number.isFinite(orig) && orig > 0) return orig;
+  const p = Number(service?.price);
+  return Number.isFinite(p) && p > 0 ? p : fallback;
+}
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -390,6 +399,7 @@ export function GroomingBookingRouter({
         serviceId: s.serviceId || s.service_id,
         name: s.serviceName || s.service_name || s.name,
         price: s.price || 0,
+        originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
         duration: s.duration || 30,
         desc: s.description || '',
         serviceStyle: style,
@@ -540,13 +550,13 @@ export function GroomingBookingRouter({
       if (success && slots.length > 0) {
         setTimeSlots(slots);
       } else if (!success) {
-        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+        setTimeSlots([]);
       } else {
         setTimeSlots([]);
       }
     } catch (error) {
       console.error('Error loading time slots:', error);
-      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+      setTimeSlots([]);
     } finally {
       setLoadingSlots(false);
     }
@@ -1037,8 +1047,8 @@ export function GroomingBookingRouter({
   const reviewTotal = appointmentsMode
     ? appointmentFee ?? selectedVendorService?.price ?? price ?? 0
     : (allSelectedServices && allSelectedServices.length > 0
-      ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
-      : selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0) ?? 0;
+      ? allSelectedServices.reduce((sum, s) => sum + groomingCheckoutListPrice(s), 0)
+      : groomingCheckoutListPrice(selectedServiceOption || allSelectedServices?.[0], price ?? 0)) ?? 0;
 
   const groomingPrePaymentSummary = (
     <>
@@ -1065,7 +1075,7 @@ export function GroomingBookingRouter({
           {allSelectedServices.map((service, index) => {
             const serviceIdValue = service.id || service.serviceId || '';
             const serviceNameValue = service.name || service.serviceName || 'Service';
-            const servicePrice = service.price || 0;
+            const servicePrice = groomingCheckoutListPrice(service);
             const serviceDuration = service.duration || 0;
             const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
 
@@ -1092,7 +1102,7 @@ export function GroomingBookingRouter({
           const svc = selectedServiceOption || allSelectedServices?.[0];
           const svcName = svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
           const svcDuration = svc?.duration ?? duration ?? 0;
-          const svcPrice = svc?.price ?? price ?? 0;
+          const svcPrice = groomingCheckoutListPrice(svc, price ?? 0);
           return (
             <div className="flex items-center gap-3 pb-4 border-b">
               <div
@@ -1174,10 +1184,8 @@ export function GroomingBookingRouter({
         baseAmount={
           appointmentsMode
             ? (appointmentFee ?? selectedVendorService?.price ?? price ?? 0)
-            : allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) ||
-              selectedServiceOption?.price ||
-              price ||
-              499
+            : allSelectedServices.reduce((total, s) => total + groomingCheckoutListPrice(s), 0) ||
+              groomingCheckoutListPrice(selectedServiceOption, price || 499)
         }
         priceIncludesTax={
           catalogPriceIncludesTax(selectedServiceOption) ||
@@ -1363,7 +1371,7 @@ export function GroomingBookingRouter({
                   <span className="font-semibold text-[#FF8C42]">
                     ₹{Array.from(selectedServiceIds).reduce((total, id) => {
                       const service = serviceOptions.find(s => s.id === id);
-                      return total + (service?.price || 0);
+                      return total + groomingCheckoutListPrice(service);
                     }, 0)}
                   </span>
                 </div>

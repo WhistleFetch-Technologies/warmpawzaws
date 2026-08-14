@@ -36,18 +36,20 @@ describe('package-slot-validation', () => {
   });
 
   test('assertNoVendorSlotConflicts returns SLOT_CONFLICT when booking exists', async () => {
-    const mockQuery = async () => ({ rows: [{ id: 'booking-1' }] }) as any;
+    const mockQuery = async () =>
+      ({
+        rows: [{ id: 'booking-1', booking_time: '12:10:00', duration_minutes: 30 }],
+      }) as any;
     const result = await assertNoVendorSlotConflicts(
       'vendor-1',
       [{ date: '2026-07-02', time: '12:10' }],
       mockQuery
     );
-    expect(result).toEqual({
-      ok: false,
-      status: 409,
-      code: 'SLOT_CONFLICT',
-      message: 'This time slot is already booked',
-    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('SLOT_CONFLICT');
+      expect(result.status).toBe(409);
+    }
   });
 
   test('validatePackagePurchaseSchedule rejects duplicate expanded multi-day schedule', async () => {

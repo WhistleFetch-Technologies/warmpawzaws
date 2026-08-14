@@ -209,8 +209,9 @@ export function UnifiedBookingEngine({
         params.append('staffId', selectedStaff.id);
       }
 
-      const slots: any = await apiClient.get(`/bookings/available-slots?${params}`);
-      setTimeSlots(slots || []);
+      const raw: any = await apiClient.get(`/bookings/available-slots?${params}`);
+      const list = Array.isArray(raw) ? raw : Array.isArray(raw?.slots) ? raw.slots : [];
+      setTimeSlots(list);
     } catch (err: any) {
       console.error('Failed to load time slots:', err);
       setTimeSlots([]);

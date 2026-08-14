@@ -55,13 +55,15 @@ export interface BoardingVendorProfileViewProps {
   footerActiveTab?: 'home' | 'shop' | 'bookings' | 'profile';
 }
 
-interface MappedBoardingService {
+interface MappedBoardingService extends Record<string, unknown> {
   rowId: string;
   serviceId?: string;
   name: string;
   price: number;
   duration?: number;
   serviceStyle?: string;
+  /** Set when catalog row is a multi-session package (discovery UI badge). */
+  isPackage?: boolean;
   /** Original API row — package detection + purchase-package payload. */
   rawRow: Record<string, unknown>;
 }
@@ -123,6 +125,7 @@ export function BoardingVendorProfileView({
       const rowId = String(s?.id ?? s?.vendorServiceId ?? s?.serviceId ?? s?.service_id ?? '');
       if (!rowId || seen.has(rowId)) continue;
       seen.add(rowId);
+      const rawRow = (s && typeof s === 'object' ? s : {}) as Record<string, unknown>;
       mapped.push({
         rowId,
         serviceId: s?.serviceId || s?.service_id,
@@ -130,7 +133,9 @@ export function BoardingVendorProfileView({
         price: parseFloat(String(s?.price || '0')) || 0,
         duration: s?.duration || s?.duration_minutes,
         serviceStyle: s?.serviceStyle || s?.service_style,
-        rawRow: (s && typeof s === 'object' ? s : {}) as Record<string, unknown>,
+        isPackage:
+          isVendorServicePackageRow(rawRow) || Boolean((rawRow as { isPackage?: unknown }).isPackage),
+        rawRow,
       });
     }
     return mapped;
@@ -509,14 +514,12 @@ export function BoardingVendorProfileView({
               </p>
             ) : (
               <div className="mt-3 space-y-4">
-                {discoveryServiceSections(
-                  publishedPlans as unknown as Record<string, unknown>[]
-                ).map((sec) => (
+                {discoveryServiceSections(publishedPlans).map((sec) => (
                   <div key={sec.title} className="space-y-2">
                     <h3 className="text-sm font-semibold text-gray-700">
                       {sec.title} ({sec.list.length})
                     </h3>
-                    {(sec.list as unknown as typeof publishedPlans).map((plan) => {
+                    {sec.list.map((plan) => {
                   const Icon = pickIconForPublishedPlan(plan.name, plan.serviceStyle);
                   const isSel = selectedOffer?.rowId === plan.rowId;
                   return (
@@ -535,8 +538,7 @@ export function BoardingVendorProfileView({
                         <span className={`truncate font-medium ${isSel ? 'text-orange-900' : 'text-gray-800'}`}>
                           {plan.name}
                         </span>
-                        {((plan as unknown as { isPackage?: boolean }).isPackage ||
-                          isVendorServicePackageRow(plan as unknown as Record<string, unknown>)) && (
+                        {(plan.isPackage || isVendorServicePackageRow(plan.rawRow)) && (
                           <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">
                             Package
                           </span>

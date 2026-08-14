@@ -14,6 +14,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { RescheduleBookingModal } from './RescheduleBookingModal';
 import { CancelBookingModal } from './CancelBookingModal';
+import { isPackageCustomerCancelAllowed } from '@/lib/package-cancel-eligibility';
 
 interface BookingDetailsCompleteProps {
   bookingId: string;
@@ -86,7 +87,8 @@ export function BookingDetailsComplete({
   };
 
   const canCancel = () => {
-    return booking?.status !== 'completed' && booking?.status !== 'cancelled';
+    if (booking?.status === 'completed' || booking?.status === 'cancelled') return false;
+    return isPackageCustomerCancelAllowed(booking);
   };
 
   const handleRescheduleSuccess = () => {

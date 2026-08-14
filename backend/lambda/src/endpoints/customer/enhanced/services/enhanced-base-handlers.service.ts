@@ -317,6 +317,7 @@ export class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
       const loyaltyFields = buildSinglePetCreateLoyaltyFields(
         customerId,
         String(created.id),
+        created,
         body as Record<string, unknown>
       );
 

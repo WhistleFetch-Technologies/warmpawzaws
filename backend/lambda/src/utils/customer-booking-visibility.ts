@@ -9,14 +9,16 @@ export function markBookingNotesCustomerHidden(notes: string | null | undefined)
   return base ? `${base} | ${CUSTOMER_HIDDEN_BOOKING_MARKER}:true` : `${CUSTOMER_HIDDEN_BOOKING_MARKER}:true`;
 }
 
-/** SQL CASE expression: re-confirm bookings paid on Razorpay but auto-cancelled by hold expiry. */
+/** SQL CASE expression: re-confirm bookings paid on Razorpay but auto-cancelled by hold expiry.
+ *  DO NOT use in the same UPDATE that sets payment_status = 'paid' — PostgreSQL CASE
+ *  sees the old row. Capture recovery belongs in finalizeCapturedPayment().
+ */
 export const SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL = `
   CASE
+    WHEN status IN ('pending', 'pending_payment') THEN 'confirmed'
     WHEN status = 'cancelled'
       AND COALESCE(cancellation_reason, '') = 'payment_window_expired'
-      AND COALESCE(payment_status, '') IN ('paid', 'completed')
     THEN 'confirmed'
-    WHEN status IN ('pending', 'pending_payment') THEN 'confirmed'
     ELSE status
   END
 `;

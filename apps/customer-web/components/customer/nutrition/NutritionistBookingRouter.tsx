@@ -16,9 +16,7 @@ import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouterProps, Pet, TimeSlot } from './constants/interface';
 import { defaultServiceTypeOptions } from './constants';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
-import { normalizeAvailableSlotsResponse, buildDefaultSlotsWithPastGuard } from '@/lib/available-slots-response';
-import { SERVICE_DESC_VIEW_MORE_MIN_LEN } from '@/lib/service-description-preview';
-import { cn } from '@/components/ui/utils';
+import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
 import { useWapptBookingSlots } from '@/hooks/useWapptBookingSlots';
 import {
@@ -260,7 +258,7 @@ export function NutritionistBookingRouter({
       }
 
       if (!success) {
-        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+        setTimeSlots([]);
         return;
       }
 
@@ -271,7 +269,7 @@ export function NutritionistBookingRouter({
     } catch (error) {
       if (seq !== slotFetchSeq.current) return;
       console.error('Error loading time slots:', error);
-      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
+      setTimeSlots([]);
     } finally {
       if (seq === slotFetchSeq.current) {
         setLoadingSlots(false);

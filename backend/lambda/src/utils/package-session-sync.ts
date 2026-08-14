@@ -208,11 +208,15 @@ async function countNonTerminalPackageSessions(
   return Number(r.rows?.[0]?.c ?? 0);
 }
 
-const round2Money = (x: number): number => Math.round(x * 100) / 100;
+import {
+  allocatePackageSessionVendorNet,
+  scaleGrossFromVendorNet,
+  vendorPoolAfterCommission,
+} from './package-session-earnings-allocation';
 
 /**
- * One slice of parent `total_amount` per completed child session; last session absorbs paise remainder.
- * Idempotent: one `vendor_earnings` row per child `booking_id`.
+ * One slice of (base − tier commission) per completed child session.
+ * Last session absorbs paise remainder. Idempotent: one `vendor_earnings` row per child `booking_id`.
  */
 async function accrueVendorEarningsForPackageSessionChild(
   db: SqlClient,
@@ -248,8 +252,9 @@ async function accrueVendorEarningsForPackageSessionChild(
 
     const parentRes = await db.query(
       `SELECT b.vendor_id::text AS vendor_id, b.total_amount::numeric AS total_amount,
+              b.base_price::numeric AS base_price,
               b.notes,
-              COALESCE(pp.total_with_tax, pp.amount, pp.package_price, 0)::numeric AS purchase_amount
+              COALESCE(pp.amount, pp.package_price, 0)::numeric AS purchase_amount
        FROM bookings b
        LEFT JOIN package_purchases pp ON pp.id = b.package_purchase_id
        WHERE b.package_purchase_id = $1::uuid
@@ -265,6 +270,9 @@ async function accrueVendorEarningsForPackageSessionChild(
 
     let parentTotal = Number(parentRow.total_amount);
     if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
+      parentTotal = Number(parentRow.base_price);
+    }
+    if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
       parentTotal = Number(parentRow.purchase_amount);
     }
     if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
@@ -274,53 +282,111 @@ async function accrueVendorEarningsForPackageSessionChild(
     const settlementPreview = extractSettlementPreviewFromBooking(parentRow as Record<string, unknown>);
     parentTotal = applySettlementPreviewToCommissionableGross(parentTotal, settlementPreview);
 
+    await db.query(`SELECT id FROM package_purchases WHERE id = $1::uuid FOR UPDATE`, [packagePurchaseId]).catch(() => undefined);
+
     const priorRes = await db.query(
-      `SELECT COALESCE(SUM(ve.total_amount), 0)::numeric AS sum_gross,
+      `SELECT COALESCE(SUM(ve.amount), 0)::numeric AS sum_net,
               COUNT(*)::int AS cnt
        FROM vendor_earnings ve
        INNER JOIN bookings b ON b.id = ve.booking_id
        WHERE b.package_purchase_id = $1::uuid
-         AND COALESCE(b.is_package_session, false) = true`,
+         AND COALESCE(b.is_package_session, false) = true
+         AND (ve.status IS DISTINCT FROM 'cancelled')`,
       [packagePurchaseId]
     );
-    const sumPriorGross = Number(priorRes.rows?.[0]?.sum_gross ?? 0);
+    const sumPriorNet = Number(priorRes.rows?.[0]?.sum_net ?? 0);
     const priorCnt = Number(priorRes.rows?.[0]?.cnt ?? 0);
-    if (priorCnt >= n) {
-      return;
-    }
-
-    const isLast = priorCnt === n - 1;
-    const perSessionGross = isLast
-      ? round2Money(parentTotal - sumPriorGross)
-      : round2Money(parentTotal / n);
-
-    if (!Number.isFinite(perSessionGross) || perSessionGross <= 0) {
-      return;
-    }
 
     const commissionRate = await getVendorCommissionRate(String(parentRow.vendor_id));
-    const commissionAmount = round2Money((perSessionGross * commissionRate) / 100);
-    const vendorAmount = round2Money(perSessionGross - commissionAmount);
+    const vendorPool = vendorPoolAfterCommission(parentTotal, commissionRate);
+    const perSessionNet = allocatePackageSessionVendorNet({
+      vendorPool,
+      sessionCount: n,
+      priorCount: priorCnt,
+      priorSum: sumPriorNet,
+    });
+
+    if (!Number.isFinite(perSessionNet) || perSessionNet <= 0) {
+      return;
+    }
+
+    const { allocatedGross: perSessionGross, commissionAmount, vendorNet: vendorAmount } =
+      scaleGrossFromVendorNet({
+        vendorNet: perSessionNet,
+        commissionRate,
+      });
     if (vendorAmount <= 0) {
       return;
     }
 
-    const insRes = await db.query(
-      `INSERT INTO vendor_earnings (
-         vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at
-       )
-       SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', NOW()
-       WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
-       RETURNING id`,
-      [
-        String(parentRow.vendor_id),
-        childBookingId,
-        vendorAmount,
-        commissionAmount,
-        perSessionGross,
-        commissionRate,
-      ]
-    );
+    const isFirstSession = priorCnt === 0;
+    const breakdown = isFirstSession
+      ? {
+          packageBreakdown: {
+            basePrice: parentTotal,
+            commissionRate,
+            vendorPool,
+            sessionCount: n,
+            sessionNumber: 1,
+            thisSession: vendorAmount,
+            remainingSessions: Math.max(0, n - 1),
+          },
+        }
+      : null;
+
+    const insRes = breakdown
+      ? await db
+          .query(
+            `INSERT INTO vendor_earnings (
+               vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at, metadata
+             )
+             SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', NOW(), $7::jsonb
+             WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
+             RETURNING id`,
+            [
+              String(parentRow.vendor_id),
+              childBookingId,
+              vendorAmount,
+              commissionAmount,
+              perSessionGross,
+              commissionRate,
+              JSON.stringify(breakdown),
+            ]
+          )
+          .catch(() =>
+            db.query(
+              `INSERT INTO vendor_earnings (
+                 vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at
+               )
+               SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', NOW()
+               WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
+               RETURNING id`,
+              [
+                String(parentRow.vendor_id),
+                childBookingId,
+                vendorAmount,
+                commissionAmount,
+                perSessionGross,
+                commissionRate,
+              ]
+            )
+          )
+      : await db.query(
+          `INSERT INTO vendor_earnings (
+             vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at
+           )
+           SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', NOW()
+           WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
+           RETURNING id`,
+          [
+            String(parentRow.vendor_id),
+            childBookingId,
+            vendorAmount,
+            commissionAmount,
+            perSessionGross,
+            commissionRate,
+          ]
+        );
 
     if ((insRes.rowCount ?? 0) > 0 && insRes.rows?.[0]?.id) {
       await db

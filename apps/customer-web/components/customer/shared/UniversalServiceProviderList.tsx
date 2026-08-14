@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, type MouseEvent } from 'react';
 import {
   ArrowLeft, Search, Filter, Star, MapPin, Clock, ChevronRight,
   Video, Home, Building2, Shield, Award, GraduationCap, X, Sliders,
@@ -27,6 +27,15 @@ import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
 import { DiscoveryProviderAvatar } from './DiscoveryProviderAvatar';
+import { BoardingVendorExpandableCard } from '../boarding/BoardingVendorExpandableCard';
+import { mapProviderToBoardingListVendor } from '@/lib/map-provider-to-boarding-vendor';
+import {
+  mapServicesApiResponseToPlanRows,
+  type BoardingListVendor,
+  type BoardingPlanRow,
+} from '@/lib/boarding-vendor-discovery-map';
+import { filterPlanRowsForVetHub } from '@/lib/filter-hub-services';
+import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 
 // ============================================================================
 // TYPES
@@ -637,6 +646,10 @@ export function UniversalServiceProviderList({
     specialization: specializationFilter || null, // Pre-set specialization filter
     sortBy: 'rating',
   });
+  const useVetExpandableCards = category === 'vet';
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [fetchingPlansFor, setFetchingPlansFor] = useState<string | null>(null);
+  const [planRowsByVendorId, setPlanRowsByVendorId] = useState<Record<string, BoardingPlanRow[]>>({});
 
   const {
     rows: feedRows,
@@ -678,6 +691,80 @@ export function UniversalServiceProviderList({
   useEffect(() => {
     processFeedRows();
   }, [processFeedRows]);
+
+  const findProviderByVendorId = useCallback(
+    (vendorId: string) =>
+      providers.find((p) => String(p.vendorId || p.providerId) === vendorId),
+    [providers]
+  );
+
+  const fetchVendorPlans = useCallback(
+    async (vendorId: string) => {
+      setFetchingPlansFor(vendorId);
+      try {
+        const servicesResponse = await apiClient.get(
+          `/customer/vendor/${encodeURIComponent(vendorId)}/services?serviceStyle=${encodeURIComponent(serviceStyle)}&category=vet`
+        );
+        const rows = filterPlanRowsForVetHub(mapServicesApiResponseToPlanRows(servicesResponse));
+        setPlanRowsByVendorId((prev) => ({ ...prev, [vendorId]: rows }));
+      } catch (e) {
+        console.error('[UniversalServiceProviderList] vendor services fetch failed', e);
+      } finally {
+        setFetchingPlansFor(null);
+      }
+    },
+    [serviceStyle]
+  );
+
+  useEffect(() => {
+    if (!useVetExpandableCards || !selectedVendorId) return;
+    const provider = findProviderByVendorId(selectedVendorId);
+    if (!provider) return;
+    if (planRowsByVendorId[selectedVendorId]?.length) return;
+    if (fetchingPlansFor === selectedVendorId) return;
+    if (provider.needsServiceFetch !== false) {
+      void fetchVendorPlans(selectedVendorId);
+    }
+  }, [
+    useVetExpandableCards,
+    selectedVendorId,
+    findProviderByVendorId,
+    planRowsByVendorId,
+    fetchingPlansFor,
+    fetchVendorPlans,
+  ]);
+
+  const openProviderProfile = useCallback(
+    (provider: Provider) => {
+      onSelectProvider(provider);
+    },
+    [onSelectProvider]
+  );
+
+  const openProviderProfileByVendorId = useCallback(
+    (e: MouseEvent, vendorId: string) => {
+      e.stopPropagation();
+      const provider = findProviderByVendorId(vendorId);
+      if (provider) {
+        openProviderProfile(provider);
+        return;
+      }
+      toast.error('Could not open this profile. Try View Services or refresh.');
+    },
+    [findProviderByVendorId, openProviderProfile]
+  );
+
+  const handleVetBookPlan = useCallback(
+    (v: BoardingListVendor, _plan: BoardingPlanRow) => {
+      const provider = findProviderByVendorId(v.id);
+      if (provider) openProviderProfile(provider);
+    },
+    [findProviderByVendorId, openProviderProfile]
+  );
+
+  const toggleVetVendor = useCallback((vendorId: string) => {
+    setSelectedVendorId((prev) => (prev === vendorId ? null : vendorId));
+  }, []);
 
   useEffect(() => {
     setLoading(feedLoading);
@@ -873,7 +960,13 @@ export function UniversalServiceProviderList({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, specialization, city..."
+            placeholder={
+              useVetExpandableCards
+                ? serviceStyle === 'at_center'
+                  ? 'Search clinics...'
+                  : 'Search by name, specialization, city...'
+                : 'Search by name, specialization, city...'
+            }
             className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent text-slate-900 placeholder:text-slate-400"
           />
           {searchQuery && (
@@ -926,7 +1019,11 @@ export function UniversalServiceProviderList({
 
         {/* Results Count */}
         <p className="text-sm text-slate-500 mb-4">
-          {loading ? 'Loading...' : `${filteredProviders.length} ${filteredProviders.length === 1 ? 'provider' : 'providers'} found`}
+          {loading
+            ? 'Loading...'
+            : useVetExpandableCards && serviceStyle === 'at_center'
+              ? `${filteredProviders.length} clinic${filteredProviders.length === 1 ? '' : 's'} found`
+              : `${filteredProviders.length} ${filteredProviders.length === 1 ? 'provider' : 'providers'} found`}
         </p>
 
         {/* Provider List */}
@@ -1054,16 +1151,50 @@ export function UniversalServiceProviderList({
               )}
 
               {/* Regular Provider List */}
-              {filteredProviders.map((provider) => (
-                <ProviderCard
-                  key={provider.providerId}
-                  provider={provider}
-                  serviceStyle={serviceStyle}
-                  showPriceDisclaimer={category === 'vet'}
-                  isPreviousProvider={previousProviderIds.some(id => id === (provider.vendorId || provider.providerId))}
-                  onClick={() => onSelectProvider(provider)}
-                />
-              ))}
+              {filteredProviders.map((provider) => {
+                const vendorKey = String(provider.vendorId || provider.providerId);
+                if (useVetExpandableCards) {
+                  const planRows = planRowsByVendorId[vendorKey];
+                  const boardingVendor = mapProviderToBoardingListVendor(provider, planRows);
+                  const expanded = selectedVendorId === vendorKey;
+                  const minP = minPriceForVendor(boardingVendor);
+                  return (
+                    <BoardingVendorExpandableCard
+                      key={provider.providerId}
+                      v={boardingVendor}
+                      serviceSlug="all"
+                      planBadgeLabel="Vet"
+                      showPriceDisclaimer
+                      expanded={expanded}
+                      fetchingPlansFor={fetchingPlansFor}
+                      minPrice={minP}
+                      chevronProfileAriaLabel="View provider profile"
+                      onToggleHeader={() => toggleVetVendor(vendorKey)}
+                      onViewServices={(e) => {
+                        e.stopPropagation();
+                        setSelectedVendorId(vendorKey);
+                      }}
+                      onDetails={openProviderProfileByVendorId}
+                      onBookPlan={handleVetBookPlan}
+                      onOpenCenterDetails={openProviderProfileByVendorId}
+                      customerId={phone}
+                      serviceCategory="vet"
+                    />
+                  );
+                }
+                return (
+                  <ProviderCard
+                    key={provider.providerId}
+                    provider={provider}
+                    serviceStyle={serviceStyle}
+                    showPriceDisclaimer={false}
+                    isPreviousProvider={previousProviderIds.some(
+                      (id) => id === (provider.vendorId || provider.providerId)
+                    )}
+                    onClick={() => onSelectProvider(provider)}
+                  />
+                );
+              })}
               <DiscoveryVendorFeedSentinel
                 hasMore={hasMore}
                 loading={loading}

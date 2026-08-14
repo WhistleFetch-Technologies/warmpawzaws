@@ -8,7 +8,8 @@ export const STOREFRONT_PLP_CARD_SELECT = `
   p.stock,
   p.vendor_id, p.rating, p.review_count, p.is_active,
   p.compare_at_price, p.specifications, p.metadata, p.weight,
-  p.subcategory, p.created_at, p.is_featured
+  p.subcategory, p.created_at, p.is_featured,
+  p.listing_ownership
 `;
 
 /** Full row + vendor fields for legacy clients (default). */

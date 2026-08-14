@@ -38,8 +38,13 @@ import {
   computeWalletBookingSplit,
   resolveLockedBookingGrossFromNotes,
 } from '../utils/booking-financial-gross';
-import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
+import { splitGstAmount } from '../utils/gst-split';
 import { scheduleBookingStartOtpIfNeeded } from '../utils/booking-start-otp';
+import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
+import {
+  finalizeCapturedPayment,
+  recordRazorpayWebhookEvent,
+} from '../utils/payments/finalize-captured-payment';
 
 // Type-only helper (no runtime emit)
 type BookingStatusChange = { bookingId: string; from: string | null; to: string | null };
@@ -503,6 +508,18 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           paymentData.completed_at = new Date().toISOString();
         }
 
+        if (gstAmount > 0.009 && cgstAmount + sgstAmount + igstAmount <= 0.009) {
+          const custState = customerLocation?.state;
+          const vendState = vendorLocation?.state;
+          const isInterState =
+            Boolean(custState && vendState) &&
+            String(custState).toLowerCase() !== String(vendState).toLowerCase();
+          const split = splitGstAmount(gstAmount, isInterState);
+          cgstAmount = split.cgst;
+          sgstAmount = split.sgst;
+          igstAmount = split.igst;
+        }
+
         // Add tax fields if calculated
         if (gstAmount > 0) {
           paymentData.gst_amount = gstAmount;
@@ -855,7 +872,7 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
         // Use transaction for atomicity
         await withTransaction(async (client) => {
           const { rows: payments } = await client.query(
-            `SELECT * FROM payments 
+            `SELECT * FROM payments
              WHERE razorpay_payment_id = $1 OR razorpay_order_id = $2
              FOR UPDATE`,
             [payment_id, order_id]
@@ -868,51 +885,8 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
 
           const payment = payments[0];
           const oldStatus = payment.payment_status;
+          webhookBookingId = payment.booking_id ? String(payment.booking_id) : null;
 
-          // Update payment status
-          await client.query(
-            `UPDATE payments SET 
-               payment_status = 'completed',
-               razorpay_payment_id = $1,
-               razorpay_order_id = $2,
-               completed_at = NOW(),
-               updated_at = NOW()
-             WHERE id = $3`,
-            [payment_id, order_id, payment.id]
-          );
-
-          // Update booking payment status
-          if (payment.booking_id) {
-            webhookBookingId = String(payment.booking_id);
-            const { rows: bookingRows } = await client.query(
-              `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
-              [payment.booking_id]
-            );
-            if (bookingRows.length > 0) {
-              const booking = bookingRows[0];
-              const previousStatus = booking.status || null;
-              const shouldNotify = booking.payment_status !== 'paid' || previousStatus === 'pending_payment';
-              const nextStatus = previousStatus === 'pending_payment' ? 'confirmed' : previousStatus;
-
-              await client.query(
-                `UPDATE bookings SET 
-                   payment_status = 'paid', 
-                   status = $2,
-                   updated_at = NOW() 
-                 WHERE id = $1`,
-                [booking.id, nextStatus]
-              );
-
-              if (shouldNotify) {
-                bookingToNotify = booking.id;
-              }
-              if (previousStatus !== nextStatus) {
-                bookingStatusChange = { bookingId: booking.id, from: previousStatus, to: nextStatus };
-              }
-            }
-          }
-
-          // Log status change
           await logPaymentStatusChange(
             payment.id,
             oldStatus,
@@ -922,6 +896,21 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
             { razorpay_payment_id: payment_id, amount: paymentEntity?.amount }
           );
         });
+
+        const fin = await finalizeCapturedPayment({
+          source: 'webhook',
+          razorpayOrderId: order_id,
+          razorpayPaymentId: payment_id,
+        });
+        await recordRazorpayWebhookEvent(String(webhookEventId), String(event), fin.paymentId);
+        if (fin.outcome === 'fulfilled' && fin.entityType === 'booking' && fin.entityId) {
+          bookingStatusChange = {
+            bookingId: String(fin.entityId),
+            from: fin.previousEntityStatus || null,
+            to: 'confirmed',
+          };
+        }
+        bookingToNotify = null;
 
         // Log booking status change (if any)
         if (bookingStatusChange) {

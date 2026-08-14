@@ -17,6 +17,7 @@ export async function executecustomerCustomeridPetsPost(c: Context) {
             customerId: data.customerId ?? c.req.param('customerId'),
             petId: data.petId ?? data.pet?.id,
             petCreated: data.petCreated,
+            petProfileCompleted: data.petProfileCompleted,
             vaccinationUpdated: data.vaccinationUpdated,
             loyaltyEligibleCreates: data.loyaltyEligibleCreates,
             loyaltyEligibleVaccinationUpdates: data.loyaltyEligibleVaccinationUpdates,

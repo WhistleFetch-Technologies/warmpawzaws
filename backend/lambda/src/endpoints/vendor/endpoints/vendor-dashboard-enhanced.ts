@@ -31,6 +31,10 @@ import {
   sumTransferredDeliverySettlementNetPayout,
 } from '../../../utils/meal-order-settlement';
 import {
+  firstSessionPackageBreakdown,
+  vendorEarningsAmountsForDisplay,
+} from '../../../utils/package-session-earnings-allocation';
+import {
   getTemporaryVendorSuppressionParams,
   shouldHideSettlementRowFromAdminUi,
   sqlAndExcludeSuppressedBookingRows,
@@ -806,9 +810,44 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
            b.booking_date,
            b.service_id,
            COALESCE(sc.display_name, sc.service_name, s.name, vs.service_name, 'Service') as service_name,
-           c.full_name as customer_name`;
+           c.full_name as customer_name,
+           COALESCE(b.is_package_session, false) AS is_package_session,
+           COALESCE(pp.unlimited_usage, false) AS unlimited_usage,
+           COALESCE(
+             NULLIF(parent_b.total_amount, 0),
+             NULLIF(parent_b.base_price, 0),
+             NULLIF(pp.amount, 0),
+             NULLIF(pp.package_price, 0),
+             0
+           ) AS parent_service,
+           GREATEST(
+             COALESCE(
+               NULLIF(pp.total_sessions, 0),
+               NULLIF((
+                 SELECT COUNT(*)::int FROM package_scheduled_sessions pss
+                 WHERE pss.package_purchase_id = b.package_purchase_id
+               ), 0),
+               1
+             ),
+             1
+           ) AS session_n,
+           CASE
+             WHEN COALESCE(b.is_package_session, false) AND b.package_purchase_id IS NOT NULL THEN (
+               SELECT COUNT(*)::int
+               FROM vendor_earnings ve2
+               INNER JOIN bookings b2 ON b2.id = ve2.booking_id
+               WHERE b2.package_purchase_id = b.package_purchase_id
+                 AND COALESCE(b2.is_package_session, false) = true
+                 AND ve2.status IS DISTINCT FROM 'cancelled'
+                 AND (COALESCE(ve2.realized_at, ve2.created_at), ve2.booking_id)
+                   <= (COALESCE(ve.realized_at, ve.created_at), ve.booking_id)
+             )
+             ELSE NULL
+           END AS session_seq`;
       const earningsBookingJoins = `
            LEFT JOIN bookings b ON ve.booking_id = b.id
+           LEFT JOIN bookings parent_b ON parent_b.id = b.parent_booking_id
+           LEFT JOIN package_purchases pp ON pp.id = b.package_purchase_id
            LEFT JOIN service_catalog sc ON b.service_id = sc.id
            LEFT JOIN services s ON b.service_id = s.id
            LEFT JOIN vendor_services vs ON b.service_id = vs.id
@@ -888,9 +927,23 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       };
 
       earnings.forEach((e: any) => {
-        const amount = safeMoneyAmount(e.amount);
-        const commission = safeMoneyAmount(e.commission_amount);
-        const total = safeMoneyAmount(e.total_amount);
+        const sliced = vendorEarningsAmountsForDisplay({
+          isPackageSession: e.is_package_session,
+          unlimited: e.unlimited_usage,
+          parentService: e.parent_service,
+          sessionCount: e.session_n,
+          sessionSeq: e.session_seq,
+          storedGross: e.total_amount,
+          storedCommission: e.commission_amount,
+          storedNet: e.amount,
+          commissionRate: e.commission_rate,
+        });
+        e.amount = sliced.amount;
+        e.commission_amount = sliced.commission;
+        e.total_amount = sliced.totalAmount;
+        const amount = sliced.amount;
+        const commission = sliced.commission;
+        const total = sliced.totalAmount;
 
         summary.totalEarnings += amount;
         summary.totalCommission += commission;
@@ -972,7 +1025,26 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendor = vendors[0] || {};
 
       // Transform transactions (bookings + hyperlocal delivery settlements)
-      const bookingTransactions = earnings.map((e: any) => ({
+      const bookingTransactions = earnings.map((e: any) => {
+        let meta: Record<string, unknown> = {};
+        const rawMeta = e.metadata;
+        if (rawMeta && typeof rawMeta === 'object') meta = rawMeta as Record<string, unknown>;
+        else if (typeof rawMeta === 'string') {
+          try {
+            meta = JSON.parse(rawMeta) as Record<string, unknown>;
+          } catch {
+            meta = {};
+          }
+        }
+        const packageBreakdown =
+          firstSessionPackageBreakdown({
+            sessionSeq: e.session_seq,
+            parentService: e.parent_service,
+            sessionCount: e.session_n,
+            commissionRate: e.commission_rate,
+            thisSession: safeMoneyAmount(e.amount),
+          }) || (meta.packageBreakdown ?? meta.package_breakdown) || null;
+        return {
         id: e.id,
         bookingId: e.booking_id,
         bookingDate: e.booking_date,
@@ -986,7 +1058,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         realizedAt: e.realized_at,
         paidOutAt: e.paid_out_at,
         settlementId: e.settlement_id,
-      }));
+        packageBreakdown,
+      };
+      });
 
       const settlementTransactions = settlementRows.map((ds: any) => ({
         id: ds.id,
