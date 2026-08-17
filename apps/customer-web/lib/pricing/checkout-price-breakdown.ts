@@ -122,17 +122,10 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
     });
   }
 
+  // Component-only GST lines. GST total is the sum of CGST+SGST+IGST — never a sibling charge.
   const showIgst =
     taxBreakdown.isInterState ||
     (taxBreakdown.igst > 0.009 && taxBreakdown.cgst + taxBreakdown.sgst <= 0.009);
-  if (taxBreakdown.totalTax > 0.009) {
-    lines.push({
-      kind: 'tax',
-      label: `GST (${taxBreakdown.taxRate}%)`,
-      amount: taxBreakdown.totalTax,
-      emphasis: 'muted',
-    });
-  }
   if (showIgst) {
     if (taxBreakdown.igst > 0.009) {
       lines.push({
@@ -143,7 +136,7 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
       });
     }
   } else {
-    if (taxBreakdown.cgst > 0) {
+    if (taxBreakdown.cgst > 0.009) {
       lines.push({
         kind: 'tax',
         label: `CGST (${taxBreakdown.taxRate / 2}%)`,
@@ -151,7 +144,7 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
         emphasis: 'muted',
       });
     }
-    if (taxBreakdown.sgst > 0) {
+    if (taxBreakdown.sgst > 0.009) {
       lines.push({
         kind: 'tax',
         label: `SGST (${taxBreakdown.taxRate / 2}%)`,
@@ -159,6 +152,15 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
         emphasis: 'muted',
       });
     }
+  }
+  const hasComponentTax = lines.some((l) => l.kind === 'tax');
+  if (!hasComponentTax && taxBreakdown.totalTax > 0.009) {
+    lines.push({
+      kind: 'tax',
+      label: `GST (${taxBreakdown.taxRate}%)`,
+      amount: taxBreakdown.totalTax,
+      emphasis: 'muted',
+    });
   }
 
   if (platformFees.platformFee > 0) {

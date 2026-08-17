@@ -4865,12 +4865,6 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (!catalogCategoryId || String(catalogCategoryId).trim() === '') {
         return c.json({ success: false, error: 'Catalog category is required' }, 400);
       }
-      if (
-        !isMealPlanGstScope(gstApplicationScope) &&
-        (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0)
-      ) {
-        return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
-      }
       const rate =
         defaultGSTRate !== undefined && defaultGSTRate !== null
           ? parseFloat(String(defaultGSTRate))
@@ -5054,11 +5048,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         );
         const effScope = String(scMeta.rows?.[0]?.gs || 'service_booking').trim();
         if (roleIdsRaw.length === 0) {
-          if (effScope === 'meal_plan_food' || effScope === 'meal_plan_delivery') {
-            await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
-          } else {
-            return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
-          }
+          await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
         } else {
           let ccid = String(catalogCategoryId || '').trim();
           if (!ccid) {

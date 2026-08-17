@@ -1,7 +1,8 @@
 /**
- * Resolve GST % from Admin Catalogue category + vendor role (GST Configuration).
- * Used for service checkout — not service_catalog.tax_category_id / hsn_code_id.
- * Missing category+role config must not silently default to 18%.
+ * Resolve GST % from Admin Catalogue category → Tax Category (GST Configuration).
+ * Used for service/package checkout — not service_catalog.tax_category_id / hsn_code_id.
+ * Vendor role is optional preference when multiple cards exist; it must not block a
+ * valid category-level card. Missing category or missing tax card must not silent-18%.
  */
 
 import { query } from '../../database/rds-connection';
@@ -37,9 +38,8 @@ export function missingServiceGstConfigError(params: {
   vendorRoleId?: string | null;
 }): GstConfigurationError {
   const category = params.catalogCategoryId || '(unknown category)';
-  const role = params.vendorRoleId || '(unknown role)';
   return new GstConfigurationError(
-    `Missing GST configuration for catalogue category ${category} and vendor role ${role}. Configure Admin Finance → GST Configuration → Tax Categories (catalogue category + applicable role).`,
+    `Missing GST configuration for catalogue category ${category}. Configure Admin Finance → GST Configuration → Tax Categories (catalogue category + GST rate).`,
     params,
   );
 }
@@ -95,7 +95,8 @@ function emptyResolution(
 }
 
 /**
- * Prefer tax row where junction includes vendor role; else row with no junction rows (wildcard).
+ * Category-authoritative GST: any active Admin tax card for the catalogue + scope is enough.
+ * Vendor role is a preference when several cards exist; a missing role mapping does not fail.
  * @param applicationScope service_booking (default) = existing GST rows; meal_plan_food = meal-only rows.
  */
 export async function resolveGstRateForCatalogAndRole(
@@ -144,30 +145,24 @@ export async function resolveGstRateForCatalogAndRole(
 
   for (const raw of list) {
     const jcnt = Number(raw.jcnt) || 0;
+    let score = 0;
     if (jcnt === 0) {
-      candidates.push({ row: raw, score: 1 });
-      continue;
-    }
-    if (role) {
+      score = 1;
+    } else if (role) {
       const hit = await query(
         `SELECT 1 FROM tax_category_roles WHERE tax_category_id = $1::uuid AND role_id::text = $2 LIMIT 1`,
         [String(raw.id), role]
       );
       const rows = (hit as { rows?: unknown[] })?.rows ?? [];
-      if (rows.length > 0) candidates.push({ row: raw, score: 2 });
+      if (rows.length > 0) score = 2;
     }
+    candidates.push({ row: raw, score });
   }
 
-  if (candidates.length === 0) {
-    return emptyResolution(
-      cat,
-      role,
-      scope,
-      'Admin tax category exists for this catalogue category but not for the vendor role',
-    );
-  }
-
-  candidates.sort((a, b) => b.score - a.score);
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return String(a.row.id ?? '').localeCompare(String(b.row.id ?? ''));
+  });
   const best = candidates[0].row;
   const rate = pickTaxCategoryConfiguredRate(best);
   if (rate == null) {

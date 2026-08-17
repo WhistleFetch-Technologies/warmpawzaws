@@ -91,26 +91,57 @@ describe('Admin tax category is authoritative GST rate', () => {
     expect(result.isInterstate).toBe(true);
   });
 
-  test('missing Admin category+role config does not invent 18%', async () => {
+  test('grooming + vet_clinic uses the category Admin rate (role does not block)', async () => {
+    mockedResolve.mockResolvedValue({
+      found: true,
+      rate: 18,
+      taxCategoryId: 'tc-grooming',
+      catalogCategoryId: '4fbdc899-e4da-4219-952f-6d038a48981d',
+      vendorRoleId: 'e0473f0e-bc76-47fc-8378-3f0295fe6447',
+      applicationScope: 'service_booking',
+    });
+
+    const result = await taxCalculationService.calculateTax({
+      items: [
+        {
+          id: 'clinic-grooming',
+          type: 'service',
+          amount: 1100,
+          catalogCategoryId: '4fbdc899-e4da-4219-952f-6d038a48981d',
+          roleId: 'e0473f0e-bc76-47fc-8378-3f0295fe6447',
+        },
+      ],
+      customerLocation: { state: 'Karnataka' },
+      vendorLocation: { state: 'Karnataka' },
+    });
+
+    expect(result.items[0].gstRate).toBe(18);
+    expect(result.totalTax).toBeCloseTo(198, 2);
+    expect(result.totalCGST).toBeCloseTo(99, 2);
+    expect(result.totalSGST).toBeCloseTo(99, 2);
+    expect(result.totalIGST).toBe(0);
+  });
+
+  test('missing Admin tax category does not invent 18%', async () => {
     mockedResolve.mockResolvedValue({
       found: false,
       rate: 0,
       taxCategoryId: null,
-      catalogCategoryId: 'cat-grooming',
-      vendorRoleId: 'role-groomer-solo',
+      catalogCategoryId: 'cat-physio',
+      vendorRoleId: 'role-vet-clinic',
       applicationScope: 'service_booking',
-      reason: 'Admin tax category exists for this catalogue category but not for the vendor role',
+      reason: 'No active Admin tax category for this catalogue category and GST scope',
     });
 
     await expect(
       taxCalculationService.calculateTax({
         items: [
           {
-            id: 'premium-grooming',
+            id: 'physio',
             type: 'service',
             amount: 2000,
-            catalogCategoryId: 'cat-grooming',
-            roleId: 'role-groomer-solo',
+            catalogCategoryId: 'cat-physio',
+            roleId: 'role-vet-clinic',
           },
         ],
         customerLocation: { state: 'Karnataka' },
