@@ -58,8 +58,15 @@ export async function executecustomerProfilePost(c: Context) {
         profilePayload.floor =
           typeof rawProfilePayload.floor === 'string' ? rawProfilePayload.floor : String(rawProfilePayload.floor);
       }
-      if (rawProfilePayload.photo && rawProfilePayload.photo.startsWith('http')) {
-        profilePayload.photo = rawProfilePayload.photo;
+      const photoRaw =
+        typeof rawProfilePayload.photo === 'string' ? rawProfilePayload.photo.trim() : '';
+      if (
+        photoRaw &&
+        (photoRaw.startsWith('http://') ||
+          photoRaw.startsWith('https://') ||
+          photoRaw.startsWith('media/'))
+      ) {
+        profilePayload.photo = photoRaw;
       }
       if (rawProfilePayload.latitude !== undefined) {
         profilePayload.latitude = rawProfilePayload.latitude;

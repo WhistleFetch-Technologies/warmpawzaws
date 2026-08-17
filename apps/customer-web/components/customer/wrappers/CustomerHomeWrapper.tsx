@@ -24,6 +24,7 @@ import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { apiClient } from '@/lib/api-client';
 import { readCachedPetsFromStorage, readCachedProfileName } from '../home/hooks/useHomePageData';
+import { pickCustomerProfilePhoto, CUSTOMER_PROFILE_UPDATED_EVENT } from '@/lib/customer-profile-photo';
 import {
   ensureCustomerProfileAndPets,
   getHomeBootstrapReady,
@@ -1210,13 +1211,7 @@ export function CustomerHomeWrapper({
               readCachedProfileName(phone).name
           )
         );
-        const photo = String(
-          profile.profilePhoto ||
-            profile.profile_photo_url ||
-            profile.profile_image_url ||
-            profile.photo ||
-            ''
-        );
+        const photo = pickCustomerProfilePhoto(profile as Record<string, unknown>);
         if (photo) setUserProfilePhoto(photo);
       } else {
         const cachedProfile = readCachedProfileName(phone);
@@ -1227,12 +1222,16 @@ export function CustomerHomeWrapper({
 
     rehydrateFromCache();
 
+    const onProfileUpdated = () => rehydrateFromCache();
+    window.addEventListener(CUSTOMER_PROFILE_UPDATED_EVENT, onProfileUpdated);
+
     if (currentScreen === 'home') {
       void getHomeBootstrapReady().then(rehydrateFromCache);
-      return;
+      return () => window.removeEventListener(CUSTOMER_PROFILE_UPDATED_EVENT, onProfileUpdated);
     }
 
     void ensureCustomerProfileAndPets(phone).refreshPromise.then(rehydrateFromCache);
+    return () => window.removeEventListener(CUSTOMER_PROFILE_UPDATED_EVENT, onProfileUpdated);
   }, [phone, currentScreen]);
 
   const syncTeleConsultUrl = useCallback(
@@ -3379,7 +3378,8 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'vet') {
     return renderScreenWithLayout('vet',
       <VetServiceRouter 
-        phone={phone} 
+        phone={phone}
+        isGuest={isGuest}
         onBack={handleBack} 
         onNavigate={(screen, data) => {
           if (screen === 'problem_grid') {
@@ -4714,7 +4714,8 @@ export function CustomerHomeWrapper({
         accountSidebar={accountSidebarOverlay}
       >
         <NutritionistServicesLanding 
-          phone={phone} 
+          phone={phone}
+          isGuest={isGuest}
           onBack={handleBack} 
           onNavigate={(screen, data) => {
             if (screen === 'nutrition-meal-plans') {

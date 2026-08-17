@@ -21,6 +21,7 @@ import {
   getStoredCustomerJwtForSession,
   setNeedsPasswordSetupAfterOtp,
   clearNeedsPasswordSetup,
+  needsPasswordSetupAfterOtp,
 } from '@/lib/session-utils';
 import { Eye, EyeOff } from 'lucide-react';
 import { CachedImage } from '@/components/shared/CachedImage';
@@ -35,9 +36,10 @@ import {
   readRetryAfterSecondsFromError,
   readRetryAfterSecondsFromSuccess,
 } from '@/lib/forgot-password-cooldown';
-import { resolveSafeAuthReturnPath } from '@/lib/auth-redirect';
+import { resolveAuthModeFromParams, resolveSafeAuthReturnPath } from '@/lib/auth-redirect';
 import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
 import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -110,6 +112,8 @@ function AuthPageContent() {
   // This avoids hydration issues and works even if JavaScript loads slowly
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
   const [guestBrowseEnabled, setGuestBrowseEnabled] = useState(false);
+  /** Defer URL-driven login vs signup until after mount — avoids SSR/client HTML mismatch. */
+  const [authUiReady, setAuthUiReady] = useState(false);
 
   useEffect(() => {
     // Get redirect + referral (?ref=) from URL after mount (client-side only)
@@ -122,12 +126,21 @@ function AuthPageContent() {
       if (safeReturn) {
         setRedirectAfterLogin(safeReturn);
       }
-      // Guest-first: bare /auth (no return URL, no force login) → home. Use ?login=1 to stay.
+      // Guest-first: bare /auth (no return URL, no force login/signup) → home. Use ?login=1 or ?signup=1 to stay.
       const forceLogin = params.get('login') === '1' || params.get('forceLogin') === '1';
-      if (guestOn && !safeReturn && !forceLogin && !params.get('ref') && !params.get('referral')) {
+      const forceSignup = params.get('signup') === '1';
+      if (
+        guestOn &&
+        !safeReturn &&
+        !forceLogin &&
+        !forceSignup &&
+        !params.get('ref') &&
+        !params.get('referral')
+      ) {
         router.replace('/');
         return;
       }
+      setAuthMode(resolveAuthModeFromParams(params));
       const refCode = params.get('ref') || params.get('referral') || params.get('referralCode');
       if (refCode && refCode.trim()) {
         const c = refCode.trim().toUpperCase();
@@ -135,8 +148,8 @@ function AuthPageContent() {
         setShowReferralModal(true);
         setReferralApplied(true);
         localStorage.setItem('pendingReferralCode', c);
-        setAuthMode('signup');
       }
+      setAuthUiReady(true);
     }
   }, [router]);
   const [phone, setPhone] = useState('');
@@ -155,7 +168,7 @@ function AuthPageContent() {
   const [legalDialogOpen, setLegalDialogOpen] = useState(false);
   const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
   const [helpChatOpen, setHelpChatOpen] = useState(false);
-  /** Default: password login. OTP signup opens from "New user?" or referral links. */
+  /** URL-driven after mount: signup=1 / redirect / ref → OTP; login=1 → password. */
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -222,6 +235,12 @@ function AuthPageContent() {
     const { isTokenExpired } = require('@/lib/session-utils');
 
     if (!storedPhone || !cognitoAuth.isAuthenticated()) {
+      return;
+    }
+
+    const authParams =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    if (authParams?.get('fromSetPassword') === '1' || needsPasswordSetupAfterOtp()) {
       return;
     }
 
@@ -830,19 +849,14 @@ function AuthPageContent() {
             localStorage.getItem('onboarding_completed') === 'true';
           const onboardingDone =
             localStorage.getItem('customerOnboardingComplete') === 'true';
-          const goProfileFirst = !profileCompleted && !onboardingDone;
-          if (goProfileFirst) {
-            console.log('🚀 [Auth] Password required — profile first, then set-password');
-            router.push('/profile');
-          } else {
-            const afterPwd =
-              localStorage.getItem('onboarding_completed') === 'true' ||
-              localStorage.getItem('customerOnboardingComplete') === 'true'
+          const afterPwd =
+            !profileCompleted && !onboardingDone
+              ? '/profile'
+              : onboardingDone
                 ? '/'
                 : '/onboarding';
-            console.log('🚀 [Auth] Password required — set-password then', afterPwd);
-            router.push('/auth/set-password?next=' + encodeURIComponent(afterPwd));
-          }
+          console.log('🚀 [Auth] Password required — set-password then', afterPwd);
+          router.push('/auth/set-password?next=' + encodeURIComponent(afterPwd));
         } else {
           clearNeedsPasswordSetup();
           console.log('🚀 [Auth] Navigating to:', redirectPath);
@@ -858,6 +872,10 @@ function AuthPageContent() {
       setLoading(false);
     }
   };
+
+  if (!authUiReady) {
+    return <AuthGateLoadingShell />;
+  }
 
   // OTP VERIFICATION SCREEN
   if (otpSent) {

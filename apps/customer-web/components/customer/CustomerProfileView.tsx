@@ -17,6 +17,10 @@ import {
 } from 'lucide-react';
 import { apiClient, customerApi, ordersApi } from '@/lib/api-client';
 import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
+import {
+  notifyCustomerProfileUpdated,
+  photoValueFromUploadResult,
+} from '@/lib/customer-profile-photo';
 import { toast } from 'sonner';
 import { signOutCustomer } from '@/lib/session-utils';
 import { validateEmail } from '@/lib/validation';
@@ -286,10 +290,32 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
         verifyUpload: true,
       });
 
-      if (result.success && result.publicUrl) {
-        setUploadedPhotoUrl(result.publicUrl);
-        setPhotoPreview(result.publicUrl);
-        setProfile({ ...profile, photo: result.publicUrl });
+      if (result.success && (result.publicUrl || result.imageKey)) {
+        const photoPersist = photoValueFromUploadResult(result);
+        const previewUrl = result.url || result.publicUrl || photoPersist;
+        setUploadedPhotoUrl(photoPersist);
+        setPhotoPreview(previewUrl);
+        setProfile({ ...profile, photo: photoPersist });
+
+        try {
+          await apiClient.post('/customer/profile', {
+            phone,
+            profile: { photo: photoPersist },
+          });
+          patchCustomerProfileKeysInLocalStorage({
+            pincode: profile.pincode,
+            address: profile.address,
+            city: profile.city,
+            state: profile.state,
+            photo: photoPersist,
+            houseNo: profile.houseNo,
+            floor: profile.floor,
+          });
+          notifyCustomerProfileUpdated();
+        } catch (persistErr) {
+          console.warn('[Profile] Photo uploaded but profile save failed — save profile to keep photo:', persistErr);
+        }
+
         toast.success('Photo uploaded successfully!');
       } else {
         toast.error(result.error || 'Failed to upload photo. Please try again.');
@@ -367,6 +393,7 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
       setEditMode(false);
       setUploadedPhotoUrl('');
       toast.success('Profile updated successfully!');
+      notifyCustomerProfileUpdated();
       await fetchAndApplyProfile(false);
       loadStatCounts();
     } catch (error) {

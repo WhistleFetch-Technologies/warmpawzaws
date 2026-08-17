@@ -3,6 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { PharmacyOrderFlow } from '../../../../components/customer/specialized/PharmacyOrderFlow';
+import { buildAuthSignupUrl } from '@/lib/auth-redirect';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 function PrescriptionOrderPageContent() {
@@ -51,7 +52,7 @@ function PrescriptionOrderPageContent() {
             You can also use the app and go to My Bookings → select booking → Prescriptions & documents → Order Medicine.
           </p>
           <button
-            onClick={() => router.push(`/auth?redirect=/prescriptions/${prescriptionId}/order`)}
+            onClick={() => router.push(buildAuthSignupUrl(`/prescriptions/${prescriptionId}/order`))}
             className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
           >
             Log In

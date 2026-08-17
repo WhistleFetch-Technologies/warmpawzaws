@@ -1,6 +1,7 @@
 /**
  * Map GET /customer/profile (and variants) into stable form fields for account UIs.
  */
+import { pickCustomerProfilePhoto } from '@/lib/customer-profile-photo';
 export type NormalizedCustomerProfileFields = {
   firstName: string;
   lastName: string;
@@ -59,7 +60,7 @@ export function normalizeCustomerProfileFields(
     pincode: pincode ? String(pincode) : '',
     city: p.city || (typeof p.address === 'object' ? p.address?.city : undefined),
     state: p.state || (typeof p.address === 'object' ? p.address?.state : undefined),
-    photo: p.photo || p.profile_photo_url || '',
+    photo: pickCustomerProfilePhoto(p as Record<string, unknown>),
   };
 }
 
@@ -96,7 +97,11 @@ export function patchCustomerProfileKeysInLocalStorage(patch: {
       d.address = patch.address;
       if (patch.city !== undefined) d.city = patch.city;
       if (patch.state !== undefined) d.state = patch.state;
-      if (patch.photo !== undefined) d.photo = patch.photo;
+      if (patch.photo !== undefined) {
+        d.photo = patch.photo;
+        d.profile_photo_url = patch.photo;
+        d.profilePhoto = patch.photo;
+      }
       if (patch.houseNo !== undefined) { d.houseNo = patch.houseNo; d.house_no = patch.houseNo; }
       if (patch.floor !== undefined) d.floor = patch.floor;
       localStorage.setItem(key, JSON.stringify(d));

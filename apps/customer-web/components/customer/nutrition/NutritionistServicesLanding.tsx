@@ -8,7 +8,6 @@ import {
   Calendar,
   Heart,
   ChevronRight,
-  AlertCircle,
   Dog,
   Cat,
   PawPrint,
@@ -42,6 +41,12 @@ import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, 
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
+import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { buildGuestAuthUrlForBooking } from '@/lib/guest-booking-intent';
+
+function hasCustomerPhone(phone: string): boolean {
+  return (phone?.replace(/\D/g, '') ?? '').length >= 10;
+}
 
 const NUTRITION_HEADER_ICON =
   'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
@@ -69,7 +74,7 @@ function NutritionHeaderBackground() {
  * ✅ FIX: Added pet context validation to prevent crashes (NUT-CUST-001)
  * Nutrition services require a pet to be selected before booking
  */
-export function NutritionistServicesLanding({ phone, onBack, onNavigate }: NutritionistServicesLandingProps) {
+export function NutritionistServicesLanding({ phone, isGuest = false, onBack, onNavigate }: NutritionistServicesLandingProps) {
   const mealPlansLive = isCustomerMealPlansEnabled();
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('nutrition');
   const wapptTile = buildWapptHubTile('nutrition');
@@ -81,7 +86,6 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   const [stats, setStats] = useState<any>(null);
   const [pets, setPets] = useState<any[]>([]);
   const [hasPets, setHasPets] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   //---------------------------useEffect----------------------------------//
   useEffect(() => {
@@ -91,14 +95,19 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
 
   //---------------------------fucntions----------------------------------//
   const loadPets = async () => {
+    if (!hasCustomerPhone(phone)) {
+      setPets([]);
+      setHasPets(false);
+      return;
+    }
     try {
       const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
       const petsList = petsData?.pets || [];
       setPets(petsList);
       setHasPets(petsList.length > 0);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading pets:', err);
-      setError('Failed to load pets. Please try again.');
+      setPets([]);
       setHasPets(false);
     }
   };
@@ -186,8 +195,16 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   };
 
   const handleNutritionistSelect = (nutritionist: any) => {
-    // ✅ FIX: Validate pet context before navigation
     if (!hasPets || pets.length === 0) {
+      if (isGuest || !hasCustomerPhone(phone)) {
+        emitGuestAuthAnalytics('login_prompt_shown');
+        emitGuestAuthAnalytics('login_started');
+        window.location.href = buildGuestAuthUrlForBooking({
+          returnPath: '/',
+          resumeScreen: 'nutritionist',
+        });
+        return;
+      }
       toast.error('Please add a pet first before booking nutrition services');
       onNavigate?.('pets', { action: 'add' });
       return;
@@ -232,33 +249,6 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-3"></div>
           <p className="text-gray-600">Loading nutrition services...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 max-w-md mx-auto pb-24">
-        <ServiceDashboardHeader
-          serviceName="Pet Nutrition"
-          serviceSubtitle="Expert nutrition consultation"
-          serviceIcon={Apple}
-          iconColor="text-white"
-          stats={[]}
-          onBack={onBack}
-          showBackButton={true}
-          headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
-        />
-        <div className="bg-white px-6 pt-8 min-h-[calc(100vh-180px)]">
-          <Card className="p-8 text-center">
-            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Unable to Load</h3>
-            <p className="text-gray-600 mb-4">{error}</p>
-            <Button onClick={loadPets} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
-              Try Again
-            </Button>
-          </Card>
         </div>
       </div>
     );

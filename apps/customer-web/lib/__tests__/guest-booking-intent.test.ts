@@ -39,7 +39,7 @@ describe('guest-booking-intent', () => {
       resumeScreen: 'vet-booking',
     });
     const url = buildGuestAuthUrlForBooking({ returnPath: '/' });
-    expect(url).toContain('/auth?redirect=');
+    expect(url).toContain('/auth?signup=1&redirect=');
     const intent = readGuestBookingIntent();
     expect(intent?.vendorId).toBe('v2');
     expect(intent?.time).toBe('09:00');
@@ -50,6 +50,6 @@ describe('guest-booking-intent', () => {
     const url = buildGuestAuthUrlForBooking({
       returnPath: 'https://evil.example',
     });
-    expect(url).toBe('/auth?redirect=%2F');
+    expect(url).toBe('/auth?signup=1&redirect=%2F');
   });
 });

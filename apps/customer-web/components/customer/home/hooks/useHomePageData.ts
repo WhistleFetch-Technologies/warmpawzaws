@@ -20,6 +20,7 @@ import {
   writeCachedPetsForPhone,
 } from '@/lib/customer-pets-cache';
 import { getResolvedCustomerId, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import { pickCustomerProfilePhoto, CUSTOMER_PROFILE_UPDATED_EVENT } from '@/lib/customer-profile-photo';
 import { HOME_POLL_PROFILE, withPollJitter } from '@/lib/home-poll-profile';
 
 export type { HomeCarouselBanner };
@@ -37,9 +38,7 @@ export function readCachedProfileName(phone: string): { name: string; photo?: st
     const profile = JSON.parse(raw);
     return {
       name: String(profile.firstName || profile.name || 'User'),
-      photo: String(
-        profile.photo || profile.profile_photo_url || profile.profilePhoto || profile.profile_image_url || ''
-      ),
+      photo: pickCustomerProfilePhoto(profile as Record<string, unknown>),
     };
   } catch {
     return { name: 'User' };
@@ -217,7 +216,7 @@ export function useHomePageData({
             phone,
             journeyType: String(profile.journeyType || ''),
           }));
-          setUserProfilePhoto(String(profile.photo || profile.profile_photo_url || ''));
+          setUserProfilePhoto(pickCustomerProfilePhoto(profile));
         }
       } else if (profileResult.status === 'rejected') {
         const cachedProfile = readCachedProfileName(phone);
@@ -399,6 +398,17 @@ export function useHomePageData({
       setServicesLoading(false);
     }
   }, [phone]);
+
+  useEffect(() => {
+    if (!phone) return;
+    const onProfileUpdated = () => {
+      const cached = readCachedProfileName(phone);
+      if (cached.photo) setUserProfilePhoto(cached.photo);
+      void loadUserData();
+    };
+    window.addEventListener(CUSTOMER_PROFILE_UPDATED_EVENT, onProfileUpdated);
+    return () => window.removeEventListener(CUSTOMER_PROFILE_UPDATED_EVENT, onProfileUpdated);
+  }, [phone, loadUserData]);
 
   useEffect(() => {
     if (!phone) return;

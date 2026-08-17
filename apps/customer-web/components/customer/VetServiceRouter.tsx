@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, type MouseEvent, useCallback } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
-import { Stethoscope, Star, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
+import { Stethoscope, Star, FlaskConical, TrendingUp, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -50,12 +50,19 @@ import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buil
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
 import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
+import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { buildGuestAuthUrlForBooking } from '@/lib/guest-booking-intent';
 
 interface VetServiceRouterProps {
   phone: string;
+  isGuest?: boolean;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   data?: any;
+}
+
+function hasCustomerPhone(phone: string): boolean {
+  return (phone?.replace(/\D/g, '') ?? '').length >= 10;
 }
 
 /**
@@ -112,7 +119,7 @@ function VetHeaderBackground() {
   );
 }
 
-export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
+export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, data }: VetServiceRouterProps) {
   const wapptFeaturedEnabled = canLoadWapptSearchHub('vet');
   const { problems: bootstrapProblems } = useCategoryBootstrap({ category: 'vet', roleId: 'vet' });
   const legacyProblems = useProblemGridByRole('vet');
@@ -126,9 +133,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
   const [pets, setPets] = useState<any[]>([]);
   const [hasPets, setHasPets] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // ✅ FIX #13: Track all error states
-  
+
   // User profile data for header
   const [userName, setUserName] = useState('User');
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
@@ -161,6 +166,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   }, [phone]);
 
   const loadPreviousVet = async () => {
+    if (!hasCustomerPhone(phone)) return;
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=vet`).catch(() => null);
       if (response?.provider) {
@@ -189,6 +195,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   };
   
   const loadUserProfile = async () => {
+    if (!hasCustomerPhone(phone)) return;
     try {
       const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
       if (profileResponse?.profile || profileResponse) {
@@ -202,14 +209,19 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   };
 
   const loadPets = async () => {
+    if (!hasCustomerPhone(phone)) {
+      setPets([]);
+      setHasPets(false);
+      return;
+    }
     try {
       const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
       const petsList = petsData?.pets || [];
       setPets(petsList);
       setHasPets(petsList.length > 0);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading pets:', err);
-      setError('Failed to load pets. Please try again.');
+      setPets([]);
       setHasPets(false);
     }
   };
@@ -237,6 +249,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   }, [vetClinicCountLoading, vetClinicCountFetching, vetClinicCountError, vetClinicCount]);
 
   const loadDashboardConfig = async () => {
+    if (!hasCustomerPhone(phone)) return;
     try {
       // Get customer's role
       const profile = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null);
@@ -355,6 +368,15 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     const requiresPet = ['vet-booking', 'vet-clinic-booking'].includes(screen);
     
     if (requiresPet && (!hasPets || pets.length === 0)) {
+      if (isGuest || !hasCustomerPhone(phone)) {
+        emitGuestAuthAnalytics('login_prompt_shown');
+        emitGuestAuthAnalytics('login_started');
+        window.location.href = buildGuestAuthUrlForBooking({
+          returnPath: '/',
+          resumeScreen: 'vet',
+        });
+        return;
+      }
       console.warn('⚠️ [VetServiceRouter] Pet required but not found');
       toast.error('Please add a pet first before booking vet services');
       onNavigate('pets', { action: 'add' });
@@ -441,25 +463,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <>
-        <div className="px-6 pt-8">
-          <Card className="p-8 text-center">
-            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Unable to Load</h3>
-            <p className="text-gray-600 mb-4">{error}</p>
-            <div className="flex gap-3 justify-center">
-              <Button onClick={loadPets} variant="outline">
-                Retry Pets
-              </Button>
-            </div>
-          </Card>
-        </div>
-      </>
     );
   }
 
