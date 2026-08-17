@@ -31,6 +31,7 @@ import {
 } from '@/lib/ecommerce-category-admin';
 import { getShopCategoryStaticImageUrl } from '@/lib/shop-category-static-images';
 import { toast, Toaster } from 'sonner';
+import { SubcategoryRulesPanel } from './SubcategoryRulesPanel';
 
 interface Category extends EcommerceCategoryForm {
   createdAt?: string;
@@ -405,13 +406,13 @@ export function CategoryManagement() {
                   expanded={expandedCategories.has(category.id)}
                   children={getChildCategories(category.id)}
                   onToggleExpanded={() => toggleExpanded(category.id)}
-                  onEdit={() => {
-                    setEditingCategory(category);
+                  onEdit={(cat) => {
+                    setEditingCategory(cat);
                     setShowModal(true);
                   }}
-                  onDelete={() => deleteCategory(category.id)}
-                  onToggleEnabled={() => {
-                    void handleToggleEnabled(category.id);
+                  onDelete={(id) => deleteCategory(id)}
+                  onToggleEnabled={(id) => {
+                    void handleToggleEnabled(id);
                   }}
                 />
               ))}
@@ -467,9 +468,9 @@ function CategoryTreeItem({
   expanded: boolean;
   children: Category[];
   onToggleExpanded: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onToggleEnabled: () => void;
+  onEdit: (category: Category) => void;
+  onDelete: (categoryId: string) => void;
+  onToggleEnabled: (categoryId: string) => void;
 }) {
   return (
     <div>
@@ -509,13 +510,18 @@ function CategoryTreeItem({
             </div>
 
             <div className="flex items-center gap-2">
-              <Button onClick={onToggleEnabled} variant="ghost" size="sm">
+              <Button onClick={() => onToggleEnabled(category.id)} variant="ghost" size="sm">
                 {category.enabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
               </Button>
-              <Button onClick={onEdit} variant="ghost" size="sm">
+              <Button onClick={() => onEdit(category)} variant="ghost" size="sm">
                 <Edit2 className="w-4 h-4" />
               </Button>
-              <Button onClick={onDelete} variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
+              <Button
+                onClick={() => onDelete(category.id)}
+                variant="ghost"
+                size="sm"
+                className="text-red-600 hover:text-red-700"
+              >
                 <Trash2 className="w-4 h-4" />
               </Button>
             </div>
@@ -768,6 +774,14 @@ function CategoryEditorModal({
               shop page (e.g. "Dry Pet Food" under "Pet Food").
             </p>
           </div>
+
+          {editedCategory.parentId &&
+            !String(editedCategory.id).startsWith('cat_') && (
+              <SubcategoryRulesPanel
+                subcategoryId={editedCategory.id}
+                subcategoryName={editedCategory.name}
+              />
+            )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>

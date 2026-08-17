@@ -28,6 +28,29 @@ export async function loadActiveEcommerceCategoryMap(): Promise<Map<string, Ecom
   return map;
 }
 
+/** Parent (top-level) categories only — for vendor bulk template dropdown. */
+export async function loadActiveParentEcommerceCategoryMap(): Promise<
+  Map<string, EcommerceCategoryRow>
+> {
+  const result = await query(
+    `SELECT id, name FROM ecommerce_categories
+     WHERE is_active = true
+       AND parent_category_id IS NULL
+       AND TRIM(COALESCE(name, '')) <> ''
+     ORDER BY display_order NULLS LAST, name ASC`
+  );
+  const map = new Map<string, EcommerceCategoryRow>();
+  for (const row of result.rows as { id: string; name: string }[]) {
+    const name = String(row.name ?? '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (!map.has(key)) {
+      map.set(key, { id: String(row.id), name });
+    }
+  }
+  return map;
+}
+
 export function resolveEcommerceCategoryByName(
   map: Map<string, EcommerceCategoryRow>,
   raw: string | null | undefined

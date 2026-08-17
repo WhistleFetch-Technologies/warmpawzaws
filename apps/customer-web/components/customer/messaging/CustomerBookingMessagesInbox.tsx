@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useLockBodyScroll } from '@/hooks/useLockBodyScroll';
 import { ArrowLeft, Headphones, MessageSquare, X } from 'lucide-react';
 import { apiClient, supportCrmApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
@@ -298,14 +299,7 @@ export function CustomerBookingMessagesInbox({
     });
   }, [initialBookingThread?.bookingId, initialBookingThread?.title]);
 
-  useEffect(() => {
-    if (!isModal) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [isModal]);
+  useLockBodyScroll(isModal);
 
   const refreshInbox = useCallback(
     async (resolvedCustomerId?: string) => {
@@ -564,11 +558,12 @@ export function CustomerBookingMessagesInbox({
   const hubOverlay =
     active?.mode === 'booking' ? (
       <div
-        className={`fixed inset-0 ${hubZ} flex items-end justify-center bg-black/50 sm:items-center sm:p-4`}
+        className={`fixed inset-0 ${hubZ} flex items-end justify-center overscroll-none bg-black/50 sm:items-center sm:p-4`}
       >
         <div className="flex h-[min(92vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:rounded-2xl">
           <CommunicationHub
             mode="chat"
+            presentation="embedded"
             bookingId={active.bookingId}
             customerId={customerUuid}
             userPhone={phone}
@@ -588,7 +583,7 @@ export function CustomerBookingMessagesInbox({
   const supportOverlay =
     active?.mode === 'support' ? (
       <div
-        className={`fixed inset-0 ${supportZ} flex items-end justify-center bg-black/50 sm:items-center sm:p-4`}
+        className={`fixed inset-0 ${supportZ} flex items-end justify-center overscroll-none bg-black/50 sm:items-center sm:p-4`}
       >
         <div className="flex h-[min(92dvh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:rounded-2xl">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
@@ -621,7 +616,7 @@ export function CustomerBookingMessagesInbox({
     return (
       <>
         <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+          className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4${active ? ' pointer-events-none' : ''}`}
           role="presentation"
           onClick={(e) => {
             if (e.target === e.currentTarget) onClose?.();

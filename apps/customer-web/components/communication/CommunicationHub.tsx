@@ -60,6 +60,8 @@ interface CommunicationHubProps {
   onStartVideoCall?: (bookingId: string, meetingId?: string) => Promise<string | void>; // Rule 2: Create + notify vendor (WhatsApp-like) then navigate; may return meetingId
   /** Called after booking chat messages from the provider are marked read (header badge refresh). */
   onBookingChatMarkedRead?: () => void;
+  /** fullscreen: standalone overlay; embedded: nested inside a parent modal shell */
+  presentation?: 'fullscreen' | 'embedded';
 }
 
 // ============================================================================
@@ -115,6 +117,7 @@ export function CommunicationHub({
   onNavigate, // ✅ NEW
   meetingId, // ✅ NEW
   onBookingChatMarkedRead,
+  presentation = 'fullscreen',
 }: CommunicationHubProps) {
   // State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -135,9 +138,9 @@ export function CommunicationHub({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const outerRef = useRef<HTMLDivElement>(null);
+  const isEmbedded = presentation === 'embedded';
 
-  // Contract the full-screen overlay to the visual viewport so the input bar
-  // stays visible when the virtual keyboard opens.
+  // Contract overlay height to the visual viewport so the input bar stays visible when the keyboard opens.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return;
     const vv = window.visualViewport;
@@ -145,9 +148,14 @@ export function CommunicationHub({
     function updateOuter() {
       const el = outerRef.current;
       if (!el) return;
-      el.style.height = `${vv.height}px`;
-      el.style.top = `${vv.offsetTop}px`;
-      el.style.bottom = 'auto';
+      if (isEmbedded) {
+        el.style.height = `${vv.height}px`;
+        el.style.maxHeight = `${vv.height}px`;
+      } else {
+        el.style.height = `${vv.height}px`;
+        el.style.top = `${vv.offsetTop}px`;
+        el.style.bottom = 'auto';
+      }
     }
 
     updateOuter();
@@ -157,7 +165,7 @@ export function CommunicationHub({
       vv.removeEventListener('resize', updateOuter);
       vv.removeEventListener('scroll', updateOuter);
     };
-  }, []);
+  }, [isEmbedded]);
 
   // Check if chat is active
   const chatActive = isChatActive(status) && (isBookingActive(status) || isWithin7Days);
@@ -480,8 +488,21 @@ export function CommunicationHub({
   // ============================================================================
 
   return (
-    <div ref={outerRef} className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 sm:items-center sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
-      <div className="flex h-[min(92dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] max-h-[92dvh] w-full max-w-customer flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:h-[85vh] sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl min-h-0">
+    <div
+      ref={outerRef}
+      className={
+        isEmbedded
+          ? 'flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden'
+          : 'fixed inset-0 z-[100] flex items-end justify-center bg-black/60 sm:items-center sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]'
+      }
+    >
+      <div
+        className={
+          isEmbedded
+            ? 'flex min-h-0 flex-1 flex-col overflow-hidden bg-white'
+            : 'flex h-[min(92dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] max-h-[92dvh] w-full max-w-customer flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:h-[85vh] sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl min-h-0'
+        }
+      >
         
         {/* Sticky header + status banners */}
         <div className="sticky top-0 z-10 shrink-0 bg-white">
@@ -550,7 +571,7 @@ export function CommunicationHub({
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-gray-50">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 bg-gray-50">
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
