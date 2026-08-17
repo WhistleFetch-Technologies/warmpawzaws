@@ -27,6 +27,7 @@ import {
 import { resolveWapptDiscoveryListProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
+import { shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
 
 type WarmpawzAppointmentsVendorListProps = {
   category: string;
@@ -67,6 +68,16 @@ export function WarmpawzAppointmentsVendorList({
   onNavigate,
 }: WarmpawzAppointmentsVendorListProps) {
   const router = useRouter();
+  const wapptUiEnabled = shouldUseWapptPayVendorCardUi(category);
+
+  useEffect(() => {
+    if (!wapptUiEnabled) onBack();
+  }, [wapptUiEnabled, onBack]);
+
+  if (!wapptUiEnabled) {
+    return null;
+  }
+
   const discoveryCategory = getWapptDiscoveryCategory(category);
   const [styleFilter, setStyleFilter] = useState<WapptDiscoveryListStyle>(() =>
     resolveWapptDiscoveryInitialStyle(discoveryCategory, initialServiceStyle),

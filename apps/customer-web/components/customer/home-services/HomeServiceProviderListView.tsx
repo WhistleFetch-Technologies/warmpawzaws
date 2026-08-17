@@ -27,6 +27,7 @@ import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/Discov
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
 import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
+import { shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 
@@ -131,6 +132,7 @@ export function HomeServiceProviderListView({
     nutritionist: 'nutritionist',
   };
   const category = categoryMap[serviceType] || serviceType;
+  const payVendorCardUi = shouldUseWapptPayVendorCardUi(category);
 
   const feedEnabled = Boolean(userLocation);
   const {
@@ -447,18 +449,22 @@ export function HomeServiceProviderListView({
                 onSelectProvider(provider);
               },
               onProfileClick: openProfile,
-              secondaryLabel: 'Pay with Warmpawz',
-              onSecondary: (e) => {
-                e.stopPropagation();
-                const vendorId = String(provider.vendorId || provider.id || '').trim();
-                if (!vendorId) return;
-                launchWarmpawzPayServiceBooking({
-                  router,
-                  serviceKey: category,
-                  category,
-                  vendorId,
-                });
-              },
+              ...(payVendorCardUi
+                ? {
+                    secondaryLabel: 'Pay with Warmpawz',
+                    onSecondary: (e: MouseEvent<HTMLButtonElement>) => {
+                      e.stopPropagation();
+                      const vendorId = String(provider.vendorId || provider.id || '').trim();
+                      if (!vendorId) return;
+                      launchWarmpawzPayServiceBooking({
+                        router,
+                        serviceKey: category,
+                        category,
+                        vendorId,
+                      });
+                    },
+                  }
+                : {}),
             });
 
             return (

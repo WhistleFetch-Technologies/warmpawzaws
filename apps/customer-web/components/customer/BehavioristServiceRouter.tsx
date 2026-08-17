@@ -12,13 +12,12 @@ import { Card } from '@/components/ui/card';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { BEHAVIORAL_ISSUES } from './ProblemGridSection';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import {
-  ServiceHubVendorCard,
-  resolveServiceHubVendorProfileKey,
-} from './shared/ServiceHubVendorCard';
+import { HubFeaturedVendorList } from './shared/HubFeaturedVendorList';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { HUB_DISCOVERY_BEHAVIORIST } from '@/lib/service-hub-discovery-config';
 import { TRAINING_HEADER_BANNER as BEHAVIORIST_HEADER_BANNER } from './training/constants/training-hub-assets';
 import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 
@@ -44,11 +43,12 @@ export function BehavioristServiceRouter({
 }: BehavioristServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('behaviorist');
   const wapptTile = buildWapptHubTile('behaviorist');
+  const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_BEHAVIORIST);
   const wapptDiscovery = useWapptHubFeaturedVendors('behaviorist', wapptHubEnabled);
 
-  const vendorsLoading = wapptDiscovery.loading;
-  const vendors = wapptDiscovery.vendors;
-  const relaxedFilter = wapptDiscovery.relaxedFilter;
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
 
   const behavioralConcerns = BEHAVIORAL_ISSUES.filter((issue) => issue.id !== 'view_all');
 
@@ -177,32 +177,30 @@ export function BehavioristServiceRouter({
               </p>
             )}
             <div className="space-y-4">
-              {vendors.length === 0 ? (
-                <Card className="p-8 text-center">
-                  <div className="mb-3 text-4xl">🧠</div>
-                  <p className="mb-2 text-gray-600">No behaviorists available in your area yet</p>
-                  <p className="text-sm text-gray-500">Check back soon for behavior support options!</p>
-                </Card>
-              ) : (
-                vendors.map((v) => (
-                  <ServiceHubVendorCard
-                    key={v.id}
-                    vendor={v}
-                    category="behaviorist"
-                    categoryLabelFallback="Behaviorist"
-                    onSelectSlot={(vendor, e) => {
-                      if (wapptHubEnabled) {
-                        handleWarmpawzBookAppointment(vendor);
-                        return;
-                      }
-                      openBehavioristDetails(e, resolveServiceHubVendorProfileKey(vendor));
-                    }}
-                    onOpenProfile={(e, vendor) =>
-                      openBehavioristDetails(e, resolveServiceHubVendorProfileKey(vendor))
-                    }
-                  />
-                ))
-              )}
+              <HubFeaturedVendorList
+                category="behaviorist"
+                vendors={vendors}
+                categoryLabelFallback="Behaviorist"
+                planBadgeLabel="Behavior"
+                serviceCategory="behaviorist"
+                customerId={phone}
+                marketplaceDiscovery={{
+                  selectedVendorId: marketplaceDiscovery.selectedVendorId,
+                  setSelectedVendorId: marketplaceDiscovery.setSelectedVendorId,
+                  toggleVendor: marketplaceDiscovery.toggleVendor,
+                  fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
+                }}
+                onPaySelectSlot={handleWarmpawzBookAppointment}
+                onPayOpenProfile={handleWarmpawzBookAppointment}
+                onMarketplaceOpenProfile={openBehavioristDetails}
+                emptyState={
+                  <Card className="p-8 text-center">
+                    <div className="mb-3 text-4xl">🧠</div>
+                    <p className="mb-2 text-gray-600">No behaviorists available in your area yet</p>
+                    <p className="text-sm text-gray-500">Check back soon for behavior support options!</p>
+                  </Card>
+                }
+              />
             </div>
           </div>
         </div>

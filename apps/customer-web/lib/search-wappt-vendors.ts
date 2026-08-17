@@ -6,7 +6,6 @@
 import { apiClient } from '@/lib/api-client';
 import { applyWapptHubDiscoveryToProviders } from '@/lib/filter-hub-services';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
-import { isWarmpawzPayModuleCapable } from '@/lib/commerce-switch-routing/warmpawz-pay-feature';
 import {
   getWapptDiscoveryCategory,
   getWapptHubConfig,
@@ -20,22 +19,21 @@ export const SEARCH_WAPPT_PARITY_HUBS = [
   'vet',
   'grooming',
   'training',
+  'behaviorist',
   'boarding',
   'walker',
   'sitting',
+  'nutrition',
 ] as const;
 
 /**
  * Whether search should load WAPPT discovery for a hub chip.
- * Prefer Commerce Switch (appointments hub enabled). Also allow Pay-capable builds
- * when Switch is marketplace — GET /search hub browse can return empty while
- * WAPPT discovery still has providers (common on local/dev).
+ * Gated strictly on Commerce Switch — marketplace must not merge WAPPT vendors.
  */
 export function canLoadWapptSearchHub(category: string): boolean {
   const hub = normalizeWapptHubCategory(category);
   if (!hub || !getWapptHubConfig(hub)) return false;
-  if (isWarmpawzAppointmentsHubEnabled(hub)) return true;
-  return isWarmpawzPayModuleCapable();
+  return isWarmpawzAppointmentsHubEnabled(hub);
 }
 
 export type SearchWapptVendorRow = {

@@ -22,17 +22,13 @@ import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { FeaturedVendorSpotlights } from "./shared/FeaturedVendorSpotlights";
 import { ServiceDashboardHeader } from "./shared/ServiceDashboardHeader";
-import {
-  ServiceHubVendorCard,
-  resolveServiceHubVendorProfileKey,
-} from "./shared/ServiceHubVendorCard";
+import { HubFeaturedVendorList } from "./shared/HubFeaturedVendorList";
 import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
 import { HUB_DISCOVERY_SITTING } from "@/lib/service-hub-discovery-config";
 import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from "@/lib/warmpawz-appointments-customer";
 import { shouldHideDiscoveryPricing } from "@/lib/wappt-discovery-ui";
 import { buildWapptHubTile } from "@/lib/wappt-hub-registry";
 import { useWapptHubFeaturedVendors } from "@/hooks/useWapptHubFeaturedVendors";
-import { canLoadWapptSearchHub } from "@/lib/search-wappt-vendors";
 import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
 import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
 import {
@@ -219,15 +215,14 @@ export function PetSitterServiceRouter({
   initialSittingOptionId,
 }: PetSitterServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('sitting');
-  const wapptFeaturedEnabled = canLoadWapptSearchHub('sitting');
   const wapptTile = buildWapptHubTile('sitting');
   const loadSitterRows = useCallback(() => fetchPetSitterHubRows(phone), [phone]);
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_SITTING, loadSitterRows);
-  const wapptDiscovery = useWapptHubFeaturedVendors('sitting', wapptFeaturedEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('sitting', wapptHubEnabled);
 
-  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
   const [previousSitter, setPreviousSitter] = useState<any>(null);
   /** Carried into `pet-sitter-booking` so the sitting flow can pre-match the vendor’s service row. */
   const [selectedSittingOption, setSelectedSittingOption] = useState<string | null>(null);
@@ -323,7 +318,7 @@ export function PetSitterServiceRouter({
       type: "vendor",
     };
     const vid = pickCustomerVendorAccountId(row) || v.id;
-    if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(row)) {
+    if (wapptHubEnabled || shouldHideDiscoveryPricing(row)) {
       onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId: vid,
@@ -624,48 +619,30 @@ export function PetSitterServiceRouter({
                 </p>
               )}
               <div className="space-y-4">
-                {displaySitters.length === 0 ? (
-                  <Card className="p-8 text-center">
-                    <div className="mb-3 text-4xl">🏠</div>
-                    <p className="mb-2 text-gray-600">
-                      No pet sitters in your area yet
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Check back soon for in-home sitting.
-                    </p>
-                  </Card>
-                ) : (
-                  displaySitters.map((v) => (
-                    <ServiceHubVendorCard
-                      key={v.id}
-                      vendor={v}
-                      category="sitting"
-                      serviceKey="pet_sitting"
-                      categoryLabelFallback="Sitting"
-                      onSelectSlot={(vendor, e) => {
-                        if (
-                          wapptFeaturedEnabled ||
-                          shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                        ) {
-                          handleWarmpawzBookAppointment(vendor);
-                          return;
-                        }
-                        openSitterVendorProfile(e, resolveServiceHubVendorProfileKey(vendor));
-                      }}
-                      onOpenProfile={(e, vendor) => {
-                        if (
-                          wapptFeaturedEnabled ||
-                          shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                        ) {
-                          e.stopPropagation();
-                          handleWarmpawzBookAppointment(vendor);
-                          return;
-                        }
-                        openSitterVendorProfile(e, resolveServiceHubVendorProfileKey(vendor));
-                      }}
-                    />
-                  ))
-                )}
+                <HubFeaturedVendorList
+                  category="sitting"
+                  vendors={displaySitters}
+                  categoryLabelFallback="Sitting"
+                  planBadgeLabel="Sitting"
+                  serviceCategory="sitting"
+                  customerId={phone}
+                  marketplaceDiscovery={{
+                    selectedVendorId: marketplaceDiscovery.selectedVendorId,
+                    setSelectedVendorId: marketplaceDiscovery.setSelectedVendorId,
+                    toggleVendor: marketplaceDiscovery.toggleVendor,
+                    fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
+                  }}
+                  onPaySelectSlot={handleWarmpawzBookAppointment}
+                  onPayOpenProfile={handleWarmpawzBookAppointment}
+                  onMarketplaceOpenProfile={openSitterVendorProfile}
+                  emptyState={
+                    <Card className="p-8 text-center">
+                      <div className="mb-3 text-4xl">🏠</div>
+                      <p className="mb-2 text-gray-600">No pet sitters in your area yet</p>
+                      <p className="text-sm text-gray-500">Check back soon for in-home sitting.</p>
+                    </Card>
+                  }
+                />
               </div>
             </div>
           </div>

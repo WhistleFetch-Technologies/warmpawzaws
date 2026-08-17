@@ -29,10 +29,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import {
-  ServiceHubVendorCard,
-  resolveServiceHubVendorProfileKey,
-} from './shared/ServiceHubVendorCard';
+import { HubFeaturedVendorList } from './shared/HubFeaturedVendorList';
 import { useBoardingVendorDiscovery } from '@/hooks/useBoardingVendorDiscovery';
 import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
@@ -47,7 +44,6 @@ import {
 } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
-import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 const BOARDING_IMG = '/images/home/Boarding';
@@ -285,14 +281,13 @@ function navigateToBoardingVendorList(
 export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: BoardingServiceRouterProps) {
   const router = useRouter();
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('boarding');
-  const wapptFeaturedEnabled = canLoadWapptSearchHub('boarding');
   const wapptTile = buildWapptHubTile('boarding');
   const marketplaceDiscovery = useBoardingVendorDiscovery(phone, HUB_SERVICE_SLUG);
-  const wapptDiscovery = useWapptHubFeaturedVendors('boarding', wapptFeaturedEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('boarding', wapptHubEnabled);
 
-  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
 
   const [previousFacility, setPreviousFacility] = useState<any>(null);
 
@@ -589,43 +584,30 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               )}
 
               <div className="space-y-4">
-                {vendors.length === 0 ? (
-                  <Card className="p-8 text-center">
-                    <div className="text-4xl mb-3">🏠</div>
-                    <p className="text-gray-600 mb-2">No boarding facilities available yet</p>
-                    <p className="text-gray-500 text-sm">Check back soon for boarding options!</p>
-                  </Card>
-                ) : (
-                  vendors.map((v) => (
-                    <ServiceHubVendorCard
-                      key={v.id}
-                      vendor={v}
-                      category="boarding"
-                      categoryLabelFallback="Boarding"
-                      onSelectSlot={(vendor, e) => {
-                        if (
-                          wapptFeaturedEnabled ||
-                          shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                        ) {
-                          handleWarmpawzBookAppointment(vendor);
-                          return;
-                        }
-                        openVendorProfile(e, resolveServiceHubVendorProfileKey(vendor));
-                      }}
-                      onOpenProfile={(e, vendor) => {
-                        if (
-                          wapptFeaturedEnabled ||
-                          shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                        ) {
-                          e.stopPropagation();
-                          handleWarmpawzBookAppointment(vendor);
-                          return;
-                        }
-                        openVendorProfile(e, resolveServiceHubVendorProfileKey(vendor));
-                      }}
-                    />
-                  ))
-                )}
+                <HubFeaturedVendorList
+                  category="boarding"
+                  vendors={vendors}
+                  categoryLabelFallback="Boarding"
+                  planBadgeLabel="Boarding"
+                  serviceCategory="boarding"
+                  customerId={phone}
+                  marketplaceDiscovery={{
+                    selectedVendorId: marketplaceDiscovery.selectedVendorId,
+                    setSelectedVendorId: marketplaceDiscovery.setSelectedVendorId,
+                    toggleVendor: marketplaceDiscovery.toggleVendor,
+                    fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
+                  }}
+                  onPaySelectSlot={handleWarmpawzBookAppointment}
+                  onPayOpenProfile={handleWarmpawzBookAppointment}
+                  onMarketplaceOpenProfile={openVendorProfile}
+                  emptyState={
+                    <Card className="p-8 text-center">
+                      <div className="text-4xl mb-3">🏠</div>
+                      <p className="text-gray-600 mb-2">No boarding facilities available yet</p>
+                      <p className="text-gray-500 text-sm">Check back soon for boarding options!</p>
+                    </Card>
+                  }
+                />
               </div>
             </div>
         </div>

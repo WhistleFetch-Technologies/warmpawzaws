@@ -16,4 +16,8 @@ export {
   launchWarmpawzPayServiceBooking,
   isWarmpawzPayBookingFlow,
 } from './launch-warmpawz-pay-service-booking';
+export {
+  shouldUseWapptPayVendorCardUi,
+  shouldUseWapptDiscoveryFeed,
+} from './should-use-wappt-vendor-card-ui';
 export { mapServiceKeyToWpayCategory } from './map-service-to-wpay-category';

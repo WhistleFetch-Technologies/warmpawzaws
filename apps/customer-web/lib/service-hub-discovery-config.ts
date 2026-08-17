@@ -56,3 +56,20 @@ export const HUB_DISCOVERY_SITTING: HubVendorDiscoveryConfig = {
   discoverRoleId: 'pet_sitter',
   phoneQueryParam: 'phone',
 };
+
+export const HUB_DISCOVERY_BEHAVIORIST: HubVendorDiscoveryConfig = {
+  servicesApiCategory: 'behaviorist',
+  serviceStyle: 'at_center',
+  discoverCategory: 'behaviorist',
+  discoverRoleId: 'behaviorist',
+  fallbackByStyle: { style: 'at_center', category: 'behaviorist' },
+  fallbackVendorSearch: { roleId: 'behaviorist', limit: 50 },
+};
+
+export const HUB_DISCOVERY_NUTRITION: HubVendorDiscoveryConfig = {
+  servicesApiCategory: 'nutrition',
+  serviceStyle: 'tele',
+  discoverCategory: 'nutrition',
+  discoverRoleId: 'nutritionist',
+  phoneQueryParam: 'phone',
+};

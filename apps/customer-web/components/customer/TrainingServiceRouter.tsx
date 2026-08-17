@@ -34,10 +34,7 @@ import {
   TRAINING_TYPE_CARDS,
 } from './training/constants/training-hub-assets';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import {
-  ServiceHubVendorCard,
-  resolveServiceHubVendorProfileKey,
-} from './shared/ServiceHubVendorCard';
+import { HubFeaturedVendorList } from './shared/HubFeaturedVendorList';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
@@ -52,7 +49,6 @@ import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
-import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -100,7 +96,6 @@ function TrainingHeaderBackground() {
 
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('training');
-  const wapptFeaturedEnabled = canLoadWapptSearchHub('training');
   const wapptTile = buildWapptHubTile('training');
   const { problems: bootstrapProblems } = useCategoryBootstrap({
     category: 'training',
@@ -121,11 +116,11 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     return trainingGoalsLegacy;
   }, [bootstrapProblems, trainingGoalsLegacy]);
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_TRAINING);
-  const wapptDiscovery = useWapptHubFeaturedVendors('training', wapptFeaturedEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('training', wapptHubEnabled);
 
-  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
   const {
     data: trainingCenterCount = 0,
     isLoading: trainingCenterLoading,
@@ -234,7 +229,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       }
       const rawObj = (v.raw ?? {}) as Record<string, unknown>;
       const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
-      if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(rawObj)) {
+      if (wapptHubEnabled || shouldHideDiscoveryPricing(rawObj)) {
         onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
           ...buildWarmpawzAppointmentsProfileNav({
             vendorId,
@@ -248,7 +243,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       }
       onNavigate?.('training_center', { embedVendorId: vendorId });
     },
-    [onNavigate, vendors, wapptFeaturedEnabled]
+    [onNavigate, vendors, wapptHubEnabled]
   );
 
   const serviceTypes = useMemo(() => {
@@ -561,43 +556,30 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               </p>
             )}
             <div className="space-y-4">
-              {vendors.length === 0 ? (
-                <Card className="p-8 text-center">
-                  <div className="text-4xl mb-3">🎓</div>
-                  <p className="text-gray-600 mb-2">No trainers available in your area yet</p>
-                  <p className="text-gray-500 text-sm">Check back soon for training options!</p>
-                </Card>
-              ) : (
-                vendors.map((v) => (
-                  <ServiceHubVendorCard
-                    key={v.id}
-                    vendor={v}
-                    category="training"
-                    categoryLabelFallback="Training"
-                    onSelectSlot={(vendor, e) => {
-                      if (
-                        wapptFeaturedEnabled ||
-                        shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                      ) {
-                        handleWarmpawzBookAppointment(vendor);
-                        return;
-                      }
-                      openTrainerDetails(e, resolveServiceHubVendorProfileKey(vendor));
-                    }}
-                    onOpenProfile={(e, vendor) => {
-                      if (
-                        wapptFeaturedEnabled ||
-                        shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                      ) {
-                        e.stopPropagation();
-                        handleWarmpawzBookAppointment(vendor);
-                        return;
-                      }
-                      openTrainerDetails(e, resolveServiceHubVendorProfileKey(vendor));
-                    }}
-                  />
-                ))
-              )}
+              <HubFeaturedVendorList
+                category="training"
+                vendors={vendors}
+                categoryLabelFallback="Training"
+                planBadgeLabel="Training"
+                serviceCategory="training"
+                customerId={phone}
+                marketplaceDiscovery={{
+                  selectedVendorId: marketplaceDiscovery.selectedVendorId,
+                  setSelectedVendorId: marketplaceDiscovery.setSelectedVendorId,
+                  toggleVendor: marketplaceDiscovery.toggleVendor,
+                  fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
+                }}
+                onPaySelectSlot={handleWarmpawzBookAppointment}
+                onPayOpenProfile={handleWarmpawzBookAppointment}
+                onMarketplaceOpenProfile={openTrainerDetails}
+                emptyState={
+                  <Card className="p-8 text-center">
+                    <div className="text-4xl mb-3">🎓</div>
+                    <p className="text-gray-600 mb-2">No trainers available in your area yet</p>
+                    <p className="text-gray-500 text-sm">Check back soon for training options!</p>
+                  </Card>
+                }
+              />
             </div>
           </div>
         </div>

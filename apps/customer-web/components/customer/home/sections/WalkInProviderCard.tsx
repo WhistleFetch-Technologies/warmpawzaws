@@ -161,6 +161,8 @@ export interface WalkInProviderCardProps {
   onSelect?: () => void;
   onBook?: () => void;
   onCardClick?: () => void;
+  /** When false (marketplace), show a single View Details action instead of Pay Bill + Book Now. */
+  showPayActions?: boolean;
   layout?: 'carousel' | 'stack';
   className?: string;
 }
@@ -171,6 +173,7 @@ function WalkInProviderCardComponent({
   onSelect,
   onBook,
   onCardClick,
+  showPayActions = true,
   layout = 'carousel',
   className = '',
 }: WalkInProviderCardProps) {
@@ -334,13 +337,24 @@ function WalkInProviderCardComponent({
             style={{ height: CARD_PAY_BUTTON_HEIGHT_PX, minHeight: CARD_PAY_BUTTON_HEIGHT_PX }}
             onClick={(event) => {
               event.stopPropagation();
-              onSelect?.();
+              if (showPayActions) {
+                onSelect?.();
+                return;
+              }
+              onBook?.();
             }}
           >
-            <Wallet className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} aria-hidden />
-            <span>Pay Bill</span>
+            {showPayActions ? (
+              <>
+                <Wallet className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} aria-hidden />
+                <span>Pay Bill</span>
+              </>
+            ) : (
+              <span>View Details</span>
+            )}
           </button>
 
+          {showPayActions ? (
           <button
             type="button"
             className={`inline-flex w-full shrink-0 items-center justify-center gap-1.5 ${CARD_BUTTON_RADIUS} border border-[#FF8C42] bg-white text-xs font-semibold leading-none text-[#FF8C42] active:scale-[0.98]`}
@@ -357,6 +371,7 @@ function WalkInProviderCardComponent({
             <Calendar className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} aria-hidden />
             <span>Book Now</span>
           </button>
+          ) : null}
         </div>
       </div>
     </article>

@@ -15,10 +15,7 @@ import { VetServiceCardBackground } from './vet/VetServiceCardBackground';
 import { VET_HEADER_BANNER, VET_IMG, VET_SERVICE_CARDS } from './vet/constants/vet-hub-assets';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from './shared/StandardizedFooter';
-import {
-  ServiceHubVendorCard,
-  resolveServiceHubVendorProfileKey,
-} from './shared/ServiceHubVendorCard';
+import { HubFeaturedVendorList } from './shared/HubFeaturedVendorList';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
@@ -49,7 +46,6 @@ import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
-import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
 import { buildGuestAuthUrlForBooking } from '@/lib/guest-booking-intent';
 
@@ -120,15 +116,15 @@ function VetHeaderBackground() {
 }
 
 export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, data }: VetServiceRouterProps) {
-  const wapptFeaturedEnabled = canLoadWapptSearchHub('vet');
+  const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('vet');
   const { problems: bootstrapProblems } = useCategoryBootstrap({ category: 'vet', roleId: 'vet' });
   const legacyProblems = useProblemGridByRole('vet');
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_VET);
-  const wapptDiscovery = useWapptHubFeaturedVendors('vet', wapptFeaturedEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('vet', wapptHubEnabled);
 
-  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
   const [pets, setPets] = useState<any[]>([]);
@@ -413,7 +409,7 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
     }
     const raw = (v.raw || {}) as Record<string, unknown>;
 
-    if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(raw)) {
+    if (wapptHubEnabled || shouldHideDiscoveryPricing(raw)) {
       const vendorId = pickCustomerVendorAccountId(raw) || String(raw.vendorId || raw.vendor_id || v.id);
       handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
         ...buildWarmpawzAppointmentsProfileNav({
@@ -656,42 +652,30 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
             </p>
           )}
           <div className="space-y-4">
-            {vendors.length > 0 ? (
-              vendors.map((v) => (
-                <ServiceHubVendorCard
-                  key={v.id}
-                  vendor={v}
-                  category="vet"
-                  categoryLabelFallback="Veterinarian"
-                  onSelectSlot={(vendor, e) => {
-                    if (
-                      wapptFeaturedEnabled ||
-                      shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                    ) {
-                      handleWarmpawzBookAppointment(vendor);
-                      return;
-                    }
-                    openVetDetails(e, resolveServiceHubVendorProfileKey(vendor));
-                  }}
-                  onOpenProfile={(e, vendor) => {
-                    if (
-                      wapptFeaturedEnabled ||
-                      shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                    ) {
-                      e.stopPropagation();
-                      handleWarmpawzBookAppointment(vendor);
-                      return;
-                    }
-                    openVetCenterProfile(e, resolveServiceHubVendorProfileKey(vendor));
-                  }}
-                />
-              ))
-            ) : (
-              <Card className="p-6 text-center bg-gray-50 border border-gray-200">
-                <p className="text-gray-500 text-sm">No veterinarians available in your area yet.</p>
-                <p className="text-gray-400 text-xs mt-1">Check back soon!</p>
-              </Card>
-            )}
+            <HubFeaturedVendorList
+              category="vet"
+              vendors={vendors}
+              categoryLabelFallback="Veterinarian"
+              planBadgeLabel="Vet"
+              serviceCategory="vet"
+              customerId={phone}
+              marketplaceDiscovery={{
+                selectedVendorId: marketplaceDiscovery.selectedVendorId,
+                setSelectedVendorId: marketplaceDiscovery.setSelectedVendorId,
+                toggleVendor: marketplaceDiscovery.toggleVendor,
+                fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
+              }}
+              onPaySelectSlot={handleWarmpawzBookAppointment}
+              onPayOpenProfile={handleWarmpawzBookAppointment}
+              onMarketplaceOpenProfile={openVetCenterProfile}
+              onMarketplaceBookPlan={handleVetBookPlan}
+              emptyState={
+                <Card className="p-6 text-center bg-gray-50 border border-gray-200">
+                  <p className="text-gray-500 text-sm">No veterinarians available in your area yet.</p>
+                  <p className="text-gray-400 text-xs mt-1">Check back soon!</p>
+                </Card>
+              }
+            />
           </div>
         </div>
 

@@ -60,6 +60,7 @@ import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords'
 import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
+import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 
 const WALKING_IMG = '/images/home/Walking';
 
@@ -364,6 +365,7 @@ function resolveWalkerRowAddress(walker: Record<string, unknown>): string {
 
 export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }: WalkerServiceProps) {
   const router = useRouter();
+  const wapptWalkerUi = isWarmpawzAppointmentsHubEnabled('walker');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFallbackList, setSearchFallbackList] = useState<any[] | null>(null);
   const [searchSupplement, setSearchSupplement] = useState<any[]>([]);
@@ -1134,21 +1136,87 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
             <div className="space-y-4">
               {displayedWalkers.map((walker, index) => {
                 const row = walker as Record<string, unknown>;
-                const provider = walkerRowToWapptCardSource(row);
+                if (wapptWalkerUi) {
+                  const provider = walkerRowToWapptCardSource(row);
+                  return (
+                    <WarmpawzPayVendorCard
+                      key={String(provider.vendorId || walker.id || index)}
+                      {...buildWapptDiscoveryVendorCardProps({
+                        provider,
+                        subtitle: 'Pet Walker',
+                        address: resolveWalkerRowAddress(row),
+                        category: 'walker',
+                        serviceKey: 'walker',
+                        onPrimary: () => handleWalkerSelect(row),
+                        onProfileClick: (e) => handleOpenWalkerProfile(row, e),
+                        router,
+                      })}
+                    />
+                  );
+                }
+
+                const name = resolveWalkerRowDisplayName(row);
+                const address = resolveWalkerRowAddress(row);
+                const ratingRaw = row.rating != null ? Number(row.rating) : NaN;
+                const rating = Number.isFinite(ratingRaw) && ratingRaw > 0 ? ratingRaw : null;
+                const reviewCount =
+                  Number(row.reviewCount ?? row.reviewsCount ?? row.totalReviews ?? 0) || 0;
+                const photo =
+                  (typeof row.photo === 'string' && row.photo) ||
+                  (typeof row.photoUrl === 'string' && row.photoUrl) ||
+                  (typeof row.profileImage === 'string' && row.profileImage) ||
+                  null;
+                const nextSlot = resolveNextAvailableLabel(row);
+
                 return (
-                  <WarmpawzPayVendorCard
-                    key={String(provider.vendorId || walker.id || index)}
-                    {...buildWapptDiscoveryVendorCardProps({
-                      provider,
-                      subtitle: 'Pet Walker',
-                      address: resolveWalkerRowAddress(row),
-                      category: 'walker',
-                      serviceKey: 'walker',
-                      onPrimary: () => handleWalkerSelect(row),
-                      onProfileClick: (e) => handleOpenWalkerProfile(row, e),
-                      router,
-                    })}
-                  />
+                  <Card key={String(row.id || row.vendorId || index)} className="overflow-hidden border border-gray-100 bg-white shadow-sm">
+                    <div className="flex gap-3 p-4">
+                      {photo ? (
+                        <img src={photo} alt={name} className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+                      ) : (
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-xl font-bold text-orange-600">
+                          {name.charAt(0) || 'W'}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <h3 className="truncate font-semibold text-gray-900">{name}</h3>
+                        <p className="text-sm text-gray-500">Pet Walker</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                          {rating != null && reviewCount > 0 ? (
+                            <span className="flex items-center gap-1 font-medium text-orange-600">
+                              <Star className="h-3.5 w-3.5 fill-orange-500 text-orange-500" />
+                              {rating.toFixed(1)}
+                            </span>
+                          ) : null}
+                          {nextSlot ? (
+                            <span className="text-xs text-emerald-700">Next: {nextSlot}</span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 flex items-center gap-1 text-xs text-gray-500">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{address}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 border-t border-gray-100 px-4 py-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="flex-1 border-orange-300 text-orange-700 hover:bg-orange-50"
+                        onClick={(e) => void handleViewWalkerPackages(row, e)}
+                      >
+                        View Services
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="flex-1 text-gray-700"
+                        onClick={(e) => handleOpenWalkerProfile(row, e)}
+                      >
+                        Details
+                      </Button>
+                    </div>
+                  </Card>
                 );
               })}
 

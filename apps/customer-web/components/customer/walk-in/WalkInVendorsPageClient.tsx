@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, MapPin } from 'lucide-react';
 import { useWalkInNearbyProviders } from '@/hooks/useWalkInNearbyProviders';
 import { useWalkInVendorActions } from '@/lib/walk-in-vendor-actions';
+import { shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
 import {
   WALK_IN_SECTION_SUBTITLE,
   WALK_IN_SECTION_TITLE,
@@ -113,16 +114,20 @@ export function WalkInVendorsPageClient() {
               </div>
             ) : null}
             <div className="flex flex-col gap-4">
-              {listingProviders.map((provider) => (
+              {listingProviders.map((provider) => {
+                const showPayActions = shouldUseWapptPayVendorCardUi(provider.category);
+                return (
                 <WalkInProviderCard
                   key={provider.id}
                   provider={provider}
                   layout="stack"
+                  showPayActions={showPayActions}
                   onCardClick={() => openVendorDetails(provider)}
                   onSelect={() => payBill(provider)}
-                  onBook={() => bookNow(provider)}
+                  onBook={() => (showPayActions ? bookNow(provider) : openVendorDetails(provider))}
                 />
-              ))}
+                );
+              })}
             </div>
           </>
         )}

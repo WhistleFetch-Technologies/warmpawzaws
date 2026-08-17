@@ -27,10 +27,7 @@ import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import {
-  ServiceHubVendorCard,
-  resolveServiceHubVendorProfileKey,
-} from './shared/ServiceHubVendorCard';
+import { HubFeaturedVendorList } from './shared/HubFeaturedVendorList';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
@@ -45,7 +42,6 @@ import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buil
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { mergeWapptServiceTypes } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
-import { canLoadWapptSearchHub } from '@/lib/search-wappt-vendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import {
@@ -160,8 +156,7 @@ function resolveGroomingNeedCardVisual(specId: string, index: number) {
 
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('grooming');
-  /** Featured/Top list + profile: same WAPPT source as search when Pay module is capable. */
-  const wapptFeaturedEnabled = canLoadWapptSearchHub('grooming');
+  /** Featured/Top list + profile: WAPPT when Commerce Switch routes to Pay. */
   const { problems: bootstrapProblems } = useCategoryBootstrap({
     category: 'grooming',
     roleId: 'groomer',
@@ -183,11 +178,11 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }, [bootstrapProblems]);
 
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_GROOMING);
-  const wapptDiscovery = useWapptHubFeaturedVendors('grooming', wapptFeaturedEnabled);
+  const wapptDiscovery = useWapptHubFeaturedVendors('grooming', wapptHubEnabled);
 
-  const vendorsLoading = wapptFeaturedEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
-  const vendors = wapptFeaturedEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
-  const relaxedFilter = wapptFeaturedEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
 
   const {
     data: groomingCenterCount = 0,
@@ -283,7 +278,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         type: 'vendor',
       };
       const accountId = pickCustomerVendorAccountId(row) || v.id;
-      if (wapptFeaturedEnabled || shouldHideDiscoveryPricing(rawObj)) {
+      if (wapptHubEnabled || shouldHideDiscoveryPricing(rawObj)) {
         onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
           ...buildWarmpawzAppointmentsProfileNav({
             vendorId: accountId,
@@ -304,7 +299,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         vendorData: v.raw,
       });
     },
-    [onNavigate, vendors, wapptFeaturedEnabled]
+    [onNavigate, vendors, wapptHubEnabled]
   );
 
   const loadPreviousGroomer = async () => {
@@ -663,43 +658,30 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               </p>
             )}
             <div className="space-y-4">
-              {vendors.length === 0 ? (
-                <Card className="p-8 text-center">
-                  <div className="text-4xl mb-3">✂️</div>
-                  <p className="text-gray-600 mb-2">No groomers available in your area yet</p>
-                  <p className="text-gray-500 text-sm">Check back soon for grooming options!</p>
-                </Card>
-              ) : (
-                vendors.map((v) => (
-                  <ServiceHubVendorCard
-                    key={v.id}
-                    vendor={v}
-                    category="grooming"
-                    categoryLabelFallback="Grooming"
-                    onSelectSlot={(vendor, e) => {
-                      if (
-                        wapptFeaturedEnabled ||
-                        shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                      ) {
-                        handleWarmpawzBookAppointment(vendor);
-                        return;
-                      }
-                      openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor));
-                    }}
-                    onOpenProfile={(e, vendor) => {
-                      if (
-                        wapptFeaturedEnabled ||
-                        shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
-                      ) {
-                        e.stopPropagation();
-                        handleWarmpawzBookAppointment(vendor);
-                        return;
-                      }
-                      openVendorDetails(e, resolveServiceHubVendorProfileKey(vendor));
-                    }}
-                  />
-                ))
-              )}
+              <HubFeaturedVendorList
+                category="grooming"
+                vendors={vendors}
+                categoryLabelFallback="Grooming"
+                planBadgeLabel="Grooming"
+                serviceCategory="grooming"
+                customerId={phone}
+                marketplaceDiscovery={{
+                  selectedVendorId: marketplaceDiscovery.selectedVendorId,
+                  setSelectedVendorId: marketplaceDiscovery.setSelectedVendorId,
+                  toggleVendor: marketplaceDiscovery.toggleVendor,
+                  fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
+                }}
+                onPaySelectSlot={handleWarmpawzBookAppointment}
+                onPayOpenProfile={handleWarmpawzBookAppointment}
+                onMarketplaceOpenProfile={openVendorDetails}
+                emptyState={
+                  <Card className="p-8 text-center">
+                    <div className="text-4xl mb-3">✂️</div>
+                    <p className="text-gray-600 mb-2">No groomers available in your area yet</p>
+                    <p className="text-gray-500 text-sm">Check back soon for grooming options!</p>
+                  </Card>
+                }
+              />
             </div>
           </div>
         </div>

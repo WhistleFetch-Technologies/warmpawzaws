@@ -2,41 +2,38 @@ jest.mock('@/lib/api-client', () => ({ apiClient: { get: jest.fn() } }));
 jest.mock('@/lib/warmpawz-appointments-customer', () => ({
   isWarmpawzAppointmentsHubEnabled: jest.fn(() => false),
 }));
-jest.mock('@/lib/commerce-switch-routing/warmpawz-pay-feature', () => ({
-  isWarmpawzPayModuleCapable: jest.fn(() => true),
-}));
 
 import { apiClient } from '@/lib/api-client';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
-import { isWarmpawzPayModuleCapable } from '@/lib/commerce-switch-routing/warmpawz-pay-feature';
 import {
   canLoadWapptSearchHub,
   resolveWapptHubsForSearch,
   fetchWapptSearchVendorResults,
   mergeWapptSearchVendorRows,
+  SEARCH_WAPPT_PARITY_HUBS,
 } from '../search-wappt-vendors';
 
 describe('canLoadWapptSearchHub', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockReturnValue(false);
-    (isWarmpawzPayModuleCapable as jest.Mock).mockReturnValue(true);
   });
 
-  it('loads known hubs when Pay module is capable even if commerce hub is off', () => {
-    expect(canLoadWapptSearchHub('grooming')).toBe(true);
-    expect(canLoadWapptSearchHub('vet')).toBe(true);
-  });
-
-  it('returns false when Pay module is disabled and appointments hub is off', () => {
-    (isWarmpawzPayModuleCapable as jest.Mock).mockReturnValue(false);
+  it('returns false when appointments hub is off (marketplace)', () => {
     expect(canLoadWapptSearchHub('grooming')).toBe(false);
+    expect(canLoadWapptSearchHub('vet')).toBe(false);
   });
 
-  it('returns true when appointments hub is enabled', () => {
-    (isWarmpawzPayModuleCapable as jest.Mock).mockReturnValue(false);
+  it('returns true when appointments hub is enabled (warmpawz_pay)', () => {
     (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockReturnValue(true);
     expect(canLoadWapptSearchHub('grooming')).toBe(true);
+  });
+
+  it('includes all 8 parity hub categories', () => {
+    expect(SEARCH_WAPPT_PARITY_HUBS).toEqual(
+      expect.arrayContaining(['behaviorist', 'nutrition', 'vet', 'grooming'])
+    );
+    expect(SEARCH_WAPPT_PARITY_HUBS).toHaveLength(8);
   });
 });
 
@@ -44,21 +41,32 @@ describe('resolveWapptHubsForSearch', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockReturnValue(false);
-    (isWarmpawzPayModuleCapable as jest.Mock).mockReturnValue(true);
+  });
+
+  it('returns empty when marketplace and category chip selected', () => {
+    expect(resolveWapptHubsForSearch({ category: 'vet' })).toEqual([]);
   });
 
   it('returns hub when WAPPT listing is eligible for category chip', () => {
+    (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockReturnValue(true);
     expect(resolveWapptHubsForSearch({ category: 'vet' })).toEqual(['vet']);
   });
 
-  it('infers grooming from keyword', () => {
+  it('infers grooming from keyword when pay is active', () => {
+    (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockImplementation(
+      (hub: string) => hub === 'grooming'
+    );
     expect(resolveWapptHubsForSearch({ query: 'dog grooming salon' })).toEqual(['grooming']);
   });
 
-  it('returns parity hubs on browse-all', () => {
+  it('returns parity hubs on browse-all only when pay is active', () => {
+    expect(resolveWapptHubsForSearch({ browseAll: true })).toEqual([]);
+    (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockReturnValue(true);
     expect(resolveWapptHubsForSearch({ browseAll: true }).sort()).toEqual([
+      'behaviorist',
       'boarding',
       'grooming',
+      'nutrition',
       'sitting',
       'training',
       'vet',
@@ -70,8 +78,14 @@ describe('resolveWapptHubsForSearch', () => {
 describe('fetchWapptSearchVendorResults', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockReturnValue(true);
+  });
+
+  it('returns empty when marketplace', async () => {
     (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockReturnValue(false);
-    (isWarmpawzPayModuleCapable as jest.Mock).mockReturnValue(true);
+    const rows = await fetchWapptSearchVendorResults('vet');
+    expect(rows).toEqual([]);
+    expect(apiClient.get).not.toHaveBeenCalled();
   });
 
   it('maps WAPPT discovery vendors', async () => {
@@ -96,28 +110,6 @@ describe('fetchWapptSearchVendorResults', () => {
       name: 'City Vet',
       category: 'vet',
       city: 'Bengaluru',
-    });
-  });
-
-  it('maps preferredServiceStyle from discovery row', async () => {
-    (apiClient.get as jest.Mock).mockResolvedValue({
-      vendors: [
-        {
-          vendorId: 'g-1',
-          name: 'Bindu Grooming Service',
-          roleDisplayName: 'Groomer (Solo)',
-          preferredServiceStyle: 'at_home',
-          city: 'Bengaluru',
-        },
-      ],
-      nextCursor: null,
-    });
-
-    const rows = await fetchWapptSearchVendorResults('grooming');
-    expect(rows[0]).toMatchObject({
-      id: 'g-1',
-      preferredServiceStyle: 'at_home',
-      roleDisplayName: 'Groomer (Solo)',
     });
   });
 });

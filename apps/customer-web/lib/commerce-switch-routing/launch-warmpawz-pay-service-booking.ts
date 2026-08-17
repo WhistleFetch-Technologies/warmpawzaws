@@ -1,5 +1,6 @@
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { mapServiceKeyToWpayCategory } from './map-service-to-wpay-category';
+import { resolveServiceBookingCommerceRouteForNavigation } from './resolve-service-booking-commerce-route';
 import type { ServiceBookingCommerceRouteResult } from './types';
 
 /** True when Commerce Switch selected the Warmpawz Pay module for this service booking. */
@@ -17,6 +18,14 @@ export function launchWarmpawzPayServiceBooking(opts: {
   category?: string;
   vendorId?: string;
 }): void {
+  const route = resolveServiceBookingCommerceRouteForNavigation({
+    serviceKey: opts.serviceKey,
+    category: opts.category ?? opts.serviceKey,
+  });
+  if (!isWarmpawzPayBookingFlow(route)) {
+    return;
+  }
+
   const vendorId = String(opts.vendorId ?? '').trim();
   if (vendorId) {
     opts.router.push(`/warmpawz-pay/vendors/${encodeURIComponent(vendorId)}`);

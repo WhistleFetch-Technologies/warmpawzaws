@@ -9,6 +9,7 @@ import {
   WALK_IN_NEARBY_HOME_LIMIT,
 } from '@/hooks/useWalkInNearbyProviders';
 import { useWalkInVendorActions } from '@/lib/walk-in-vendor-actions';
+import { shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
 import {
   WALK_IN_SECTION_SUBTITLE,
   WALK_IN_SECTION_TITLE,
@@ -80,7 +81,7 @@ function WalkInNearYouSectionComponent({
     phone,
     enabled: fetchEnabled,
   });
-  const { payBill, bookNow } = useWalkInVendorActions(onNavigate);
+  const { payBill, bookNow, openVendorDetails } = useWalkInVendorActions(onNavigate);
 
   const carouselProviders = useMemo(
     () => providers.slice(0, WALK_IN_NEARBY_HOME_LIMIT),
@@ -121,14 +122,18 @@ function WalkInNearYouSectionComponent({
     <section className={`mb-6 mt-6 ${className}`} aria-label="Walk-in services near you">
       {header}
       <div className="flex min-w-0 snap-x snap-mandatory gap-2 overflow-x-auto scroll-smooth px-3 pb-1 scrollbar-hide [-webkit-overflow-scrolling:touch]">
-        {carouselProviders.map((provider) => (
+        {carouselProviders.map((provider) => {
+          const showPayActions = shouldUseWapptPayVendorCardUi(provider.category);
+          return (
           <WalkInProviderCard
             key={provider.id}
             provider={provider}
+            showPayActions={showPayActions}
             onSelect={() => payBill(provider)}
-            onBook={() => bookNow(provider)}
+            onBook={() => (showPayActions ? bookNow(provider) : openVendorDetails(provider))}
           />
-        ))}
+          );
+        })}
       </div>
     </section>
   );
