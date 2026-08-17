@@ -154,12 +154,152 @@ describe('Admin tax category is authoritative GST rate', () => {
     try {
       await taxCalculationService.calculateTax({
         items: [{ id: 'custom', type: 'service', amount: 2000, roleId: 'role-groomer-solo' }],
+        customerLocation: { state: 'Karnataka' },
+        vendorLocation: { state: 'Karnataka' },
       });
       throw new Error('expected GstConfigurationError');
     } catch (err) {
       expect(isGstConfigurationError(err)).toBe(true);
     }
     expect(mockedResolve).not.toHaveBeenCalled();
+  });
+
+  test('TEST A — Karnataka + Karnataka on ₹1100 @ 18% is CGST+SGST', async () => {
+    mockedResolve.mockResolvedValue({
+      found: true,
+      rate: 18,
+      taxCategoryId: 'tc-grooming',
+      catalogCategoryId: 'cat-grooming',
+      vendorRoleId: 'role-groomer',
+      applicationScope: 'service_booking',
+    });
+    const result = await taxCalculationService.calculateTax({
+      items: [
+        {
+          id: 'svc',
+          type: 'service',
+          amount: 1100,
+          catalogCategoryId: 'cat-grooming',
+          roleId: 'role-groomer',
+        },
+      ],
+      customerLocation: { state: 'Karnataka' },
+      vendorLocation: { state: 'Karnataka' },
+    });
+    expect(result.isInterstate).toBe(false);
+    expect(result.totalTax).toBeCloseTo(198, 2);
+    expect(result.totalCGST).toBeCloseTo(99, 2);
+    expect(result.totalSGST).toBeCloseTo(99, 2);
+    expect(result.totalIGST).toBe(0);
+  });
+
+  test('TEST B — Karnataka + Tamil Nadu on ₹1100 @ 18% is IGST only', async () => {
+    mockedResolve.mockResolvedValue({
+      found: true,
+      rate: 18,
+      taxCategoryId: 'tc-grooming',
+      catalogCategoryId: 'cat-grooming',
+      vendorRoleId: 'role-groomer',
+      applicationScope: 'service_booking',
+    });
+    const result = await taxCalculationService.calculateTax({
+      items: [
+        {
+          id: 'svc',
+          type: 'service',
+          amount: 1100,
+          catalogCategoryId: 'cat-grooming',
+          roleId: 'role-groomer',
+        },
+      ],
+      customerLocation: { state: 'Tamil Nadu' },
+      vendorLocation: { state: 'Karnataka' },
+    });
+    expect(result.isInterstate).toBe(true);
+    expect(result.totalTax).toBeCloseTo(198, 2);
+    expect(result.totalCGST).toBe(0);
+    expect(result.totalSGST).toBe(0);
+    expect(result.totalIGST).toBeCloseTo(198, 2);
+  });
+
+  test('TEST C — KA vendor + Karnataka customer still intra-state', async () => {
+    mockedResolve.mockResolvedValue({
+      found: true,
+      rate: 18,
+      taxCategoryId: 'tc-grooming',
+      catalogCategoryId: 'cat-grooming',
+      vendorRoleId: 'role-groomer',
+      applicationScope: 'service_booking',
+    });
+    const result = await taxCalculationService.calculateTax({
+      items: [
+        {
+          id: 'svc',
+          type: 'service',
+          amount: 1100,
+          catalogCategoryId: 'cat-grooming',
+          roleId: 'role-groomer',
+        },
+      ],
+      customerLocation: { state: 'Karnataka ' },
+      vendorLocation: { state: 'KA', city: 'Bengaluru' },
+    });
+    expect(result.isInterstate).toBe(false);
+    expect(result.totalIGST).toBe(0);
+    expect(result.totalCGST).toBeCloseTo(99, 2);
+  });
+
+  test('TEST D — missing place of supply fail-closes for service booking', async () => {
+    mockedResolve.mockResolvedValue({
+      found: true,
+      rate: 18,
+      taxCategoryId: 'tc-grooming',
+      catalogCategoryId: 'cat-grooming',
+      vendorRoleId: 'role-groomer',
+      applicationScope: 'service_booking',
+    });
+    await expect(
+      taxCalculationService.calculateTax({
+        items: [
+          {
+            id: 'svc',
+            type: 'service',
+            amount: 1100,
+            catalogCategoryId: 'cat-grooming',
+            roleId: 'role-groomer',
+          },
+        ],
+        vendorLocation: { state: 'Karnataka' },
+      }),
+    ).rejects.toThrow(/place of supply/i);
+  });
+
+  test('Bangalore city-only on both sides is intra-state, not IGST', async () => {
+    mockedResolve.mockResolvedValue({
+      found: true,
+      rate: 18,
+      taxCategoryId: 'tc-grooming',
+      catalogCategoryId: 'cat-grooming',
+      vendorRoleId: 'role-groomer',
+      applicationScope: 'service_booking',
+    });
+    const result = await taxCalculationService.calculateTax({
+      items: [
+        {
+          id: 'svc',
+          type: 'service',
+          amount: 1100,
+          catalogCategoryId: 'cat-grooming',
+          roleId: 'role-groomer',
+        },
+      ],
+      customerLocation: { state: '', city: 'Bengaluru' },
+      vendorLocation: { state: '', city: 'Bangalore' },
+    });
+    expect(result.isInterstate).toBe(false);
+    expect(result.totalCGST).toBeCloseTo(99, 2);
+    expect(result.totalSGST).toBeCloseTo(99, 2);
+    expect(result.totalIGST).toBe(0);
   });
 
   test('Admin rate change affects a new snapshot only; paid snapshot stays 18%', () => {

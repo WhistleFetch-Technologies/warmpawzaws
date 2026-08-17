@@ -7,7 +7,12 @@
  */
 
 import { query } from '../../database/rds-connection';
-import { isGstInterstateSupply, resolveGstStateKey } from '../gst-place-of-supply';
+import {
+  classifyGstPlaceOfSupply,
+  isGstInterstateSupply,
+  missingGstPlaceOfSupplyError,
+  resolveGstStateKey,
+} from '../gst-place-of-supply';
 import {
   missingServiceGstConfigError,
   resolveGstRateForCatalogAndRole,
@@ -109,18 +114,24 @@ export class TaxCalculationService {
     // City-only + same city/state inference avoids false IGST when both sides are e.g. Bangalore/Karnataka.
     const customerStateKey = resolveGstStateKey(customerLocation?.state, customerLocation?.city);
     const vendorStateKey = resolveGstStateKey(vendorLocation?.state, vendorLocation?.city);
-    const isInterstate = isGstInterstateSupply(customerStateKey, vendorStateKey);
+    const supplyKind = classifyGstPlaceOfSupply(customerStateKey, vendorStateKey);
+    const hasServiceBooking = items.some(
+      (item) =>
+        item.type === 'service' &&
+        (item.gstApplicationScope || 'service_booking') === 'service_booking',
+    );
+    if (hasServiceBooking && supplyKind === 'unknown') {
+      throw missingGstPlaceOfSupplyError();
+    }
+    const isInterstate = hasServiceBooking
+      ? supplyKind === 'inter_state'
+      : isGstInterstateSupply(customerStateKey, vendorStateKey);
     if (process.env.LOG_GST === '1') {
       console.log('[GST]', {
         customerStateKey,
         vendorStateKey,
+        supplyKind,
         isInterstate,
-      });
-    }
-    if (isInterstate && (!customerStateKey || !vendorStateKey)) {
-      console.warn('[GST] Missing place of supply; defaulting to IGST', {
-        customerStateKey,
-        vendorStateKey,
       });
     }
 

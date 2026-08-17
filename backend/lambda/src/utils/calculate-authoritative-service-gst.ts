@@ -3,6 +3,12 @@
  */
 
 import { query, select } from '../database/rds-connection';
+import {
+  classifyGstPlaceOfSupply,
+  locationFromStoredFields,
+  missingGstPlaceOfSupplyError,
+  resolveGstStateKey,
+} from '../lib/gst-place-of-supply';
 import { taxCalculationService } from '../lib/services/tax-calculation-service';
 import {
   snapshotFromTaxResult,
@@ -10,26 +16,6 @@ import {
   type GstLocation,
 } from './canonical-gst-snapshot';
 import { resolveServiceBookingTaxItem } from './resolve-service-booking-tax-item';
-
-function parseJsonStateCity(raw: unknown): GstLocation | undefined {
-  if (raw == null || raw === '') return undefined;
-  try {
-    let addr: Record<string, unknown> | null = null;
-    if (typeof raw === 'string') {
-      if (raw.startsWith('{') || raw.startsWith('[')) addr = JSON.parse(raw) as Record<string, unknown>;
-      else return undefined;
-    } else if (typeof raw === 'object' && !Array.isArray(raw)) {
-      addr = raw as Record<string, unknown>;
-    }
-    if (!addr?.state && !addr?.city) return undefined;
-    return {
-      state: addr.state != null ? String(addr.state) : undefined,
-      city: addr.city != null ? String(addr.city) : undefined,
-    };
-  } catch {
-    return undefined;
-  }
-}
 
 export async function resolveVendorGstLocation(vendorId: string | null | undefined): Promise<{
   location?: GstLocation;
@@ -43,15 +29,12 @@ export async function resolveVendorGstLocation(vendorId: string | null | undefin
   ).catch(() => ({ rows: [] }));
   const row = r.rows?.[0] as Record<string, unknown> | undefined;
   if (!row) return {};
-  const st = row.state != null ? String(row.state).trim() : '';
-  if (st) {
-    return {
-      location: { state: st, city: row.city != null ? String(row.city) : undefined },
-      roleId: row.role_id ? String(row.role_id) : undefined,
-    };
-  }
   return {
-    location: parseJsonStateCity(row.address),
+    location: locationFromStoredFields({
+      state: row.state,
+      city: row.city,
+      address: row.address,
+    }),
     roleId: row.role_id ? String(row.role_id) : undefined,
   };
 }
@@ -62,9 +45,8 @@ export async function resolveCustomerGstLocation(params: {
   state?: string | null;
   city?: string | null;
 }): Promise<GstLocation | undefined> {
-  if (params.state && String(params.state).trim()) {
-    return { state: String(params.state).trim(), city: params.city ? String(params.city).trim() : undefined };
-  }
+  const explicit = locationFromStoredFields({ state: params.state, city: params.city });
+  if (explicit) return explicit;
   const addressId = params.addressId ? String(params.addressId).trim() : '';
   if (addressId) {
     const r = await query(
@@ -72,7 +54,8 @@ export async function resolveCustomerGstLocation(params: {
       [addressId],
     ).catch(() => ({ rows: [] }));
     const row = r.rows?.[0] as { state?: string; city?: string } | undefined;
-    if (row?.state) return { state: String(row.state), city: row.city != null ? String(row.city) : undefined };
+    const fromSelected = locationFromStoredFields({ state: row?.state, city: row?.city });
+    if (fromSelected) return fromSelected;
   }
   const cid = params.customerId ? String(params.customerId).trim() : '';
   if (cid) {
@@ -82,17 +65,17 @@ export async function resolveCustomerGstLocation(params: {
       [cid],
     ).catch(() => ({ rows: [] }));
     const drow = def.rows?.[0] as { state?: string; city?: string } | undefined;
-    if (drow?.state) return { state: String(drow.state), city: drow.city != null ? String(drow.city) : undefined };
+    const fromDefault = locationFromStoredFields({ state: drow?.state, city: drow?.city });
+    if (fromDefault) return fromDefault;
 
     const customers = await select('customers', { id: cid }).catch(() => []);
-    const fromProfile = parseJsonStateCity(customers[0]?.address);
-    if (fromProfile?.state) return fromProfile;
-    if (customers[0]?.state) {
-      return {
-        state: String(customers[0].state),
-        city: customers[0].city != null ? String(customers[0].city) : undefined,
-      };
-    }
+    const profile = customers[0] as Record<string, unknown> | undefined;
+    const fromProfile = locationFromStoredFields({
+      state: profile?.state,
+      city: profile?.city,
+      address: profile?.address,
+    });
+    if (fromProfile) return fromProfile;
   }
   return undefined;
 }
@@ -130,13 +113,19 @@ export async function calculateAuthoritativeServiceGst(params: {
     itemId: params.serviceId || params.bookingId || 'service-booking',
   });
 
+  const customerKey = resolveGstStateKey(customerLocation?.state, customerLocation?.city);
+  const vendorKey = resolveGstStateKey(vendor.location?.state, vendor.location?.city);
+  if (classifyGstPlaceOfSupply(customerKey, vendorKey) === 'unknown') {
+    throw missingGstPlaceOfSupplyError();
+  }
+
   const taxResult = await taxCalculationService.calculateTax({
     items: [taxItem],
-    customerLocation: customerLocation?.state
-      ? { state: customerLocation.state, city: customerLocation.city }
+    customerLocation: customerLocation
+      ? { state: customerLocation.state || customerLocation.city || '', city: customerLocation.city }
       : undefined,
-    vendorLocation: vendor.location?.state
-      ? { state: vendor.location.state, city: vendor.location.city }
+    vendorLocation: vendor.location
+      ? { state: vendor.location.state || vendor.location.city || '', city: vendor.location.city }
       : undefined,
     vendorId: params.vendorId || undefined,
     serviceType: taxItem.category || params.category || undefined,

@@ -167,8 +167,27 @@ export async function executepricingQuote(c: Context) {
       });
 
       const amountAfterDiscount = discountResult.finalAmount;
-      const vendorLocation = vendor.state ? { state: vendor.state, city: vendor.city } : undefined;
-      const customerLocation = body.customerState ? { state: body.customerState, city: body.customerCity } : undefined;
+      const { locationFromStoredFields } = await import('../../../../lib/gst-place-of-supply');
+      const { resolveCustomerGstLocation } = await import('../../../../utils/calculate-authoritative-service-gst');
+      const vendorLoc = locationFromStoredFields({
+        state: vendor.state,
+        city: vendor.city,
+        address: vendor.address,
+      });
+      const vendorLocation = vendorLoc
+        ? { state: vendorLoc.state || vendorLoc.city || '', city: vendorLoc.city }
+        : undefined;
+      const customerResolved = body.customerState || body.customerCity
+        ? locationFromStoredFields({ state: body.customerState, city: body.customerCity })
+        : await resolveCustomerGstLocation({
+            customerId,
+            addressId: body.addressId || body.address_id || undefined,
+            state: body.customerState,
+            city: body.customerCity,
+          });
+      const customerLocation = customerResolved
+        ? { state: customerResolved.state || customerResolved.city || '', city: customerResolved.city }
+        : undefined;
 
       const vendorRoleId = vendor.role_id ? String(vendor.role_id) : undefined;
       let resolvedVendorServiceId: string | undefined;

@@ -1735,9 +1735,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             const { isGstConfigurationError } = await import(
               '../../../lib/services/gst-catalog-role-resolution'
             );
-            const message = isGstConfigurationError(gstErr)
-              ? gstErr.message
-              : 'Unable to calculate GST for this booking. Please retry.';
+            const { isGstPlaceOfSupplyError } = await import('../../../lib/gst-place-of-supply');
+            const message =
+              isGstConfigurationError(gstErr) || isGstPlaceOfSupplyError(gstErr)
+                ? gstErr.message
+                : 'Unable to calculate GST for this booking. Please retry.';
             return this.error(message, 400, requestId);
           }
           const gstMeta = snapshotToFinancialMeta(authoritativeGst);

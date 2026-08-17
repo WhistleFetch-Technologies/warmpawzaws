@@ -310,6 +310,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
             serviceId: serviceId || undefined,
             bookingId: booking.id,
             customerId: effectiveCustomerId,
+            addressId: booking.address_id || undefined,
             serviceStyle: serviceStyle || undefined,
             category: serviceCategory || undefined,
           });

@@ -168,12 +168,14 @@ export function PaymentPage({
 
   const calculateTax = useCallback(async () => {
     const addr = address;
+    const hasState = Boolean(addr?.state && String(addr.state).trim());
+    const hasCity = Boolean(addr?.city && String(addr.city).trim());
     const customerLocation =
-      addr?.state && String(addr.state).trim()
+      hasState || hasCity
         ? {
-            state: String(addr.state).trim(),
-            city: addr.city,
-            pincode: addr.pincode,
+            state: hasState ? String(addr.state).trim() : undefined,
+            city: addr?.city,
+            pincode: addr?.pincode,
           }
         : undefined;
 
@@ -193,6 +195,7 @@ export function PaymentPage({
         customerId,
         customerPhone,
         customerLocation,
+        addressId,
       });
 
       if (taxCalculateResponseHasPayload(taxRes)) {
@@ -236,6 +239,7 @@ export function PaymentPage({
     }
   }, [
     address,
+    addressId,
     clearAuthoritativeGstBreakdown,
     baseAmount,
     customerId,

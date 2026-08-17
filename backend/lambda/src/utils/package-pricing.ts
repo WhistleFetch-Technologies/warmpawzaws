@@ -11,8 +11,11 @@
  */
 
 import { createHash } from 'crypto';
-import { query } from '../database/rds-connection';
 import { calculateFinalFees, mapCatalogCategoryToBusinessType } from './feeCalculator';
+import {
+  resolveCustomerGstLocation,
+  resolveVendorGstLocation,
+} from './calculate-authoritative-service-gst';
 import type { VendorPackageComputation } from './vendor-package-razorpay-flow';
 
 export type PackagePolicySnapshot = {
@@ -79,91 +82,6 @@ function resolvePackagePolicySnapshot(
   return { cancellationPolicy, refundPolicy, version };
 }
 
-function parseJsonAddressStateCity(
-  rawAddr: unknown
-): { state?: string; city?: string; pincode?: string } | undefined {
-  if (rawAddr == null || rawAddr === '') return undefined;
-  try {
-    let addr: any = null;
-    if (typeof rawAddr === 'string') {
-      if (rawAddr.startsWith('{') || rawAddr.startsWith('[')) {
-        addr = JSON.parse(rawAddr);
-      } else {
-        return undefined;
-      }
-    } else if (typeof rawAddr === 'object') {
-      addr = rawAddr;
-    }
-    if (addr?.state) {
-      return {
-        state: String(addr.state),
-        city: addr.city != null ? String(addr.city) : undefined,
-        pincode: addr.pincode != null ? String(addr.pincode) : undefined,
-      };
-    }
-  } catch {
-    /* ignore */
-  }
-  return undefined;
-}
-
-async function resolveCustomerTaxLocation(
-  customerId: string
-): Promise<{ state: string; city?: string; pincode?: string } | undefined> {
-  const cid = String(customerId || '').trim();
-  if (!cid) return undefined;
-  try {
-    const r = await query(
-      `SELECT city, state, pincode
-       FROM customer_addresses
-       WHERE customer_id = $1::uuid AND is_default = true
-       LIMIT 1`,
-      [cid]
-    );
-    const row = r.rows?.[0];
-    if (row?.state) {
-      return {
-        state: String(row.state),
-        city: row.city != null ? String(row.city) : undefined,
-        pincode: row.pincode != null ? String(row.pincode) : undefined,
-      };
-    }
-  } catch {
-    /* ignore */
-  }
-  try {
-    const r2 = await query(`SELECT address FROM customers WHERE id = $1::uuid LIMIT 1`, [cid]);
-    const parsed = parseJsonAddressStateCity(r2.rows?.[0]?.address);
-    if (parsed?.state) {
-      return {
-        state: parsed.state,
-        city: parsed.city,
-        pincode: parsed.pincode,
-      };
-    }
-  } catch {
-    /* ignore */
-  }
-  return undefined;
-}
-
-function vendorTaxLocationFromDbRow(
-  row: Record<string, unknown> | undefined
-): { state: string; city?: string } | undefined {
-  if (!row) return undefined;
-  const st = row.state != null ? String(row.state).trim() : '';
-  if (st) {
-    return {
-      state: st,
-      city: row.city != null ? String(row.city) : undefined,
-    };
-  }
-  const fromAddr = parseJsonAddressStateCity(row.address);
-  if (fromAddr?.state) {
-    return { state: fromAddr.state, city: fromAddr.city };
-  }
-  return undefined;
-}
 
 /**
  * Compute package totals using the same pipeline as a normal booking.
@@ -195,27 +113,15 @@ export async function quotePackagePricing(
   let taxBreakdown: PackageTaxBreakdownRow[] = [];
 
   try {
-    let vendorLocation: { state: string; city?: string } | undefined;
-    let roleId: string | undefined;
-    try {
-      const vRes = await query(
-        `SELECT state, city, address, role_id::text AS role_id
-         FROM vendors WHERE id = $1::uuid LIMIT 1`,
-        [comp.vendorId]
-      );
-      const vrow = vRes.rows?.[0] as Record<string, unknown> | undefined;
-      vendorLocation = vendorTaxLocationFromDbRow(vrow);
-      if (vrow?.role_id) roleId = String(vrow.role_id);
-    } catch {
-      vendorLocation = undefined;
-    }
-
-    let customerLocation: { state: string; city?: string; pincode?: string } | undefined;
-    try {
-      customerLocation = await resolveCustomerTaxLocation(comp.customerId);
-    } catch {
-      customerLocation = undefined;
-    }
+    const vendor = await resolveVendorGstLocation(comp.vendorId);
+    const roleId = vendor.roleId;
+    const vendorLocation = vendor.location?.state || vendor.location?.city
+      ? { state: vendor.location.state || vendor.location.city || '', city: vendor.location.city }
+      : undefined;
+    const customerResolved = await resolveCustomerGstLocation({ customerId: comp.customerId });
+    const customerLocation = customerResolved?.state || customerResolved?.city
+      ? { state: customerResolved.state || customerResolved.city || '', city: customerResolved.city }
+      : undefined;
 
     const { resolveServiceBookingTaxItem } = await import('./resolve-service-booking-tax-item');
     const { taxItem } = await resolveServiceBookingTaxItem({
