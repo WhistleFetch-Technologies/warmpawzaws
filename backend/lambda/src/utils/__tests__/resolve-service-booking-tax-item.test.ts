@@ -49,6 +49,24 @@ describe('resolveGstCatalogCategoryRefForBooking', () => {
     expect(ref).toBe('diagnostic');
   });
 
+  it('maps veterinary_services package category text to veterinary GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'veterinary_services',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
+  it('maps Veterinary Services display name to veterinary GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'Veterinary Services',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
   it('uses veterinary category for deworming', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: 'veterinary',

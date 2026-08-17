@@ -26,11 +26,19 @@ const GST_CATALOG_CATEGORY_ALIASES: Record<string, string> = {
   behavioral: 'training',
   behavioural: 'training',
   'lab-diagnostics': 'diagnostic',
+  // Package/custom vendor_services.category is often "Veterinary Services"
+  // (normalized to veterinary_services). Admin GST is on slug `veterinary`.
+  veterinary_services: 'veterinary',
+  'veterinary-services': 'veterinary',
+  vet_services: 'veterinary',
+  'vet-care': 'veterinary',
+  vet_care: 'veterinary',
 };
 
 export function aliasGstCatalogCategoryRef(ref: string): string {
-  const key = String(ref || '').trim().toLowerCase();
-  return GST_CATALOG_CATEGORY_ALIASES[key] ?? ref;
+  const raw = String(ref || '').trim().toLowerCase();
+  const key = raw.replace(/[\s-]+/g, '_');
+  return GST_CATALOG_CATEGORY_ALIASES[raw] ?? GST_CATALOG_CATEGORY_ALIASES[key] ?? ref;
 }
 
 export function isVetVendorRoleName(roleName: string | null | undefined): boolean {
