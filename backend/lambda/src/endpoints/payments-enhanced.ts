@@ -38,7 +38,9 @@ import {
   computeWalletBookingSplit,
   resolveLockedBookingGrossFromNotes,
 } from '../utils/booking-financial-gross';
-import { splitGstAmount } from '../utils/gst-split';
+import { calculateAuthoritativeServiceGst } from '../utils/calculate-authoritative-service-gst';
+import { isGstConfigurationError } from '../lib/services/gst-catalog-role-resolution';
+import { hasCompleteGstSplit, readAuthoritativeGst, snapshotToPaymentColumns } from '../utils/canonical-gst-snapshot';
 import { scheduleBookingStartOtpIfNeeded } from '../utils/booking-start-otp';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
 import {
@@ -154,6 +156,8 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       let sgstAmount = 0;
       let igstAmount = 0;
       let gstRuleId = null;
+      let paymentGstSnap: ReturnType<typeof readAuthoritativeGst> | null = null;
+      let paymentIsInterState: boolean | null = null;
 
       // Get customer and vendor locations for tax calculation
       let customerLocation: { state: string; city?: string; pincode?: string } | undefined = undefined;
@@ -272,47 +276,59 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
             : amount;
 
       try {
-        if (lockedGrossEarly && lockedGrossEarly.totalTax > 0) {
+        const lockedSnap = lockedGrossEarly
+          ? readAuthoritativeGst({
+              gstAmount: lockedGrossEarly.totalTax,
+              cgstAmount: lockedGrossEarly.cgst,
+              sgstAmount: lockedGrossEarly.sgst,
+              igstAmount: lockedGrossEarly.igst,
+              isInterState: (lockedGrossEarly as { isInterState?: boolean }).isInterState,
+              taxableAmount: lockedGrossEarly.subtotalAfterDiscounts,
+            })
+          : null;
+        const lockedIsBackend =
+          Boolean(lockedSnap && lockedSnap.splitAvailable && lockedSnap.gstAmount > 0.009) &&
+          hasCompleteGstSplit({
+            gstAmount: lockedGrossEarly?.totalTax,
+            cgstAmount: lockedGrossEarly?.cgst,
+            sgstAmount: lockedGrossEarly?.sgst,
+            igstAmount: lockedGrossEarly?.igst,
+          });
+
+        if (lockedIsBackend && lockedSnap) {
           taxBreakdown = null;
-          gstAmount = lockedGrossEarly.totalTax;
-          cgstAmount = lockedGrossEarly.cgst;
-          sgstAmount = lockedGrossEarly.sgst;
-          igstAmount = lockedGrossEarly.igst;
+          gstAmount = lockedSnap.gstAmount;
+          cgstAmount = lockedSnap.cgstAmount;
+          sgstAmount = lockedSnap.sgstAmount;
+          igstAmount = lockedSnap.igstAmount;
+          paymentGstSnap = lockedSnap;
+          paymentIsInterState = lockedSnap.isInterState;
         } else {
-          const { resolveServiceBookingTaxItem } = await import('../utils/resolve-service-booking-tax-item');
-          const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
-          const { taxItem } = await resolveServiceBookingTaxItem({
+          const snap = await calculateAuthoritativeServiceGst({
+            taxableAmount: taxAmountInput,
+            vendorId: booking.vendor_id,
             serviceId: serviceId || undefined,
-            vendorId: booking.vendor_id || undefined,
             bookingId: booking.id,
-            vendorRoleId: roleId,
-            amount: taxAmountInput,
-            quantity: 1,
-            category: serviceCategory || undefined,
+            customerId: effectiveCustomerId,
             serviceStyle: serviceStyle || undefined,
-            itemId: serviceId || booking.id,
-          });
-          if (!serviceCategory && taxItem.category) serviceCategory = taxItem.category;
-
-          const taxResult = await taxCalculationService.calculateTax({
-            items: [taxItem],
-            customerLocation,
-            vendorLocation,
-            vendorId: booking.vendor_id || undefined,
-            serviceType: serviceCategory || undefined,
             category: serviceCategory || undefined,
           });
-
-          taxBreakdown = taxResult;
-          gstAmount = taxResult.totalTax;
-          cgstAmount = taxResult.totalCGST;
-          sgstAmount = taxResult.totalSGST;
-          igstAmount = taxResult.totalIGST;
-          gstRuleId = taxResult.items[0]?.taxRuleId || null;
+          taxBreakdown = null;
+          gstAmount = snap.gstAmount;
+          cgstAmount = snap.cgstAmount;
+          sgstAmount = snap.sgstAmount;
+          igstAmount = snap.igstAmount;
+          paymentGstSnap = snap;
+          paymentIsInterState = snap.isInterState;
         }
       } catch (taxError) {
-        console.error('Error calculating tax, using amount as base:', taxError);
-        // Fallback: if tax calculation fails, use the amount as base (tax already included or will be calculated later)
+        console.error('Error calculating tax:', taxError);
+        if (isGstConfigurationError(taxError)) {
+          throw taxError;
+        }
+        if (!lockedGrossEarly || lockedGrossEarly.totalTax <= 0.009) {
+          throw taxError;
+        }
         gstAmount = 0;
       }
 
@@ -369,10 +385,22 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       let totalAmount: number;
       if (useLockedGross) {
         totalAmount = lockedGross!.grossTotal;
-        gstAmount = lockedGross!.totalTax;
-        cgstAmount = lockedGross!.cgst;
-        sgstAmount = lockedGross!.sgst;
-        igstAmount = lockedGross!.igst;
+        const lockedGst = readAuthoritativeGst({
+          gstAmount: lockedGross!.totalTax,
+          cgstAmount: lockedGross!.cgst,
+          sgstAmount: lockedGross!.sgst,
+          igstAmount: lockedGross!.igst,
+          isInterState: (lockedGross as { isInterState?: boolean }).isInterState,
+          taxableAmount: lockedGross!.subtotalAfterDiscounts,
+        });
+        if (lockedGst.splitAvailable) {
+          gstAmount = lockedGst.gstAmount;
+          cgstAmount = lockedGst.cgstAmount;
+          sgstAmount = lockedGst.sgstAmount;
+          igstAmount = lockedGst.igstAmount;
+          paymentGstSnap = lockedGst;
+          paymentIsInterState = lockedGst.isInterState;
+        }
         platformFee = lockedGross!.platformFee;
         convenienceFee = lockedGross!.convenienceFee;
         deliveryFee = lockedGross!.deliveryFee;
@@ -508,24 +536,17 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           paymentData.completed_at = new Date().toISOString();
         }
 
-        if (gstAmount > 0.009 && cgstAmount + sgstAmount + igstAmount <= 0.009) {
-          const custState = customerLocation?.state;
-          const vendState = vendorLocation?.state;
-          const isInterState =
-            Boolean(custState && vendState) &&
-            String(custState).toLowerCase() !== String(vendState).toLowerCase();
-          const split = splitGstAmount(gstAmount, isInterState);
-          cgstAmount = split.cgst;
-          sgstAmount = split.sgst;
-          igstAmount = split.igst;
-        }
-
-        // Add tax fields if calculated
         if (gstAmount > 0) {
-          paymentData.gst_amount = gstAmount;
-          paymentData.cgst_amount = cgstAmount;
-          paymentData.sgst_amount = sgstAmount;
-          paymentData.igst_amount = igstAmount;
+          const snapCols = paymentGstSnap
+            ? snapshotToPaymentColumns(paymentGstSnap)
+            : {
+                gst_amount: gstAmount,
+                cgst_amount: cgstAmount,
+                sgst_amount: sgstAmount,
+                igst_amount: igstAmount,
+                is_inter_state: paymentIsInterState,
+              };
+          Object.assign(paymentData, snapCols);
           if (gstRuleId) {
             paymentData.gst_rule_id = gstRuleId;
           }
@@ -815,8 +836,8 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       }
       return this.error(
         message,
-        500,
-        'INTERNAL_ERROR',
+        isGstConfigurationError(error) ? 400 : 500,
+        isGstConfigurationError(error) ? 'GST_CONFIGURATION_MISSING' : 'INTERNAL_ERROR',
         details,
         requestId
       );

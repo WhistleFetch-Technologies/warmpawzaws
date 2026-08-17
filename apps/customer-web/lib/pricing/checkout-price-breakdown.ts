@@ -122,13 +122,26 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
     });
   }
 
-  if (taxBreakdown.isInterState) {
+  const showIgst =
+    taxBreakdown.isInterState ||
+    (taxBreakdown.igst > 0.009 && taxBreakdown.cgst + taxBreakdown.sgst <= 0.009);
+  if (taxBreakdown.totalTax > 0.009) {
     lines.push({
       kind: 'tax',
-      label: `IGST (${taxBreakdown.taxRate}%)`,
-      amount: taxBreakdown.igst,
+      label: `GST (${taxBreakdown.taxRate}%)`,
+      amount: taxBreakdown.totalTax,
       emphasis: 'muted',
     });
+  }
+  if (showIgst) {
+    if (taxBreakdown.igst > 0.009) {
+      lines.push({
+        kind: 'tax',
+        label: `IGST (${taxBreakdown.taxRate}%)`,
+        amount: taxBreakdown.igst,
+        emphasis: 'muted',
+      });
+    }
   } else {
     if (taxBreakdown.cgst > 0) {
       lines.push({
@@ -146,24 +159,6 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
         emphasis: 'muted',
       });
     }
-  }
-
-  const splitTax = taxBreakdown.cgst + taxBreakdown.sgst + taxBreakdown.igst;
-  if (taxBreakdown.totalTax > 0 && splitTax <= 0) {
-    lines.push({
-      kind: 'tax',
-      label: 'Total tax',
-      amount: taxBreakdown.totalTax,
-      emphasis: 'muted',
-    });
-  } else if (taxBreakdown.totalTax > 0 && splitTax > 0 && splitTax !== taxBreakdown.totalTax) {
-    lines.push({
-      kind: 'tax',
-      label: 'Total tax',
-      amount: taxBreakdown.totalTax,
-      emphasis: 'muted',
-      indent: true,
-    });
   }
 
   if (platformFees.platformFee > 0) {

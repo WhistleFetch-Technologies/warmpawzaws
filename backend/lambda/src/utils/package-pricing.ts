@@ -36,6 +36,8 @@ export type PackagePricingResult = {
   cgstAmount: number;
   sgstAmount: number;
   igstAmount: number;
+  isInterState: boolean;
+  gstRate: number;
   taxBreakdown: PackageTaxBreakdownRow[];
   platformFee: number;
   convenienceFee: number;
@@ -188,6 +190,8 @@ export async function quotePackagePricing(
   let cgstAmount = 0;
   let sgstAmount = 0;
   let igstAmount = 0;
+  let isInterState = false;
+  let gstRate = 0;
   let taxBreakdown: PackageTaxBreakdownRow[] = [];
 
   try {
@@ -235,10 +239,14 @@ export async function quotePackagePricing(
       category: comp.serviceType,
     });
 
-    gstAmount = Number(taxResult.totalTax) || 0;
-    cgstAmount = Number(taxResult.totalCGST) || 0;
-    sgstAmount = Number(taxResult.totalSGST) || 0;
-    igstAmount = Number(taxResult.totalIGST) || 0;
+    const { snapshotFromTaxResult } = await import('./canonical-gst-snapshot');
+    const snap = snapshotFromTaxResult(taxResult, basePrice);
+    gstAmount = snap.gstAmount;
+    cgstAmount = snap.cgstAmount;
+    sgstAmount = snap.sgstAmount;
+    igstAmount = snap.igstAmount;
+    isInterState = snap.isInterState;
+    gstRate = snap.gstRate;
     taxBreakdown = (taxResult.hsnSummary || []).map((h: any) => ({
       name: h.description || 'GST',
       rate: Number(h.gstRate) || 0,
@@ -246,8 +254,7 @@ export async function quotePackagePricing(
     }));
   } catch (taxErr) {
     console.error('[package-pricing] tax calculation failed:', taxErr);
-    gstAmount = 0;
-    taxBreakdown = [];
+    throw taxErr;
   }
 
   const fees = await calculateFinalFees({
@@ -271,6 +278,8 @@ export async function quotePackagePricing(
     cgstAmount,
     sgstAmount,
     igstAmount,
+    isInterState,
+    gstRate,
     taxBreakdown,
     platformFee: fees.platformFee,
     convenienceFee: fees.convenienceFee,

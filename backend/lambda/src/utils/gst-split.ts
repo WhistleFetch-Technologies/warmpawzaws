@@ -13,6 +13,13 @@ function money(raw: unknown): number {
   return Number.isFinite(n) ? round2(n) : 0;
 }
 
+/** Explicit stored jurisdiction only. Unknown/null must not become intra (false). */
+export function parseStoredInterstate(raw: unknown): boolean | undefined {
+  if (raw === true || raw === 't' || raw === 'true' || raw === 1 || raw === '1') return true;
+  if (raw === false || raw === 'f' || raw === 'false' || raw === 0 || raw === '0') return false;
+  return undefined;
+}
+
 export function splitGstAmount(
   taxAmount: number,
   isInterState: boolean,
@@ -30,15 +37,21 @@ export type GstSplitParts = {
   sgstAmount: number;
   igstAmount: number;
   gstTotal: number;
+  /** False when only a GST total exists and jurisdiction is unknown — do not fabricate 50/50. */
+  splitAvailable?: boolean;
 };
 
-/** If a split is missing but gstTotal is present, reconstruct using invoice rules. */
+/**
+ * If a complete split exists, keep it.
+ * If only gstTotal exists, reconstruct ONLY when isInterState is an explicit boolean.
+ * Unknown jurisdiction: preserve total, leave CGST/SGST/IGST at 0.
+ */
 export function reconstructGstSplit(parts: {
   cgstAmount?: unknown;
   sgstAmount?: unknown;
   igstAmount?: unknown;
   gstTotal?: unknown;
-  isInterState?: boolean;
+  isInterState?: boolean | null;
 }): GstSplitParts {
   const cgst = money(parts.cgstAmount);
   const sgst = money(parts.sgstAmount);
@@ -47,18 +60,29 @@ export function reconstructGstSplit(parts: {
   const gstTotal = splitSum > 0.009 ? splitSum : money(parts.gstTotal);
 
   if (gstTotal <= 0.009) {
-    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
+    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0, splitAvailable: true };
   }
   if (splitSum > 0.009) {
-    return { cgstAmount: cgst, sgstAmount: sgst, igstAmount: igst, gstTotal };
+    return { cgstAmount: cgst, sgstAmount: sgst, igstAmount: igst, gstTotal, splitAvailable: true };
   }
 
-  const reconstructed = splitGstAmount(gstTotal, Boolean(parts.isInterState));
+  if (parts.isInterState === true || parts.isInterState === false) {
+    const reconstructed = splitGstAmount(gstTotal, parts.isInterState);
+    return {
+      cgstAmount: reconstructed.cgst,
+      sgstAmount: reconstructed.sgst,
+      igstAmount: reconstructed.igst,
+      gstTotal,
+      splitAvailable: true,
+    };
+  }
+
   return {
-    cgstAmount: reconstructed.cgst,
-    sgstAmount: reconstructed.sgst,
-    igstAmount: reconstructed.igst,
+    cgstAmount: 0,
+    sgstAmount: 0,
+    igstAmount: 0,
     gstTotal,
+    splitAvailable: false,
   };
 }
 
@@ -110,7 +134,10 @@ export function inferExclusiveGstFromChargedDelta(params: {
   for (const rate of rates) {
     const expected = round2(taxable * (rate / 100));
     if (Math.abs(implied - expected) <= 0.05) {
-      return reconstructGstSplit({ gstTotal: expected, isInterState: Boolean(params.isInterState) });
+      return reconstructGstSplit({
+        gstTotal: expected,
+        isInterState: params.isInterState === true || params.isInterState === false ? params.isInterState : null,
+      });
     }
   }
 
@@ -146,7 +173,8 @@ export function inferInclusiveGstFromListedPrice(params: {
 
   const gross = money(params.vendorGross);
   const charged = money(params.chargedTotal);
-  const isInterState = Boolean(params.isInterState);
+  const isInterState =
+    params.isInterState === true || params.isInterState === false ? params.isInterState : undefined;
   const chargedLooksInclusive = charged <= 0.009 || Math.abs(charged - taxable) <= 0.05;
 
   for (const rate of rates) {

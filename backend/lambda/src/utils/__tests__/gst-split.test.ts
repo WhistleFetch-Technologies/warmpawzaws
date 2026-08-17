@@ -24,7 +24,13 @@ describe('gst-split', () => {
       igstAmount: 0,
       gstTotal: 180,
     });
-    expect(split).toEqual({ cgstAmount: 90, sgstAmount: 90, igstAmount: 0, gstTotal: 180 });
+    expect(split).toEqual({
+      cgstAmount: 90,
+      sgstAmount: 90,
+      igstAmount: 0,
+      gstTotal: 180,
+      splitAvailable: true,
+    });
   });
 
   test('reconstructGstSplit uses gst_amount when CGST/SGST/IGST are 0', () => {
@@ -77,14 +83,41 @@ describe('gst-split', () => {
     expect(split.gstTotal).toBe(0);
   });
 
+  test('reconstructGstSplit does not invent 50/50 when jurisdiction is unknown', () => {
+    const split = reconstructGstSplit({
+      cgstAmount: 0,
+      sgstAmount: 0,
+      igstAmount: 0,
+      gstTotal: 324,
+    });
+    expect(split.gstTotal).toBe(324);
+    expect(split.cgstAmount).toBe(0);
+    expect(split.sgstAmount).toBe(0);
+    expect(split.igstAmount).toBe(0);
+    expect(split.splitAvailable).toBe(false);
+  });
+
   test('inferInclusiveGstFromListedPrice extracts Pawsome inclusive GST from vendor gross', () => {
+    const split = inferInclusiveGstFromListedPrice({
+      taxableValue: 1593,
+      vendorGross: 1350,
+      isInterState: false,
+    });
+    expect(split.gstTotal).toBe(243);
+    expect(split.cgstAmount).toBe(121.5);
+    expect(split.sgstAmount).toBe(121.5);
+  });
+
+  test('inferInclusiveGstFromListedPrice keeps total only when jurisdiction is unknown', () => {
     const split = inferInclusiveGstFromListedPrice({
       taxableValue: 1593,
       vendorGross: 1350,
     });
     expect(split.gstTotal).toBe(243);
-    expect(split.cgstAmount).toBe(121.5);
-    expect(split.sgstAmount).toBe(121.5);
+    expect(split.cgstAmount).toBe(0);
+    expect(split.sgstAmount).toBe(0);
+    expect(split.igstAmount).toBe(0);
+    expect(split.splitAvailable).toBe(false);
   });
 
   test('inferInclusiveGstFromListedPrice extracts K9 inclusive GST from listed 1800', () => {

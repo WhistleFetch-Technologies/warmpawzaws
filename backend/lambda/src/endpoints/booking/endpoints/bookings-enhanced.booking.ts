@@ -76,6 +76,8 @@ import {
 import { reversePendingPackageSessionEarnings } from '../../../utils/package-session-earnings-reverse';
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
+import { calculateAuthoritativeServiceGst } from '../../../utils/calculate-authoritative-service-gst';
+import { snapshotToFinancialMeta } from '../../../utils/canonical-gst-snapshot';
 import {
   computeWalletBookingSplit,
   resolveBookingFinancialDiscountBuckets,
@@ -1715,6 +1717,42 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             0,
             Math.round((servicePriceForMeta - vendorDisc - platformDisc - couponDisc) * 100) / 100
           );
+          let authoritativeGst: Awaited<ReturnType<typeof calculateAuthoritativeServiceGst>> | null = null;
+          try {
+            authoritativeGst = await calculateAuthoritativeServiceGst({
+              taxableAmount: derivedSubtotalAfterDiscounts,
+              vendorId: settlementVendorId || String(bookingData.vendor_id ?? body.vendorId ?? ''),
+              serviceId: String(bookingData.service_id ?? body.serviceId ?? ''),
+              customerId: String(bookingData.customer_id ?? customerId ?? ''),
+              addressId: addressIdToStore,
+              customerState: body.state || body.customerState || undefined,
+              customerCity: body.city || body.customerCity || undefined,
+              serviceStyle: String(bookingData.service_type ?? body.serviceType ?? ''),
+              category: String(body.serviceCategory ?? body.category ?? ''),
+            });
+          } catch (gstErr) {
+            console.error('[BOOKING] Authoritative GST calculation failed:', gstErr);
+            const { isGstConfigurationError } = await import(
+              '../../../lib/services/gst-catalog-role-resolution'
+            );
+            const message = isGstConfigurationError(gstErr)
+              ? gstErr.message
+              : 'Unable to calculate GST for this booking. Please retry.';
+            return this.error(message, 400, requestId);
+          }
+          const gstMeta = snapshotToFinancialMeta(authoritativeGst);
+          bookingData.tax_amount = gstMeta.totalTax;
+          const gstFinalPaid = Math.round(
+            (derivedSubtotalAfterDiscounts +
+              gstMeta.totalTax +
+              (parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0) +
+              (parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0) +
+              (parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0)) *
+              100
+          ) / 100;
+          if (Number.isFinite(finalPaid) && Math.abs(finalPaid - gstFinalPaid) > 0.05) {
+            bookingData.total_amount = gstFinalPaid;
+          }
           let enrichedMeta = settlementVendorId
             ? await enrichFinancialMetaWithSettlement({
                 vendorId: settlementVendorId,
@@ -1726,10 +1764,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 platformPromotionId: resolvedBookingPromotions?.platformPromotionId,
                 couponFundingType,
                 subtotalAfterDiscounts: derivedSubtotalAfterDiscounts,
-                cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
-                sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
-                igst: parseFloat(String(fm.igst ?? 0)) || 0,
-                totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+                cgst: gstMeta.cgst,
+                sgst: gstMeta.sgst,
+                igst: gstMeta.igst,
+                totalTax: gstMeta.totalTax,
                 platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
                 convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
                 deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
@@ -1742,10 +1780,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 platformDiscount: platformDisc,
                 couponDiscount: couponDisc,
                 subtotalAfterDiscounts: derivedSubtotalAfterDiscounts || undefined,
-                cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
-                sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
-                igst: parseFloat(String(fm.igst ?? 0)) || 0,
-                totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+                cgst: gstMeta.cgst,
+                sgst: gstMeta.sgst,
+                igst: gstMeta.igst,
+                totalTax: gstMeta.totalTax,
                 platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
                 convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
                 deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
@@ -1755,10 +1793,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           if (!settlementVendorId) {
             Object.assign(enrichedMeta, {
               subtotalAfterDiscounts: derivedSubtotalAfterDiscounts || undefined,
-              cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
-              sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
-              igst: parseFloat(String(fm.igst ?? 0)) || 0,
-              totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+              cgst: gstMeta.cgst,
+              sgst: gstMeta.sgst,
+              igst: gstMeta.igst,
+              totalTax: gstMeta.totalTax,
+              isInterState: gstMeta.isInterState,
+              taxableAmount: gstMeta.taxableAmount,
+              gstRate: gstMeta.gstRate,
+              gstAuthority: 'backend',
               platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
               convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
               deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
@@ -1770,10 +1812,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               parseFloat(String(enrichedMeta.subtotalAfterDiscounts ?? 0)) ||
               derivedSubtotalAfterDiscounts;
             enrichedMeta.finalPaid = Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount;
-            enrichedMeta.cgst = parseFloat(String(fm.cgst ?? 0)) || 0;
-            enrichedMeta.sgst = parseFloat(String(fm.sgst ?? 0)) || 0;
-            enrichedMeta.igst = parseFloat(String(fm.igst ?? 0)) || 0;
-            enrichedMeta.totalTax = parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0;
+            enrichedMeta.cgst = gstMeta.cgst;
+            enrichedMeta.sgst = gstMeta.sgst;
+            enrichedMeta.igst = gstMeta.igst;
+            enrichedMeta.totalTax = gstMeta.totalTax;
+            (enrichedMeta as Record<string, unknown>).isInterState = gstMeta.isInterState;
+            (enrichedMeta as Record<string, unknown>).taxableAmount = gstMeta.taxableAmount;
+            (enrichedMeta as Record<string, unknown>).gstRate = gstMeta.gstRate;
+            (enrichedMeta as Record<string, unknown>).gstAuthority = 'backend';
             enrichedMeta.platformFee = parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0;
             enrichedMeta.convenienceFee =
               parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0;

@@ -101,6 +101,14 @@ function splitTax(isInterState: boolean, gstRate: number, taxAmount: number) {
   return { cgst: half, sgst: half, igst: 0 };
 }
 
+function storedMealGstSplit(order: Record<string, unknown>): { cgst: number; sgst: number; igst: number } | null {
+  const cgst = safeMoney(order.cgst_amount);
+  const sgst = safeMoney(order.sgst_amount);
+  const igst = safeMoney(order.igst_amount);
+  if (cgst + sgst + igst <= 0.009) return null;
+  return { cgst, sgst, igst };
+}
+
 function numberToWords(num: number): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -153,8 +161,19 @@ export function buildMealOrderInvoicePayload(params: {
   const snap = parseSnap(order.purchase_snapshot);
   const cp = (snap.checkoutPricing ?? {}) as Record<string, unknown>;
   const gstSnap = (cp.gst ?? snap.gst) as Record<string, unknown> | undefined;
-  const foodGstPct = safeMoney(gstSnap?.foodGstPct ?? gstSnap?.food_gst_pct ?? 5);
+  const foodGstPct = safeMoney(gstSnap?.foodGstPct ?? gstSnap?.food_gst_pct ?? order.gst_rate);
   const deliveryGstPct = safeMoney(gstSnap?.deliveryGstPct ?? gstSnap?.delivery_gst_pct ?? 0);
+  const storedSplit = storedMealGstSplit(order);
+  const snapInter =
+    gstSnap?.isInterState === true ||
+    gstSnap?.is_inter_state === true ||
+    order.is_inter_state === true ||
+    order.is_inter_state === 't';
+  const effectiveInterState = storedSplit
+    ? storedSplit.igst > 0.009
+    : typeof gstSnap?.isInterState === 'boolean'
+      ? Boolean(gstSnap.isInterState)
+      : isInterState;
 
   const { subtotal, total } = resolveCustomerMealPlanOrderDisplayTotals(order, null);
   const deliveryFee = safeMoney(order.delivery_fee ?? order.logistics_cost ?? cp.deliveryFee);
@@ -194,7 +213,15 @@ export function buildMealOrderInvoicePayload(params: {
     } else if (line.label === 'Delivery') {
       taxForLine = safeMoney(gstSnap?.deliveryGstAmount ?? (taxableValue * deliveryGstPct) / 100);
     }
-    const taxSplit = splitTax(isInterState, gstRate, taxForLine);
+    const lineSplit = splitTax(effectiveInterState, gstRate, taxForLine);
+    const taxSplit =
+      storedSplit && taxAmount > 0.009
+        ? {
+            cgst: lineSplit.cgst,
+            sgst: lineSplit.sgst,
+            igst: lineSplit.igst,
+          }
+        : lineSplit;
     const lineQty = line.label === 'Meal price' ? qty : 1;
     const unitPrice = lineQty > 0 ? taxableValue / lineQty : taxableValue;
 

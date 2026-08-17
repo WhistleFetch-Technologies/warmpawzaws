@@ -964,7 +964,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
             (item as { catalog_category_id?: string }).catalog_category_id;
           // Meal-plan GST rows must always resolve catalogue UUID here. Do not require `vendorId`:
           // missing vendor would skip this branch, drop `catalogCategoryId`, and fall through to the
-          // generic service path — which then defaults GST to 18%.
+          // generic service path — which now fails closed without Admin GST configuration.
           if (isMealPlanFoodScope && explicitCatRaw) {
             const catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(explicitCatRaw));
             if (catalogCategoryUuid) {

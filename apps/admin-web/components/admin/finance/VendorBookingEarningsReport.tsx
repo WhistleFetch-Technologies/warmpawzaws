@@ -48,6 +48,9 @@ type VendorSummary = {
   serviceBaseTotal: number;
   discountTotal: number;
   gstTotal: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
   platformFeeTotal: number;
   convenienceFeeTotal: number;
   deliveryFeeTotal: number;
@@ -65,6 +68,9 @@ type PeriodTotals = {
   serviceBaseTotal: number;
   discountTotal: number;
   gstTotal: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
   platformFeeTotal: number;
   convenienceFeeTotal: number;
   deliveryFeeTotal: number;
@@ -75,6 +81,33 @@ type PeriodTotals = {
 
 function moneyCell(v: string | number | undefined | null) {
   return `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
+
+function gstBreakdownCell(
+  gstTotal: string | number | undefined | null,
+  cgst?: string | number | null,
+  sgst?: string | number | null,
+  igst?: string | number | null,
+  packageOnce?: boolean,
+) {
+  const c = Number(cgst || 0);
+  const s = Number(sgst || 0);
+  const i = Number(igst || 0);
+  return (
+    <div className="text-right">
+      <div className="tabular-nums">{moneyCell(gstTotal)}</div>
+      {i > 0.009 && c + s <= 0.009 ? (
+        <div className="text-xs text-gray-500">IGST {moneyCell(i)}</div>
+      ) : c + s > 0.009 ? (
+        <div className="text-xs text-gray-500">
+          CGST {moneyCell(c)} · SGST {moneyCell(s)}
+        </div>
+      ) : null}
+      {packageOnce && Number(gstTotal || 0) > 0.009 ? (
+        <div className="text-xs text-orange-600">Customer / package GST</div>
+      ) : null}
+    </div>
+  );
 }
 
 function shortId(id: string) {
@@ -464,6 +497,14 @@ export function VendorBookingEarningsReport() {
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">GST</div>
               <div className="text-sm font-semibold">{moneyCell(periodTotals.gstTotal)}</div>
+              {Number(periodTotals.igstAmount) > 0.009 &&
+              Number(periodTotals.cgstAmount) + Number(periodTotals.sgstAmount) <= 0.009 ? (
+                <div className="text-xs text-gray-500">IGST {moneyCell(periodTotals.igstAmount)}</div>
+              ) : Number(periodTotals.cgstAmount) + Number(periodTotals.sgstAmount) > 0.009 ? (
+                <div className="text-xs text-gray-500">
+                  CGST {moneyCell(periodTotals.cgstAmount)} · SGST {moneyCell(periodTotals.sgstAmount)}
+                </div>
+              ) : null}
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">Platform fees</div>
@@ -521,7 +562,9 @@ export function VendorBookingEarningsReport() {
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.customerPaidTotal)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.serviceBaseTotal)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.discountTotal)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.gstTotal)}</td>
+                    <td className="px-3 py-2">
+                      {gstBreakdownCell(v.gstTotal, v.cgstAmount, v.sgstAmount, v.igstAmount)}
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.platformFeeTotal)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.vendorGross)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.commissionTotal)}</td>
@@ -605,7 +648,12 @@ export function VendorBookingEarningsReport() {
                                         </td>
                                         <td className="px-3 py-2 text-xs">{b.couponCode || '—'}</td>
                                         <td className="px-3 py-2 text-right tabular-nums">
-                                          {moneyCell(b.gstTotal)}
+                                          {gstBreakdownCell(
+                                            b.gstTotal,
+                                            b.cgstAmount,
+                                            b.sgstAmount,
+                                            b.igstAmount,
+                                          )}
                                         </td>
                                         <td className="px-3 py-2 text-right tabular-nums">
                                           {moneyCell(b.platformFee)}
@@ -659,8 +707,13 @@ export function VendorBookingEarningsReport() {
                                                 <div>{b.couponCode || '—'}</div>
                                               </div>
                                               <div>
-                                                <span className="text-gray-500">GST</span>
-                                                <div>{moneyCell(b.gstTotal)}</div>
+                                                <span className="text-gray-500">Customer GST</span>
+                                                {gstBreakdownCell(
+                                                  b.gstTotal,
+                                                  b.cgstAmount,
+                                                  b.sgstAmount,
+                                                  b.igstAmount,
+                                                )}
                                               </div>
                                               <div>
                                                 <span className="text-gray-500">Platform fee</span>
