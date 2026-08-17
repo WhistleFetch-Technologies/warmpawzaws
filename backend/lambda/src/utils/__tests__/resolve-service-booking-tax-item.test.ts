@@ -33,6 +33,22 @@ describe('isVaccinationService', () => {
 });
 
 describe('resolveGstCatalogCategoryRefForBooking', () => {
+  it('maps behavioral catalogue to training GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'behavioral',
+      serviceName: 'Aggression Rehabilitation Program',
+    });
+    expect(ref).toBe('training');
+  });
+
+  it('maps lab-diagnostics catalogue to diagnostic GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'lab-diagnostics',
+      serviceName: 'Blood Test',
+    });
+    expect(ref).toBe('diagnostic');
+  });
+
   it('uses veterinary category for deworming', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: 'veterinary',

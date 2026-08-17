@@ -21,6 +21,18 @@ export const VET_VENDOR_ROLE_NAMES = [
   'pet_clinic',
 ] as const;
 
+/** Catalogue slugs that share an Admin GST card with another master. */
+const GST_CATALOG_CATEGORY_ALIASES: Record<string, string> = {
+  behavioral: 'training',
+  behavioural: 'training',
+  'lab-diagnostics': 'diagnostic',
+};
+
+export function aliasGstCatalogCategoryRef(ref: string): string {
+  const key = String(ref || '').trim().toLowerCase();
+  return GST_CATALOG_CATEGORY_ALIASES[key] ?? ref;
+}
+
 export function isVetVendorRoleName(roleName: string | null | undefined): boolean {
   if (roleName == null || String(roleName).trim() === '') return false;
   const n = String(roleName).toLowerCase().trim();
@@ -103,10 +115,12 @@ export async function resolveGstCatalogCategoryRefForBooking(params: {
   }
 
   const catRef = params.categoryIdFromCatalog ? String(params.categoryIdFromCatalog).trim() : '';
-  if (catRef) return catRef;
+  if (catRef) return aliasGstCatalogCategoryRef(catRef);
 
   const fallback = params.categoryFallback ? String(params.categoryFallback).trim() : '';
-  if (fallback && fallback.toLowerCase() !== 'pet_services') return fallback;
+  if (fallback && fallback.toLowerCase() !== 'pet_services') {
+    return aliasGstCatalogCategoryRef(fallback);
+  }
 
   // Last resort: vet vendors with no service/catalog category signal → veterinary (0%).
   if (isVetVendorRoleName(params.vendorRoleName)) {

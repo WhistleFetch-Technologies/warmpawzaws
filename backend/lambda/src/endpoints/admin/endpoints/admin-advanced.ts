@@ -37,7 +37,10 @@ import {
   getFeeGlobalsMap,
 } from '../../../utils/admin-fee-settings-db';
 import { computePolicyDeliveryFeeForOrder } from '../../../utils/customer-delivery-fee-quote';
-import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
+import {
+  customerServicesForCatalogCategorySlug,
+  gstRolesForCatalogCategorySlug,
+} from '../../../utils/catalog-category-customer-service-map';
 import { normalizeCategoryImageUrlForStorage } from '../../../utils/ecommerce-category-display';
 import {
   canManageRbacAdmin,
@@ -4690,6 +4693,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         []) as { id: string; name: string; display_name: string }[];
 
       let fromCustomerService: { id: string; name: string; display_name: string }[] = [];
+      let fromNamedRoles: { id: string; name: string; display_name: string }[] = [];
       try {
         const slugRes = await query(
           `SELECT category_id FROM service_categories WHERE id = $1::uuid LIMIT 1`,
@@ -4697,25 +4701,57 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         );
         const slugRow = (slugRes as { rows?: { category_id?: string }[] })?.rows?.[0];
         const slug = slugRow?.category_id != null ? String(slugRow.category_id) : '';
-        const buckets = customerServicesForCatalogCategorySlug(slug);
-        if (buckets.length > 0) {
-          const csRes = await query(
+        const named = gstRolesForCatalogCategorySlug(slug);
+        if (named.names.length > 0 || named.displayNames.length > 0) {
+          const namedRes = await query(
             `SELECT DISTINCT r.id, r.name, r.display_name
              FROM roles r
              WHERE COALESCE(r.is_active, true) = true
-               AND r.customer_service IS NOT NULL
-               AND r.customer_service = ANY($1::text[])`,
-            [buckets]
+               AND (
+                 LOWER(TRIM(r.name)) = ANY($1::text[])
+                 OR LOWER(TRIM(r.display_name)) = ANY($2::text[])
+               )`,
+            [named.names.map((n) => n.toLowerCase()), named.displayNames.map((n) => n.toLowerCase())]
           );
-          fromCustomerService = ((csRes as { rows?: typeof fromCustomerService })?.rows ??
-            []) as typeof fromCustomerService;
+          fromNamedRoles = ((namedRes as { rows?: typeof fromNamedRoles })?.rows ??
+            []) as typeof fromNamedRoles;
+        } else {
+          const buckets = customerServicesForCatalogCategorySlug(slug);
+          if (buckets.length > 0) {
+            const bucketArgs = [buckets.map((b) => String(b).toLowerCase())];
+            try {
+              const csRes = await query(
+                `SELECT DISTINCT r.id, r.name, r.display_name
+                 FROM roles r
+                 WHERE COALESCE(r.is_active, true) = true
+                   AND NULLIF(TRIM(r.config->>'customer_service'), '') IS NOT NULL
+                   AND LOWER(TRIM(r.config->>'customer_service')) = ANY($1::text[])`,
+                bucketArgs
+              );
+              fromCustomerService = ((csRes as { rows?: typeof fromCustomerService })?.rows ??
+                []) as typeof fromCustomerService;
+            } catch {
+              const csRes = await query(
+                `SELECT DISTINCT r.id, r.name, r.display_name
+                 FROM roles r
+                 WHERE COALESCE(r.is_active, true) = true
+                   AND r.customer_service IS NOT NULL
+                   AND LOWER(TRIM(r.customer_service)) = ANY($1::text[])`,
+                bucketArgs
+              );
+              fromCustomerService = ((csRes as { rows?: typeof fromCustomerService })?.rows ??
+                []) as typeof fromCustomerService;
+            }
+          }
         }
       } catch (csErr: unknown) {
         console.warn('[catalog-category-roles] customer_service branch skipped:', (csErr as Error)?.message);
       }
 
       const byId = new Map<string, { id: string; name: string; display_name: string }>();
-      for (const r of [...fromSpecs, ...fromCustomerService]) {
+      const roleSources =
+        fromNamedRoles.length > 0 ? fromNamedRoles : [...fromSpecs, ...fromCustomerService];
+      for (const r of roleSources) {
         if (r?.id) byId.set(String(r.id), r);
       }
       const roles = [...byId.values()].sort((a, b) => {
