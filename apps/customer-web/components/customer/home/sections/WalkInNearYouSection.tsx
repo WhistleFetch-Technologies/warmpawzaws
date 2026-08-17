@@ -14,6 +14,8 @@ import {
   WALK_IN_SECTION_TITLE,
   WALK_IN_VENDORS_PATH,
 } from '@/lib/walk-in-constants';
+import { shouldShowWalkInNearYou } from '@/lib/walk-in-commerce-gate';
+import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
 import {
   WalkInProviderCard,
   WalkInProviderCardSkeleton,
@@ -70,9 +72,13 @@ function WalkInNearYouSectionComponent({
   className = '',
   enabled = true,
 }: WalkInNearYouSectionProps) {
+  const commerce = useCommerceConfigOptional();
+  const showWalkIn = shouldShowWalkInNearYou(commerce);
+  const fetchEnabled = showWalkIn && enabled !== false;
+
   const { data: providers = [], isLoading, isError } = useWalkInNearbyProviders({
     phone,
-    enabled,
+    enabled: fetchEnabled,
   });
   const { payBill, bookNow } = useWalkInVendorActions(onNavigate);
 
@@ -90,7 +96,7 @@ function WalkInNearYouSectionComponent({
     [handleViewAll]
   );
 
-  if (!enabled) {
+  if (!showWalkIn || !enabled) {
     return null;
   }
 

@@ -9,6 +9,8 @@ import {
   WALK_IN_SECTION_SUBTITLE,
   WALK_IN_SECTION_TITLE,
 } from '@/lib/walk-in-constants';
+import { shouldShowWalkInNearYou } from '@/lib/walk-in-commerce-gate';
+import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
 import {
   WalkInProviderCard,
@@ -29,14 +31,23 @@ function dedupeWalkInProvidersById(providers: WalkInProvider[]): WalkInProvider[
 
 export function WalkInVendorsPageClient() {
   const router = useRouter();
+  const commerce = useCommerceConfigOptional();
+  const showWalkIn = shouldShowWalkInNearYou(commerce);
   const [phone, setPhone] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setPhone(localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || undefined);
   }, []);
 
+  useEffect(() => {
+    if (commerce?.isLoaded && !showWalkIn) {
+      router.replace('/');
+    }
+  }, [commerce?.isLoaded, showWalkIn, router]);
+
   const { data: providers = [], isLoading, isError, isFetching } = useWalkInNearbyProviders({
     phone,
+    enabled: showWalkIn,
   });
   const { payBill, bookNow, openVendorDetails } = useWalkInVendorActions();
 
@@ -47,6 +58,14 @@ export function WalkInVendorsPageClient() {
 
   const showSkeleton = isLoading && listingProviders.length === 0;
   const showEmpty = !showSkeleton && !isError && listingProviders.length === 0;
+
+  if (!showWalkIn) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <Loader2 className="h-6 w-6 animate-spin text-[#FF8C42]" aria-label="Loading" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/40 via-white to-slate-50">
