@@ -2643,7 +2643,7 @@ export function UniversalPaymentPage({
             ? {
                 serviceCategory: category || initialPromotionIntent?.serviceCategory || undefined,
                 financialMeta: {
-                  servicePrice: taxBreakdown.subtotal,
+                  servicePrice: baseAmount,
                   vendorDiscount: checkoutVendorDiscount,
                   platformDiscount: checkoutPlatformDiscount,
                   couponDiscount,

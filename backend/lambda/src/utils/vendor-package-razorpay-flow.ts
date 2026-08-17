@@ -12,6 +12,7 @@ import {
   resolveServicePackageDisplayName,
 } from './service-package-sessions';
 import { resolveVendorId } from './vendor-resolve';
+import { resolvePackageCustomerSellingPrice } from './resolve-booking-list-price';
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
   if (!raw) return null;
@@ -189,7 +190,7 @@ export async function computeVendorPackagePurchase(params: {
 
   const vsRows = await query(
     `SELECT vs.id, vs.vendor_id, vs.service_id, vs.service_name, vs.metadata, vs.service_style,
-            vs.price, vs.duration_minutes, vs.category
+            vs.price, vs.custom_price, vs.duration_minutes, vs.category
      FROM vendor_services vs
      WHERE vs.id = $1::uuid`,
     [vendorServiceId]
@@ -232,10 +233,12 @@ export async function computeVendorPackagePurchase(params: {
     (Number(details.totalSessions) < 0 && Number.isFinite(Number(details.totalSessions))) ||
     (Number(meta.sessionCount) < 0 && Number.isFinite(Number(meta.sessionCount)));
 
-  const priceNum = Math.max(
-    0,
-    Number(details.price ?? details.packagePrice ?? vs.price ?? vs.custom_price ?? 0) || 0
-  );
+  const priceNum = resolvePackageCustomerSellingPrice({
+    vendorCustomPrice: vs.custom_price,
+    vendorPrice: vs.price,
+    packageDetailsPrice: details.price ?? details.packagePrice,
+    packagePrice: meta.packagePrice ?? meta.price,
+  });
   const displayName = String(vs.service_name || meta.serviceName || 'Package').trim() || 'Package';
   const serviceType = String(vs.category || meta.serviceType || 'walking')
     .toLowerCase()

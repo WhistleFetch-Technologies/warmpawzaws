@@ -6,6 +6,7 @@ import { isValidUUID } from '../../../../types/entities';
 import { getDiscoveryRules, type DiscoveryRuleSet } from '../../../../lib/rule-engine';
 import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../../vendor/endpoints/vendorProfile.vendor';
 import { taxCalculationService } from '../../../../lib/services/tax-calculation-service';
+import { resolveVendorConfiguredSellingPrice } from '../../../../utils/resolve-booking-list-price';
 import { discountCalculationService } from '../../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../../constants';
 import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../../constants/helper';
@@ -87,7 +88,10 @@ export async function executepricingQuote(c: Context) {
       const vsRow = await pricing_quoteRepo.dbPricingQuote0(serviceId, vendor)
       if (vsRow.rows?.length > 0) {
         const vs = vsRow.rows[0];
-        basePrice = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
+        basePrice = resolveVendorConfiguredSellingPrice({
+          vendorCustomPrice: vs.custom_price,
+          vendorPrice: vs.price,
+        });
         category = vs.category || '';
         try {
           const meta = typeof vs.metadata === 'string' ? (vs.metadata ? JSON.parse(vs.metadata) : {}) : (vs.metadata || {});

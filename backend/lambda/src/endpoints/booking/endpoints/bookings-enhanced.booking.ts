@@ -354,7 +354,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       
       totalSelectedServicesAmount = selectedServices.reduce((sum, s) => {
         const quantity = s.quantity || 1;
-        const price = s.price || 0;
+        const price = Number(s.originalPrice ?? s.original_price ?? s.price ?? 0) || 0;
         return sum + (price * quantity);
       }, 0);
       

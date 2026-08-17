@@ -1,9 +1,14 @@
 import {
+  customerTaxableAfterDiscount,
+  preferVendorSellingPriceOverClientUndercut,
   resolveBookingListPrice,
+  resolvePackageCustomerSellingPrice,
   resolvePersistedBookingBasePrice,
   resolvePromoValidationAmount,
+  resolveVendorConfiguredSellingPrice,
   sumSelectedServicesListPrice,
 } from '../resolve-booking-list-price';
+import { buildCanonicalGstSnapshot } from '../canonical-gst-snapshot';
 
 describe('resolveBookingListPrice', () => {
   it('prefers stay/server billed total over vendor unit price', () => {
@@ -96,5 +101,77 @@ describe('resolvePromoValidationAmount', () => {
         grossPayableBeforeWallet: 1485,
       })
     ).toBe(1650);
+  });
+});
+
+describe('customer vs vendor economics (shared selling-price authority)', () => {
+  it('SERVICE: vendor 1650 / commission 10% → customer 1650, vendor net 1485', () => {
+    const customer = resolveVendorConfiguredSellingPrice({
+      vendorCustomPrice: 1650,
+      vendorPrice: 1650,
+      adminDefaultPrice: 1650,
+    });
+    expect(customer).toBe(1650);
+    expect(preferVendorSellingPriceOverClientUndercut(customer, 1485)).toBe(1650);
+    expect(Math.round((customer - customer * 0.1) * 100) / 100).toBe(1485);
+  });
+
+  it('PACKAGE: vendor 10000 / commission 10% → customer 10000, not metadata 9000', () => {
+    const customer = resolvePackageCustomerSellingPrice({
+      vendorCustomPrice: 10000,
+      vendorPrice: 10000,
+      packageDetailsPrice: 9000,
+    });
+    expect(customer).toBe(10000);
+    expect(Math.round((customer - customer * 0.1) * 100) / 100).toBe(9000);
+  });
+
+  it('CUSTOM OVERRIDE: Admin 2000 / vendor 900 → customer 900, vendor net 810', () => {
+    const customer = resolveVendorConfiguredSellingPrice({
+      vendorCustomPrice: 900,
+      vendorPrice: 900,
+      adminDefaultPrice: 2000,
+    });
+    expect(customer).toBe(900);
+    expect(preferVendorSellingPriceOverClientUndercut(customer, 810)).toBe(900);
+    expect(Math.round((customer - customer * 0.1) * 100) / 100).toBe(810);
+  });
+
+  it('CUSTOMER DISCOUNT: 1650 − 100 → taxable 1550 (commission is not a discount input)', () => {
+    expect(customerTaxableAfterDiscount(1650, 100)).toBe(1550);
+    expect(customerTaxableAfterDiscount(1650, 0)).toBe(1650);
+  });
+
+  it('GST INTRA on taxable 1650 @ 18%', () => {
+    const snap = buildCanonicalGstSnapshot({
+      taxableAmount: 1650,
+      gstRate: 18,
+      isInterState: false,
+    });
+    expect(snap.gstAmount).toBe(297);
+    expect(snap.cgstAmount).toBe(148.5);
+    expect(snap.sgstAmount).toBe(148.5);
+    expect(snap.igstAmount).toBe(0);
+  });
+
+  it('GST INTER on taxable 1650 @ 18%', () => {
+    const snap = buildCanonicalGstSnapshot({
+      taxableAmount: 1650,
+      gstRate: 18,
+      isInterState: true,
+    });
+    expect(snap.gstAmount).toBe(297);
+    expect(snap.cgstAmount).toBe(0);
+    expect(snap.sgstAmount).toBe(0);
+    expect(snap.igstAmount).toBe(297);
+  });
+
+  it('does not use Admin default when vendor has configured a price', () => {
+    expect(
+      resolveVendorConfiguredSellingPrice({
+        vendorCustomPrice: 900,
+        adminDefaultPrice: 2000,
+      })
+    ).toBe(900);
   });
 });
