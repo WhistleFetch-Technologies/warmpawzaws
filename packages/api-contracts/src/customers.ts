@@ -16,6 +16,11 @@ const ProfileCoordinatesSchema = z.union([
   z.string().min(2, 'Invalid coordinates'),
 ]);
 
+const CustomerProfilePhotoSchema = z.union([
+  z.string().url('Invalid photo URL'),
+  z.string().regex(/^media\/[a-zA-Z0-9/_.-]+$/, 'Invalid photo storage key'),
+]);
+
 export const UpdateCustomerProfileRequestSchema = z.object({
   firstName: z.string().min(1, 'First name required').max(100, 'First name too long').optional(),
   lastName: z.string().min(1, 'Last name required').max(100, 'Last name too long').optional(),
@@ -26,7 +31,7 @@ export const UpdateCustomerProfileRequestSchema = z.object({
   state: z.string().max(100, 'State too long').optional(),
   houseNo: z.string().max(200, 'House number too long').optional(),
   floor: z.string().max(100, 'Floor too long').optional(),
-  photo: z.string().url('Invalid photo URL').optional(),
+  photo: CustomerProfilePhotoSchema.optional(),
   /** From Google Places / device location — persisted on `customers` and default `customer_addresses` row */
   latitude: z.number().gte(-90).lte(90).nullish(),
   longitude: z.number().gte(-180).lte(180).nullish(),

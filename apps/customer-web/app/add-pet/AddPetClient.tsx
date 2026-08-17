@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { EnhancedAddPetModal } from '@/components/customer/EnhancedAddPetModal';
+import { buildAuthSignupUrl } from '@/lib/auth-redirect';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 function readPhoneFromStorage(): string {
@@ -41,7 +42,7 @@ export default function AddPetClient() {
     if (typeof window === 'undefined') return;
     const p = readPhoneFromStorage();
     if (!p || !hasCustomerAuthToken()) {
-      router.replace('/auth');
+      router.replace(buildAuthSignupUrl('/add-pet'));
       return;
     }
     setPhone(p);

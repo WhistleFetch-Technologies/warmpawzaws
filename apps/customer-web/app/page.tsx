@@ -37,33 +37,15 @@ const GUEST_SESSION: CustomerSession = {
   hasPets: false,
 };
 
-function hasStoredAuthCredentials(): boolean {
-  if (typeof window === 'undefined') return false;
-  const phone = localStorage.getItem('customerPhone');
-  const token = getStoredCustomerJwtForSession();
-  return !!(phone && token);
+function HomeLoadingShell() {
+  return <AuthGateLoadingShell />;
 }
 
 export default function HomePage() {
   const router = useRouter();
-  // Guest-first: if browsing is on and there is no JWT session, start on guest home (avoids auth flash).
-  const [session, setSession] = useState<CustomerSession | null>(() => {
-    if (typeof window === 'undefined') return null;
-    if (hasStoredAuthCredentials()) return null;
-    return isGuestBrowsingEnabled() ? GUEST_SESSION : null;
-  });
-  const [isLoading, setIsLoading] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    if (hasStoredAuthCredentials()) return true;
-    return !isGuestBrowsingEnabled();
-  });
-  const [homeGateReady, setHomeGateReady] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    const sp = new URLSearchParams(window.location.search);
-    if (sp.get('service')) return true;
-    if (!hasStoredAuthCredentials() && isGuestBrowsingEnabled()) return true;
-    return readProfileCompleted() && readOnboardingCompleted();
-  });
+  const [session, setSession] = useState<CustomerSession | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [homeGateReady, setHomeGateReady] = useState(false);
   const hasRedirected = useRef(false);
 
   useEffect(() => {
@@ -96,6 +78,13 @@ export default function HomePage() {
       setIsLoading(false);
       resetHomeBootstrapForPhone(storedPhone);
 
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('service')) {
+        setHomeGateReady(true);
+      } else if (readProfileCompleted() && readOnboardingCompleted()) {
+        setHomeGateReady(true);
+      }
+
       // Single coordinated profile + pets refresh (deduped with home bootstrap).
       void ensureCustomerProfileAndPets(storedPhone).refreshPromise.then((result) => {
         const data = result.profile;
@@ -123,6 +112,10 @@ export default function HomePage() {
       return;
     }
 
+    if (isGuestBrowsingEnabled()) {
+      setSession(GUEST_SESSION);
+      setHomeGateReady(true);
+    }
     setIsLoading(false);
   }, []);
 
@@ -144,16 +137,15 @@ export default function HomePage() {
       return;
     }
     if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
-      router.replace('/auth/set-password?next=/');
+      const pwdNext = readProfileCompleted() ? '/' : '/profile';
+      router.replace('/auth/set-password?next=' + encodeURIComponent(pwdNext));
       return;
     }
-    if (typeof window !== 'undefined') {
-      const sp = new URLSearchParams(window.location.search);
-      // Preserve service deep links (e.g. tele) — do not strip query via profile/onboarding redirects
-      if (sp.get('service')) {
-        setHomeGateReady(true);
-        return;
-      }
+    const sp = new URLSearchParams(window.location.search);
+    // Preserve service deep links (e.g. tele) — do not strip query via profile/onboarding redirects
+    if (sp.get('service')) {
+      setHomeGateReady(true);
+      return;
     }
     if (!readProfileCompleted()) {
       router.replace('/profile');
@@ -167,47 +159,21 @@ export default function HomePage() {
   }, [isLoading, session, router]);
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
+    return <HomeLoadingShell />;
   }
 
   if (!session) {
     // Guest flag resolution / auth redirect in flight
-    return <AuthGateLoadingShell />;
+    return <HomeLoadingShell />;
   }
 
-  const skipGateSpinner =
-    typeof window !== 'undefined' && readProfileCompleted() && readOnboardingCompleted();
-
-  if (!homeGateReady && !skipGateSpinner) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
+  if (!homeGateReady) {
+    return <HomeLoadingShell />;
   }
 
   return (
     <ErrorBoundary>
-      <Suspense
-        fallback={
-          <div className="min-h-screen bg-white flex items-center justify-center">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
-              <p className="text-gray-600">Loading...</p>
-            </div>
-          </div>
-        }
-      >
+      <Suspense fallback={<HomeLoadingShell />}>
         <CustomerApp initialSession={session} />
       </Suspense>
     </ErrorBoundary>

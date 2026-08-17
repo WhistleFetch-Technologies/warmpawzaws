@@ -1188,29 +1188,35 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              LIMIT 1`,
             [customerId, serviceCategory, vendorId]
           );
-          await client.query('RELEASE SAVEPOINT sp_subscription_check');
-          
+
           const subscriptions = (activeSubscriptions as any).rows || [];
-          
+
           if (subscriptions.length > 0) {
             const subscription = subscriptions[0];
             subscriptionId = subscription.id;
             isSubscriptionBooking = true;
             finalAmount = 0; // Zero payment for unlimited subscription
-            
-            // Increment usage count
+
+            // Increment usage count (must stay inside savepoint — before RELEASE)
             await client.query(
               `UPDATE customer_subscriptions 
                SET bookings_used = COALESCE(bookings_used, 0) + 1, updated_at = NOW()
                WHERE id = $1`,
               [subscriptionId]
             );
-            
+
             console.log(`[BOOKING] ✅ Active unlimited subscription found: ${subscriptionId}. Setting amount to ₹0.`);
           }
+          await client.query('RELEASE SAVEPOINT sp_subscription_check');
           }
         } catch (subError) {
-          await client.query('ROLLBACK TO SAVEPOINT sp_subscription_check').catch(() => {});
+          const rolledBack = await client
+            .query('ROLLBACK TO SAVEPOINT sp_subscription_check')
+            .then(() => true)
+            .catch(() => false);
+          if (!rolledBack) {
+            throw subError;
+          }
           console.warn('[BOOKING] Could not check subscriptions (table/column may not exist):', (subError as any)?.message);
         }
         

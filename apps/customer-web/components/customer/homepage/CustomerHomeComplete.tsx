@@ -91,6 +91,7 @@ import {
   readCachedPetsFromStorage,
   readCachedProfileName,
 } from '../home/hooks/useHomePageData';
+import { pickCustomerProfilePhoto, CUSTOMER_PROFILE_UPDATED_EVENT } from '@/lib/customer-profile-photo';
 import { HOME_CONTENT_SHELL_CLASS } from '../home/shared/HomeContentShell';
 import { ViewportSection } from '../home/shared/ViewportSection';
 import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
@@ -1597,9 +1598,7 @@ export function CustomerHomeComplete({
             phone,
             journeyType: String(profile.journeyType || ''),
           }));
-          setUserProfilePhoto(
-            String(profile.photo || profile.profile_photo_url || profile.profilePhoto || '')
-          );
+          setUserProfilePhoto(pickCustomerProfilePhoto(profile));
         }
         if (result.pets.length > 0) {
           setUserData((prev) => ({ ...prev, pets: result.pets }));
@@ -2250,7 +2249,7 @@ export function CustomerHomeComplete({
           phone,
           journeyType: String(profile.journeyType || ''),
         }));
-        setUserProfilePhoto(String(profile.photo || profile.profile_photo_url || ''));
+        setUserProfilePhoto(pickCustomerProfilePhoto(profile as Record<string, unknown>));
       } else {
         const cachedProfile = readCachedProfileName(phone);
         setUserData((prev) => ({ ...prev, name: cachedProfile.name, phone }));
@@ -2269,6 +2268,17 @@ export function CustomerHomeComplete({
       setPetsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!phone) return;
+    const onProfileUpdated = () => {
+      const cached = readCachedProfileName(phone);
+      if (cached.photo) setUserProfilePhoto(cached.photo);
+      void loadUserData();
+    };
+    window.addEventListener(CUSTOMER_PROFILE_UPDATED_EVENT, onProfileUpdated);
+    return () => window.removeEventListener(CUSTOMER_PROFILE_UPDATED_EVENT, onProfileUpdated);
+  }, [phone]);
 
   const handleAddPet = () => {
     // Prefer parent shell handler (guest → auth boundary). Fallback to local modal for legacy.

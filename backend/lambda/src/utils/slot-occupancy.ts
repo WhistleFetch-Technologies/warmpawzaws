@@ -169,6 +169,35 @@ export async function loadOccupyingBookings(
   }));
 }
 
+async function queryVendorWindowCapacity(
+  q: SqlQueryFn,
+  vendorId: string,
+  dateYmd: string,
+  startTime: string
+): Promise<number> {
+  const dow = dayOfWeekFromYmd(dateYmd);
+  const startMin = parseBookingTimeMinutes(startTime);
+  const { rows } = await q(
+    `SELECT COALESCE(max_capacity, 1) AS max_capacity,
+            COALESCE(time_window_start, start_time) AS win_start,
+            COALESCE(time_window_end, end_time) AS win_end
+     FROM vendor_availability_v2
+     WHERE vendor_id::text = $1::text
+       AND day_of_week = $2
+       AND COALESCE(is_available, is_enabled, true) = true`,
+    [vendorId, dow]
+  );
+  for (const row of rows || []) {
+    const winStart = parseBookingTimeMinutes(row.win_start);
+    const winEnd = parseBookingTimeMinutes(row.win_end);
+    if (startMin >= winStart && startMin < winEnd) {
+      const cap = parseInt(String(row.max_capacity), 10);
+      return Number.isFinite(cap) && cap > 0 ? cap : 1;
+    }
+  }
+  return 1;
+}
+
 export async function loadVendorWindowCapacity(
   db: OccupancyDb,
   vendorId: string,
@@ -176,31 +205,31 @@ export async function loadVendorWindowCapacity(
   startTime: string
 ): Promise<number> {
   const q = asQueryFn(db);
-  const dow = dayOfWeekFromYmd(dateYmd);
-  const startMin = parseBookingTimeMinutes(startTime);
-  try {
-    const { rows } = await q(
-      `SELECT COALESCE(max_capacity, 1) AS max_capacity,
-              COALESCE(time_window_start, start_time) AS win_start,
-              COALESCE(time_window_end, end_time) AS win_end
-       FROM vendor_availability_v2
-       WHERE vendor_id::text = $1::text
-         AND day_of_week = $2
-         AND COALESCE(is_available, is_enabled, true) = true`,
-      [vendorId, dow]
-    );
-    for (const row of rows || []) {
-      const winStart = parseBookingTimeMinutes(row.win_start);
-      const winEnd = parseBookingTimeMinutes(row.win_end);
-      if (startMin >= winStart && startMin < winEnd) {
-        const cap = parseInt(String(row.max_capacity), 10);
-        return Number.isFinite(cap) && cap > 0 ? cap : 1;
-      }
+
+  // Inside an open transaction, a failed query aborts the whole tx unless we
+  // roll back to a savepoint. Do not swallow errors on PoolClient (booking create).
+  if (typeof db !== 'function') {
+    const client = db as PoolClient;
+    await client.query('SAVEPOINT sp_vendor_window_capacity');
+    try {
+      const cap = await queryVendorWindowCapacity(q, vendorId, dateYmd, startTime);
+      await client.query('RELEASE SAVEPOINT sp_vendor_window_capacity');
+      return cap;
+    } catch (err) {
+      await client.query('ROLLBACK TO SAVEPOINT sp_vendor_window_capacity').catch(() => {});
+      console.warn(
+        '[slot-occupancy] vendor_availability_v2 capacity lookup failed; defaulting to 1:',
+        (err as Error)?.message || err
+      );
+      return 1;
     }
+  }
+
+  try {
+    return await queryVendorWindowCapacity(q, vendorId, dateYmd, startTime);
   } catch {
     return 1;
   }
-  return 1;
 }
 
 export async function loadVendorServiceDurationMinutes(

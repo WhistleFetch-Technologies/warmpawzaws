@@ -131,6 +131,7 @@ describe('original availability occupancy defect', () => {
     expect(file).toContain('is_instant_tele');
     expect(file).toContain('pg_advisory_xact_lock');
     expect(file).toContain(SLOT_OCCUPANCY_LOCK_NAMESPACE);
+    expect(file).toContain('SAVEPOINT sp_vendor_window_capacity');
   });
 
   test('create, reschedule, revive, package, and follow-up share occupancy', () => {
