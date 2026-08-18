@@ -44,21 +44,68 @@ export function missingServiceGstConfigError(params: {
   );
 }
 
-/** Resolve service_categories.id from slug, uuid string, or name. */
+/**
+ * Catalogue slugs that share an Admin GST card with another master.
+ * Slug-only: a category UUID must be resolved to its slug before this applies.
+ */
+const GST_CATALOG_CATEGORY_ALIASES: Record<string, string> = {
+  behavioral: 'training',
+  behavioural: 'training',
+  'lab-diagnostics': 'diagnostic',
+  // Package/custom vendor_services.category is often "Veterinary Services"
+  // (normalized to veterinary_services). Admin GST is on slug `veterinary`.
+  veterinary_services: 'veterinary',
+  'veterinary-services': 'veterinary',
+  vet_services: 'veterinary',
+  'vet-care': 'veterinary',
+  vet_care: 'veterinary',
+};
+
+export function aliasGstCatalogCategoryRef(ref: string): string {
+  const raw = String(ref || '').trim().toLowerCase();
+  const key = raw.replace(/[\s-]+/g, '_');
+  return GST_CATALOG_CATEGORY_ALIASES[raw] ?? GST_CATALOG_CATEGORY_ALIASES[key] ?? ref;
+}
+
+type CatalogCategoryLookupRow = { id?: string; category_id?: string | null };
+
+async function lookupServiceCategoryRow(ref: string): Promise<CatalogCategoryLookupRow | null> {
+  const result = await query(
+    `SELECT id::text AS id, category_id
+     FROM service_categories
+     WHERE id::text = $1 OR LOWER(TRIM(category_id)) = LOWER(TRIM($1)) OR LOWER(TRIM(name)) = LOWER(TRIM($1))
+     LIMIT 1`,
+    [ref],
+  );
+  const rows = (result as { rows?: CatalogCategoryLookupRow[] })?.rows ?? [];
+  return rows[0] ?? null;
+}
+
+/**
+ * Resolve service_categories.id from slug, uuid string, or name.
+ * If the matched category slug has a GST alias (e.g. behavioral → training),
+ * return the alias target UUID so GST uses the existing shared tax card.
+ */
 export async function resolveCatalogCategoryUuidFromRef(
-  ref: string | null | undefined
+  ref: string | null | undefined,
+  seenSlugs: Set<string> = new Set(),
 ): Promise<string | null> {
   if (ref == null || String(ref).trim() === '') return null;
   const s = String(ref).trim();
+  const lookup = aliasGstCatalogCategoryRef(s);
   try {
-    const result = await query(
-      `SELECT id::text AS id FROM service_categories
-       WHERE id::text = $1 OR LOWER(TRIM(category_id)) = LOWER(TRIM($1)) OR LOWER(TRIM(name)) = LOWER(TRIM($1))
-       LIMIT 1`,
-      [s]
-    );
-    const rows = (result as { rows?: { id?: string }[] })?.rows ?? [];
-    return rows[0]?.id ? String(rows[0].id) : null;
+    const row = await lookupServiceCategoryRow(lookup);
+    if (!row?.id) return null;
+    const slug = row.category_id != null ? String(row.category_id).trim() : '';
+    if (slug) {
+      const slugTarget = aliasGstCatalogCategoryRef(slug);
+      if (slugTarget && slugTarget !== slug && !seenSlugs.has(slug.toLowerCase())) {
+        seenSlugs.add(slug.toLowerCase());
+        const aliasedId = await resolveCatalogCategoryUuidFromRef(slugTarget, seenSlugs);
+        if (aliasedId) return aliasedId;
+      }
+    }
+    return String(row.id);
   } catch {
     return null;
   }

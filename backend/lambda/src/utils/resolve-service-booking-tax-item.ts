@@ -7,8 +7,13 @@
 
 import { query, select } from '../database/rds-connection';
 import { isValidUUID } from '../types/entities';
-import { resolveCatalogCategoryUuidFromRef } from '../lib/services/gst-catalog-role-resolution';
+import {
+  aliasGstCatalogCategoryRef,
+  resolveCatalogCategoryUuidFromRef,
+} from '../lib/services/gst-catalog-role-resolution';
 import type { TaxItem } from '../lib/services/tax-calculation-service';
+
+export { aliasGstCatalogCategoryRef };
 
 /** Vendor roles that receive 0% GST on service_booking when catalogue category is missing. */
 export const VET_VENDOR_ROLE_NAMES = [
@@ -20,26 +25,6 @@ export const VET_VENDOR_ROLE_NAMES = [
   'solo_vet',
   'pet_clinic',
 ] as const;
-
-/** Catalogue slugs that share an Admin GST card with another master. */
-const GST_CATALOG_CATEGORY_ALIASES: Record<string, string> = {
-  behavioral: 'training',
-  behavioural: 'training',
-  'lab-diagnostics': 'diagnostic',
-  // Package/custom vendor_services.category is often "Veterinary Services"
-  // (normalized to veterinary_services). Admin GST is on slug `veterinary`.
-  veterinary_services: 'veterinary',
-  'veterinary-services': 'veterinary',
-  vet_services: 'veterinary',
-  'vet-care': 'veterinary',
-  vet_care: 'veterinary',
-};
-
-export function aliasGstCatalogCategoryRef(ref: string): string {
-  const raw = String(ref || '').trim().toLowerCase();
-  const key = raw.replace(/[\s-]+/g, '_');
-  return GST_CATALOG_CATEGORY_ALIASES[raw] ?? GST_CATALOG_CATEGORY_ALIASES[key] ?? ref;
-}
 
 export function isVetVendorRoleName(roleName: string | null | undefined): boolean {
   if (roleName == null || String(roleName).trim() === '') return false;
