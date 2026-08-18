@@ -74,6 +74,34 @@ describe('resolveGstCatalogCategoryRefForBooking', () => {
     expect(ref).toBe('diagnostic');
   });
 
+  it('maps diagnostics literal to diagnostic GST card (not veterinary)', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'diagnostics',
+      serviceName: 'Lab Tests',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('diagnostic');
+    expect(ref).not.toBe('veterinary');
+  });
+
+  it('categoryFallback diagnostics does not last-resort to veterinary', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'diagnostics',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('diagnostic');
+  });
+
+  it('veterinary category still resolves to veterinary (0% Admin card lane)', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'veterinary',
+      serviceName: 'Deworming',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
   it('maps veterinary_services package category text to veterinary GST card', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: null,

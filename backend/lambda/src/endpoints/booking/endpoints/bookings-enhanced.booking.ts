@@ -488,53 +488,38 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     // Validate service exists and belongs to vendor
-    // ✅ CRITICAL FIX: Frontend sends serviceId which is service.service_id (base service UUID)
-    // NOT vendor_services.id. We need to look up by service_id column in vendor_services table.
-    // ✅ Diagnostics: when serviceId is 'diagnostics', resolve to a diagnostics vendor_service for this vendor
+    // Frontend may send vendor_services.id or catalog service UUID.
+    // Legacy diagnostics clients sent serviceId='diagnostics' — resolve only a
+    // diagnostic/lab vendor_services row (never the vendor's first service of any kind).
     let resolvedServiceId = serviceId;
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(serviceId || ''));
-    if (!isUUID && (String(serviceId).toLowerCase() === 'diagnostics' || String(serviceId).toLowerCase() === 'diagnostic')) {
-      const diagResult = await query(
-        `SELECT * FROM vendor_services WHERE vendor_id = $1::uuid AND (is_enabled = true OR is_enabled IS NULL) ORDER BY created_at ASC LIMIT 1`,
-        [vendorId]
-      );
-      if (diagResult.rows?.length > 0) {
-        const row = diagResult.rows[0];
-        resolvedServiceId = row.service_id || row.id;
-        console.log(`[BOOKING] Resolved diagnostics serviceId to ${resolvedServiceId} for vendor ${vendorId}`);
-      } else {
-        // Fallback: diagnostics center has tests but no vendor_services - create service + vendor_service
-        const diagTests = await query(
-          `SELECT id, price FROM diagnostic_tests WHERE vendor_id = $1::uuid LIMIT 1`,
-          [vendorId]
+    if (
+      !isUUID &&
+      (String(serviceId).toLowerCase() === 'diagnostics' || String(serviceId).toLowerCase() === 'diagnostic')
+    ) {
+      const {
+        resolveOrEnsureDiagnosticVendorService,
+      } = await import('../../../utils/resolve-diagnostic-vendor-service');
+      const diagnosticVs = await resolveOrEnsureDiagnosticVendorService(String(vendorId));
+      if (diagnosticVs?.vendorServiceId) {
+        resolvedServiceId = diagnosticVs.vendorServiceId;
+        console.log(
+          `[BOOKING] Resolved diagnostics serviceId to vendor_services ${resolvedServiceId} for vendor ${vendorId}`,
         );
-        if (diagTests.rows?.length > 0) {
-          const test = diagTests.rows[0];
-          const labServiceId = 'a1b2c3d4-e5f6-4789-a012-345678901234';
-          await query(
-            `INSERT INTO services (id, name, description, category, price, duration_minutes, is_active, created_at, updated_at)
-             VALUES ($1, 'Lab Tests', 'Diagnostic lab tests', 'diagnostics', $2, 30, true, NOW(), NOW())
-             ON CONFLICT (id) DO UPDATE SET updated_at = NOW()`,
-            [labServiceId, test.price || 0]
-          );
-          try {
-            await query(
-              `INSERT INTO vendor_services (vendor_id, service_id, service_name, service_style, publish_status, is_enabled, created_at, updated_at)
-               VALUES ($1, $2, 'Lab Tests', 'at_center', 'published', true, NOW(), NOW())`,
-              [vendorId, labServiceId]
-            );
-          } catch (insErr: any) {
-            if (!insErr.message?.includes('unique') && insErr.code !== '23505') {
-              console.warn('[BOOKING] vendor_services insert:', insErr.message);
-            }
-          }
-          resolvedServiceId = labServiceId;
-          console.log(`[BOOKING] Diagnostics: created lab service + vendor_service for vendor ${vendorId}`);
-        }
       }
     }
-    if (!isUUID && resolvedServiceId === serviceId && String(serviceId).toLowerCase() === 'diagnostics') {
-      return this.error('Diagnostics service not found for this vendor. Vendor must have diagnostic tests or services configured.', 404, 'NOT_FOUND', undefined, requestId);
+    if (
+      !isUUID &&
+      resolvedServiceId === serviceId &&
+      (String(serviceId).toLowerCase() === 'diagnostics' || String(serviceId).toLowerCase() === 'diagnostic')
+    ) {
+      return this.error(
+        'Diagnostics service not found for this vendor. Vendor must have diagnostic tests or a diagnostic catalogue service configured.',
+        404,
+        'NOT_FOUND',
+        undefined,
+        requestId,
+      );
     }
     const lookupServiceId = resolvedServiceId;
 
@@ -1755,9 +1740,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               (parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0)) *
               100
           ) / 100;
-          if (Number.isFinite(finalPaid) && Math.abs(finalPaid - gstFinalPaid) > 0.05) {
-            bookingData.total_amount = gstFinalPaid;
-          }
+          // Backend-authoritative all-in: keep booking.total_amount and wp_financial_meta.finalPaid aligned.
+          const authoritativeFinalPaid = gstFinalPaid;
+          bookingData.total_amount = authoritativeFinalPaid;
           let enrichedMeta = settlementVendorId
             ? await enrichFinancialMetaWithSettlement({
                 vendorId: settlementVendorId,
@@ -1777,7 +1762,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
                 deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
                 walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
-                finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+                finalPaid: authoritativeFinalPaid,
               })
             : {
                 servicePrice: servicePriceForMeta,
@@ -1793,7 +1778,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
                 deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
                 walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
-                finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+                finalPaid: authoritativeFinalPaid,
               };
           if (!settlementVendorId) {
             Object.assign(enrichedMeta, {
@@ -1810,13 +1795,13 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
               deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
               walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
-              finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+              finalPaid: authoritativeFinalPaid,
             });
           } else {
             enrichedMeta.subtotalAfterDiscounts =
               parseFloat(String(enrichedMeta.subtotalAfterDiscounts ?? 0)) ||
               derivedSubtotalAfterDiscounts;
-            enrichedMeta.finalPaid = Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount;
+            enrichedMeta.finalPaid = authoritativeFinalPaid;
             enrichedMeta.cgst = gstMeta.cgst;
             enrichedMeta.sgst = gstMeta.sgst;
             enrichedMeta.igst = gstMeta.igst;

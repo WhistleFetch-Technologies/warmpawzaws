@@ -41,7 +41,7 @@ import {
 import { calculateAuthoritativeServiceGst } from '../utils/calculate-authoritative-service-gst';
 import { isGstConfigurationError } from '../lib/services/gst-catalog-role-resolution';
 import { isGstPlaceOfSupplyError } from '../lib/gst-place-of-supply';
-import { hasCompleteGstSplit, readAuthoritativeGst, snapshotToPaymentColumns } from '../utils/canonical-gst-snapshot';
+import { readAuthoritativeGst, snapshotToPaymentColumns, isBackendAuthoritativeGstLock } from '../utils/canonical-gst-snapshot';
 import { scheduleBookingStartOtpIfNeeded } from '../utils/booking-start-otp';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
 import {
@@ -283,18 +283,18 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
               cgstAmount: lockedGrossEarly.cgst,
               sgstAmount: lockedGrossEarly.sgst,
               igstAmount: lockedGrossEarly.igst,
-              isInterState: (lockedGrossEarly as { isInterState?: boolean }).isInterState,
+              isInterState: lockedGrossEarly.isInterState,
               taxableAmount: lockedGrossEarly.subtotalAfterDiscounts,
             })
           : null;
-        const lockedIsBackend =
-          Boolean(lockedSnap && lockedSnap.splitAvailable && lockedSnap.gstAmount > 0.009) &&
-          hasCompleteGstSplit({
-            gstAmount: lockedGrossEarly?.totalTax,
-            cgstAmount: lockedGrossEarly?.cgst,
-            sgstAmount: lockedGrossEarly?.sgst,
-            igstAmount: lockedGrossEarly?.igst,
-          });
+        const lockedIsBackend = isBackendAuthoritativeGstLock({
+          gstAuthority: lockedGrossEarly?.gstAuthority,
+          lockedSnap,
+          gstAmount: lockedGrossEarly?.totalTax,
+          cgstAmount: lockedGrossEarly?.cgst,
+          sgstAmount: lockedGrossEarly?.sgst,
+          igstAmount: lockedGrossEarly?.igst,
+        });
 
         if (lockedIsBackend && lockedSnap) {
           taxBreakdown = null;
@@ -328,10 +328,44 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         if (isGstConfigurationError(taxError) || isGstPlaceOfSupplyError(taxError)) {
           throw taxError;
         }
-        if (!lockedGrossEarly || lockedGrossEarly.totalTax <= 0.009) {
+        // Do not treat GST=0 as "no lock" — only recalculate fallback when lock was never backend-authoritative.
+        const hadBackendZeroLock =
+          lockedGrossEarly &&
+          isBackendAuthoritativeGstLock({
+            gstAuthority: lockedGrossEarly.gstAuthority,
+            lockedSnap: readAuthoritativeGst({
+              gstAmount: lockedGrossEarly.totalTax,
+              cgstAmount: lockedGrossEarly.cgst,
+              sgstAmount: lockedGrossEarly.sgst,
+              igstAmount: lockedGrossEarly.igst,
+              isInterState: lockedGrossEarly.isInterState,
+              taxableAmount: lockedGrossEarly.subtotalAfterDiscounts,
+            }),
+            gstAmount: lockedGrossEarly.totalTax,
+            cgstAmount: lockedGrossEarly.cgst,
+            sgstAmount: lockedGrossEarly.sgst,
+            igstAmount: lockedGrossEarly.igst,
+          });
+        if (!hadBackendZeroLock && (!lockedGrossEarly || lockedGrossEarly.totalTax <= 0.009)) {
           throw taxError;
         }
-        gstAmount = 0;
+        if (hadBackendZeroLock && lockedGrossEarly) {
+          gstAmount = lockedGrossEarly.totalTax;
+          cgstAmount = lockedGrossEarly.cgst;
+          sgstAmount = lockedGrossEarly.sgst;
+          igstAmount = lockedGrossEarly.igst;
+          paymentGstSnap = readAuthoritativeGst({
+            gstAmount: lockedGrossEarly.totalTax,
+            cgstAmount: lockedGrossEarly.cgst,
+            sgstAmount: lockedGrossEarly.sgst,
+            igstAmount: lockedGrossEarly.igst,
+            isInterState: lockedGrossEarly.isInterState,
+            taxableAmount: lockedGrossEarly.subtotalAfterDiscounts,
+          });
+          paymentIsInterState = paymentGstSnap?.isInterState ?? false;
+        } else {
+          gstAmount = 0;
+        }
       }
 
       // Platform / convenience / delivery / packaging — same rules as GET /config/fees (admin_settings)

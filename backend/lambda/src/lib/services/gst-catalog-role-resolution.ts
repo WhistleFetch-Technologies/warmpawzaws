@@ -52,6 +52,8 @@ const GST_CATALOG_CATEGORY_ALIASES: Record<string, string> = {
   behavioral: 'training',
   behavioural: 'training',
   'lab-diagnostics': 'diagnostic',
+  // Customer diagnostics booking historically sent category/serviceId "diagnostics".
+  diagnostics: 'diagnostic',
   // Package/custom vendor_services.category is often "Veterinary Services"
   // (normalized to veterinary_services). Admin GST is on slug `veterinary`.
   veterinary_services: 'veterinary',

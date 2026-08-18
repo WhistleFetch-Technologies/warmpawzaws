@@ -121,6 +121,28 @@ export function hasCompleteGstSplit(params: {
   return intra || inter;
 }
 
+/**
+ * Payment lock: a backend-authoritative snapshot (including GST = 0%) must lock.
+ * Do not use gstAmount > 0 as proof the snapshot exists — 0% is a valid Admin rate.
+ */
+export function isBackendAuthoritativeGstLock(params: {
+  gstAuthority?: string | null;
+  lockedSnap: { splitAvailable?: boolean; gstAmount?: number } | null;
+  gstAmount?: unknown;
+  cgstAmount?: unknown;
+  sgstAmount?: unknown;
+  igstAmount?: unknown;
+}): boolean {
+  if (String(params.gstAuthority || '').trim().toLowerCase() !== 'backend') return false;
+  if (!params.lockedSnap || params.lockedSnap.splitAvailable !== true) return false;
+  return hasCompleteGstSplit({
+    gstAmount: params.gstAmount,
+    cgstAmount: params.cgstAmount,
+    sgstAmount: params.sgstAmount,
+    igstAmount: params.igstAmount,
+  });
+}
+
 export function readAuthoritativeGst(row: {
   gstAmount?: unknown;
   gst_amount?: unknown;

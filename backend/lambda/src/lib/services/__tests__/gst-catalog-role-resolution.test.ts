@@ -174,6 +174,16 @@ describe('resolveGstRateForCatalogAndRole — category-authoritative', () => {
     expect(resolved.reason).toMatch(/No active Admin tax category/i);
   });
 
+  test('diagnostics alias maps to diagnostic (Diagnostic Labs card lane)', () => {
+    expect(aliasGstCatalogCategoryRef('diagnostics')).toBe('diagnostic');
+    expect(aliasGstCatalogCategoryRef('diagnostics')).not.toBe('veterinary');
+    expect(aliasGstCatalogCategoryRef('lab-diagnostics')).toBe('diagnostic');
+  });
+
+  test('veterinary slug is not aliased away (0% Admin card remains the lane)', () => {
+    expect(aliasGstCatalogCategoryRef('veterinary')).toBe('veterinary');
+  });
+
   test('TEST 8 — package uses the same category resolver (grooming + vet_clinic)', async () => {
     mockedQuery
       .mockResolvedValueOnce({ rows: [taxRow()] } as never)
