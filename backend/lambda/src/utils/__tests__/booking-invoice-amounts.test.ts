@@ -80,6 +80,20 @@ describe('resolveBookingInvoiceAmounts', () => {
     expect(amounts.total).toBe(500);
   });
 
+  it('does not invent CGST/SGST when only gst_amount exists and jurisdiction is unknown', () => {
+    const amounts = resolveBookingInvoiceAmounts({
+      basePrice: 1800,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 2124,
+      isInterState: undefined as unknown as boolean,
+      payment: { gstAmount: 324, totalAmount: 2124, cgstAmount: 0, sgstAmount: 0, igstAmount: 0 },
+    });
+    expect(amounts.taxAmount).toBe(324);
+    expect(amounts.cgst).toBe(0);
+    expect(amounts.sgst).toBe(0);
+    expect(amounts.igst).toBe(0);
+  });
+
   it('infers 18% GST when charged total is base + GST and tax columns are 0 (Sara Pets)', () => {
     const amounts = resolveBookingInvoiceAmounts({
       basePrice: 1485,

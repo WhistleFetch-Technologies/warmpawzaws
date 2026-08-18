@@ -24,6 +24,7 @@ import {
   feeBreakdownCsvCells,
   fetchVendorAccrualFeeBreakdownForIstRange,
   mergeFeeBreakdownIntoAccrualRows,
+  persistDailyAccrualCustomerGst,
   sumAccrualFeeBreakdowns,
 } from '../../../utils/vendor-accrual-fee-breakdown';
 import { fetchFundingDiscountTotalsForIstRange } from '../../../utils/resolve-settlement-breakdown-for-report';
@@ -74,6 +75,8 @@ async function fetchAccrualRowsWithBanks(reportDate: string): Promise<{
     `SELECT a.id, a.report_date, a.vendor_id, a.gross_amount, a.commission_amount, a.net_amount,
             a.earnings_line_count, a.missing_earnings_booking_count,
             a.delivery_settlement_line_count, a.missing_delivery_settlement_count,
+            a.gst_amount, a.cgst_amount, a.sgst_amount, a.igst_amount,
+            a.gst_amount AS gst_total,
             a.currency, a.computed_at,
             v.business_name, v.owner_name, v.phone AS vendor_phone
      FROM vendor_daily_accrual a
@@ -81,7 +84,21 @@ async function fetchAccrualRowsWithBanks(reportDate: string): Promise<{
      WHERE a.report_date = $1::date
      ORDER BY v.business_name ASC NULLS LAST, v.owner_name ASC NULLS LAST`,
     [reportDate]
-  ).catch(() => ({ rows: [] }));
+  ).catch(async (err: { code?: string }) => {
+    if (err?.code !== '42703') return { rows: [] };
+    return query(
+      `SELECT a.id, a.report_date, a.vendor_id, a.gross_amount, a.commission_amount, a.net_amount,
+              a.earnings_line_count, a.missing_earnings_booking_count,
+              a.delivery_settlement_line_count, a.missing_delivery_settlement_count,
+              a.currency, a.computed_at,
+              v.business_name, v.owner_name, v.phone AS vendor_phone
+       FROM vendor_daily_accrual a
+       INNER JOIN vendors v ON v.id = a.vendor_id
+       WHERE a.report_date = $1::date
+       ORDER BY v.business_name ASC NULLS LAST, v.owner_name ASC NULLS LAST`,
+      [reportDate]
+    ).catch(() => ({ rows: [] }));
+  });
 
   const rows = await attachBankDetailsToAccrualRows(accrualRes.rows || []);
   return { ok: true, rows };
@@ -176,6 +193,11 @@ async function fetchMonthlyAccrualRowsWithBanks(
             SUM(a.missing_earnings_booking_count)::int AS missing_earnings_booking_count,
             SUM(a.delivery_settlement_line_count)::int AS delivery_settlement_line_count,
             SUM(a.missing_delivery_settlement_count)::int AS missing_delivery_settlement_count,
+            SUM(a.gst_amount)::numeric(14,2) AS gst_amount,
+            SUM(a.cgst_amount)::numeric(14,2) AS cgst_amount,
+            SUM(a.sgst_amount)::numeric(14,2) AS sgst_amount,
+            SUM(a.igst_amount)::numeric(14,2) AS igst_amount,
+            SUM(a.gst_amount)::numeric(14,2) AS gst_total,
             MAX(a.computed_at) AS computed_at,
             COUNT(DISTINCT a.report_date)::int AS snapshot_day_count,
             MAX(a.currency) AS currency,
@@ -187,7 +209,30 @@ async function fetchMonthlyAccrualRowsWithBanks(
      GROUP BY a.vendor_id, v.business_name, v.owner_name, v.phone
      ORDER BY v.business_name ASC NULLS LAST, v.owner_name ASC NULLS LAST`,
     [monthStart, monthEndExclusive]
-  ).catch(() => ({ rows: [] }));
+  ).catch(async (err: { code?: string }) => {
+    if (err?.code !== '42703') return { rows: [] };
+    return query(
+      `SELECT a.vendor_id,
+              SUM(a.gross_amount)::numeric(14,2) AS gross_amount,
+              SUM(a.commission_amount)::numeric(14,2) AS commission_amount,
+              SUM(a.net_amount)::numeric(14,2) AS net_amount,
+              SUM(a.earnings_line_count)::int AS earnings_line_count,
+              SUM(a.missing_earnings_booking_count)::int AS missing_earnings_booking_count,
+              SUM(a.delivery_settlement_line_count)::int AS delivery_settlement_line_count,
+              SUM(a.missing_delivery_settlement_count)::int AS missing_delivery_settlement_count,
+              MAX(a.computed_at) AS computed_at,
+              COUNT(DISTINCT a.report_date)::int AS snapshot_day_count,
+              MAX(a.currency) AS currency,
+              v.business_name, v.owner_name, v.phone AS vendor_phone
+       FROM vendor_daily_accrual a
+       INNER JOIN vendors v ON v.id = a.vendor_id
+       WHERE a.report_date >= $1::date
+         AND a.report_date < $2::date
+       GROUP BY a.vendor_id, v.business_name, v.owner_name, v.phone
+       ORDER BY v.business_name ASC NULLS LAST, v.owner_name ASC NULLS LAST`,
+      [monthStart, monthEndExclusive]
+    ).catch(() => ({ rows: [] }));
+  });
 
   const rows = await attachBankDetailsToAccrualRows(accrualRes.rows || []);
   return { ok: true, rows, monthStart, monthEndExclusive };
@@ -311,6 +356,10 @@ function dailyAccrualUpsertSql(): string {
 
 async function computeDailyAccrualSnapshot(reportDate: string): Promise<number> {
   const ins = await query(dailyAccrualUpsertSql(), [reportDate]);
+  const periodEnd = istDayEndExclusiveYmd(reportDate);
+  if (periodEnd) {
+    await persistDailyAccrualCustomerGst(reportDate, periodEnd);
+  }
   return (ins.rows || []).length;
 }
 

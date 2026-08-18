@@ -1110,18 +1110,32 @@ async function buildBookingInvoiceData(params: {
 
   const basePrice = parseFloat(booking.base_price || booking.total_amount || '0');
   const discountAmount = parseFloat(booking.discount_amount || '0');
-  const isInterState = Boolean(
-    booking.customer_state &&
-      booking.vendor_state &&
-      String(booking.customer_state).toLowerCase() !== String(booking.vendor_state).toLowerCase()
-  );
+  const financialMeta = financialMetaFromBookingNotes(booking.notes);
+  const paymentTax = paymentTaxFromBookingRow(booking);
+  const payCgst = parseFloat(String(paymentTax?.cgstAmount ?? 0)) || 0;
+  const paySgst = parseFloat(String(paymentTax?.sgstAmount ?? 0)) || 0;
+  const payIgst = parseFloat(String(paymentTax?.igstAmount ?? 0)) || 0;
+  const metaCgst = parseFloat(String(financialMeta?.cgst ?? 0)) || 0;
+  const storedInter =
+    financialMeta?.isInterState === true ||
+    financialMeta?.isInterState === 'true' ||
+    (payIgst > 0.009 && payCgst + paySgst <= 0.009);
+  const isInterState = storedInter
+    ? true
+    : payCgst + metaCgst > 0.009
+      ? false
+      : Boolean(
+          booking.customer_state &&
+            booking.vendor_state &&
+            String(booking.customer_state).toLowerCase() !== String(booking.vendor_state).toLowerCase()
+        );
   const amounts = resolveBookingInvoiceAmounts({
     basePrice,
     bookingTaxAmount: parseFloat(booking.tax_amount || '0') || 0,
     bookingTotalAmount: parseFloat(booking.total_amount || '0') || 0,
     discountAmount,
-    financialMeta: financialMetaFromBookingNotes(booking.notes),
-    payment: paymentTaxFromBookingRow(booking),
+    financialMeta,
+    payment: paymentTax,
     isInterState,
     catalogGstRate: serviceMeta.gstRate || 0,
   });
@@ -1864,9 +1878,15 @@ export async function ensureMealOrderInvoiceGenerated(mealOrderId: string): Prom
     return { created: false, ineligible: true };
   }
 
+  const storedInter = order.is_inter_state;
   const customerState = parseMealDeliveryState(order).toLowerCase();
   const vendorState = String(order.vendor_state ?? '').toLowerCase();
-  const isInterState = Boolean(vendorState && customerState && vendorState !== customerState);
+  const isInterState =
+    storedInter === true || storedInter === 't' || storedInter === 'true'
+      ? true
+      : storedInter === false || storedInter === 'f' || storedInter === 'false'
+        ? false
+        : Boolean(vendorState && customerState && vendorState !== customerState);
 
   const invoiceNumber = await generateInvoiceNumber(String(order.vendor_id));
   const invoicePayload = buildMealOrderInvoicePayload({

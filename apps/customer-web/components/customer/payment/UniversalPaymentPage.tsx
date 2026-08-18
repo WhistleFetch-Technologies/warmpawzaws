@@ -585,24 +585,21 @@ export function UniversalPaymentPage({
       : undefined) ??
     (typeof address?.state === 'string' && address.state.trim() ? address.state.trim() : undefined);
 
-  const applyDefaultGstBreakdown = useCallback(
-    (ratePct: number) => {
-      const lineTotal = baseAmount;
-      const taxable = priceIncludesTax ? lineTotal / (1 + ratePct / 100) : lineTotal;
-      const totalTax = (taxable * ratePct) / 100;
-      setTaxBreakdown({
-        subtotal: taxable,
-        cgst: totalTax / 2,
-        sgst: totalTax / 2,
-        igst: 0,
-        totalTax,
-        total: taxable + totalTax,
-        taxRate: ratePct,
-        isInterState: false,
-      });
-    },
-    [baseAmount, priceIncludesTax]
-  );
+  const [taxCalculationFailed, setTaxCalculationFailed] = useState(false);
+
+  const clearAuthoritativeGstBreakdown = useCallback(() => {
+    setTaxCalculationFailed(true);
+    setTaxBreakdown({
+      subtotal: baseAmount,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      totalTax: 0,
+      total: baseAmount,
+      taxRate: 0,
+      isInterState: false,
+    });
+  }, [baseAmount]);
 
   const runMealCheckoutTaxAndFees = useCallback(async () => {
     if (type !== 'meal_subscription' && type !== 'meal_one_time') return;
@@ -756,6 +753,7 @@ export function UniversalPaymentPage({
         const grand = Number(taxRes.grandTotal);
         const totalPay = Number.isFinite(grand) ? grand : taxableForLabel + totalTax;
 
+        setTaxCalculationFailed(false);
         setTaxBreakdown({
           subtotal: taxableForLabel,
           cgst,
@@ -774,43 +772,9 @@ export function UniversalPaymentPage({
       console.error('Meal checkout tax error:', e);
     }
 
-    const draftFoodPctCatch =
-      type === 'meal_one_time' && mealOneTimeDraft ? Number(mealOneTimeDraft.foodGstPct) : NaN;
-    const subscriptionFoodPct =
-      type === 'meal_subscription' && mealSubscriptionGstFallbackPct
-        ? Number(mealSubscriptionGstFallbackPct.food)
-        : NaN;
-    const fallbackRate = Number.isFinite(draftFoodPctCatch)
-      ? Math.min(100, Math.max(0, draftFoodPctCatch))
-      : Number.isFinite(subscriptionFoodPct)
-        ? Math.min(100, Math.max(0, subscriptionFoodPct))
-        : 0;
-    const taxable = foodAmt;
-    const totalTax = (taxable * fallbackRate) / 100;
-    const deliveryPctFallback =
-      type === 'meal_one_time' &&
-      mealOneTimeDraft &&
-      typeof mealOneTimeDraft.deliveryGstPct === 'number'
-        ? mealOneTimeDraft.deliveryGstPct
-        : type === 'meal_subscription' && mealSubscriptionGstFallbackPct
-          ? Number(mealSubscriptionGstFallbackPct.delivery)
-          : 0;
-    const deliveryTax =
-      deliveryFeeForTax > 0.009
-        ? Math.round(((deliveryFeeForTax * deliveryPctFallback) / 100) * 100) / 100
-        : 0;
-    const combinedTax = Math.round((totalTax + deliveryTax) * 100) / 100;
-    setTaxBreakdown({
-      subtotal: taxable,
-      cgst: combinedTax / 2,
-      sgst: combinedTax / 2,
-      igst: 0,
-      totalTax: combinedTax,
-      total: taxable + deliveryFeeForTax + combinedTax,
-      taxRate: fallbackRate,
-      isInterState: false,
-    });
-    setMealTaxReady(true);
+    toast.error('Unable to calculate GST. Please retry.');
+    clearAuthoritativeGstBreakdown();
+    setMealTaxReady(false);
   }, [
     type,
     mealOneTimeDraft,
@@ -824,6 +788,7 @@ export function UniversalPaymentPage({
     selectedAddress,
     address,
     appliedCoupon?.discountAmount,
+    clearAuthoritativeGstBreakdown,
   ]);
 
   const calculateTax = useCallback(async () => {
@@ -874,18 +839,19 @@ export function UniversalPaymentPage({
         const exclusiveSub = Number(taxRes.totalAmount);
         const taxableForLabel = Number.isFinite(exclusiveSub) ? exclusiveSub : baseAmount;
         const rawRate = Number(taxRes.items?.[0]?.taxRate);
-        const declaredRate = Number.isFinite(rawRate) ? rawRate : 18;
+        const declaredRate = Number.isFinite(rawRate) ? rawRate : 0;
         const taxRate = resolveGstDisplayRatePercent(
           taxableForLabel,
           totalTax,
           declaredRate,
-          18
+          0
         );
         const interState =
           typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0;
         const grand = Number(taxRes.grandTotal);
         const totalPay = Number.isFinite(grand) ? grand : taxableForLabel + totalTax;
 
+        setTaxCalculationFailed(false);
         setTaxBreakdown({
           subtotal: taxableForLabel,
           cgst,
@@ -901,18 +867,20 @@ export function UniversalPaymentPage({
       }
 
       if (baseAmount > 0) {
-        console.warn('Tax calculate returned no usable items; using default 18% split', taxRes);
-        applyDefaultGstBreakdown(18);
+        console.warn('Tax calculate returned no usable items; not applying a fallback GST split', taxRes);
+        toast.error('Unable to calculate GST. Please retry.');
+        clearAuthoritativeGstBreakdown();
       }
     } catch (error) {
-      console.error('Tax calculation error, using default 18%:', error);
+      console.error('Tax calculation error; not applying a fallback GST split:', error);
       if (baseAmount > 0) {
-        applyDefaultGstBreakdown(18);
+        toast.error('Unable to calculate GST. Please retry.');
+        clearAuthoritativeGstBreakdown();
       }
     }
   }, [
     address,
-    applyDefaultGstBreakdown,
+    clearAuthoritativeGstBreakdown,
     baseAmount,
     bookingId,
     category,
@@ -2060,6 +2028,11 @@ export function UniversalPaymentPage({
       return;
     }
 
+    if (taxCalculationFailed && (type === 'booking' || type === 'meal_subscription' || type === 'meal_one_time')) {
+      toast.error('Unable to calculate GST. Please retry.');
+      return;
+    }
+
     setProcessing(true);
 
     try {
@@ -2670,7 +2643,7 @@ export function UniversalPaymentPage({
             ? {
                 serviceCategory: category || initialPromotionIntent?.serviceCategory || undefined,
                 financialMeta: {
-                  servicePrice: taxBreakdown.subtotal,
+                  servicePrice: baseAmount,
                   vendorDiscount: checkoutVendorDiscount,
                   platformDiscount: checkoutPlatformDiscount,
                   couponDiscount,
@@ -4338,7 +4311,13 @@ export function UniversalPaymentPage({
           <div className="space-y-2">
             <Button
               onClick={() => handlePayment()}
-              disabled={processing || serviceIdResolving || (showAddressSelection && !selectedAddress)}
+              disabled={
+                processing ||
+                serviceIdResolving ||
+                (showAddressSelection && !selectedAddress) ||
+                (taxCalculationFailed &&
+                  (type === 'booking' || type === 'meal_subscription' || type === 'meal_one_time'))
+              }
               className="h-auto w-full rounded-full bg-gradient-to-r from-[#FF8C42] to-[#FF7029] px-6 py-4 text-lg font-bold text-white shadow-[0_8px_24px_rgba(255,107,53,0.35)] transition-all duration-150 hover:from-[#E67A35] hover:to-[#D66A25] active:scale-[0.98] touch-manipulation disabled:opacity-50"
             >
               {processing || serviceIdResolving ? (

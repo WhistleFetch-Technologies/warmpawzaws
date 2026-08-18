@@ -33,6 +33,65 @@ describe('isVaccinationService', () => {
 });
 
 describe('resolveGstCatalogCategoryRefForBooking', () => {
+  it('maps behavioral catalogue to training GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'behavioral',
+      serviceName: 'Aggression Rehabilitation Program',
+    });
+    expect(ref).toBe('training');
+  });
+
+  it('passes Behavioral UUID through — slug hop happens in catalog UUID resolver', async () => {
+    const behavioralUuid = 'b0dd3945-3506-4530-ab48-466ddd77a92d';
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: behavioralUuid,
+      serviceName: 'Behaviour Consult',
+    });
+    expect(ref).toBe(behavioralUuid);
+  });
+
+  it('does not invent a pet-sitting → boarding GST alias', async () => {
+    const sittingUuid = '06047ded-ca62-4837-8de6-04535eca5629';
+    const bySlug = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'pet-sitting',
+      serviceName: 'pet sitter',
+    });
+    const byUuid = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: sittingUuid,
+      serviceName: 'pet sitter',
+    });
+    expect(bySlug).toBe('pet-sitting');
+    expect(byUuid).toBe(sittingUuid);
+    expect(bySlug).not.toBe('boarding');
+    expect(byUuid).not.toBe('boarding');
+  });
+
+  it('maps lab-diagnostics catalogue to diagnostic GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'lab-diagnostics',
+      serviceName: 'Blood Test',
+    });
+    expect(ref).toBe('diagnostic');
+  });
+
+  it('maps veterinary_services package category text to veterinary GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'veterinary_services',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
+  it('maps Veterinary Services display name to veterinary GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'Veterinary Services',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
   it('uses veterinary category for deworming', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: 'veterinary',

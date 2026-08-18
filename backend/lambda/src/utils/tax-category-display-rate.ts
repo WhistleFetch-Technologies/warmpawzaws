@@ -22,7 +22,8 @@ export function isMealPlanGstScope(scope: GstApplicationScope): boolean {
   return scope === 'meal_plan_food' || scope === 'meal_plan_delivery';
 }
 
-export function pickTaxCategoryDisplayRate(row: Record<string, unknown>): number {
+/** Configured Admin GST % from a tax_categories row. Null when no rate was stored. */
+export function pickTaxCategoryConfiguredRate(row: Record<string, unknown>): number | null {
   const t = toFiniteDbNum(row.tax_rate);
   const d = toFiniteDbNum(row.default_gst_rate);
   const g = toFiniteDbNum(row.gst_rate);
@@ -32,5 +33,9 @@ export function pickTaxCategoryDisplayRate(row: Record<string, unknown>): number
   if (d !== undefined) return d;
   if (g !== undefined) return g;
   if (t !== undefined) return t;
-  return 0;
+  return null;
+}
+
+export function pickTaxCategoryDisplayRate(row: Record<string, unknown>): number {
+  return pickTaxCategoryConfiguredRate(row) ?? 0;
 }

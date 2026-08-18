@@ -7,8 +7,17 @@
  */
 
 import { query } from '../../database/rds-connection';
-import { isGstInterstateSupply, resolveGstStateKey } from '../gst-place-of-supply';
-import { resolveGstRateForCatalogAndRole, type GstApplicationScope } from './gst-catalog-role-resolution';
+import {
+  classifyGstPlaceOfSupply,
+  isGstInterstateSupply,
+  missingGstPlaceOfSupplyError,
+  resolveGstStateKey,
+} from '../gst-place-of-supply';
+import {
+  missingServiceGstConfigError,
+  resolveGstRateForCatalogAndRole,
+  type GstApplicationScope,
+} from './gst-catalog-role-resolution';
 
 /** DB NUMERIC / JSON may return rates as strings; normalize for math and API JSON. */
 function coerceRate(value: unknown, fallback: number): number {
@@ -95,7 +104,8 @@ export interface TaxCalculationResult {
 
 export class TaxCalculationService {
   /**
-   * Calculate tax: products via HSN / tax category; services via catalogue category + vendor role; default 18%.
+   * Calculate tax: products via HSN / tax category; services via Admin catalogue category + vendor role.
+   * Service bookings do not silently default to 18% when Admin GST configuration is missing.
    */
   async calculateTax(params: TaxCalculationParams): Promise<TaxCalculationResult> {
     const { items, customerLocation, vendorLocation, vendorId, serviceType, category } = params;
@@ -104,18 +114,24 @@ export class TaxCalculationService {
     // City-only + same city/state inference avoids false IGST when both sides are e.g. Bangalore/Karnataka.
     const customerStateKey = resolveGstStateKey(customerLocation?.state, customerLocation?.city);
     const vendorStateKey = resolveGstStateKey(vendorLocation?.state, vendorLocation?.city);
-    const isInterstate = isGstInterstateSupply(customerStateKey, vendorStateKey);
+    const supplyKind = classifyGstPlaceOfSupply(customerStateKey, vendorStateKey);
+    const hasServiceBooking = items.some(
+      (item) =>
+        item.type === 'service' &&
+        (item.gstApplicationScope || 'service_booking') === 'service_booking',
+    );
+    if (hasServiceBooking && supplyKind === 'unknown') {
+      throw missingGstPlaceOfSupplyError();
+    }
+    const isInterstate = hasServiceBooking
+      ? supplyKind === 'inter_state'
+      : isGstInterstateSupply(customerStateKey, vendorStateKey);
     if (process.env.LOG_GST === '1') {
       console.log('[GST]', {
         customerStateKey,
         vendorStateKey,
+        supplyKind,
         isInterstate,
-      });
-    }
-    if (isInterstate && (!customerStateKey || !vendorStateKey)) {
-      console.warn('[GST] Missing place of supply; defaulting to IGST', {
-        customerStateKey,
-        vendorStateKey,
       });
     }
 
@@ -127,7 +143,7 @@ export class TaxCalculationService {
       const quantity = item.quantity || 1;
       const lineInputTotal = item.amount * quantity;
 
-      // CGST/SGST split metadata only — statutory % comes from HSN / tax category / catalogue+role / 18% default.
+      // CGST/SGST split metadata only — statutory % comes from HSN / tax category / catalogue+role.
       const taxRule = this.getDefaultGstComponentRule();
 
       let hsnDetails: any = null;
@@ -135,18 +151,39 @@ export class TaxCalculationService {
       let gstRate: number;
 
       if (item.type === 'service') {
-        if (item.catalogCategoryId) {
-          let scope: GstApplicationScope = 'service_booking';
-          if (item.gstApplicationScope === 'meal_plan_food') scope = 'meal_plan_food';
-          else if (item.gstApplicationScope === 'meal_plan_delivery') scope = 'meal_plan_delivery';
+        let scope: GstApplicationScope = 'service_booking';
+        if (item.gstApplicationScope === 'meal_plan_food') scope = 'meal_plan_food';
+        else if (item.gstApplicationScope === 'meal_plan_delivery') scope = 'meal_plan_delivery';
+
+        if (scope !== 'service_booking') {
+          if (!item.catalogCategoryId) {
+            gstRate = 0;
+          } else {
+            const resolved = await resolveGstRateForCatalogAndRole(
+              item.catalogCategoryId,
+              item.roleId,
+              scope,
+            );
+            gstRate = resolved.found ? resolved.rate : 0;
+          }
+        } else if (!item.catalogCategoryId) {
+          throw missingServiceGstConfigError({
+            catalogCategoryId: item.category || null,
+            vendorRoleId: item.roleId || null,
+          });
+        } else {
           const resolved = await resolveGstRateForCatalogAndRole(
             item.catalogCategoryId,
             item.roleId,
             scope,
           );
-          gstRate = coerceRate(resolved.rate, scope === 'service_booking' ? 18 : 0);
-        } else {
-          gstRate = 18;
+          if (!resolved.found) {
+            throw missingServiceGstConfigError({
+              catalogCategoryId: resolved.catalogCategoryId || item.catalogCategoryId,
+              vendorRoleId: resolved.vendorRoleId ?? item.roleId ?? null,
+            });
+          }
+          gstRate = resolved.rate;
         }
       } else {
         let hsnCodeToRescope: string | undefined;
@@ -256,7 +293,7 @@ export class TaxCalculationService {
 
   /**
    * Default component labels for CGST/SGST/IGST breakdown. Per-line statutory % always comes from
-   * HSN → tax category → (services) catalogue category + role → 18% — not from gst_rules.
+   * HSN → tax category → (services) Admin catalogue category + role — not from gst_rules.
    */
   private getDefaultGstComponentRule(): {
     rule_name: string;

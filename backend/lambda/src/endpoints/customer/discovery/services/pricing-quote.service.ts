@@ -6,6 +6,7 @@ import { isValidUUID } from '../../../../types/entities';
 import { getDiscoveryRules, type DiscoveryRuleSet } from '../../../../lib/rule-engine';
 import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../../vendor/endpoints/vendorProfile.vendor';
 import { taxCalculationService } from '../../../../lib/services/tax-calculation-service';
+import { resolveVendorConfiguredSellingPrice } from '../../../../utils/resolve-booking-list-price';
 import { discountCalculationService } from '../../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../../constants';
 import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../../constants/helper';
@@ -87,7 +88,10 @@ export async function executepricingQuote(c: Context) {
       const vsRow = await pricing_quoteRepo.dbPricingQuote0(serviceId, vendor)
       if (vsRow.rows?.length > 0) {
         const vs = vsRow.rows[0];
-        basePrice = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
+        basePrice = resolveVendorConfiguredSellingPrice({
+          vendorCustomPrice: vs.custom_price,
+          vendorPrice: vs.price,
+        });
         category = vs.category || '';
         try {
           const meta = typeof vs.metadata === 'string' ? (vs.metadata ? JSON.parse(vs.metadata) : {}) : (vs.metadata || {});
@@ -163,8 +167,27 @@ export async function executepricingQuote(c: Context) {
       });
 
       const amountAfterDiscount = discountResult.finalAmount;
-      const vendorLocation = vendor.state ? { state: vendor.state, city: vendor.city } : undefined;
-      const customerLocation = body.customerState ? { state: body.customerState, city: body.customerCity } : undefined;
+      const { locationFromStoredFields } = await import('../../../../lib/gst-place-of-supply');
+      const { resolveCustomerGstLocation } = await import('../../../../utils/calculate-authoritative-service-gst');
+      const vendorLoc = locationFromStoredFields({
+        state: vendor.state,
+        city: vendor.city,
+        address: vendor.address,
+      });
+      const vendorLocation = vendorLoc
+        ? { state: vendorLoc.state || vendorLoc.city || '', city: vendorLoc.city }
+        : undefined;
+      const customerResolved = body.customerState || body.customerCity
+        ? locationFromStoredFields({ state: body.customerState, city: body.customerCity })
+        : await resolveCustomerGstLocation({
+            customerId,
+            addressId: body.addressId || body.address_id || undefined,
+            state: body.customerState,
+            city: body.customerCity,
+          });
+      const customerLocation = customerResolved
+        ? { state: customerResolved.state || customerResolved.city || '', city: customerResolved.city }
+        : undefined;
 
       const vendorRoleId = vendor.role_id ? String(vendor.role_id) : undefined;
       let resolvedVendorServiceId: string | undefined;
