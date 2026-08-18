@@ -84,6 +84,26 @@ describe('resolveGstCatalogCategoryRefForBooking', () => {
     expect(ref).not.toBe('veterinary');
   });
 
+  it('corrected Babul walker packages resolve via walking catalogue (not dog walker text)', async () => {
+    // After migration 1091: category_id → Walking master / category text = walking.
+    const bySlug = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'walking',
+      serviceName: 'Monthly Dog Walking Package',
+      vendorRoleName: 'walker',
+    });
+    expect(bySlug).toBe('walking');
+
+    // Free-text "Dog Walker" without correction must NOT silently become walking
+    // (no GST alias hack — catalogue/category data must be fixed).
+    const badFallback = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'Dog Walker',
+      vendorRoleName: 'walker',
+    });
+    expect(badFallback).toBe('Dog Walker');
+    expect(String(badFallback).toLowerCase()).not.toBe('walking');
+  });
+
   it('categoryFallback diagnostics does not last-resort to veterinary', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: null,

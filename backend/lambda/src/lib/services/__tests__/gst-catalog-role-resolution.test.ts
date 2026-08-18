@@ -242,4 +242,31 @@ describe('resolveGstRateForCatalogAndRole — category-authoritative', () => {
     expect(err.message).not.toMatch(/applicable role/i);
     expect(err.vendorRoleId).toBe(SOLO_ROLE);
   });
+
+  test('does not invent dog-walker → walking GST alias (data fix required)', () => {
+    expect(aliasGstCatalogCategoryRef('dog walker')).toBe('dog walker');
+    expect(aliasGstCatalogCategoryRef('Dog Walker')).toBe('Dog Walker');
+    expect(aliasGstCatalogCategoryRef('walking')).toBe('walking');
+  });
+
+  test('Walking catalogue UUID resolves existing Walking GST card at Admin rate', async () => {
+    const WALKING_CAT = 'effeec22-c4b6-44c3-bfee-1962f66110d5';
+    mockedQuery
+      .mockResolvedValueOnce({
+        rows: [
+          taxRow({
+            id: 'tc-walking',
+            catalog_category_id: WALKING_CAT,
+            tax_rate: 18,
+            default_gst_rate: 18,
+            jcnt: 0,
+          }),
+        ],
+      } as never);
+
+    const resolved = await resolveGstRateForCatalogAndRole(WALKING_CAT, WALKER_ROLE);
+    expect(resolved.found).toBe(true);
+    expect(resolved.rate).toBe(18);
+    expect(resolved.taxCategoryId).toBe('tc-walking');
+  });
 });
