@@ -40,6 +40,7 @@ import {
 } from '../utils/booking-financial-gross';
 import { calculateAuthoritativeServiceGst } from '../utils/calculate-authoritative-service-gst';
 import { isGstConfigurationError } from '../lib/services/gst-catalog-role-resolution';
+import { isGstPlaceOfSupplyError } from '../lib/gst-place-of-supply';
 import { hasCompleteGstSplit, readAuthoritativeGst, snapshotToPaymentColumns } from '../utils/canonical-gst-snapshot';
 import { scheduleBookingStartOtpIfNeeded } from '../utils/booking-start-otp';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
@@ -324,7 +325,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         }
       } catch (taxError) {
         console.error('Error calculating tax:', taxError);
-        if (isGstConfigurationError(taxError)) {
+        if (isGstConfigurationError(taxError) || isGstPlaceOfSupplyError(taxError)) {
           throw taxError;
         }
         if (!lockedGrossEarly || lockedGrossEarly.totalTax <= 0.009) {
@@ -835,10 +836,16 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         details.stack = error?.stack;
         details.code = error?.code;
       }
+      const gstConfig = isGstConfigurationError(error);
+      const gstPlace = isGstPlaceOfSupplyError(error);
       return this.error(
         message,
-        isGstConfigurationError(error) ? 400 : 500,
-        isGstConfigurationError(error) ? 'GST_CONFIGURATION_MISSING' : 'INTERNAL_ERROR',
+        gstConfig || gstPlace ? 400 : 500,
+        gstPlace
+          ? 'GST_PLACE_OF_SUPPLY_UNKNOWN'
+          : gstConfig
+            ? 'GST_CONFIGURATION_MISSING'
+            : 'INTERNAL_ERROR',
         details,
         requestId
       );

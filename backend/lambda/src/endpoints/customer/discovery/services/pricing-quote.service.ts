@@ -6,6 +6,8 @@ import { isValidUUID } from '../../../../types/entities';
 import { getDiscoveryRules, type DiscoveryRuleSet } from '../../../../lib/rule-engine';
 import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../../vendor/endpoints/vendorProfile.vendor';
 import { taxCalculationService } from '../../../../lib/services/tax-calculation-service';
+import { isGstConfigurationError } from '../../../../lib/services/gst-catalog-role-resolution';
+import { isGstPlaceOfSupplyError } from '../../../../lib/gst-place-of-supply';
 import { resolveVendorConfiguredSellingPrice } from '../../../../utils/resolve-booking-list-price';
 import { discountCalculationService } from '../../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../../constants';
@@ -239,6 +241,12 @@ export async function executepricingQuote(c: Context) {
       });
     } catch (error: any) {
       console.error('Error in /customer/pricing/quote:', error);
+      if (isGstConfigurationError(error) || isGstPlaceOfSupplyError(error)) {
+        return c.json(
+          { success: false, error: error.message, code: error.code },
+          400,
+        );
+      }
       return c.json({ success: false, error: error?.message || 'Pricing quote failed' }, 500);
     }
 }

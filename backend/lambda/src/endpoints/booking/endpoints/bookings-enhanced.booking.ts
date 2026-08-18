@@ -1740,7 +1740,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               isGstConfigurationError(gstErr) || isGstPlaceOfSupplyError(gstErr)
                 ? gstErr.message
                 : 'Unable to calculate GST for this booking. Please retry.';
-            return this.error(message, 400, requestId);
+            const code = isGstPlaceOfSupplyError(gstErr)
+              ? 'GST_PLACE_OF_SUPPLY_UNKNOWN'
+              : 'GST_CONFIGURATION_MISSING';
+            return this.error(message, 400, code, undefined, requestId);
           }
           const gstMeta = snapshotToFinancialMeta(authoritativeGst);
           bookingData.tax_amount = gstMeta.totalTax;
