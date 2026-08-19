@@ -52,11 +52,18 @@ export function BehavioristServiceRouter({
 
   const behavioralConcerns = BEHAVIORAL_ISSUES.filter((issue) => issue.id !== 'view_all');
 
-  const handleWarmpawzBookAppointment = useCallback(
+  const handleWarmpawzOpenProfile = useCallback(
     (_v: BoardingListVendor) => {
       onNavigate?.('wappt-discovery', { category: 'behaviorist' });
     },
     [onNavigate],
+  );
+
+  const handleWarmpawzBookAppointment = useCallback(
+    (v: BoardingListVendor) => {
+      handleWarmpawzOpenProfile(v);
+    },
+    [handleWarmpawzOpenProfile],
   );
 
   const openBehavioristDetails = useCallback(
@@ -191,7 +198,7 @@ export function BehavioristServiceRouter({
                   fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
                 }}
                 onPaySelectSlot={handleWarmpawzBookAppointment}
-                onPayOpenProfile={handleWarmpawzBookAppointment}
+                onPayOpenProfile={handleWarmpawzOpenProfile}
                 onMarketplaceOpenProfile={openBehavioristDetails}
                 emptyState={
                   <Card className="p-8 text-center">

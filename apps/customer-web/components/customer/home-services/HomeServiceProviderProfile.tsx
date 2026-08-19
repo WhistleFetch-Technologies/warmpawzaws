@@ -59,6 +59,7 @@ import {
 } from '@/lib/vendor-display-media';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 import { homeServiceTypeToPersona, shareVendorProfile } from '@/lib/vendor-profile-share';
+import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 import { mergeProviderAboutFromFacility } from '@/lib/universal-provider-profile-enrichment';
 import { resolveHomeServiceProfileOverviewFields } from '@/lib/home-service-profile-overview';
 import { formatOperatingHours } from '@/lib/format-utils';
@@ -510,6 +511,17 @@ export function HomeServiceProviderProfile({
 
   const walkerContinueToBook = useCallback(() => {
     if (!selectedServiceId || !provider) return;
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: homeServiceTypeToPersona(serviceType),
+        category: serviceType,
+        vendorId: String(provider.vendorId || vendorId || ''),
+        resumeScreen: 'home-service-booking',
+        wapptMode: false,
+      })
+    ) {
+      return;
+    }
     const option = walkerSelectedOptionRef.current;
     const fromMap = rawServiceRowsRef.current.get(selectedServiceId);
     const service: HomeServiceProfileService = option

@@ -63,6 +63,7 @@ import {
   mapFacilityRecentReviews,
   normalizeFacilityRating,
 } from '@/lib/universal-provider-profile-enrichment';
+import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -734,6 +735,18 @@ export function GroomingServicesByStyle({
   // ✅ FIX: Pass all selected services to booking, not just the first one
   // This matches the vet flow where multiple services can be selected
   const handleBookServices = () => {
+    const vid = String(profileProvider?.vendorId || profileProvider?.providerId || '');
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: 'grooming',
+        category: 'grooming',
+        vendorId: vid,
+        resumeScreen: 'grooming-booking',
+        wapptMode: appointmentsMode,
+      })
+    ) {
+      return;
+    }
     if (appointmentsMode && profileProvider) {
       const vid = String(profileProvider.vendorId || profileProvider.providerId || '');
       const style =

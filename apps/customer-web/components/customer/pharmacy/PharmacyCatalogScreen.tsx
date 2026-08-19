@@ -19,6 +19,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { requestGuestAuthForCart } from '@/lib/guest-auth-gate';
 import { toast } from 'sonner';
 
 interface Medicine {
@@ -79,6 +80,7 @@ export function PharmacyCatalogScreen({
   };
 
   const handleAddToCart = (medicineId: string) => {
+    if (requestGuestAuthForCart('/pharmacy')) return;
     setCart(prev => ({
       ...prev,
       [medicineId]: (prev[medicineId] || 0) + 1

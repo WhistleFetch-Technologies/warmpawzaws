@@ -54,6 +54,7 @@ import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import { requestGuestAuthForMarketplaceBook } from '@/lib/guest-auth-gate';
 import {
   buildWarmpawzAppointmentsBookingNav,
   isWarmpawzAppointmentsHubEnabled,
@@ -601,6 +602,16 @@ export function ClinicListView({
   }, [selectedClinicId, clinics, fetchingServicesFor, fetchVendorServicesForClinic]);
 
   const handleBookService = (clinic: ClinicProvider, row: ClinicServiceRow) => {
+    if (
+      requestGuestAuthForMarketplaceBook({
+        persona: 'vet',
+        category: 'vet',
+        vendorId: String(clinic.id),
+        resumeScreen: 'vet-booking',
+      })
+    ) {
+      return;
+    }
     const vendorId = clinic.id;
     const serviceIdForBooking = row.catalogServiceId || String(row.vendorServiceId);
     const serviceObj = normalizeVendorServiceRowForPackage({

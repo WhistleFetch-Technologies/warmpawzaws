@@ -60,8 +60,8 @@ import {
   serviceNameLooksLikeSwimming,
 } from '@/lib/boarding-service-types';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
-import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
-import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { requestGuestAuthForBooking } from '@/lib/guest-auth-gate';
 import { mapBookingPetFromApi, resolvePetDisplayPhotoUrl } from '@/lib/pet-display-photo';
 
 interface BoardingBookingRouterProps {
@@ -1267,9 +1267,8 @@ export function BoardingBookingRouter({
   };
 
   const handleContinueFromWapptDetails = () => {
-    if (!hasAuthenticatedCustomerSession()) {
-      emitGuestAuthAnalytics('login_prompt_shown');
-      window.location.href = buildGuestAuthUrlForBooking({
+    if (
+      requestGuestAuthForBooking({
         kind: 'booking',
         persona: isPetSitting ? 'sitting' : 'boarding',
         category: isPetSitting ? 'sitting' : 'boarding',
@@ -1281,7 +1280,8 @@ export function BoardingBookingRouter({
         returnPath: '/',
         resumeScreen: isPetSitting ? 'pet-sitter-booking' : 'boarding-booking',
         requiresPet: false,
-      });
+      })
+    ) {
       return;
     }
     if (!checkInDate || !checkInTime) {
@@ -1304,9 +1304,8 @@ export function BoardingBookingRouter({
   };
 
   const handleContinueFromWapptBoardingDetails = () => {
-    if (!hasAuthenticatedCustomerSession()) {
-      emitGuestAuthAnalytics('login_prompt_shown');
-      window.location.href = buildGuestAuthUrlForBooking({
+    if (
+      requestGuestAuthForBooking({
         kind: 'booking',
         persona: 'boarding',
         category: 'boarding',
@@ -1318,7 +1317,8 @@ export function BoardingBookingRouter({
         returnPath: '/',
         resumeScreen: 'boarding-booking',
         requiresPet: false,
-      });
+      })
+    ) {
       return;
     }
     if (!checkInDate || !checkOutDate || !checkInTime || !checkOutTime) {

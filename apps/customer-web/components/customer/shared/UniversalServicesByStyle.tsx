@@ -64,6 +64,7 @@ import {
   mapFacilityRecentReviews,
   normalizeFacilityRating,
 } from '@/lib/universal-provider-profile-enrichment';
+import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 import { roleIdToSharePersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from './ServiceStyleLaunchBlocked';
@@ -693,6 +694,18 @@ export function UniversalServicesByStyle({
 
   // ✅ FIX: Pass all selected services to booking (matches vet/grooming flow)
   const handleBookServices = () => {
+    const vid = String(profileProvider?.vendorId || profileProvider?.providerId || '');
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: String(roleId || finalCategory || 'booking'),
+        category: finalCategory || String(roleId || 'booking'),
+        vendorId: vid,
+        resumeScreen: bookingScreen,
+        wapptMode: appointmentsMode,
+      })
+    ) {
+      return;
+    }
     if (appointmentsMode && profileProvider) {
       const vid = String(profileProvider.vendorId || profileProvider.providerId || '');
       const style = wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;

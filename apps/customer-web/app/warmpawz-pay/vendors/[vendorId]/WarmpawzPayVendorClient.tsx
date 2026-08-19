@@ -13,6 +13,7 @@ import {
 } from '@/lib/warmpawz-pay/wpay-api';
 import { previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
+import { requestGuestAuthForWpayVendor } from '@/lib/guest-auth-gate';
 import { VendorProfileDashboardHeader } from '@/components/customer/shared/VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from '@/components/customer/shared/VendorHeroPhotoCarousel';
 import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
@@ -97,6 +98,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
   const onProceedToPay = useCallback(async () => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
+    if (requestGuestAuthForWpayVendor(resolvedVendorId)) return;
     const phone = readCustomerPhoneFromStorage();
     if (!phone) {
       setPayError('Please log in to continue');

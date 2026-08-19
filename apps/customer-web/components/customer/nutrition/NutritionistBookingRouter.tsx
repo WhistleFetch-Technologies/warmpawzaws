@@ -41,8 +41,8 @@ import {
   priceFromVendorServiceRow,
 } from '@/lib/nutrition-vendor-price';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
-import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
-import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { requestGuestAuthForBooking } from '@/lib/guest-auth-gate';
 import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
@@ -530,9 +530,8 @@ export function NutritionistBookingRouter({
   };
 
   const handleContinueFromBookingDetails = () => {
-    if (!hasAuthenticatedCustomerSession()) {
-      emitGuestAuthAnalytics('login_prompt_shown');
-      window.location.href = buildGuestAuthUrlForBooking({
+    if (
+      requestGuestAuthForBooking({
         kind: 'booking',
         persona: 'nutrition',
         category: 'nutrition',
@@ -544,7 +543,8 @@ export function NutritionistBookingRouter({
         returnPath: '/',
         resumeScreen: 'nutritionist-booking',
         requiresPet: true,
-      });
+      })
+    ) {
       return;
     }
     if (!selectedDate || !selectedTime) {

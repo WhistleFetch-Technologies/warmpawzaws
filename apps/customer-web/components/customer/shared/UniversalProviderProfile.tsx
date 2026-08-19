@@ -43,6 +43,7 @@ import { VendorProfileDashboardHeader } from './VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from './VendorHeroPhotoCarousel';
 import { ServicePricingDisplay } from '@/components/customer/ServicePricingDisplay';
 import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
+import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 
 // ============================================================================
 // TYPES
@@ -710,6 +711,17 @@ export function UniversalProviderProfile({
   const handleProceedToBooking = () => {
     if (selectedServices.size === 0) {
       toast.error('Please select at least one service');
+      return;
+    }
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: category,
+        category,
+        vendorId: String(provider.vendorId || provider.providerId || ''),
+        resumeScreen: 'universal-provider-booking',
+        wapptMode: false,
+      })
+    ) {
       return;
     }
     const pkgOnly = selectedServicesList.filter((s) =>

@@ -18,9 +18,9 @@ import {
   type GuestVendorProfileService,
 } from '@/lib/guest-vendor-profile-api';
 import {
-  buildGuestBookingLoginUrl,
   type VendorShareNavigationParams,
 } from '@/lib/vendor-profile-share';
+import { requestGuestAuth } from '@/lib/guest-auth-gate';
 import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { ServiceDescriptionInline } from '@/components/customer/shared/ServiceDescriptionInline';
 
@@ -106,11 +106,20 @@ export function GuestVendorShareProfile({ vendorId, shareParams }: GuestVendorSh
 
   const handleBook = (service?: GuestVendorProfileService) => {
     const serviceId = service ? guestVendorServiceId(service) : undefined;
-    router.push(
-      buildGuestBookingLoginUrl(vendorId, shareParams, {
-        serviceId: serviceId || undefined,
-      })
-    );
+    requestGuestAuth({
+      mode: 'signup',
+      returnPath: '/',
+      resumeScreen: 'wappt-vendor-profile',
+      guestBookingIntent: {
+        kind: 'booking',
+        persona: shareParams.persona || 'vet',
+        category: shareParams.persona || 'vet',
+        vendorId,
+        serviceId,
+        serviceStyle: shareParams.serviceStyle,
+        requiresPet: false,
+      },
+    });
   };
 
   if (loading) {

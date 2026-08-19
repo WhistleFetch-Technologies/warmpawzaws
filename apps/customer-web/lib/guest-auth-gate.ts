@@ -122,3 +122,119 @@ export function requestGuestAuth(options: GuestAuthRequestOptions = {}): void {
 export function redirectGuestToLogin(returnPath: string): void {
   requestGuestAuth({ mode: 'signup', returnPath: returnPath || '/' });
 }
+
+/** @returns true if the guest modal was opened (caller should abort). */
+export function requestGuestAuthIfNeeded(options: GuestAuthRequestOptions = {}): boolean {
+  if (hasAuthenticatedCustomerSession()) return false;
+  requestGuestAuth(options);
+  return true;
+}
+
+/** Booking continue / Book appointment — modal, not full-page /auth. */
+export function requestGuestAuthForBooking(
+  intent: Partial<Omit<GuestBookingIntentV1, 'v' | 'savedAt'>> & {
+    vendorId?: string;
+    serviceId?: string;
+    serviceStyle?: string;
+    wapptMode?: boolean;
+  }
+): boolean {
+  return requestGuestAuthIfNeeded({
+    mode: 'signup',
+    returnPath: intent.returnPath || '/',
+    resumeScreen: intent.resumeScreen,
+    guestBookingIntent: {
+      kind: intent.kind || 'booking',
+      persona: intent.persona,
+      category: intent.category,
+      vendorId: intent.vendorId || intent.vendorId,
+      serviceId: intent.serviceId || intent.serviceId,
+      serviceStyle: intent.serviceStyle || intent.serviceStyle,
+      date: intent.date,
+      time: intent.time,
+      wapptMode: intent.wapptMode ?? intent.wapptMode,
+      requiresPet: intent.requiresPet,
+      resumeScreen: intent.resumeScreen,
+    },
+  });
+}
+
+/** Marketplace Book service / Continue from vendor profile (not slot browse). */
+export function requestGuestAuthForMarketplaceBook(opts: {
+  persona: string;
+  category: string;
+  vendorId?: string;
+  resumeScreen: string;
+}): boolean {
+  return requestGuestAuthForProfileContinue({ ...opts, wapptMode: false });
+}
+
+/**
+ * Vendor profile CTA that leaves the profile for slot booking.
+ * Same injection for marketplace Continue and WAPPT Select Slot.
+ */
+export function requestGuestAuthForProfileContinue(opts: {
+  persona: string;
+  category: string;
+  vendorId?: string;
+  resumeScreen: string;
+  wapptMode?: boolean;
+}): boolean {
+  const wapptMode = opts.wapptMode === true;
+  return requestGuestAuthForBooking({
+    kind: 'booking',
+    persona: opts.persona,
+    category: opts.category,
+    vendorId: opts.vendorId,
+    requiresPet: !wapptMode,
+    wapptMode,
+    returnPath: '/',
+    resumeScreen: opts.resumeScreen,
+  });
+}
+
+/** @deprecated Prefer requestGuestAuthForProfileContinue({ wapptMode: true }) on the slot CTA. */
+export function requestGuestAuthForWapptBook(opts: {
+  persona: string;
+  category: string;
+  vendorId?: string;
+  resumeScreen?: string;
+}): boolean {
+  return requestGuestAuthForBooking({
+    kind: 'booking',
+    persona: opts.persona,
+    category: opts.category,
+    vendorId: opts.vendorId,
+    requiresPet: false,
+    wapptMode: true,
+    returnPath: '/',
+    resumeScreen: opts.resumeScreen || 'wappt-vendor-profile',
+  });
+}
+
+/** Warmpawz Pay vendor card — list browse is guest-ok; opening a vendor requires login. */
+export function requestGuestAuthForWpayVendor(vendorId: string): boolean {
+  const id = String(vendorId || '').trim();
+  const returnPath = id
+    ? `/warmpawz-pay/vendors/${encodeURIComponent(id)}`
+    : '/warmpawz-pay';
+  return requestGuestAuthIfNeeded({
+    mode: 'signup',
+    returnPath,
+    resumeScreen: 'warmpawz-pay-vendor',
+  });
+}
+
+/** Ecommerce add-to-cart / Pay card click. */
+export function requestGuestAuthForCart(returnPath?: string): boolean {
+  const path =
+    returnPath ||
+    (typeof window !== 'undefined'
+      ? `${window.location.pathname}${window.location.search || ''}` || '/shop'
+      : '/shop');
+  return requestGuestAuthIfNeeded({
+    mode: 'signup',
+    returnPath: path,
+    resumeScreen: 'shop',
+  });
+}

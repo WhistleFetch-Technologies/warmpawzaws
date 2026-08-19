@@ -41,8 +41,8 @@ import {
   getWapptBookingSteps,
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
-import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
-import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { requestGuestAuthForBooking } from '@/lib/guest-auth-gate';
 import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
@@ -651,9 +651,8 @@ export function TrainingBookingRouter({
   };
 
   const handleContinueFromBookingDetails = () => {
-    if (!hasAuthenticatedCustomerSession()) {
-      emitGuestAuthAnalytics('login_prompt_shown');
-      window.location.href = buildGuestAuthUrlForBooking({
+    if (
+      requestGuestAuthForBooking({
         kind: 'booking',
         persona: 'training',
         category: 'training',
@@ -666,7 +665,8 @@ export function TrainingBookingRouter({
         returnPath: '/',
         resumeScreen: 'training-booking',
         requiresPet: appointmentsMode !== true,
-      });
+      })
+    ) {
       return;
     }
     if (!selectedDate || !selectedTime) {

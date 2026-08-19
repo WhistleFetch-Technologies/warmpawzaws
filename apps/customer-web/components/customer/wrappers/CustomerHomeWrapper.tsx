@@ -45,7 +45,7 @@ import {
   resolveResumeScreen,
   transactionRequiresPet,
 } from '@/lib/guest-booking-intent';
-import { emitGuestAuthAnalytics, requestGuestAuth } from '@/lib/guest-auth-gate';
+import { emitGuestAuthAnalytics, requestGuestAuth, requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
@@ -58,7 +58,7 @@ import {
   clearWishlistOpenedFromShopMark,
   rememberHelpBackSpaScreen,
 } from '@/lib/go-back-or-replace';
-import { isWarmpawzPayCommerceActive } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzPayCommerceActive, isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { buildWapptShellBookingPayload, handleWapptShellScreenNavigate } from '@/lib/wappt-shell-navigation';
 import { consumeWalkInShellNav } from '@/lib/walk-in-vendor-actions';
@@ -1986,7 +1986,20 @@ export function CustomerHomeWrapper({
     }
     setVetServiceData((prev: any) => mergeBannerNavigationPayload(prev, data || {}));
     // ✅ FIX: Handle all navigation screens including pharmacy, lab, etc.
-    if (screen === 'vet-booking') navigateToScreen('vet-booking');
+    if (screen === 'vet-booking') {
+      if (
+        requestGuestAuthForProfileContinue({
+          persona: 'vet',
+          category: 'vet',
+          vendorId: String(data?.vendorId || data?.clinicId || ''),
+          resumeScreen: 'vet-booking',
+          wapptMode: data?.appointmentsMode === true,
+        })
+      ) {
+        return;
+      }
+      navigateToScreen('vet-booking');
+    }
     else if (screen === 'vet-clinic-list') {
       if ((data as any)?.startStep === 'home') setVetClinicFromHome(true);
       else setVetClinicFromHome(false);
@@ -3550,6 +3563,17 @@ export function CustomerHomeWrapper({
       });
       navigateToScreen('vet-clinic-profile');
     } else if (screen === 'appointment' || screen === 'vet-booking') {
+      if (
+        requestGuestAuthForProfileContinue({
+          persona: 'vet',
+          category: 'vet',
+          vendorId: String(data?.vendorId || data?.clinicId || ''),
+          resumeScreen: 'vet-booking',
+          wapptMode: data?.appointmentsMode === true,
+        })
+      ) {
+        return;
+      }
       setVetServiceData({
         ...vetServiceData,
         id: data?.clinicId || data?.vendorId || vetServiceData?.id,
@@ -3576,6 +3600,17 @@ export function CustomerHomeWrapper({
       return;
     }
     if (screen === 'appointment' || screen === 'vet-booking') {
+      if (
+        requestGuestAuthForProfileContinue({
+          persona: 'vet',
+          category: 'vet',
+          vendorId: String(data?.vendorId || data?.clinicId || vetServiceData?.id || ''),
+          resumeScreen: 'vet-booking',
+          wapptMode: data?.appointmentsMode === true || vetServiceData?.appointmentsMode === true,
+        })
+      ) {
+        return;
+      }
       setVetServiceData({
         ...vetServiceData,
         id: data?.clinicId || vetServiceData?.id,
@@ -3744,6 +3779,7 @@ export function CustomerHomeWrapper({
         serviceTypeName={vetServiceData?.serviceTypeName}
         category={vetServiceData?.category || 'vet'}
         specialization={vetServiceData?.specialization || problemGridSpecialization}
+        appointmentsMode={isWarmpawzAppointmentsHubEnabled('vet')}
         onBack={() => {
           backFromBannerOr(() => {
           if (vetServiceData?.returnScreen === 'problem_grid_flow') {
@@ -5455,6 +5491,7 @@ export function CustomerHomeWrapper({
             category="grooming"
             specialization={problemGridSpecialization}
             vendorId={groomingCenterProfileVendorId ?? undefined}
+            appointmentsMode={isWarmpawzAppointmentsHubEnabled('grooming')}
             onBack={() => {
               backFromBannerOr(() => {
               if (groomingCenterProfileVendorId) {
@@ -5486,6 +5523,7 @@ export function CustomerHomeWrapper({
             category="grooming"
             specialization={problemGridSpecialization}
             vendorId={groomingHomeProfileVendorId ?? undefined}
+            appointmentsMode={isWarmpawzAppointmentsHubEnabled('grooming')}
             onBack={() => {
               backFromBannerOr(() => {
               if (groomingHomeProfileVendorId) {
@@ -5537,6 +5575,7 @@ export function CustomerHomeWrapper({
             serviceTypeName="All Dog Walkers"
             category="walker"
             bookingScreen="walker-booking"
+            appointmentsMode={isWarmpawzAppointmentsHubEnabled('walker')}
             onBack={() => {
               backFromBannerOr(() => {
                 if (returnToProblemGridFromStyleHub) {
@@ -5618,6 +5657,7 @@ export function CustomerHomeWrapper({
             specialization={problemGridSpecialization}
             bookingScreen="training-booking"
             vendorId={trainingCenterProfileVendorId ?? undefined}
+            appointmentsMode={isWarmpawzAppointmentsHubEnabled('training')}
             onBack={() => {
               backFromBannerOr(() => {
               if (trainingCenterProfileVendorId) {
@@ -5656,6 +5696,7 @@ export function CustomerHomeWrapper({
             specialization={problemGridSpecialization}
             bookingScreen="training-booking"
             vendorId={trainingHomeProfileVendorId ?? undefined}
+            appointmentsMode={isWarmpawzAppointmentsHubEnabled('training')}
             onBack={() => {
               backFromBannerOr(() => {
               if (trainingHomeProfileVendorId) {

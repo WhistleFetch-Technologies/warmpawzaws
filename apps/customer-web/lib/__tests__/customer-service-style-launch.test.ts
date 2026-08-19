@@ -54,9 +54,20 @@ const catalog: ServiceLaunchCatalogEntry[] = [
 ];
 
 describe('resolveServiceStyleLaunchFromCatalog', () => {
-  it('inherits parent when style has no entry', () => {
+  it('does not hide tiles when service is missing from catalog', () => {
     const r = resolveServiceStyleLaunchFromCatalog(catalog, 'grooming', 'at_home');
-    expect(r.status).toBe('hidden');
+    expect(r.status).toBe('launched');
+    expect(r.inheritsParent).toBe(true);
+  });
+
+  it('does not hide tiles when catalog is empty', () => {
+    const r = resolveServiceStyleLaunchFromCatalog([], 'vet', 'at_home');
+    expect(r.status).toBe('launched');
+  });
+
+  it('inherits parent when style has no entry on a known service', () => {
+    const r = resolveServiceStyleLaunchFromCatalog(catalog, 'vet', 'unknown_style');
+    expect(r.status).toBe('launched');
     expect(r.inheritsParent).toBe(true);
   });
 

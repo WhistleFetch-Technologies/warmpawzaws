@@ -74,9 +74,10 @@ export function hasAnyLaunchedStyle(
   catalog: ServiceLaunchCatalogEntry[],
   serviceId: string
 ): boolean {
+  if (!catalog.length) return true;
   const svcKey = launchServiceIdFromCategory(serviceId);
   const entry = getCatalogEntry(catalog, svcKey);
-  if (!entry) return false;
+  if (!entry) return true;
 
   const supported =
     entry.supportedStyles && entry.supportedStyles.length > 0
@@ -171,10 +172,16 @@ export function resolveServiceStyleLaunchFromCatalog(
   const style = normalizeServiceStyleLaunchKey(serviceStyle);
   // Always resolve via launch-id aliases so category="nutrition" hits catalog "nutritionist".
   const svcKey = launchServiceIdFromCategory(serviceId);
+  if (!catalog.length) {
+    return { status: 'launched', inheritsParent: true };
+  }
   const entry = catalogByServiceId(catalog).get(svcKey);
-  const parentStatus = (entry?.effectiveStatus || 'hidden') as LaunchStatusValue;
+  if (!entry) {
+    return { status: 'launched', inheritsParent: true };
+  }
+  const parentStatus = (entry.effectiveStatus || 'hidden') as LaunchStatusValue;
 
-  if (!style || !entry?.effectiveStyles?.[style]) {
+  if (!style || !entry.effectiveStyles?.[style]) {
     return { status: parentStatus, inheritsParent: true };
   }
 

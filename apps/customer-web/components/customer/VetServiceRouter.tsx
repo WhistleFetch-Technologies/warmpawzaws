@@ -441,7 +441,7 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
 
   const openVetCenterProfile = openVetProviderProfile;
 
-  const handleWarmpawzBookAppointment = useCallback(
+  const handleWarmpawzOpenProfile = useCallback(
     (v: BoardingListVendor) => {
       const raw = (v.raw || {}) as Record<string, unknown>;
       const vendorId = pickCustomerVendorAccountId(raw) || v.id;
@@ -456,6 +456,13 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
       });
     },
     [handleNavigate],
+  );
+
+  const handleWarmpawzBookAppointment = useCallback(
+    (v: BoardingListVendor) => {
+      handleWarmpawzOpenProfile(v);
+    },
+    [handleWarmpawzOpenProfile],
   );
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
@@ -672,7 +679,7 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
                 fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
               }}
               onPaySelectSlot={handleWarmpawzBookAppointment}
-              onPayOpenProfile={handleWarmpawzBookAppointment}
+              onPayOpenProfile={handleWarmpawzOpenProfile}
               onMarketplaceOpenProfile={openVetCenterProfile}
               onMarketplaceBookPlan={handleVetBookPlan}
               emptyState={

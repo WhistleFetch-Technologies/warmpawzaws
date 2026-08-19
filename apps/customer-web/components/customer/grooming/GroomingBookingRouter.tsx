@@ -48,8 +48,8 @@ import {
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
-import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
-import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { requestGuestAuthForBooking } from '@/lib/guest-auth-gate';
 import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 
 
@@ -769,9 +769,8 @@ export function GroomingBookingRouter({
 
   /** Single-page booking: validate schedule + pet + address (home) then go to review/payment step */
   const handleContinueFromBookingDetails = () => {
-    if (!hasAuthenticatedCustomerSession()) {
-      emitGuestAuthAnalytics('login_prompt_shown');
-      window.location.href = buildGuestAuthUrlForBooking({
+    if (
+      requestGuestAuthForBooking({
         kind: 'booking',
         persona: 'grooming',
         category: 'grooming',
@@ -784,7 +783,8 @@ export function GroomingBookingRouter({
         returnPath: '/',
         resumeScreen: 'grooming-booking',
         requiresPet: appointmentsMode !== true,
-      });
+      })
+    ) {
       return;
     }
     if (!selectedDate || !selectedTime) {

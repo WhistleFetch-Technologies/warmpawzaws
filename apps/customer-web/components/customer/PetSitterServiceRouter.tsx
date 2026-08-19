@@ -286,7 +286,7 @@ export function PetSitterServiceRouter({
     });
   };
 
-  const handleWarmpawzBookAppointment = useCallback(
+  const handleWarmpawzOpenProfile = useCallback(
     (v: BoardingListVendor) => {
       const rawObj = (v.raw ?? {}) as Record<string, unknown>;
       const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
@@ -301,6 +301,13 @@ export function PetSitterServiceRouter({
       });
     },
     [onNavigate],
+  );
+
+  const handleWarmpawzBookAppointment = useCallback(
+    (v: BoardingListVendor) => {
+      handleWarmpawzOpenProfile(v);
+    },
+    [handleWarmpawzOpenProfile],
   );
 
   /** Chevron / “Details” → vendor profile (not the booking stepper). */
@@ -632,7 +639,7 @@ export function PetSitterServiceRouter({
                     fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
                   }}
                   onPaySelectSlot={handleWarmpawzBookAppointment}
-                  onPayOpenProfile={handleWarmpawzBookAppointment}
+                  onPayOpenProfile={handleWarmpawzOpenProfile}
                   onMarketplaceOpenProfile={openSitterVendorProfile}
                   emptyState={
                     <Card className="p-8 text-center">

@@ -16,6 +16,7 @@ import {
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { VendorServicePromotions } from '../services/VendorServicePromotions';
+import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 
 interface ClinicProfileViewProps {
   phone: string;
@@ -199,6 +200,17 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
 
     const svc = selectedService as any;
     const vid = clinic?.id;
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: 'vet',
+        category: 'vet',
+        vendorId: String(vid || ''),
+        resumeScreen: 'vet-booking',
+        wapptMode: false,
+      })
+    ) {
+      return;
+    }
     if (vid && isVendorServicePackageRow(svc)) {
       const nav = buildWalkerServiceDataForVendorPackagePurchase({
         vendorId: String(vid),

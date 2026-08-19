@@ -10,6 +10,7 @@ import { isGuestBrowsingEnabled } from '../guest-browsing-flag';
 import {
   registerGuestAuthModalOpener,
   requestGuestAuth,
+  requestGuestAuthForWpayVendor,
 } from '../guest-auth-gate';
 import {
   GUEST_BOOKING_INTENT_KEY,
@@ -61,5 +62,22 @@ describe('requestGuestAuth', () => {
 
     expect(opener).not.toHaveBeenCalled();
     expect(window.location.href).toBe('/auth?signup=1&redirect=%2Fadd-pet');
+  });
+
+  it('requestGuestAuthForWpayVendor opens the modal with the vendor return path', () => {
+    const opener = jest.fn();
+    registerGuestAuthModalOpener(opener);
+    localStorage.clear();
+
+    const blocked = requestGuestAuthForWpayVendor('vendor-1');
+
+    expect(blocked).toBe(true);
+    expect(opener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'signup',
+        returnPath: '/warmpawz-pay/vendors/vendor-1',
+        resumeScreen: 'warmpawz-pay-vendor',
+      }),
+    );
   });
 });

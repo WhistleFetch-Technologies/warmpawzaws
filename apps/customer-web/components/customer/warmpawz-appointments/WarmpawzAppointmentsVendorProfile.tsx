@@ -44,6 +44,7 @@ import {
 import { resolveWapptStylePlaceholderIcon } from '@/lib/warmpawz-appointments/wappt-vendor-profile-config';
 import { getWapptHubConfig } from '@/lib/wappt-hub-registry';
 import { useWarmpawzAppointmentsVendorProfile } from '@/hooks/useWarmpawzAppointmentsVendorProfile';
+import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 
 type TabId = 'overview' | 'services' | 'reviews';
 
@@ -186,6 +187,17 @@ export function WarmpawzAppointmentsVendorProfile({
   const handleBookAppointment = () => {
     const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
     if (!vid) return;
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: category,
+        category,
+        vendorId: vid,
+        resumeScreen: resolveWarmpawzBookingScreen(category === 'nutrition' ? 'nutrition' : category),
+        wapptMode: true,
+      })
+    ) {
+      return;
+    }
     if (category === 'nutrition') {
       onNavigate('nutritionist-booking', {
         vendorId: vid,
@@ -243,6 +255,17 @@ export function WarmpawzAppointmentsVendorProfile({
     const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
     const sid = String(service.serviceId || service.id || '').trim();
     if (!vid || !sid) return;
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: category,
+        category,
+        vendorId: vid,
+        resumeScreen: 'vet-booking',
+        wapptMode: true,
+      })
+    ) {
+      return;
+    }
     onNavigate('vet-booking', {
       vendorId: vid,
       vendorName: providerName,

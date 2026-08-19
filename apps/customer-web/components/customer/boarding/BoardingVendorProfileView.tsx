@@ -44,6 +44,7 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
+import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 
 export interface BoardingVendorProfileViewProps {
   phone: string;
@@ -296,6 +297,17 @@ export function BoardingVendorProfileView({
 
   const handleBook = () => {
     if (!selectedOffer?.rowId) {
+      return;
+    }
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: 'boarding',
+        category: 'boarding',
+        vendorId: String(vendor?.id || vendorId),
+        resumeScreen: 'boarding-booking',
+        wapptMode: false,
+      })
+    ) {
       return;
     }
     const rawRow = selectedOffer.rawRow;

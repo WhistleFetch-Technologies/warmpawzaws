@@ -329,7 +329,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     loadPreviousFacility();
   }, [loadPreviousFacility]);
 
-  const handleWarmpawzBookAppointment = useCallback(
+  const handleWarmpawzOpenProfile = useCallback(
     (v: BoardingListVendor) => {
       const rawObj = (v.raw ?? {}) as Record<string, unknown>;
       const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
@@ -344,6 +344,13 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       });
     },
     [onNavigate],
+  );
+
+  const handleWarmpawzBookAppointment = useCallback(
+    (v: BoardingListVendor) => {
+      handleWarmpawzOpenProfile(v);
+    },
+    [handleWarmpawzOpenProfile],
   );
 
   const openVendorProfile = useCallback(
@@ -598,7 +605,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     fetchingPlansFor: marketplaceDiscovery.fetchingPlansFor,
                   }}
                   onPaySelectSlot={handleWarmpawzBookAppointment}
-                  onPayOpenProfile={handleWarmpawzBookAppointment}
+                  onPayOpenProfile={handleWarmpawzOpenProfile}
                   onMarketplaceOpenProfile={openVendorProfile}
                   emptyState={
                     <Card className="p-8 text-center">
