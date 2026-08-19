@@ -305,6 +305,10 @@ export function EnhancedAddPetModal({
       returnPath,
       resumeScreen: 'add-pet',
       openAddPet: true,
+      guestBookingIntent: {
+        kind: 'add_pet',
+        requiresPet: true,
+      },
     });
   }, [isOpen, editPet]);
 

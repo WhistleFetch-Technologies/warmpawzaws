@@ -52,7 +52,9 @@ import {
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
-import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 
 
 interface VetBookingRouterProps {
@@ -71,6 +73,8 @@ interface VetBookingRouterProps {
   selectedServices?: any[]; // ✅ NEW: Multiple selected services (from VetServicesByStyle, etc.)
   vendorName?: string; // ✅ NEW: Clinic/center/vendor name for display
   appointmentsMode?: boolean;
+  bookingDate?: string;
+  bookingTime?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -108,6 +112,8 @@ export function VetBookingRouter({
   selectedServices,
   vendorName: vendorNameProp,
   appointmentsMode = false,
+  bookingDate: preFilledDate,
+  bookingTime: preFilledTime,
   onBack, 
   onNavigate, 
   onViewBooking,
@@ -197,8 +203,8 @@ export function VetBookingRouter({
   
   const [loading, setLoading] = useState(false);
   const [selectedServiceType, setSelectedServiceType] = useState(normalizedServiceType);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
+  const [selectedDate, setSelectedDate] = useState(preFilledDate || '');
+  const [selectedTime, setSelectedTime] = useState(preFilledTime || '');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
   const [showPaymentPage, setShowPaymentPage] = useState(false);
@@ -461,6 +467,8 @@ export function VetBookingRouter({
     const vid = vendorId || doctorId;
     if (!vid && !selectedDate && !selectedTime) return;
     updateGuestBookingProgress({
+      kind: 'booking',
+      persona: 'vet',
       vendorId: vid || undefined,
       serviceId: serviceId || undefined,
       serviceStyle: selectedServiceType || undefined,
@@ -471,7 +479,8 @@ export function VetBookingRouter({
       price: typeof price === 'number' ? price : undefined,
       resumeScreen: 'vet-booking',
       returnPath: '/',
-      openAddPet: true,
+      requiresPet: appointmentsMode !== true,
+      openAddPet: appointmentsMode !== true,
     });
   }, [
     vendorId,
@@ -483,6 +492,14 @@ export function VetBookingRouter({
     appointmentsMode,
     price,
   ]);
+
+  useEffect(() => {
+    if (!selectedTime || timeSlots.length === 0) return;
+    if (!isSelectedSlotStillAvailable(selectedTime, timeSlots)) {
+      setSelectedTime('');
+      toast.error('That time is no longer available. Please choose another slot.');
+    }
+  }, [timeSlots, selectedTime]);
 
   const loadTimeSlots = async (date: string) => {
     const effectiveVendorId = vendorId || doctorId;
@@ -854,6 +871,24 @@ export function VetBookingRouter({
   };
 
   const handleContinueFromBookingDetails = () => {
+    if (!hasAuthenticatedCustomerSession()) {
+      emitGuestAuthAnalytics('login_prompt_shown');
+      window.location.href = buildGuestAuthUrlForBooking({
+        kind: 'booking',
+        persona: 'vet',
+        category: 'vet',
+        vendorId: vendorId || doctorId,
+        serviceId,
+        serviceStyle: selectedServiceType,
+        date: selectedDate,
+        time: selectedTime,
+        wapptMode: appointmentsMode === true,
+        returnPath: '/',
+        resumeScreen: 'vet-booking',
+        requiresPet: appointmentsMode !== true,
+      });
+      return;
+    }
     if (!selectedDate || !selectedTime) {
       toast.error('Please select date and time');
       return;
@@ -863,7 +898,7 @@ export function VetBookingRouter({
       toast.error('This time slot is already booked. Please select a different time.');
       return;
     }
-    if (!selectedPet) {
+    if (!appointmentsMode && !selectedPet) {
       toast.error('Please select a pet');
       return;
     }

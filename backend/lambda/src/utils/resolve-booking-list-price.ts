@@ -1,5 +1,11 @@
 /**
- * Vendor list / stay total used as bookings.base_price and financialMeta.servicePrice.
+ * Vendor configured selling price is the customer-price authority.
+ * Admin catalogue base_price is default/reference only — never use it once the
+ * vendor row has custom_price or price.
+ *
+ * Platform commission / vendor net must never become:
+ *   booking.base_price, package customer price, taxable amount, or payable.
+ *
  * Client checkout must not persist a promo- or commission-reduced amount as the base.
  */
 
@@ -27,6 +33,60 @@ export function vendorRowListPrice(vendorCustomPrice: unknown, vendorPrice: unkn
   const custom = money2(vendorCustomPrice);
   if (custom > 0) return custom;
   return money2(vendorPrice);
+}
+
+/**
+ * Authoritative customer selling price for a vendor service/package row.
+ * Ignores Admin catalogue default when the vendor has configured a price.
+ */
+export function resolveVendorConfiguredSellingPrice(params: {
+  vendorCustomPrice?: unknown;
+  vendorPrice?: unknown;
+  /** Admin/catalogue default — used only when the vendor has not configured a price. */
+  adminDefaultPrice?: unknown;
+}): number {
+  const vendor = vendorRowListPrice(params.vendorCustomPrice, params.vendorPrice);
+  if (vendor > 0) return vendor;
+  return money2(params.adminDefaultPrice);
+}
+
+/**
+ * Package customer purchase base: vendor row first, then packageDetails.price.
+ * Never let a stale/commission-adjusted metadata price override custom_price.
+ */
+export function resolvePackageCustomerSellingPrice(params: {
+  vendorCustomPrice?: unknown;
+  vendorPrice?: unknown;
+  packageDetailsPrice?: unknown;
+  packagePrice?: unknown;
+}): number {
+  const vendor = vendorRowListPrice(params.vendorCustomPrice, params.vendorPrice);
+  if (vendor > 0) return vendor;
+  return vendorRowListPrice(params.packageDetailsPrice, params.packagePrice);
+}
+
+/**
+ * If the client amount is below the vendor selling price, keep the vendor price.
+ * Higher client amounts (add-ons / stay totals) are allowed.
+ */
+export function preferVendorSellingPriceOverClientUndercut(
+  vendorSellingPrice: unknown,
+  clientAmount: unknown
+): number {
+  const vendor = money2(vendorSellingPrice);
+  const client = money2(clientAmount);
+  if (vendor > 0) return client > vendor ? client : vendor;
+  return client;
+}
+
+/** Customer taxable after legitimate discounts only — never after commission. */
+export function customerTaxableAfterDiscount(
+  vendorSellingPrice: unknown,
+  customerDiscount: unknown
+): number {
+  const list = money2(vendorSellingPrice);
+  const disc = money2(customerDiscount);
+  return Math.max(0, Math.round((list - disc) * 100) / 100);
 }
 
 export function sumSelectedServicesListPrice(

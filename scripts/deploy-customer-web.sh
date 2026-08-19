@@ -113,12 +113,15 @@ fi
 if [ "$PROD" = true ]; then
   GB_RAW="${GUEST_BROWSING_ENABLED:-false}"
   GL_RAW="${GUEST_LOCATION_ENABLED:-false}"
+  GBOOK_RAW="${GUEST_BOOKING_ENABLED:-false}"
 else
   GB_RAW="${GUEST_BROWSING_ENABLED:-true}"
   GL_RAW="${GUEST_LOCATION_ENABLED:-true}"
+  GBOOK_RAW="${GUEST_BOOKING_ENABLED:-false}"
 fi
 if [ "$GB_RAW" = "true" ] || [ "$GB_RAW" = "1" ]; then GB_JS="true"; else GB_JS="false"; fi
 if [ "$GL_RAW" = "true" ] || [ "$GL_RAW" = "1" ]; then GL_JS="true"; else GL_JS="false"; fi
+if [ "$GBOOK_RAW" = "true" ] || [ "$GBOOK_RAW" = "1" ]; then GBOOK_JS="true"; else GBOOK_JS="false"; fi
 
 if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
   echo -e "${GREEN}✅ Skipping build (--deploy-only, dist exists)${NC}"
@@ -142,6 +145,7 @@ else
       "NEXT_PUBLIC_DISCOUNT_ENGINE_V2_ENABLED=true"
       "NEXT_PUBLIC_GUEST_BROWSING_ENABLED=${GB_JS}"
       "NEXT_PUBLIC_GUEST_LOCATION_ENABLED=${GL_JS}"
+      "NEXT_PUBLIC_GUEST_BOOKING_ENABLED=${GBOOK_JS}"
     )
   else
     BUILD_ENV=(
@@ -152,6 +156,7 @@ else
       "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
       "NEXT_PUBLIC_GUEST_BROWSING_ENABLED=${GB_JS}"
       "NEXT_PUBLIC_GUEST_LOCATION_ENABLED=${GL_JS}"
+      "NEXT_PUBLIC_GUEST_BOOKING_ENABLED=${GBOOK_JS}"
     )
   fi
 
@@ -207,7 +212,8 @@ if [ "$PROD" = true ]; then
       customerEcommerceEnabled: ${CEE_JS},
       customerMealPlansEnabled: ${CMP_JS},
       guestBrowsingEnabled: ${GB_JS},
-      guestLocationEnabled: ${GL_JS}
+      guestLocationEnabled: ${GL_JS},
+      guestBookingEnabled: ${GBOOK_JS}
     }
   );
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
@@ -235,7 +241,8 @@ else
       customerEcommerceEnabled: ${CEE_JS},
       customerMealPlansEnabled: ${CMP_JS},
       guestBrowsingEnabled: ${GB_JS},
-      guestLocationEnabled: ${GL_JS}
+      guestLocationEnabled: ${GL_JS},
+      guestBookingEnabled: ${GBOOK_JS}
     }
   );
   if (existing.customerMealPlansEnabled !== undefined) {

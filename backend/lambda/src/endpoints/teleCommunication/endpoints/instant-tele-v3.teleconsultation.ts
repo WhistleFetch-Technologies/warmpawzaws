@@ -30,6 +30,10 @@ import { processInstantTeleRejectionRefund } from 'src/utils/payments/refund-ser
 import { dispatchNotification } from '../../../utils/notification-dispatch';
 import { VET_ROLE_NAMES } from 'src/endpoints/customer/constants';
 import { regeneratePresignedUrl } from 'src/endpoints/constants/helper';
+import {
+  preferVendorSellingPriceOverClientUndercut,
+  resolveVendorConfiguredSellingPrice,
+} from '../../../utils/resolve-booking-list-price';
 
 // Timeout for vendor to respond (seconds)
 const VENDOR_RESPONSE_TIMEOUT_SECONDS = 60 * 60;
@@ -268,7 +272,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         try {
           // serviceId is vendor_services.id (the service instance being booked)
           const svcRes = await query(
-            `SELECT id, price, service_name, duration_minutes
+            `SELECT id, price, custom_price, service_name, duration_minutes
              FROM vendor_services
              WHERE id = $1 AND vendor_id = $2 AND is_enabled = true
                AND COALESCE(publish_status, 'published') IN ('published', 'auto_published')
@@ -277,7 +281,13 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
           );
           if (svcRes.rows.length > 0) {
             resolvedVendorServiceId = svcRes.rows[0].id;
-            resolvedPrice = Number(svcRes.rows[0].price) || resolvedPrice;
+            resolvedPrice = preferVendorSellingPriceOverClientUndercut(
+              resolveVendorConfiguredSellingPrice({
+                vendorCustomPrice: svcRes.rows[0].custom_price,
+                vendorPrice: svcRes.rows[0].price,
+              }),
+              resolvedPrice
+            );
             resolvedServiceName = svcRes.rows[0].service_name || resolvedServiceName;
           }
         } catch (e) {
@@ -289,7 +299,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       if (!resolvedVendorServiceId) {
         try {
           const svcRes = await query(
-            `SELECT id, price, service_name
+            `SELECT id, price, custom_price, service_name
              FROM vendor_services
              WHERE vendor_id = $1 AND service_style = 'tele' AND is_enabled = true
                AND COALESCE(publish_status, 'published') IN ('published', 'auto_published')
@@ -298,7 +308,13 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
           );
           if (svcRes.rows.length > 0) {
             resolvedVendorServiceId = svcRes.rows[0].id;
-            resolvedPrice = Number(svcRes.rows[0].price) || resolvedPrice;
+            resolvedPrice = preferVendorSellingPriceOverClientUndercut(
+              resolveVendorConfiguredSellingPrice({
+                vendorCustomPrice: svcRes.rows[0].custom_price,
+                vendorPrice: svcRes.rows[0].price,
+              }),
+              resolvedPrice
+            );
             resolvedServiceName = svcRes.rows[0].service_name || resolvedServiceName;
           }
         } catch (e) {

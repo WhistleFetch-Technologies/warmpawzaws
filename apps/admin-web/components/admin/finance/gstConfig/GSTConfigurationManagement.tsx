@@ -311,10 +311,6 @@ export function GSTConfigurationManagement() {
       toast.error('Select a catalogue category');
       return;
     }
-    if (!roleIds.length && !isMealPlanGstScope(gstScope)) {
-      toast.error('Select at least one applicable role');
-      return;
-    }
     setSaving(true);
     try {
       const raw = editingCategory.defaultGSTRate;
@@ -606,17 +602,22 @@ export function GSTConfigurationManagement() {
                     ) && (category.roles?.length ?? 0) === 0 ? (
                       <p className="text-xs text-gray-600">
                         <span className="font-medium text-gray-700">Applicable roles: </span>
-                        All vendors (wildcard — optional role-specific overrides)
+                        Optional — GST uses this catalogue category rate
                       </p>
                     ) : (category.roles?.length ?? 0) > 0 ? (
                       <div className="text-xs text-gray-600">
-                        <span className="font-medium text-gray-700">Applicable roles: </span>
+                        <span className="font-medium text-gray-700">Applicable roles (optional): </span>
                         {(category.roles ?? [])
                           .map((r) => r.display_name || r.name)
                           .filter(Boolean)
                           .join(', ')}
                       </div>
-                    ) : null}
+                    ) : (
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium text-gray-700">Applicable roles: </span>
+                        Optional — GST uses this catalogue category rate for every vendor
+                      </p>
+                    )}
                     <div className="flex justify-between items-start gap-2">
                       <span className="text-sm text-gray-600">
                         Services in catalogue (same master category)
@@ -628,7 +629,7 @@ export function GSTConfigurationManagement() {
                     {(category.linkedCatalogServicesCount ?? 0) === 0 && (
                       <p className="text-xs text-amber-900 bg-amber-50 border border-amber-100 rounded-md p-2.5 mt-1 leading-relaxed">
                         No <code className="text-[11px]">service_catalog</code> rows use this master category slug yet.
-                        GST at checkout uses <strong>Catalogue category + vendor role</strong> from this config.
+                        GST at checkout uses <strong>catalogue category + this GST rate</strong>. Vendor role is optional.
                       </p>
                     )}
                   </div>
@@ -765,8 +766,8 @@ export function GSTConfigurationManagement() {
                 {editingCategory.id ? 'Edit Tax Category' : 'Add Tax Category'}
               </DialogTitle>
               <DialogDescription>
-                Tie GST to a catalogue master category. Service bookings require at least one vendor role. Meal plan
-                food and delivery fee use separate scopes on the same catalogue category (roles optional).
+                Tie GST to a catalogue master category and rate. Applicable roles are optional metadata and do not
+                block checkout. Meal plan food and delivery fee use separate scopes on the same catalogue category.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -817,12 +818,10 @@ export function GSTConfigurationManagement() {
               </div>
               <div className="space-y-2">
                 <Label>Applicable Roles</Label>
-                {isMealPlanGstScope(parseGstApplicationScope(editingCategory.gstApplicationScope)) ? (
-                  <p className="text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-md p-2">
-                    Optional for meal plan scopes: leave all unchecked for one default rate for this catalogue
-                    category, or pick roles for vendor-type-specific GST.
-                  </p>
-                ) : null}
+                <p className="text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-md p-2">
+                  Optional. GST is calculated from the catalogue category and this rate. Roles do not
+                  block checkout; leave unchecked to apply the rate to every vendor offering this category.
+                </p>
                 {loadingCatalogRoles ? (
                   <p className="text-sm text-gray-500">Loading roles for this category…</p>
                 ) : !(editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id) ? (
@@ -908,9 +907,7 @@ export function GSTConfigurationManagement() {
                 onClick={handleSaveCategory}
                 disabled={
                   saving ||
-                  !(editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id) ||
-                  (!isMealPlanGstScope(parseGstApplicationScope(editingCategory.gstApplicationScope)) &&
-                    !(editingCategory.role_ids ?? []).length)
+                  !(editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id)
                 }
                 className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
               >

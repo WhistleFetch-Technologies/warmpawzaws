@@ -41,6 +41,9 @@ import {
   priceFromVendorServiceRow,
 } from '@/lib/nutrition-vendor-price';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 
@@ -97,6 +100,8 @@ export function NutritionistBookingRouter({
   price,
   duration,
   appointmentsMode: _appointmentsMode = false,
+  bookingDate: preFilledDate,
+  bookingTime: preFilledTime,
   onBack,
   onNavigate,
   onViewBooking,
@@ -127,8 +132,8 @@ export function NutritionistBookingRouter({
   }, [catalogServiceId, hasServiceContext, step]);
   const [loading, setLoading] = useState(false);
   const [selectedServiceType, setSelectedServiceType] = useState<'tele' | 'at_home' | 'at_center'>(initialBookingStyle);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
+  const [selectedDate, setSelectedDate] = useState(preFilledDate || '');
+  const [selectedTime, setSelectedTime] = useState(preFilledTime || '');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [selectedAddress, setSelectedAddress] = useState<any>(null);
   const [pets, setPets] = useState<Pet[]>([]);
@@ -286,6 +291,31 @@ export function NutritionistBookingRouter({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadTimeSlots uses latest slot duration / catalog service
   }, [selectedDate, effectiveVendorId, selectedServiceType, slotDurationMinutes, selectedVendorService?.id, serviceId]);
+
+  useEffect(() => {
+    if (!effectiveVendorId && !selectedDate && !selectedTime) return;
+    updateGuestBookingProgress({
+      kind: 'booking',
+      persona: 'nutrition',
+      vendorId: effectiveVendorId || undefined,
+      serviceId: serviceId || undefined,
+      serviceStyle: selectedServiceType || undefined,
+      category: 'nutrition',
+      date: selectedDate || undefined,
+      time: selectedTime || undefined,
+      resumeScreen: 'nutritionist-booking',
+      returnPath: '/',
+      requiresPet: true,
+    });
+  }, [effectiveVendorId, serviceId, selectedServiceType, selectedDate, selectedTime]);
+
+  useEffect(() => {
+    if (!selectedTime || timeSlots.length === 0) return;
+    if (!isSelectedSlotStillAvailable(selectedTime, timeSlots)) {
+      setSelectedTime('');
+      toast.error('That time is no longer available. Please choose another slot.');
+    }
+  }, [timeSlots, selectedTime]);
 
   const [dates] = useState(generateDates());
 
@@ -500,6 +530,23 @@ export function NutritionistBookingRouter({
   };
 
   const handleContinueFromBookingDetails = () => {
+    if (!hasAuthenticatedCustomerSession()) {
+      emitGuestAuthAnalytics('login_prompt_shown');
+      window.location.href = buildGuestAuthUrlForBooking({
+        kind: 'booking',
+        persona: 'nutrition',
+        category: 'nutrition',
+        vendorId: effectiveVendorId,
+        serviceId,
+        serviceStyle: selectedServiceType,
+        date: selectedDate,
+        time: selectedTime,
+        returnPath: '/',
+        resumeScreen: 'nutritionist-booking',
+        requiresPet: true,
+      });
+      return;
+    }
     if (!selectedDate || !selectedTime) {
       toast.error('Please select date and time');
       return;

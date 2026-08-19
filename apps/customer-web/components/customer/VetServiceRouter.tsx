@@ -367,7 +367,13 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
         requestGuestAuth({
           mode: 'signup',
           returnPath: '/',
-          resumeScreen: 'vet',
+          resumeScreen: 'vet-booking',
+          guestBookingIntent: {
+            kind: 'booking',
+            persona: 'vet',
+            category: 'vet',
+            requiresPet: true,
+          },
         });
         return;
       }

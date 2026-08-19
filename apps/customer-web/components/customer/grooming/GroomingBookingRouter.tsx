@@ -48,7 +48,9 @@ import {
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
-import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 
 
 function groomingCheckoutListPrice(
@@ -458,6 +460,8 @@ export function GroomingBookingRouter({
   useEffect(() => {
     if (!vendorId && !selectedDate && !selectedTime) return;
     updateGuestBookingProgress({
+      kind: 'booking',
+      persona: 'grooming',
       vendorId: vendorId || undefined,
       serviceId: serviceId || undefined,
       serviceStyle: selectedServiceType || serviceStyle || undefined,
@@ -468,7 +472,8 @@ export function GroomingBookingRouter({
       price: typeof price === 'number' ? price : undefined,
       resumeScreen: 'grooming-booking',
       returnPath: '/',
-      openAddPet: true,
+      requiresPet: appointmentsMode !== true,
+      openAddPet: appointmentsMode !== true,
     });
   }, [
     vendorId,
@@ -480,6 +485,14 @@ export function GroomingBookingRouter({
     appointmentsMode,
     price,
   ]);
+
+  useEffect(() => {
+    if (!selectedTime || timeSlots.length === 0) return;
+    if (!isSelectedSlotStillAvailable(selectedTime, timeSlots)) {
+      setSelectedTime('');
+      toast.error('That time is no longer available. Please choose another slot.');
+    }
+  }, [timeSlots, selectedTime]);
 
   // Scheduling policy and operating-hours are deprecated (replaced by advance availability).
   // Slots come from GET /customer/vendor/:id/available-slots only; no extra policy/hours APIs.
@@ -756,6 +769,24 @@ export function GroomingBookingRouter({
 
   /** Single-page booking: validate schedule + pet + address (home) then go to review/payment step */
   const handleContinueFromBookingDetails = () => {
+    if (!hasAuthenticatedCustomerSession()) {
+      emitGuestAuthAnalytics('login_prompt_shown');
+      window.location.href = buildGuestAuthUrlForBooking({
+        kind: 'booking',
+        persona: 'grooming',
+        category: 'grooming',
+        vendorId,
+        serviceId,
+        serviceStyle: selectedServiceType,
+        date: selectedDate,
+        time: selectedTime,
+        wapptMode: appointmentsMode === true,
+        returnPath: '/',
+        resumeScreen: 'grooming-booking',
+        requiresPet: appointmentsMode !== true,
+      });
+      return;
+    }
     if (!selectedDate || !selectedTime) {
       toast.error('Please select date and time');
       return;
@@ -765,7 +796,7 @@ export function GroomingBookingRouter({
       toast.error('This time slot is already booked. Please select a different time.');
       return;
     }
-    if (!selectedPet) {
+    if (!appointmentsMode && !selectedPet) {
       toast.error('Please select a pet');
       return;
     }

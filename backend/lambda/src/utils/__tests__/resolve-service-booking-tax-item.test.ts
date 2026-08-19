@@ -33,6 +33,113 @@ describe('isVaccinationService', () => {
 });
 
 describe('resolveGstCatalogCategoryRefForBooking', () => {
+  it('maps behavioral catalogue to training GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'behavioral',
+      serviceName: 'Aggression Rehabilitation Program',
+    });
+    expect(ref).toBe('training');
+  });
+
+  it('passes Behavioral UUID through — slug hop happens in catalog UUID resolver', async () => {
+    const behavioralUuid = 'b0dd3945-3506-4530-ab48-466ddd77a92d';
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: behavioralUuid,
+      serviceName: 'Behaviour Consult',
+    });
+    expect(ref).toBe(behavioralUuid);
+  });
+
+  it('does not invent a pet-sitting → boarding GST alias', async () => {
+    const sittingUuid = '06047ded-ca62-4837-8de6-04535eca5629';
+    const bySlug = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'pet-sitting',
+      serviceName: 'pet sitter',
+    });
+    const byUuid = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: sittingUuid,
+      serviceName: 'pet sitter',
+    });
+    expect(bySlug).toBe('pet-sitting');
+    expect(byUuid).toBe(sittingUuid);
+    expect(bySlug).not.toBe('boarding');
+    expect(byUuid).not.toBe('boarding');
+  });
+
+  it('maps lab-diagnostics catalogue to diagnostic GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'lab-diagnostics',
+      serviceName: 'Blood Test',
+    });
+    expect(ref).toBe('diagnostic');
+  });
+
+  it('maps diagnostics literal to diagnostic GST card (not veterinary)', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'diagnostics',
+      serviceName: 'Lab Tests',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('diagnostic');
+    expect(ref).not.toBe('veterinary');
+  });
+
+  it('corrected Babul walker packages resolve via walking catalogue (not dog walker text)', async () => {
+    // After migration 1091: category_id → Walking master / category text = walking.
+    const bySlug = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'walking',
+      serviceName: 'Monthly Dog Walking Package',
+      vendorRoleName: 'walker',
+    });
+    expect(bySlug).toBe('walking');
+
+    // Free-text "Dog Walker" without correction must NOT silently become walking
+    // (no GST alias hack — catalogue/category data must be fixed).
+    const badFallback = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'Dog Walker',
+      vendorRoleName: 'walker',
+    });
+    expect(badFallback).toBe('Dog Walker');
+    expect(String(badFallback).toLowerCase()).not.toBe('walking');
+  });
+
+  it('categoryFallback diagnostics does not last-resort to veterinary', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'diagnostics',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('diagnostic');
+  });
+
+  it('veterinary category still resolves to veterinary (0% Admin card lane)', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'veterinary',
+      serviceName: 'Deworming',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
+  it('maps veterinary_services package category text to veterinary GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'veterinary_services',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
+  it('maps Veterinary Services display name to veterinary GST card', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'Veterinary Services',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
   it('uses veterinary category for deworming', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: 'veterinary',

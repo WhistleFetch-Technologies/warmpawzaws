@@ -199,7 +199,13 @@ export function NutritionistServicesLanding({ phone, isGuest = false, onBack, on
         requestGuestAuth({
           mode: 'signup',
           returnPath: '/',
-          resumeScreen: 'nutritionist',
+          resumeScreen: 'nutritionist-booking',
+          guestBookingIntent: {
+            kind: 'booking',
+            persona: 'nutrition',
+            category: 'nutrition',
+            requiresPet: true,
+          },
         });
         return;
       }

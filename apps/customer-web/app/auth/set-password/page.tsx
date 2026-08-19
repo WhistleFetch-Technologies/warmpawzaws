@@ -11,7 +11,16 @@ import {
   registerBackHandler,
 } from '@/lib/navigation/back-handler-registry';
 import { clearNeedsPasswordSetup, getStoredCustomerJwtForSession } from '@/lib/session-utils';
+import { readGuestBookingIntent } from '@/lib/guest-booking-intent';
 import { CachedImage } from '@/components/shared/CachedImage';
+
+function resolveSetPasswordNext(): string {
+  const intent = readGuestBookingIntent();
+  if (intent?.returnPath?.startsWith('/')) return intent.returnPath;
+  const next =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
+  return next && next.startsWith('/') ? next : '/';
+}
 
 const noRetry = { maxRetries: 0, retryableStatusCodes: [] as number[], retryableErrors: [] as string[] };
 
@@ -127,11 +136,7 @@ export default function SetPasswordPage() {
         if (d?.has_password === true) setHasExistingPassword(true);
         if (d?.has_password === true && !new URLSearchParams(window.location.search).has('change')) {
           clearNeedsPasswordSetup();
-          const next =
-            typeof window !== 'undefined'
-              ? new URLSearchParams(window.location.search).get('next')
-              : null;
-          router.replace(next && next.startsWith('/') ? next : '/');
+          router.replace(resolveSetPasswordNext());
         }
       } catch {
         phoneFallback();
@@ -226,9 +231,7 @@ export default function SetPasswordPage() {
       }
 
       clearNeedsPasswordSetup();
-      const next =
-        typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
-      router.replace(next && next.startsWith('/') ? next : '/');
+      router.replace(resolveSetPasswordNext());
     } catch (e: unknown) {
       const isAuthError =
         e instanceof ApiError && (e.statusCode === 401 || (e as any).statusCode === 401);

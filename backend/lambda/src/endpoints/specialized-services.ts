@@ -754,7 +754,33 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         category: r.category ?? r.test_category,
       }));
 
-      return c.json({ success: true, tests, total: tests.length });
+      let bookingServiceId: string | null = null;
+      try {
+        const { findDiagnosticVendorServiceId, resolveOrEnsureDiagnosticVendorService } = await import(
+          '../utils/resolve-diagnostic-vendor-service'
+        );
+        const found = await findDiagnosticVendorServiceId(String(actualVendorId));
+        if (found?.vendorServiceId) {
+          bookingServiceId = found.vendorServiceId;
+        } else if (publishedOnly && tests.length > 0) {
+          const ensured = await resolveOrEnsureDiagnosticVendorService(String(actualVendorId));
+          bookingServiceId = ensured?.vendorServiceId ?? null;
+        }
+      } catch (resolveErr: unknown) {
+        console.warn(
+          '[diagnostics/tests] bookingServiceId resolve skipped:',
+          (resolveErr as Error)?.message,
+        );
+      }
+
+      return c.json({
+        success: true,
+        tests,
+        total: tests.length,
+        bookingServiceId,
+        /** Catalogue slug for GST — Admin Diagnostic Labs card (not veterinary). */
+        gstCatalogCategory: 'diagnostic',
+      });
     } catch (error: any) {
       console.error('Error fetching diagnostic tests:', error);
       return c.json({ error: error.message }, 500);

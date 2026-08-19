@@ -45,5 +45,9 @@ export function resolveGuestPublicApiPath(path: string): string {
     return `${pathname.replace('/ecommerce/products', '/public/ecommerce/products')}${q}`;
   }
 
+  if (pathname === '/search' || pathname === '/search/autocomplete') {
+    return `/public${pathname}${q}`;
+  }
+
   return path;
 }

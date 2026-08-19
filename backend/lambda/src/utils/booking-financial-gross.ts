@@ -42,6 +42,9 @@ export interface LockedBookingGross {
   walletAmount: number;
   finalPaid: number;
   source: 'components' | 'finalPaid_plus_wallet' | 'finalPaid_only';
+  /** From wp_financial_meta.gstAuthority — 'backend' means booking-create GST is authoritative. */
+  gstAuthority: string | null;
+  isInterState?: boolean;
 }
 
 function num(meta: Record<string, unknown>, ...keys: string[]): number {
@@ -73,6 +76,19 @@ export function resolveLockedBookingGrossFromNotes(notes: unknown): LockedBookin
   const deliveryFee = num(finMeta, 'deliveryFee', 'delivery_fee');
   const walletAmount = num(finMeta, 'walletAmount', 'wallet_amount');
   const finalPaid = num(finMeta, 'finalPaid', 'final_paid');
+
+  const gstAuthorityRaw = finMeta.gstAuthority ?? finMeta.gst_authority;
+  const gstAuthority =
+    gstAuthorityRaw != null && String(gstAuthorityRaw).trim() !== ''
+      ? String(gstAuthorityRaw).trim().toLowerCase()
+      : null;
+  const interRaw = finMeta.isInterState ?? finMeta.is_inter_state;
+  const isInterState =
+    interRaw === true || interRaw === 't' || interRaw === 'true'
+      ? true
+      : interRaw === false || interRaw === 'f' || interRaw === 'false'
+        ? false
+        : undefined;
 
   const servicePrice = num(finMeta, 'servicePrice', 'service_price');
   let vendorDiscount = num(finMeta, 'vendorDiscount', 'vendor_discount');
@@ -124,6 +140,8 @@ export function resolveLockedBookingGrossFromNotes(notes: unknown): LockedBookin
     deliveryFee,
     walletAmount,
     finalPaid,
+    gstAuthority,
+    ...(isInterState === true || isInterState === false ? { isInterState } : {}),
   };
 
   // Components must agree with finalPaid (within ₹0.02). Never treat componentGross >> finalPaid

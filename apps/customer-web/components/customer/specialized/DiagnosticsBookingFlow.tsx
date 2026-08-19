@@ -72,6 +72,9 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
   const [preferredSampleType, setPreferredSampleType] = useState<'home' | 'center'>('center');
   const [vendorName, setVendorName] = useState('Diagnostic Lab');
   const [resolvedCustomerId, setResolvedCustomerId] = useState<string | undefined>();
+  /** Real vendor_services.id for GST/booking — never the literal "diagnostics". */
+  const [diagnosticVendorServiceId, setDiagnosticVendorServiceId] = useState<string | null>(null);
+  const [diagnosticGstCategory, setDiagnosticGstCategory] = useState<string>('diagnostic');
 
   // Payment-before-booking: step 'form' | 'payment'; booking is created only after payment success
   const [step, setStep] = useState<'form' | 'payment'>('form');
@@ -211,6 +214,16 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
 
       const list = Array.isArray(response?.tests) ? response.tests : [];
       setTests(list);
+      const bookingSid =
+        typeof response?.bookingServiceId === 'string' && response.bookingServiceId.trim()
+          ? response.bookingServiceId.trim()
+          : null;
+      setDiagnosticVendorServiceId(bookingSid);
+      const gstCat =
+        typeof response?.gstCatalogCategory === 'string' && response.gstCatalogCategory.trim()
+          ? response.gstCatalogCategory.trim()
+          : 'diagnostic';
+      setDiagnosticGstCategory(gstCat);
 
       if (list.length === 0) {
         setError(
@@ -307,14 +320,21 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
     }
     const selectedTestDetails = selectedTests.map(id => tests.find(t => t.id === id)).filter(Boolean);
     const totalAmountNum = Number(getTotalPrice());
+    if (!diagnosticVendorServiceId) {
+      throw new Error(
+        'Diagnostic booking service is not configured for this lab. Please go back and try again, or choose another lab.',
+      );
+    }
     const payload: Record<string, unknown> = {
-      serviceId: 'diagnostics',
+      serviceId: diagnosticVendorServiceId,
       vendorId,
       customerId,
       serviceType: preferredSampleType === 'home' ? 'at_home' : 'at_center',
       bookingType: 'scheduled',
       bookingDate: selectedDate,
       bookingTime: selectedTime,
+      category: diagnosticGstCategory,
+      serviceCategory: diagnosticGstCategory,
       address: preferredSampleType === 'home' 
         ? (selectedAddress?.formattedAddress || 
            `${selectedAddress?.addressLine1 || selectedAddress?.address || ''}, ${selectedAddress?.city || ''}, ${selectedAddress?.pincode || ''}`.trim() || 
@@ -337,6 +357,8 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
         ...(selectedPetId ? { petId: selectedPetId } : {}),
         homeCollectionFee: preferredSampleType === 'home' ? totalAmountNum - selectedTestDetails.reduce((s, t) => s + (Number(t?.price) ?? 0), 0) : 0,
         preparationInstructions: selectedTestDetails.map(t => t?.preparation_instructions).filter(Boolean),
+        gstCatalogCategory: diagnosticGstCategory,
+        diagnosticVendorServiceId,
       }),
       totalAmount: totalAmountNum,
     };
@@ -429,8 +451,8 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
         type="booking"
         layoutVariant="appShell"
         fillViewport
-        category="diagnostics"
-        serviceId="diagnostics"
+        category={diagnosticGstCategory}
+        serviceId={diagnosticVendorServiceId || undefined}
         serviceName={
           selectedTests.length > 1
             ? `${selectedTests.length} Lab Tests`

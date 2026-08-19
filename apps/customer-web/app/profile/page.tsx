@@ -15,6 +15,7 @@ import {
 } from '@/lib/session-utils';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
+import { readGuestBookingIntent, transactionRequiresPet } from '@/lib/guest-booking-intent';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -53,8 +54,13 @@ export default function ProfilePage() {
     } catch {
       // Unified fetch is best-effort; gates still use profile_completed
     }
+    const intent = readGuestBookingIntent();
+    const journeyPath =
+      intent?.returnPath && intent.returnPath.startsWith('/') ? intent.returnPath : null;
     if (needsPasswordSetupAfterOtp()) {
-      router.replace('/auth/set-password?next=' + encodeURIComponent('/onboarding'));
+      router.replace(
+        '/auth/set-password?next=' + encodeURIComponent(journeyPath || '/onboarding')
+      );
       return;
     }
     const next =
@@ -63,6 +69,15 @@ export default function ProfilePage() {
         : null;
     if (next && next.startsWith('/')) {
       router.replace(next);
+      return;
+    }
+    // Pending guest conversion: resume the snapshot. Pet only if this transaction needs it.
+    if (journeyPath) {
+      if (transactionRequiresPet(intent) && intent?.kind === 'add_pet') {
+        router.replace('/?open=add-pet');
+        return;
+      }
+      router.replace(journeyPath);
       return;
     }
     router.replace('/onboarding');

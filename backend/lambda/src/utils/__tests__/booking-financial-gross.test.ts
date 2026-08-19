@@ -58,11 +58,23 @@ describe('resolveLockedBookingGrossFromNotes', () => {
     expect(locked!.source).toBe('finalPaid_plus_wallet');
   });
 
+  it('reads gstAuthority backend from financial meta for 0% lock lineage', () => {
+    const notes =
+      'wp_financial_meta:{"servicePrice":1000,"subtotalAfterDiscounts":1000,"totalTax":0,"cgst":0,"sgst":0,"igst":0,"platformFee":20,"walletAmount":0,"finalPaid":1020,"gstAuthority":"backend","isInterState":false}';
+    const locked = resolveLockedBookingGrossFromNotes(notes);
+    expect(locked).not.toBeNull();
+    expect(locked!.gstAuthority).toBe('backend');
+    expect(locked!.totalTax).toBe(0);
+    expect(locked!.finalPaid).toBe(1020);
+    expect(locked!.grossTotal).toBe(1020);
+  });
+
   it('uses finalPaid alone when no wallet in meta', () => {
     const notes = 'wp_financial_meta:{"finalPaid":2124,"totalTax":324}';
     const locked = resolveLockedBookingGrossFromNotes(notes);
     expect(locked!.grossTotal).toBe(2124);
     expect(locked!.source).toBe('finalPaid_only');
+    expect(locked!.gstAuthority).toBeNull();
   });
 
   it('treats modern all-in finalPaid as gross when wallet is a portion of it', () => {

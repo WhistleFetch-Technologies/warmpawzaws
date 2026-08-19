@@ -8,6 +8,7 @@ import {
   resolveCatalogCategoryUuidFromRef,
   resolveGstRateForCatalogAndRole,
 } from '../lib/services/gst-catalog-role-resolution';
+import { applyCanonicalGstSplit } from './canonical-gst-snapshot';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const rateCache = new Map<
@@ -114,7 +115,7 @@ export async function getMealPlanGstRates(plan?: Record<string, unknown> | null)
             'meal_plan_delivery',
           );
           deliveryGstPct =
-            Number.isFinite(rd.rate) && rd.rate >= 0 ? Math.min(100, rd.rate) : 0;
+            rd.found && Number.isFinite(rd.rate) && rd.rate >= 0 ? Math.min(100, rd.rate) : 0;
         }
         return {
           foodGstPct: Math.min(100, Math.max(0, rate)),
@@ -154,8 +155,8 @@ export async function getMealPlanGstRates(plan?: Record<string, unknown> | null)
   const resolvedFood = await resolveGstRateForCatalogAndRole(catalogId, roleId, 'meal_plan_food');
   const resolvedDelivery = await resolveGstRateForCatalogAndRole(catalogId, roleId, 'meal_plan_delivery');
 
-  let foodGstPct = resolvedFood.rate;
-  let deliveryGstPct = resolvedDelivery.rate;
+  let foodGstPct = resolvedFood.found ? resolvedFood.rate : 0;
+  let deliveryGstPct = resolvedDelivery.found ? resolvedDelivery.rate : 0;
   if (!Number.isFinite(foodGstPct) || foodGstPct < 0) foodGstPct = 0;
   if (!Number.isFinite(deliveryGstPct) || deliveryGstPct < 0) deliveryGstPct = 0;
 
@@ -195,6 +196,25 @@ export function computeMealGstBreakdown(
     totalGstAmount: round(foodGst + deliveryGst),
     foodGstPct,
     deliveryGstPct,
+  };
+}
+
+export function applyMealGstJurisdiction(
+  breakdown: ReturnType<typeof computeMealGstBreakdown>,
+  isInterState: boolean,
+): ReturnType<typeof computeMealGstBreakdown> & {
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  isInterState: boolean;
+} {
+  const split = applyCanonicalGstSplit(breakdown.totalGstAmount, isInterState);
+  return {
+    ...breakdown,
+    cgstAmount: split.cgstAmount,
+    sgstAmount: split.sgstAmount,
+    igstAmount: split.igstAmount,
+    isInterState,
   };
 }
 
