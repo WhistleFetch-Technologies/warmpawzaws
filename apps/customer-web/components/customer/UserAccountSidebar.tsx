@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { buildAuthLoginUrl, buildAuthSignupUrl } from '@/lib/auth-redirect';
+import { requestGuestAuth } from '@/lib/guest-auth-gate';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
 import { isWarmpawzPayModuleCapable } from '@/lib/commerce-switch-routing';
@@ -1453,7 +1453,7 @@ export function UserAccountSidebar({
                 <button
                   type="button"
                   onClick={() => {
-                    window.location.href = buildAuthLoginUrl('/');
+                    requestGuestAuth({ mode: 'login', returnPath: '/' });
                   }}
                   className="flex h-[72px] w-full items-center justify-between gap-3 rounded-[20px] border border-[#F1F1F1] bg-white px-3.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
                 >
@@ -1468,7 +1468,7 @@ export function UserAccountSidebar({
                 <button
                   type="button"
                   onClick={() => {
-                    window.location.href = buildAuthSignupUrl('/');
+                    requestGuestAuth({ mode: 'signup', returnPath: '/' });
                   }}
                   className="flex h-[72px] w-full items-center justify-between gap-3 rounded-[20px] border border-[#F1F1F1] bg-white px-3.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
                 >

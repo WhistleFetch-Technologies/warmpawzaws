@@ -38,8 +38,7 @@ import {
   extractPetImageKey,
   keysToAbandon,
 } from '@/lib/pet-photo-upload';
-import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
-import { buildGuestAuthUrlForBooking } from '@/lib/guest-booking-intent';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics, requestGuestAuth } from '@/lib/guest-auth-gate';
 
 // ============================================================================
 // TYPES
@@ -301,12 +300,15 @@ export function EnhancedAddPetModal({
       typeof window !== 'undefined'
         ? `${window.location.pathname}${window.location.search || ''}` || '/'
         : '/';
-    window.location.href = buildGuestAuthUrlForBooking({
-      kind: 'add_pet',
+    requestGuestAuth({
+      mode: 'signup',
       returnPath,
       resumeScreen: 'add-pet',
       openAddPet: true,
-      requiresPet: true,
+      guestBookingIntent: {
+        kind: 'add_pet',
+        requiresPet: true,
+      },
     });
   }, [isOpen, editPet]);
 

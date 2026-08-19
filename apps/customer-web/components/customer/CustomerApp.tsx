@@ -10,7 +10,11 @@ import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
-import { resetHomeBootstrapForPhone } from '@/lib/customer-home-bootstrap';
+import { resetHomeBootstrapForPhone, ensureCustomerProfileAndPets } from '@/lib/customer-home-bootstrap';
+import {
+  CUSTOMER_AUTH_COMPLETED_EVENT,
+  readCustomerAuthSessionFromStorage,
+} from '@/lib/customer-auth-session-event';
 
 interface CustomerSession {
   phone: string;
@@ -56,6 +60,30 @@ export function CustomerApp({
   useEffect(() => {
     setSession(initialSession);
   }, [initialSession]);
+
+  useEffect(() => {
+    const onAuthCompleted = () => {
+      const next = readCustomerAuthSessionFromStorage();
+      if (!next?.phone) return;
+      resetHomeBootstrapForPhone(next.phone);
+      setSession(next);
+      void ensureCustomerProfileAndPets(next.phone).refreshPromise.then((result) => {
+        const data = result.profile;
+        if (!data) return;
+        setSession((prev) => ({
+          ...prev,
+          phone: next.phone,
+          isGuest: false,
+          verified: true,
+          customer: { ...data, pets: result.pets },
+          hasCompletedOnboarding: prev.hasCompletedOnboarding,
+          hasPets: result.pets.length > 0,
+        }));
+      });
+    };
+    window.addEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuthCompleted);
+    return () => window.removeEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuthCompleted);
+  }, []);
 
   useEffect(() => {
     const userId = getResolvedCustomerId();

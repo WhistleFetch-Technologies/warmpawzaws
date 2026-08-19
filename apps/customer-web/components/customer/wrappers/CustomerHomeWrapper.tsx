@@ -40,13 +40,12 @@ import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-al
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
 import {
-  buildGuestAuthUrlForBooking,
   clearGuestBookingIntent,
   consumeGuestBookingIntentForRestore,
   resolveResumeScreen,
   transactionRequiresPet,
 } from '@/lib/guest-booking-intent';
-import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { emitGuestAuthAnalytics, requestGuestAuth } from '@/lib/guest-auth-gate';
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
@@ -1002,6 +1001,19 @@ export function CustomerHomeWrapper({
     clearGuestBookingIntent();
   }, [pathname, isGuest, shellNav, router]);
 
+  /** Guest landed on add-pet shell screen — prompt auth modal and return to home. */
+  useEffect(() => {
+    if (pathname !== '/' || currentScreen !== 'add-pet' || !isGuest) return;
+    emitGuestAuthAnalytics('pet_add_auth_required');
+    requestGuestAuth({
+      mode: 'signup',
+      returnPath: '/?open=add-pet',
+      resumeScreen: 'add-pet',
+      openAddPet: true,
+    });
+    goToHome();
+  }, [pathname, currentScreen, isGuest, goToHome]);
+
   /** After `/shop` or `/promotions` back: restore embedded screen (same URL `/` as home). */
   useEffect(() => {
     if (pathname !== '/' || typeof window === 'undefined') return;
@@ -1401,12 +1413,15 @@ export function CustomerHomeWrapper({
     if (isGuest) {
       emitGuestAuthAnalytics('pet_add_attempted');
       emitGuestAuthAnalytics('pet_add_auth_required');
-      window.location.href = buildGuestAuthUrlForBooking({
-        kind: 'add_pet',
+      requestGuestAuth({
+        mode: 'signup',
         returnPath: '/?open=add-pet',
         resumeScreen: 'add-pet',
         openAddPet: true,
-        requiresPet: true,
+        guestBookingIntent: {
+          kind: 'add_pet',
+          requiresPet: true,
+        },
       });
       return;
     }
@@ -3151,16 +3166,6 @@ export function CustomerHomeWrapper({
     );
   if (currentScreen === 'add-pet') {
     if (isGuest) {
-      if (typeof window !== 'undefined') {
-        emitGuestAuthAnalytics('pet_add_auth_required');
-        window.location.href = buildGuestAuthUrlForBooking({
-          kind: 'add_pet',
-          returnPath: '/?open=add-pet',
-          resumeScreen: 'add-pet',
-          openAddPet: true,
-          requiresPet: true,
-        });
-      }
       return null;
     }
     return (
