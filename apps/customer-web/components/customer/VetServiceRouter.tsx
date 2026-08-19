@@ -44,7 +44,6 @@ import {
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
-import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
 import { requestGuestAuth } from '@/lib/guest-auth-gate';
 
@@ -413,7 +412,7 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
     }
     const raw = (v.raw || {}) as Record<string, unknown>;
 
-    if (wapptHubEnabled || shouldHideDiscoveryPricing(raw)) {
+    if (wapptHubEnabled) {
       const vendorId = pickCustomerVendorAccountId(raw) || String(raw.vendorId || raw.vendor_id || v.id);
       handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
         ...buildWarmpawzAppointmentsProfileNav({

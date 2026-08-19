@@ -39,7 +39,6 @@ import {
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
-import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { mergeWapptServiceTypes } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
@@ -278,7 +277,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         type: 'vendor',
       };
       const accountId = pickCustomerVendorAccountId(row) || v.id;
-      if (wapptHubEnabled || shouldHideDiscoveryPricing(rawObj)) {
+      if (wapptHubEnabled) {
         onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
           ...buildWarmpawzAppointmentsProfileNav({
             vendorId: accountId,
