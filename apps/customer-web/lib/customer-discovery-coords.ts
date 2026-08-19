@@ -1,4 +1,8 @@
 import { apiClient } from '@/lib/api-client';
+import { readPersistedLocation, writePersistedLocation } from '@/lib/location-storage';
+
+/** Dispatched when discovery lat/lng change so vendor lists can reload. */
+export const LOCATION_UPDATED_EVENT = 'warmpawz:location-updated';
 
 /** Phone for discovery: prop first, then localStorage (parity with api-client / hub). */
 export function resolveCustomerDiscoveryPhone(candidate?: string): string {
@@ -12,7 +16,11 @@ export function resolveCustomerDiscoveryPhone(candidate?: string): string {
   ).trim();
 }
 
-export type CustomerDiscoveryCoordsSource = 'profile' | 'localStorage' | 'geolocation';
+export type CustomerDiscoveryCoordsSource =
+  | 'profile'
+  | 'localStorage'
+  | 'geolocation'
+  | 'location_context';
 
 /** Synchronous read of persisted discovery coordinates (no network). */
 export function readStoredCustomerDiscoveryCoords(): {
@@ -30,10 +38,46 @@ export function readStoredCustomerDiscoveryCoords(): {
   return {};
 }
 
+export function hasStoredDiscoveryCoords(): boolean {
+  const { latitude, longitude } = readStoredCustomerDiscoveryCoords();
+  if (!latitude || !longitude) return false;
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng);
+}
+
+function persistDiscoveryCoords(
+  latitude: string,
+  longitude: string,
+  source: CustomerDiscoveryCoordsSource
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('customer_latitude', latitude);
+    localStorage.setItem('customer_longitude', longitude);
+    const prev = readPersistedLocation();
+    writePersistedLocation({
+      v: 1,
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      locality: prev?.locality,
+      city: prev?.city,
+      pincode: prev?.pincode,
+      state: prev?.state,
+      accuracyM: prev?.accuracyM,
+      timestamp: Date.now(),
+      source: source === 'geolocation' || source === 'location_context' ? 'gps' : 'cached',
+      permissionState: 'granted',
+    });
+    window.dispatchEvent(new CustomEvent(LOCATION_UPDATED_EVENT));
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
- * Discovery coordinates: localStorage → profile API → GPS.
- * When coords come from profile or geolocation, they are written to `customer_latitude` /
- * `customer_longitude` so other screens (by-style listings) reuse them without racing.
+ * Discovery coordinates: localStorage → profile API → Capacitor/browser GPS.
+ * Persists to legacy keys + warmpawz_location_v1 so guest + authed lists share one source.
  */
 export async function resolveCustomerDiscoveryCoords(
   phone?: string,
@@ -72,19 +116,15 @@ export async function resolveCustomerDiscoveryCoords(
     }
   }
 
-  if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
+  if (latitude == null) {
     try {
-      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          timeout: 5000,
-          maximumAge: 300000,
-        });
-      });
-      latitude = String(pos.coords.latitude);
-      longitude = String(pos.coords.longitude);
+      const { resolveCurrentGeolocationCoords } = await import('@/lib/address-from-geolocation');
+      const coords = await resolveCurrentGeolocationCoords();
+      latitude = String(coords.latitude);
+      longitude = String(coords.longitude);
       source = 'geolocation';
     } catch {
-      /* ignore */
+      /* permission denied / unavailable — leave unset so UI can show Detect CTA */
     }
   }
 
@@ -96,12 +136,7 @@ export async function resolveCustomerDiscoveryCoords(
     source != null &&
     source !== 'localStorage'
   ) {
-    try {
-      localStorage.setItem('customer_latitude', latitude);
-      localStorage.setItem('customer_longitude', longitude);
-    } catch {
-      /* ignore */
-    }
+    persistDiscoveryCoords(latitude, longitude, source);
   }
 
   return { latitude, longitude, source };
