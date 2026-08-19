@@ -22,7 +22,8 @@ import { getRazorpayConfig, razorpayRequest } from '../utils/payments/razorpay-c
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
 import { computeNutritionistMealCheckoutFees } from '../utils/meal-checkout-platform-fees';
-import { getMealPlanGstRates, computeMealGstBreakdown } from '../utils/meal-plan-gst';
+import { getMealPlanGstRates, computeMealGstBreakdown, applyMealGstJurisdiction } from '../utils/meal-plan-gst';
+import { resolveCanonicalInterstate } from '../utils/canonical-gst-snapshot';
 import { presignMealPlanRowDisplayFields } from '../utils/s3-media-presign';
 import {
   computePolicyDeliveryFeeForOrder,
@@ -1386,12 +1387,25 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const totalAmountBeforeGst = subtotal + deliveryFee + platformFee + convenienceFee;
       const gstRatesOrder = await getMealPlanGstRates(plan as Record<string, unknown>);
-      const mealGstOrder = computeMealGstBreakdown(
+      const mealGstBase = computeMealGstBreakdown(
         subtotal,
         deliveryFee,
         gstRatesOrder.foodGstPct,
         gstRatesOrder.deliveryGstPct,
       );
+      const vendorLocRow = await query(
+        `SELECT state, city FROM vendors WHERE id = $1::uuid LIMIT 1`,
+        [plan.vendor_id],
+      ).catch(() => ({ rows: [] }));
+      const vendorLoc = vendorLocRow.rows?.[0] as { state?: string; city?: string } | undefined;
+      const mealIsInterState = resolveCanonicalInterstate(
+        {
+          state: String(deliveryAddress.state ?? deliveryAddress.address_state ?? ''),
+          city: String(deliveryAddress.city ?? deliveryAddress.address_city ?? ''),
+        },
+        { state: vendorLoc?.state, city: vendorLoc?.city },
+      );
+      const mealGstOrder = applyMealGstJurisdiction(mealGstBase, mealIsInterState);
       const totalAmount = Math.round((totalAmountBeforeGst + mealGstOrder.totalGstAmount) * 100) / 100;
 
       const catalogSnap = mergeMealPlanCatalogForApi(plan as Record<string, unknown>, plan.dietary_requirements);
@@ -1454,6 +1468,12 @@ export function registerMealPlanEndpoints(app: Hono) {
           mealOrderRow.payment_hold_expires_at = paymentHoldExpiresAt(holdStarted);
         }
       }
+      if (moCols.has('tax_amount')) mealOrderRow.tax_amount = mealGstOrder.totalGstAmount;
+      if (moCols.has('cgst_amount')) mealOrderRow.cgst_amount = mealGstOrder.cgstAmount;
+      if (moCols.has('sgst_amount')) mealOrderRow.sgst_amount = mealGstOrder.sgstAmount;
+      if (moCols.has('igst_amount')) mealOrderRow.igst_amount = mealGstOrder.igstAmount;
+      if (moCols.has('is_inter_state')) mealOrderRow.is_inter_state = mealGstOrder.isInterState;
+      if (moCols.has('gst_rate')) mealOrderRow.gst_rate = gstRatesOrder.foodGstPct;
       if (moCols.has('purchase_type')) mealOrderRow.purchase_type = expectedPurchaseType;
       if (moCols.has('purchase_snapshot')) mealOrderRow.purchase_snapshot = purchase_snapshot;
       if (moCols.has('order_number')) mealOrderRow.order_number = generateMealOrderNumber();

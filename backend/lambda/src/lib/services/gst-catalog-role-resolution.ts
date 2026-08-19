@@ -1,51 +1,151 @@
 /**
- * Resolve GST % from Admin Catalogue category + vendor role (GST Configuration).
- * Used for service checkout — not service_catalog.tax_category_id / hsn_code_id.
+ * Resolve GST % from Admin Catalogue category → Tax Category (GST Configuration).
+ * Used for service/package checkout — not service_catalog.tax_category_id / hsn_code_id.
+ * Vendor role is optional preference when multiple cards exist; it must not block a
+ * valid category-level card. Missing category or missing tax card must not silent-18%.
  */
 
 import { query } from '../../database/rds-connection';
+import { pickTaxCategoryConfiguredRate } from '../../utils/tax-category-display-rate';
 
-function taxCategoryRowRate(row: Record<string, unknown>): number {
-  const rawTax = row.tax_rate;
-  if (rawTax != null && rawTax !== '') {
-    const t = Number(rawTax);
-    if (Number.isFinite(t)) return Math.min(100, Math.max(0, t));
+export class GstConfigurationError extends Error {
+  readonly code = 'GST_CONFIGURATION_MISSING';
+  readonly catalogCategoryId: string | null;
+  readonly vendorRoleId: string | null;
+
+  constructor(
+    message: string,
+    details?: { catalogCategoryId?: string | null; vendorRoleId?: string | null },
+  ) {
+    super(message);
+    this.name = 'GstConfigurationError';
+    this.catalogCategoryId = details?.catalogCategoryId ?? null;
+    this.vendorRoleId = details?.vendorRoleId ?? null;
   }
-  const rawDefault = row.default_gst_rate;
-  if (rawDefault != null && rawDefault !== '') {
-    const d = Number(rawDefault);
-    if (Number.isFinite(d)) return Math.min(100, Math.max(0, d));
-  }
-  return 18;
 }
 
-/** Resolve service_categories.id from slug, uuid string, or name. */
+export function isGstConfigurationError(err: unknown): err is GstConfigurationError {
+  return (
+    err instanceof GstConfigurationError ||
+    (typeof err === 'object' &&
+      err != null &&
+      (err as { code?: string }).code === 'GST_CONFIGURATION_MISSING')
+  );
+}
+
+export function missingServiceGstConfigError(params: {
+  catalogCategoryId?: string | null;
+  vendorRoleId?: string | null;
+}): GstConfigurationError {
+  const category = params.catalogCategoryId || '(unknown category)';
+  return new GstConfigurationError(
+    `Missing GST configuration for catalogue category ${category}. Configure Admin Finance → GST Configuration → Tax Categories (catalogue category + GST rate).`,
+    params,
+  );
+}
+
+/**
+ * Catalogue slugs that share an Admin GST card with another master.
+ * Slug-only: a category UUID must be resolved to its slug before this applies.
+ */
+const GST_CATALOG_CATEGORY_ALIASES: Record<string, string> = {
+  behavioral: 'training',
+  behavioural: 'training',
+  'lab-diagnostics': 'diagnostic',
+  // Customer diagnostics booking historically sent category/serviceId "diagnostics".
+  diagnostics: 'diagnostic',
+  // Package/custom vendor_services.category is often "Veterinary Services"
+  // (normalized to veterinary_services). Admin GST is on slug `veterinary`.
+  veterinary_services: 'veterinary',
+  'veterinary-services': 'veterinary',
+  vet_services: 'veterinary',
+  'vet-care': 'veterinary',
+  vet_care: 'veterinary',
+};
+
+export function aliasGstCatalogCategoryRef(ref: string): string {
+  const raw = String(ref || '').trim().toLowerCase();
+  const key = raw.replace(/[\s-]+/g, '_');
+  return GST_CATALOG_CATEGORY_ALIASES[raw] ?? GST_CATALOG_CATEGORY_ALIASES[key] ?? ref;
+}
+
+type CatalogCategoryLookupRow = { id?: string; category_id?: string | null };
+
+async function lookupServiceCategoryRow(ref: string): Promise<CatalogCategoryLookupRow | null> {
+  const result = await query(
+    `SELECT id::text AS id, category_id
+     FROM service_categories
+     WHERE id::text = $1 OR LOWER(TRIM(category_id)) = LOWER(TRIM($1)) OR LOWER(TRIM(name)) = LOWER(TRIM($1))
+     LIMIT 1`,
+    [ref],
+  );
+  const rows = (result as { rows?: CatalogCategoryLookupRow[] })?.rows ?? [];
+  return rows[0] ?? null;
+}
+
+/**
+ * Resolve service_categories.id from slug, uuid string, or name.
+ * If the matched category slug has a GST alias (e.g. behavioral → training),
+ * return the alias target UUID so GST uses the existing shared tax card.
+ */
 export async function resolveCatalogCategoryUuidFromRef(
-  ref: string | null | undefined
+  ref: string | null | undefined,
+  seenSlugs: Set<string> = new Set(),
 ): Promise<string | null> {
   if (ref == null || String(ref).trim() === '') return null;
   const s = String(ref).trim();
+  const lookup = aliasGstCatalogCategoryRef(s);
   try {
-    const result = await query(
-      `SELECT id::text AS id FROM service_categories
-       WHERE id::text = $1 OR LOWER(TRIM(category_id)) = LOWER(TRIM($1)) OR LOWER(TRIM(name)) = LOWER(TRIM($1))
-       LIMIT 1`,
-      [s]
-    );
-    const rows = (result as { rows?: { id?: string }[] })?.rows ?? [];
-    return rows[0]?.id ? String(rows[0].id) : null;
+    const row = await lookupServiceCategoryRow(lookup);
+    if (!row?.id) return null;
+    const slug = row.category_id != null ? String(row.category_id).trim() : '';
+    if (slug) {
+      const slugTarget = aliasGstCatalogCategoryRef(slug);
+      if (slugTarget && slugTarget !== slug && !seenSlugs.has(slug.toLowerCase())) {
+        seenSlugs.add(slug.toLowerCase());
+        const aliasedId = await resolveCatalogCategoryUuidFromRef(slugTarget, seenSlugs);
+        if (aliasedId) return aliasedId;
+      }
+    }
+    return String(row.id);
   } catch {
     return null;
   }
 }
 
-export type CatalogRoleGstResolution = { rate: number; taxCategoryId: string | null };
+export type CatalogRoleGstResolution = {
+  found: boolean;
+  rate: number;
+  taxCategoryId: string | null;
+  catalogCategoryId: string;
+  vendorRoleId: string | null;
+  applicationScope: GstApplicationScope;
+  reason?: string;
+};
 
 /** Service checkout vs meal plan food — same catalogue category, different tax_categories rows. */
 export type GstApplicationScope = 'service_booking' | 'meal_plan_food' | 'meal_plan_delivery';
 
+function emptyResolution(
+  catalogCategoryId: string,
+  vendorRoleId: string | null,
+  applicationScope: GstApplicationScope,
+  reason: string,
+): CatalogRoleGstResolution {
+  return {
+    found: false,
+    rate: 0,
+    taxCategoryId: null,
+    catalogCategoryId,
+    vendorRoleId,
+    applicationScope,
+    reason,
+  };
+}
+
 /**
- * Prefer tax row where junction includes vendor role; else row with no junction rows (wildcard).
+ * Category-authoritative GST: any active Admin tax card for the catalogue + scope is enough.
+ * Vendor role is a preference when several cards exist; a missing role mapping does not fail.
  * @param applicationScope service_booking (default) = existing GST rows; meal_plan_food = meal-only rows.
  */
 export async function resolveGstRateForCatalogAndRole(
@@ -82,37 +182,52 @@ export async function resolveGstRateForCatalogAndRole(
   );
   const list = (result as { rows?: Record<string, unknown>[] })?.rows ?? [];
   if (list.length === 0) {
-    return scope === 'service_booking'
-      ? { rate: 18, taxCategoryId: null }
-      : { rate: 0, taxCategoryId: null };
+    return emptyResolution(
+      cat,
+      role,
+      scope,
+      'No active Admin tax category for this catalogue category and GST scope',
+    );
   }
 
   const candidates: { row: Record<string, unknown>; score: number }[] = [];
 
   for (const raw of list) {
     const jcnt = Number(raw.jcnt) || 0;
+    let score = 0;
     if (jcnt === 0) {
-      candidates.push({ row: raw, score: 1 });
-      continue;
-    }
-    if (role) {
+      score = 1;
+    } else if (role) {
       const hit = await query(
         `SELECT 1 FROM tax_category_roles WHERE tax_category_id = $1::uuid AND role_id::text = $2 LIMIT 1`,
         [String(raw.id), role]
       );
       const rows = (hit as { rows?: unknown[] })?.rows ?? [];
-      if (rows.length > 0) candidates.push({ row: raw, score: 2 });
+      if (rows.length > 0) score = 2;
     }
+    candidates.push({ row: raw, score });
   }
 
-  if (candidates.length === 0) {
-    return scope === 'service_booking'
-      ? { rate: 18, taxCategoryId: null }
-      : { rate: 0, taxCategoryId: null };
-  }
-
-  candidates.sort((a, b) => b.score - a.score);
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return String(a.row.id ?? '').localeCompare(String(b.row.id ?? ''));
+  });
   const best = candidates[0].row;
-  const rate = taxCategoryRowRate(best);
-  return { rate, taxCategoryId: best.id != null ? String(best.id) : null };
+  const rate = pickTaxCategoryConfiguredRate(best);
+  if (rate == null) {
+    return emptyResolution(
+      cat,
+      role,
+      scope,
+      'Matched Admin tax category has no configured GST rate',
+    );
+  }
+  return {
+    found: true,
+    rate,
+    taxCategoryId: best.id != null ? String(best.id) : null,
+    catalogCategoryId: cat,
+    vendorRoleId: role,
+    applicationScope: scope,
+  };
 }

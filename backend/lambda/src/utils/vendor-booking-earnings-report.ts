@@ -16,6 +16,7 @@ import {
   type PaymentAccrualSnapshot,
   type VendorAccrualFeeBreakdown,
 } from './vendor-accrual-fee-breakdown';
+import { parseStoredInterstate } from './gst-split';
 import { allocatedEarningsFromStored } from './package-session-earnings-allocation';
 import {
   istDayEndExclusiveYmd,
@@ -43,6 +44,9 @@ export type VendorBookingEarningsLine = {
   serviceBase: number;
   discountAmount: number;
   gstTotal: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
   platformFee: number;
   convenienceFee: number;
   deliveryFee: number;
@@ -67,6 +71,9 @@ export type VendorBookingEarningsDaySummary = {
   serviceBaseTotal: number;
   discountTotal: number;
   gstTotal: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
   platformFeeTotal: number;
   convenienceFeeTotal: number;
   deliveryFeeTotal: number;
@@ -115,6 +122,7 @@ type RawEarningsRow = {
   sgst_amount?: unknown;
   igst_amount?: unknown;
   gst_amount?: unknown;
+  is_inter_state?: unknown;
   payment_total_amount?: unknown;
   payment_amount?: unknown;
   fee_breakdown?: unknown;
@@ -157,6 +165,7 @@ function rowToResolveContext(row: RawEarningsRow): BookingAccrualResolveContext 
     hsnCodeId: row.hsn_code_id,
     bookingNotes: row.booking_notes,
     parentBookingId: row.parent_booking_id,
+    isInterState: parseStoredInterstate(row.is_inter_state),
     gstIdentity: row.gst_identity != null ? String(row.gst_identity) : undefined,
     gstAttributeBookingId:
       row.gst_attribute_booking_id != null ? String(row.gst_attribute_booking_id) : undefined,
@@ -169,6 +178,7 @@ function rowToResolveContext(row: RawEarningsRow): BookingAccrualResolveContext 
       sgst_amount: row.sgst_amount,
       igst_amount: row.igst_amount,
       gst_amount: row.gst_amount,
+      is_inter_state: row.is_inter_state,
       total_amount: row.payment_total_amount,
       amount: row.payment_amount,
       fee_breakdown: row.fee_breakdown,
@@ -216,6 +226,9 @@ function emptyDayTotals(): VendorBookingEarningsDayTotals {
     serviceBaseTotal: 0,
     discountTotal: 0,
     gstTotal: 0,
+    cgstAmount: 0,
+    sgstAmount: 0,
+    igstAmount: 0,
     platformFeeTotal: 0,
     convenienceFeeTotal: 0,
     deliveryFeeTotal: 0,
@@ -236,6 +249,9 @@ function addToDaySummary(
     serviceBaseTotal: round2(acc.serviceBaseTotal + line.serviceBase),
     discountTotal: round2(acc.discountTotal + line.discountAmount),
     gstTotal: round2(acc.gstTotal + line.gstTotal),
+    cgstAmount: round2(acc.cgstAmount + line.cgstAmount),
+    sgstAmount: round2(acc.sgstAmount + line.sgstAmount),
+    igstAmount: round2(acc.igstAmount + line.igstAmount),
     platformFeeTotal: round2(acc.platformFeeTotal + line.platformFee),
     convenienceFeeTotal: round2(acc.convenienceFeeTotal + line.convenienceFee),
     deliveryFeeTotal: round2(acc.deliveryFeeTotal + line.deliveryFee),
@@ -260,6 +276,9 @@ function summaryFromLines(
     serviceBaseTotal: 0,
     discountTotal: 0,
     gstTotal: 0,
+    cgstAmount: 0,
+    sgstAmount: 0,
+    igstAmount: 0,
     platformFeeTotal: 0,
     convenienceFeeTotal: 0,
     deliveryFeeTotal: 0,
@@ -279,6 +298,9 @@ function totalsFromSummaries(vendors: VendorBookingEarningsDaySummary[]): Vendor
     totals.serviceBaseTotal = round2(totals.serviceBaseTotal + v.serviceBaseTotal);
     totals.discountTotal = round2(totals.discountTotal + v.discountTotal);
     totals.gstTotal = round2(totals.gstTotal + v.gstTotal);
+    totals.cgstAmount = round2(totals.cgstAmount + v.cgstAmount);
+    totals.sgstAmount = round2(totals.sgstAmount + v.sgstAmount);
+    totals.igstAmount = round2(totals.igstAmount + v.igstAmount);
     totals.platformFeeTotal = round2(totals.platformFeeTotal + v.platformFeeTotal);
     totals.convenienceFeeTotal = round2(totals.convenienceFeeTotal + v.convenienceFeeTotal);
     totals.deliveryFeeTotal = round2(totals.deliveryFeeTotal + v.deliveryFeeTotal);
@@ -378,6 +400,7 @@ async function fetchRawEarningsRowsForIstRange(
             p.sgst_amount,
             p.igst_amount,
             p.gst_amount,
+            p.is_inter_state,
             p.total_amount AS payment_total_amount,
             p.amount AS payment_amount,
             p.fee_breakdown,
@@ -508,6 +531,9 @@ export async function buildVendorBookingEarningsLine(
     serviceBase,
     discountAmount,
     gstTotal: breakdown.gstTotal,
+    cgstAmount: breakdown.cgstAmount,
+    sgstAmount: breakdown.sgstAmount,
+    igstAmount: breakdown.igstAmount,
     platformFee: breakdown.platformFee,
     convenienceFee: breakdown.convenienceFee,
     deliveryFee: breakdown.deliveryFee,

@@ -14,6 +14,7 @@ import { isValidUUID } from '../types/entities';
 import {
   displayStateFromKey,
   inferStateFromPlainAddressText,
+  locationFromStoredFields,
   resolveGstStateKey,
 } from '../lib/gst-place-of-supply';
 import { findCustomerByPhone } from '../utils/customer-phone-lookup';
@@ -825,6 +826,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
         customerPhone: bodyCustomerPhone,
         customerLocation,
         vendorLocation,
+        addressId: bodyAddressId,
         bookingId: requestBookingId,
       } = body;
 
@@ -852,6 +854,37 @@ export function registerTaxManagementEndpoints(app: Hono) {
         if (byPhone) customerRow = byPhone as Record<string, unknown>;
       }
 
+      const requestAddressId =
+        typeof bodyAddressId === 'string' && isValidUUID(bodyAddressId) ? bodyAddressId : '';
+      if (requestAddressId) {
+        const selected = await query(
+          `SELECT state, city, pincode FROM customer_addresses WHERE id = $1::uuid LIMIT 1`,
+          [requestAddressId],
+        ).catch(() => ({ rows: [] }));
+        const srow = (selected as { rows?: Array<Record<string, unknown>> }).rows?.[0];
+        const fromSelected = locationFromStoredFields({ state: srow?.state, city: srow?.city });
+        if (fromSelected) {
+          if (!customerStateRaw && fromSelected.state) customerStateRaw = fromSelected.state;
+          if (!customerCityRaw && fromSelected.city) customerCityRaw = fromSelected.city;
+        }
+        if (!customerPincode && srow?.pincode) customerPincode = String(srow.pincode);
+      }
+
+      if (customerId && isValidUUID(String(customerId)) && (!customerStateRaw || !customerCityRaw)) {
+        const def = await query(
+          `SELECT state, city, pincode FROM customer_addresses
+           WHERE customer_id = $1::uuid AND is_default = true LIMIT 1`,
+          [String(customerId)],
+        ).catch(() => ({ rows: [] }));
+        const drow = (def as { rows?: Array<Record<string, unknown>> }).rows?.[0];
+        const fromDefault = locationFromStoredFields({ state: drow?.state, city: drow?.city });
+        if (fromDefault) {
+          if (!customerStateRaw && fromDefault.state) customerStateRaw = fromDefault.state;
+          if (!customerCityRaw && fromDefault.city) customerCityRaw = fromDefault.city;
+        }
+        if (!customerPincode && drow?.pincode) customerPincode = String(drow.pincode);
+      }
+
       if (customerRow?.address) {
         const addr = addressFieldToLocation(customerRow.address);
         if (addr) {
@@ -866,23 +899,31 @@ export function registerTaxManagementEndpoints(app: Hono) {
           }
         }
       }
+      if (customerRow && (!customerStateRaw || !customerCityRaw)) {
+        const fromCustomerCols = locationFromStoredFields({
+          state: customerRow.state,
+          city: customerRow.city,
+        });
+        if (fromCustomerCols) {
+          if (!customerStateRaw && fromCustomerCols.state) customerStateRaw = fromCustomerCols.state;
+          if (!customerCityRaw && fromCustomerCols.city) customerCityRaw = fromCustomerCols.city;
+        }
+      }
 
       let vendorStateRaw = vendorLocation?.state;
       let vendorCityRaw = vendorLocation?.city;
 
       if (vendorId) {
         const vendors = await select('vendors', { id: vendorId });
-        if (vendors.length > 0 && vendors[0].address) {
-          const addr = addressFieldToLocation(vendors[0].address);
-          if (addr) {
-            if (!vendorStateRaw && addr.state) vendorStateRaw = addr.state;
-            if (!vendorCityRaw && addr.city) vendorCityRaw = addr.city;
-          } else if (typeof vendors[0].address === 'string') {
-            const inf = inferStateFromPlainAddressText(vendors[0].address);
-            if (inf) {
-              if (!vendorStateRaw) vendorStateRaw = displayStateFromKey(inf.stateKey);
-              if (!vendorCityRaw && inf.city) vendorCityRaw = inf.city;
-            }
+        if (vendors.length > 0) {
+          const fromVendor = locationFromStoredFields({
+            state: vendors[0].state,
+            city: vendors[0].city,
+            address: vendors[0].address,
+          });
+          if (fromVendor) {
+            if (!vendorStateRaw && fromVendor.state) vendorStateRaw = fromVendor.state;
+            if (!vendorCityRaw && fromVendor.city) vendorCityRaw = fromVendor.city;
           }
         }
       }
@@ -964,7 +1005,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
             (item as { catalog_category_id?: string }).catalog_category_id;
           // Meal-plan GST rows must always resolve catalogue UUID here. Do not require `vendorId`:
           // missing vendor would skip this branch, drop `catalogCategoryId`, and fall through to the
-          // generic service path — which then defaults GST to 18%.
+          // generic service path — which now fails closed without Admin GST configuration.
           if (isMealPlanFoodScope && explicitCatRaw) {
             const catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(explicitCatRaw));
             if (catalogCategoryUuid) {

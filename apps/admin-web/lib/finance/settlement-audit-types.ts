@@ -56,6 +56,9 @@ export type BookingEarningsLine = {
   serviceBase: number;
   discountAmount: number;
   gstTotal: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
   platformFee: number;
   convenienceFee: number;
   deliveryFee: number;
@@ -160,6 +163,9 @@ export function normalizeBookingLine(raw: Record<string, unknown>): BookingEarni
     serviceBase: Number(raw.serviceBase) || 0,
     discountAmount: Number(raw.discountAmount) || 0,
     gstTotal: Number(raw.gstTotal) || 0,
+    cgstAmount: Number(raw.cgstAmount) || 0,
+    sgstAmount: Number(raw.sgstAmount) || 0,
+    igstAmount: Number(raw.igstAmount) || 0,
     platformFee: Number(raw.platformFee) || 0,
     convenienceFee: Number(raw.convenienceFee) || 0,
     deliveryFee: Number(raw.deliveryFee) || 0,

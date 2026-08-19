@@ -69,6 +69,9 @@ describe('vendor-accrual-fee-breakdown', () => {
       'convenience_fee',
       'delivery_fee',
       'gst_total',
+      'cgst_amount',
+      'sgst_amount',
+      'igst_amount',
     ]);
   });
 
@@ -202,13 +205,15 @@ describe('vendor-accrual-fee-breakdown', () => {
       basePrice: 1000,
       serviceStyle: 'at_home',
       categoryName: 'Grooming',
-      payment: { amount: 1230 },
+      isInterState: false,
+      payment: { amount: 1230, platform_fee: 20, delivery_fee: 30 },
     });
 
     expect(mockedCalculateFinalFees).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 1000, type: 'booking', serviceStyle: 'at_home' }),
     );
-    expect(mockedResolveServiceBookingTaxItem).toHaveBeenCalled();
+    expect(mockedResolveServiceBookingTaxItem).not.toHaveBeenCalled();
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
     expect(b.platformFee).toBe(20);
     expect(b.deliveryFee).toBe(30);
     expect(b.cgstAmount).toBe(90);
@@ -309,14 +314,30 @@ describe('vendor-accrual-fee-breakdown', () => {
     });
 
     expect(b.platformFee).toBe(12);
-    expect(b.gstTotal).toBe(108);
+    expect(b.gstTotal).toBe(0);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
 
-  test('payment gst_amount reconstructs CGST/SGST without mutating the payment shape', async () => {
+  test('payment gst_amount without jurisdiction keeps total and does not invent 50/50', async () => {
     const b = await resolveBookingCustomerPaidFeeBreakdown({
       bookingId: 'ed864719',
       basePrice: 12712,
       taxAmount: 0,
+      payment: { gst_amount: 2288.16, cgst_amount: 0, sgst_amount: 0, igst_amount: 0, platform_fee: 0 },
+    });
+    expect(b.gstTotal).toBe(2288.16);
+    expect(b.cgstAmount).toBe(0);
+    expect(b.sgstAmount).toBe(0);
+    expect(b.igstAmount).toBe(0);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
+  });
+
+  test('payment gst_amount reconstructs CGST/SGST only when intra-state is stored', async () => {
+    const b = await resolveBookingCustomerPaidFeeBreakdown({
+      bookingId: 'ed864719',
+      basePrice: 12712,
+      taxAmount: 0,
+      isInterState: false,
       payment: { gst_amount: 2288.16, cgst_amount: 0, sgst_amount: 0, igst_amount: 0, platform_fee: 0 },
     });
     expect(b.gstTotal).toBe(2288.16);
@@ -346,8 +367,9 @@ describe('vendor-accrual-fee-breakdown', () => {
       payment: { gst_amount: 2288.16 },
     });
     expect(b.gstTotal).toBe(2288.16);
-    expect(b.cgstAmount).toBe(1144.08);
-    expect(b.sgstAmount).toBe(1144.08);
+    expect(b.cgstAmount).toBe(0);
+    expect(b.sgstAmount).toBe(0);
+    expect(b.igstAmount).toBe(0);
   });
 
   test('package GST is attributed once across sibling sessions', async () => {
@@ -369,8 +391,9 @@ describe('vendor-accrual-fee-breakdown', () => {
     ]);
     const fees = map.get('vendor-1')!;
     expect(fees.gstTotal).toBe(2288.16);
-    expect(fees.cgstAmount).toBe(1144.08);
-    expect(fees.sgstAmount).toBe(1144.08);
+    expect(fees.cgstAmount).toBe(0);
+    expect(fees.sgstAmount).toBe(0);
+    expect(fees.igstAmount).toBe(0);
   });
 
   test('shouldAttributeCustomerPaidBreakdown is true for normal bookings without attribute id', () => {
@@ -400,6 +423,7 @@ describe('vendor-accrual-fee-breakdown', () => {
       totalAmount: 1752.3,
       discountAmount: 0,
       taxAmount: 0,
+      isInterState: false,
       payment: { amount: 1752.3, gst_amount: 0, cgst_amount: 0, sgst_amount: 0, igst_amount: 0 },
     });
 
@@ -415,6 +439,7 @@ describe('vendor-accrual-fee-breakdown', () => {
       basePrice: 220,
       totalAmount: 220,
       taxAmount: 0,
+      isInterState: false,
       payment: { amount: 259.6, gst_amount: 0 },
     });
     expect(b.gstTotal).toBe(39.6);
@@ -430,6 +455,7 @@ describe('vendor-accrual-fee-breakdown', () => {
       taxAmount: 0,
       earningTotalAmount: 1350,
       categoryName: 'Grooming',
+      isInterState: false,
       payment: { amount: 1620, gst_amount: 0 },
     });
     expect(b.gstTotal).toBe(243);
