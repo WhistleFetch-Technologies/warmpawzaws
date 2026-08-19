@@ -15,9 +15,6 @@ import { calculateFinalFees, mapCatalogCategoryToBusinessType } from './feeCalcu
 import { resolveLockedBookingGrossFromNotes } from './booking-financial-gross';
 import {
   gstFinancialIdentity,
-  inferExclusiveGstFromChargedDelta,
-  inferInclusiveGstFromListedPrice,
-  isZeroRatedHealthcareHint,
   parseStoredInterstate,
   reconstructGstSplit,
 } from './gst-split';
@@ -248,15 +245,6 @@ function resolveChargedCustomerTotal(ctx: BookingAccrualResolveContext): number 
   return safeMoneyAmount(ctx.totalAmount);
 }
 
-function paymentKnownFees(payment: PaymentAccrualSnapshot | null | undefined): number {
-  if (!payment) return 0;
-  return round2(
-    safeMoneyAmount(payment.platform_fee) +
-      safeMoneyAmount(payment.convenience_fee) +
-      safeMoneyAmount(payment.delivery_fee),
-  );
-}
-
 function resolveBusinessServiceType(ctx: BookingAccrualResolveContext): string {
   const categoryHint = String(
     ctx.categoryName || ctx.vsCategory || ctx.serviceType || ctx.categoryId || '',
@@ -266,7 +254,7 @@ function resolveBusinessServiceType(ctx: BookingAccrualResolveContext): string {
 
 async function resolveGstForAccrual(
   ctx: BookingAccrualResolveContext,
-  feeBase: number,
+  _feeBase: number,
   payment: PaymentAccrualSnapshot | null | undefined,
 ): Promise<Pick<VendorAccrualFeeBreakdown, 'cgstAmount' | 'sgstAmount' | 'igstAmount' | 'gstTotal'>> {
   const isInterState = resolveInterstateHint(ctx.isInterState, ctx.is_inter_state, payment?.is_inter_state);
@@ -297,56 +285,8 @@ async function resolveGstForAccrual(
     return reconstructGstSplit({ gstTotal: bookingTax, isInterState });
   }
 
-  const lockedZeroTax = Boolean(lockedGross && lockedGross.grossTotal > 0 && lockedGross.totalTax <= 0.009);
-  if (!lockedZeroTax) {
-    const inferred = inferExclusiveGstFromChargedDelta({
-      taxableValue: resolveTaxableValue(ctx),
-      chargedTotal: resolveChargedCustomerTotal(ctx),
-      knownFees: paymentKnownFees(payment),
-      catalogGstRate: safeMoneyAmount(ctx.catalogGstRate),
-      isInterState,
-    });
-    if (inferred.gstTotal > 0.009) {
-      return inferred;
-    }
-  }
-
-  const zeroRated = isZeroRatedHealthcareHint({
-    catalogGstRate: ctx.catalogGstRate,
-    categoryName: ctx.categoryName,
-    vsCategory: ctx.vsCategory,
-    serviceType: ctx.serviceType,
-  });
-  if (!lockedZeroTax && !zeroRated) {
-    const inclusive = inferInclusiveGstFromListedPrice({
-      taxableValue: resolveTaxableValue(ctx),
-      chargedTotal: resolveChargedCustomerTotal(ctx),
-      vendorGross: safeMoneyAmount(ctx.earningTotalAmount),
-      catalogGstRate: ctx.catalogGstRate != null && ctx.catalogGstRate !== ''
-        ? safeMoneyAmount(ctx.catalogGstRate)
-        : undefined,
-      isInterState,
-      zeroRated,
-    });
-    if (inclusive.gstTotal > 0.009) {
-      return inclusive;
-    }
-  }
-
-  if (lockedGross && lockedGross.grossTotal > 0) {
-    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
-  }
-
-  if (taxAmountPresent) {
-    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
-  }
-
-  if (feeBase <= 0.009) {
-    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
-  }
-
-  // Paid-transaction reporting must READ GST, not invent a jurisdiction via calculateTax
-  // without place-of-supply (that path historically defaulted to IGST or 50/50).
+  // Reports must show stored checkout GST only. Do not infer tax from catalog
+  // rates or charged-vs-list deltas — that invented July GST that Razorpay never collected.
   return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
 }
 
@@ -409,27 +349,24 @@ function dropInventedFeesWhenChargedIsTaxablePlusGst(
   };
 }
 
-export async function resolveBookingCustomerPaidFeeBreakdown(
-  ctx: BookingAccrualResolveContext,
-): Promise<VendorAccrualFeeBreakdown> {
-  const payment = ctx.payment;
-
-  const interstate = resolveInterstateHint(ctx.isInterState, ctx.is_inter_state, payment?.is_inter_state);
-  const fromColumns = breakdownFromPaymentColumns(payment, interstate);
-  if (hasMeaningfulCustomerPaidBreakdown(fromColumns)) {
-    return fromColumns;
-  }
-
-  const fromJson = breakdownFromFeeBreakdownJson(payment?.fee_breakdown, interstate);
-  if (hasMeaningfulCustomerPaidBreakdown(fromJson)) {
-    return fromJson;
-  }
-
-  const recomputed = await recomputeBookingCustomerPaidFeeBreakdown(ctx);
-  return dropInventedFeesWhenChargedIsTaxablePlusGst(ctx, fromColumns, recomputed);
-}
-
 export type CustomerPaidFeeBreakdownSource = 'payment_columns' | 'fee_breakdown_json' | 'recomputed';
+
+function hasStoredPaymentSnapshot(payment: PaymentAccrualSnapshot | null | undefined): boolean {
+  if (!payment) return false;
+  return [
+    payment.id,
+    payment.amount,
+    payment.total_amount,
+    payment.gst_amount,
+    payment.platform_fee,
+    payment.convenience_fee,
+    payment.delivery_fee,
+    payment.cgst_amount,
+    payment.sgst_amount,
+    payment.igst_amount,
+    payment.fee_breakdown,
+  ].some((value) => value !== undefined && value !== null && value !== '');
+}
 
 export async function resolveBookingCustomerPaidFeeBreakdownWithSource(
   ctx: BookingAccrualResolveContext,
@@ -447,11 +384,24 @@ export async function resolveBookingCustomerPaidFeeBreakdownWithSource(
     return { breakdown: fromJson, source: 'fee_breakdown_json' };
   }
 
+  // A payment row is the charge snapshot. Stored zeros mean GST/fees were not
+  // captured — do not reconstruct them for admin reports.
+  if (hasStoredPaymentSnapshot(payment)) {
+    return { breakdown: fromColumns, source: 'payment_columns' };
+  }
+
   const recomputed = await recomputeBookingCustomerPaidFeeBreakdown(ctx);
   return {
     breakdown: dropInventedFeesWhenChargedIsTaxablePlusGst(ctx, fromColumns, recomputed),
     source: 'recomputed',
   };
+}
+
+export async function resolveBookingCustomerPaidFeeBreakdown(
+  ctx: BookingAccrualResolveContext,
+): Promise<VendorAccrualFeeBreakdown> {
+  const { breakdown } = await resolveBookingCustomerPaidFeeBreakdownWithSource(ctx);
+  return breakdown;
 }
 
 type BookingAccrualRow = {
@@ -495,7 +445,7 @@ export const SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL = `
      LEFT JOIN LATERAL (
        SELECT p.id, p.platform_fee, p.convenience_fee, p.delivery_fee,
               p.cgst_amount, p.sgst_amount, p.igst_amount, p.gst_amount,
-              p.is_inter_state,
+              p.gst_rate, p.is_inter_state,
               p.total_amount, p.amount, p.fee_breakdown, p.payment_status
        FROM payments p
        WHERE p.booking_id = COALESCE(

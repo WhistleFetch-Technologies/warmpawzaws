@@ -84,31 +84,8 @@ function moneyCell(v: string | number | undefined | null) {
   return `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
-function gstBreakdownCell(
-  gstTotal: string | number | undefined | null,
-  cgst?: string | number | null,
-  sgst?: string | number | null,
-  igst?: string | number | null,
-  packageOnce?: boolean,
-) {
-  const c = Number(cgst || 0);
-  const s = Number(sgst || 0);
-  const i = Number(igst || 0);
-  return (
-    <div className="text-right">
-      <div className="tabular-nums">{moneyCell(gstTotal)}</div>
-      {i > 0.009 && c + s <= 0.009 ? (
-        <div className="text-xs text-gray-500">IGST {moneyCell(i)}</div>
-      ) : c + s > 0.009 ? (
-        <div className="text-xs text-gray-500">
-          CGST {moneyCell(c)} · SGST {moneyCell(s)}
-        </div>
-      ) : null}
-      {packageOnce && Number(gstTotal || 0) > 0.009 ? (
-        <div className="text-xs text-orange-600">Customer / package GST</div>
-      ) : null}
-    </div>
-  );
+function gstPercentLabel(rate: string | number | undefined | null) {
+  return `${Number(rate || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}%`;
 }
 
 function shortId(id: string) {
@@ -395,7 +372,11 @@ export function VendorBookingEarningsReport() {
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
         Financial audit report — per-booking customer-paid waterfall, vendor ledger, and settlement breakdown
-        (IST {periodWord}). Use <strong>Download Invoice</strong> for the same tax invoice the customer receives, or{' '}
+        (IST {periodWord}). <strong>GST %</strong> and <strong>CGST / SGST / IGST / Total GST</strong> are
+        stored checkout tax only (never inferred).{' '}
+        <strong>Platform commission</strong> is what Warmpawz takes from the vendor;{' '}
+        <strong>Checkout fee</strong> is the customer-paid platform fee at checkout. Use{' '}
+        <strong>Download Invoice</strong> for the same tax invoice the customer receives, or{' '}
         <strong>View Settlement</strong> for funding and commission audit detail.
       </p>
 
@@ -487,7 +468,7 @@ export function VendorBookingEarningsReport() {
               <div className="text-xl font-semibold">{moneyCell(periodTotals.vendorNet)}</div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">Service base</div>
               <div className="text-sm font-semibold">{moneyCell(periodTotals.serviceBaseTotal)}</div>
@@ -497,24 +478,29 @@ export function VendorBookingEarningsReport() {
               <div className="text-sm font-semibold">{moneyCell(periodTotals.discountTotal)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">GST</div>
-              <div className="text-sm font-semibold">{moneyCell(periodTotals.gstTotal)}</div>
-              {Number(periodTotals.igstAmount) > 0.009 &&
-              Number(periodTotals.cgstAmount) + Number(periodTotals.sgstAmount) <= 0.009 ? (
-                <div className="text-xs text-gray-500">IGST {moneyCell(periodTotals.igstAmount)}</div>
-              ) : Number(periodTotals.cgstAmount) + Number(periodTotals.sgstAmount) > 0.009 ? (
-                <div className="text-xs text-gray-500">
-                  CGST {moneyCell(periodTotals.cgstAmount)} · SGST {moneyCell(periodTotals.sgstAmount)}
-                </div>
-              ) : null}
+              <div className="text-xs text-gray-500">CGST</div>
+              <div className="text-sm font-semibold">{moneyCell(periodTotals.cgstAmount)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Platform fees</div>
+              <div className="text-xs text-gray-500">SGST</div>
+              <div className="text-sm font-semibold">{moneyCell(periodTotals.sgstAmount)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">IGST</div>
+              <div className="text-sm font-semibold">{moneyCell(periodTotals.igstAmount)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Total GST</div>
+              <div className="text-sm font-semibold">{moneyCell(periodTotals.gstTotal)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Checkout fee</div>
               <div className="text-sm font-semibold">{moneyCell(periodTotals.platformFeeTotal)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Commission</div>
+              <div className="text-xs text-gray-500">Platform commission</div>
               <div className="text-sm font-semibold">{moneyCell(periodTotals.commissionTotal)}</div>
+              <div className="text-xs text-gray-500">What Warmpawz takes</div>
             </div>
           </div>
         </>
@@ -531,17 +517,24 @@ export function VendorBookingEarningsReport() {
               <th className="px-3 py-2 text-right font-medium text-gray-700">Customer paid</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Service base</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Discount</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">GST</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">Platform</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">CGST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">SGST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">IGST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">Total GST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700" title="Customer-paid checkout platform fee">
+                Checkout fee
+              </th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Gross</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">Commission</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700" title="What Warmpawz takes from the vendor">
+                Platform commission
+              </th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Vendor net</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {vendors.length === 0 && !loading && (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={15} className="px-3 py-8 text-center text-gray-500">
                   Pick a {periodWord} and click <strong>Load</strong> to see vendor totals. Click a row for per-booking
                   detail.
                 </td>
@@ -564,9 +557,10 @@ export function VendorBookingEarningsReport() {
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.customerPaidTotal)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.serviceBaseTotal)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.discountTotal)}</td>
-                    <td className="px-3 py-2">
-                      {gstBreakdownCell(v.gstTotal, v.cgstAmount, v.sgstAmount, v.igstAmount)}
-                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.cgstAmount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.sgstAmount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.igstAmount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.gstTotal)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.platformFeeTotal)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.vendorGross)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.commissionTotal)}</td>
@@ -574,7 +568,7 @@ export function VendorBookingEarningsReport() {
                   </tr>
                   {open && (
                     <tr className="bg-orange-50/40">
-                      <td colSpan={12} className="px-3 py-3">
+                      <td colSpan={15} className="px-3 py-3">
                         <div className="space-y-2 rounded-lg border border-orange-100 bg-white p-3">
                           <h3 className="text-sm font-semibold text-gray-900">
                             Bookings — {v.businessName || v.vendorId}
@@ -594,11 +588,19 @@ export function VendorBookingEarningsReport() {
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Base</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Discount</th>
                                   <th className="px-3 py-2 text-left font-medium text-gray-700">Coupon</th>
-                                  <th className="px-3 py-2 text-right font-medium text-gray-700">GST</th>
-                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Platform</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">GST %</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">CGST</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">SGST</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">IGST</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Total GST</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700" title="Customer-paid checkout platform fee">
+                                    Checkout fee
+                                  </th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Delivery</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Gross</th>
-                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Commission</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700" title="What Warmpawz takes from the vendor">
+                                    Platform commission
+                                  </th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Net</th>
                                   <th className="px-3 py-2 text-center font-medium text-gray-700">Invoice</th>
                                   <th className="px-3 py-2 text-center font-medium text-gray-700">Settlement</th>
@@ -607,7 +609,7 @@ export function VendorBookingEarningsReport() {
                               <tbody className="divide-y divide-gray-100">
                                 {bookings.length === 0 && !loadingBookings && (
                                   <tr>
-                                    <td colSpan={16} className="px-3 py-6 text-center text-gray-500">
+                                    <td colSpan={20} className="px-3 py-6 text-center text-gray-500">
                                       No bookings for this vendor in the selected {periodWord}.
                                     </td>
                                   </tr>
@@ -650,14 +652,11 @@ export function VendorBookingEarningsReport() {
                                           {moneyCell(b.discountAmount)}
                                         </td>
                                         <td className="px-3 py-2 text-xs">{b.couponCode || '—'}</td>
-                                        <td className="px-3 py-2 text-right tabular-nums">
-                                          {gstBreakdownCell(
-                                            b.gstTotal,
-                                            b.cgstAmount,
-                                            b.sgstAmount,
-                                            b.igstAmount,
-                                          )}
-                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums">{gstPercentLabel(b.gstRate)}</td>
+                                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.cgstAmount)}</td>
+                                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.sgstAmount)}</td>
+                                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.igstAmount)}</td>
+                                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.gstTotal)}</td>
                                         <td className="px-3 py-2 text-right tabular-nums">
                                           {moneyCell(b.platformFee)}
                                         </td>
@@ -694,7 +693,7 @@ export function VendorBookingEarningsReport() {
                                       </tr>
                                       {expanded && (
                                         <tr className="bg-gray-50/80">
-                                          <td colSpan={16} className="px-6 py-3">
+                                          <td colSpan={20} className="px-6 py-3">
                                             <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
                                               <div>
                                                 <span className="text-gray-500">Customer paid</span>
@@ -713,16 +712,27 @@ export function VendorBookingEarningsReport() {
                                                 <div>{b.couponCode || '—'}</div>
                                               </div>
                                               <div>
-                                                <span className="text-gray-500">Customer GST</span>
-                                                {gstBreakdownCell(
-                                                  b.gstTotal,
-                                                  b.cgstAmount,
-                                                  b.sgstAmount,
-                                                  b.igstAmount,
-                                                )}
+                                                <span className="text-gray-500">GST %</span>
+                                                <div>{gstPercentLabel(b.gstRate)}</div>
                                               </div>
                                               <div>
-                                                <span className="text-gray-500">Platform fee</span>
+                                                <span className="text-gray-500">CGST</span>
+                                                <div>{moneyCell(b.cgstAmount)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">SGST</span>
+                                                <div>{moneyCell(b.sgstAmount)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">IGST</span>
+                                                <div>{moneyCell(b.igstAmount)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Total GST</span>
+                                                <div>{moneyCell(b.gstTotal)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Checkout fee</span>
                                                 <div>{moneyCell(b.platformFee)}</div>
                                               </div>
                                               <div>
@@ -738,7 +748,7 @@ export function VendorBookingEarningsReport() {
                                                 <div>{moneyCell(b.vendorGross)}</div>
                                               </div>
                                               <div>
-                                                <span className="text-gray-500">Commission</span>
+                                                <span className="text-gray-500">Platform commission</span>
                                                 <div>
                                                   {moneyCell(b.commissionAmount)}
                                                   {b.commissionRate != null ? ` (${b.commissionRate}%)` : ''}

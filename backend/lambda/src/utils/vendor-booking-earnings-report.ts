@@ -27,6 +27,10 @@ import {
   resolveSettlementBreakdownForReport,
   type SettlementBreakdownForReport,
 } from './resolve-settlement-breakdown-for-report';
+import {
+  correctLedgerFromFundingSnapshot,
+  resolveStoredGstPercent,
+} from './funding-aware-ledger-correction';
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -44,6 +48,7 @@ export type VendorBookingEarningsLine = {
   serviceBase: number;
   discountAmount: number;
   gstTotal: number;
+  gstRate: number;
   cgstAmount: number;
   sgstAmount: number;
   igstAmount: number;
@@ -122,6 +127,7 @@ type RawEarningsRow = {
   sgst_amount?: unknown;
   igst_amount?: unknown;
   gst_amount?: unknown;
+  gst_rate?: unknown;
   is_inter_state?: unknown;
   payment_total_amount?: unknown;
   payment_amount?: unknown;
@@ -208,14 +214,12 @@ export function computeCustomerPaidTotal(
   if (payTotal > 0) return round2(payTotal);
 
   const payAmount = safeMoneyAmount(payment?.amount);
+  if (payAmount > 0) return round2(payAmount);
+
   const taxableBase = round2(Math.max(0, serviceBase - discountAmount));
-  const computed = round2(
+  return round2(
     taxableBase + fees.gstTotal + fees.platformFee + fees.convenienceFee + fees.deliveryFee,
   );
-
-  if (payAmount > computed + 0.01) return round2(payAmount);
-  if (computed > 0) return computed;
-  return round2(payAmount);
 }
 
 function emptyDayTotals(): VendorBookingEarningsDayTotals {
@@ -400,6 +404,7 @@ async function fetchRawEarningsRowsForIstRange(
             p.sgst_amount,
             p.igst_amount,
             p.gst_amount,
+            p.gst_rate,
             p.is_inter_state,
             p.total_amount AS payment_total_amount,
             p.amount AS payment_amount,
@@ -502,12 +507,6 @@ export async function buildVendorBookingEarningsLine(
   const payment = attributed ? ctx.payment : null;
 
   const customerPaidTotal = computeCustomerPaidTotal(serviceBase, discountAmount, breakdown, payment);
-  const vendorGross = allocated.gross;
-  const commissionAmount = allocated.commission;
-  const vendorNet = allocated.net;
-  const commissionRateRaw = safeMoneyAmount(row.commission_rate);
-  const commissionRate = commissionRateRaw > 0 ? commissionRateRaw : null;
-
   const settlementBreakdown = resolveSettlementBreakdownForReport({
     earningsMetadata: row.earnings_metadata,
     bookingNotes: row.booking_notes,
@@ -516,6 +515,22 @@ export async function buildVendorBookingEarningsLine(
     settlementStatus: row.settlement_status != null ? String(row.settlement_status) : null,
     payoutId: row.payout_id != null ? String(row.payout_id) : null,
     payoutStatus: row.payout_status != null ? String(row.payout_status) : null,
+  });
+  const corrected = correctLedgerFromFundingSnapshot(
+    { gross: allocated.gross, commission: allocated.commission, net: allocated.net },
+    settlementBreakdown,
+    customerPaidTotal,
+  );
+  const vendorGross = corrected.gross;
+  const commissionAmount = corrected.commission;
+  const vendorNet = corrected.net;
+  const commissionRateRaw =
+    safeMoneyAmount(row.commission_rate) || settlementBreakdown.commissionRate || 0;
+  const commissionRate = commissionRateRaw > 0 ? commissionRateRaw : null;
+  const gstRate = resolveStoredGstPercent({
+    gstRate: row.gst_rate,
+    gstTotal: breakdown.gstTotal,
+    taxableValue: Math.max(0, serviceBase - discountAmount),
   });
 
   return {
@@ -531,6 +546,7 @@ export async function buildVendorBookingEarningsLine(
     serviceBase,
     discountAmount,
     gstTotal: breakdown.gstTotal,
+    gstRate,
     cgstAmount: breakdown.cgstAmount,
     sgstAmount: breakdown.sgstAmount,
     igstAmount: breakdown.igstAmount,

@@ -46,14 +46,14 @@ describe('vendor-booking-earnings-report', () => {
     expect(total).toBe(1200);
   });
 
-  test('computeCustomerPaidTotal sums base discount gst and fees when no total_amount', () => {
+  test('computeCustomerPaidTotal uses payment amount when total_amount is missing', () => {
     const total = computeCustomerPaidTotal(
       1000,
       100,
       { platformFee: 20, convenienceFee: 0, deliveryFee: 30, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 180 },
       { amount: 1000 },
     );
-    expect(total).toBe(1130);
+    expect(total).toBe(1000);
   });
 
   test('package child lines show parent GST once and sliced gross', async () => {
@@ -123,7 +123,7 @@ describe('vendor-booking-earnings-report', () => {
     expect(line.commissionAmount).toBe(100);
   });
 
-  test('Sara Pets booking earnings shows inferred GST once', async () => {
+  test('Sara Pets booking earnings keeps stored 0 GST', async () => {
     const line = await buildVendorBookingEarningsLine({
       vendor_id: 'b781c10d',
       booking_id: '3cae9785-2726-4362-b47b-1f61c8e1ed27',
@@ -141,12 +141,13 @@ describe('vendor-booking-earnings-report', () => {
       igst_amount: 0,
       is_package_session: false,
     });
-    expect(line.gstTotal).toBe(267.3);
+    expect(line.gstTotal).toBe(0);
     expect(line.vendorGross).toBe(1650);
     expect(line.customerPaidTotal).toBe(1752.3);
+    expect(line.commissionAmount).toBe(165);
   });
 
-  test('July Pawsome inclusive list shows extracted GST', async () => {
+  test('July Pawsome keeps stored 0 GST and shows platform commission', async () => {
     const line = await buildVendorBookingEarningsLine({
       vendor_id: 'pawsome',
       booking_id: 'e1652035',
@@ -162,12 +163,14 @@ describe('vendor-booking-earnings-report', () => {
       category_name: 'Grooming',
       is_package_session: false,
     });
-    expect(line.gstTotal).toBe(243);
+    expect(line.gstTotal).toBe(0);
     expect(line.vendorGross).toBe(1350);
     expect(line.serviceBase).toBe(1593);
+    expect(line.commissionAmount).toBe(135);
+    expect(line.customerPaidTotal).toBe(1620);
   });
 
-  test('July K9 inclusive boarding shows extracted GST', async () => {
+  test('July K9 keeps stored 0 GST and shows platform commission', async () => {
     const line = await buildVendorBookingEarningsLine({
       vendor_id: 'k9',
       booking_id: 'k9-july',
@@ -183,8 +186,56 @@ describe('vendor-booking-earnings-report', () => {
       category_name: 'Boarding',
       is_package_session: false,
     });
-    expect(line.gstTotal).toBe(274.58);
+    expect(line.gstTotal).toBe(0);
     expect(line.vendorGross).toBe(1800);
+    expect(line.commissionAmount).toBe(180);
+    expect(line.customerPaidTotal).toBe(1800);
+  });
+
+  test('Chandrali platform coupon corrects ledger net to 1799.10 without inventing GST', async () => {
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'sara-pets',
+      booking_id: '01dbe38e-95a2-4a15-ae8f-5bbc04a6b966',
+      base_price: 1999,
+      total_amount: 40,
+      discount_amount: 1999,
+      tax_amount: 0,
+      earning_total_amount: 40,
+      earning_commission_amount: 4,
+      earning_net_amount: 36,
+      payment_amount: 40,
+      gst_amount: 0,
+      gst_rate: 18,
+      coupon_code: 'COLLABCODE',
+      is_package_session: false,
+      earnings_metadata: {
+        vendorSettlement: 1799.1,
+        commissionBase: 1999,
+        commissionAmount: 199.9,
+        fundingType: 'PLATFORM',
+        vendorBasePrice: 1999,
+        winningOffer: { offerType: 'PLATFORM_COUPON', fundingType: 'PLATFORM' },
+        settlementSnapshot: {
+          vendorBasePrice: 1999,
+          winningOffer: { offerType: 'PLATFORM_COUPON', fundingType: 'PLATFORM', discountAmount: 1999 },
+          commissionBase: 1999,
+          commissionRate: 10,
+          commissionAmount: 199.9,
+          vendorSettlement: 1799.1,
+          platformCost: 1999,
+          vendorCost: 0,
+        },
+      },
+    });
+    expect(line.customerPaidTotal).toBe(40);
+    expect(line.gstTotal).toBe(0);
+    expect(line.gstRate).toBe(0);
+    expect(line.cgstAmount).toBe(0);
+    expect(line.sgstAmount).toBe(0);
+    expect(line.igstAmount).toBe(0);
+    expect(line.vendorGross).toBe(1999);
+    expect(line.commissionAmount).toBe(199.9);
+    expect(line.vendorNet).toBe(1799.1);
   });
 
   test('July vet consult stays 0 GST', async () => {

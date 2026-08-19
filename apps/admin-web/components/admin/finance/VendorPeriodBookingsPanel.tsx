@@ -13,6 +13,10 @@ function moneyCell(v: string | number | undefined | null) {
   return `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
+function gstPercentLabel(rate: string | number | undefined | null) {
+  return `${Number(rate || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}%`;
+}
+
 function shortId(id: string) {
   if (!id) return '—';
   return id.length > 8 ? `${id.slice(0, 8)}…` : id;
@@ -70,7 +74,8 @@ export function VendorPeriodBookingsPanel(query: VendorPeriodBookingsQuery) {
         {loading && <Loader2 className="ml-2 inline h-4 w-4 animate-spin text-gray-400" />}
       </h3>
       <p className="text-xs text-gray-500">
-        Same tax invoice the customer downloads from booking details.
+        GST % and CGST / SGST / IGST / Total GST are stored checkout tax only.
+        Platform commission is what Warmpawz takes from the vendor.
       </p>
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
@@ -83,13 +88,25 @@ export function VendorPeriodBookingsPanel(query: VendorPeriodBookingsQuery) {
               <th className="px-3 py-2 text-left font-medium text-gray-700">Service</th>
               <th className="px-3 py-2 text-left font-medium text-gray-700">Customer</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Customer paid</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">GST %</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">CGST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">SGST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">IGST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">Total GST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700" title="Customer-paid checkout platform fee">
+                Checkout fee
+              </th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700" title="What Warmpawz takes from the vendor">
+                Platform commission
+              </th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">Vendor net</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Invoice</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {bookings.length === 0 && !loading && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={13} className="px-3 py-6 text-center text-gray-500">
                   No bookings for this vendor in the selected period.
                 </td>
               </tr>
@@ -104,6 +121,14 @@ export function VendorPeriodBookingsPanel(query: VendorPeriodBookingsQuery) {
                 </td>
                 <td className="px-3 py-2">{b.customerName || '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.customerPaidTotal)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{gstPercentLabel(b.gstRate)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.cgstAmount)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.sgstAmount)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.igstAmount)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.gstTotal)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.platformFee)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.commissionAmount)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.vendorNet)}</td>
                 <td className="px-3 py-2 text-center">
                   <BookingInvoiceDownloadButton bookingId={b.bookingId} />
                 </td>

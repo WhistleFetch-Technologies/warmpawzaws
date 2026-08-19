@@ -90,18 +90,22 @@ export function SettlementBreakdownDrawer({
             <Row label="Vendor coupon" value={moneyOrDash(b.vendorCoupon, !legacy)} />
             <Row label="Platform coupon" value={moneyOrDash(b.platformCoupon, !legacy)} />
             <Row label="Winning offer" value={legacy ? '—' : winningOfferLabel(line)} />
-            <Row label="GST" value={formatInr(line.gstTotal)} />
+            <Row label="GST %" value={`${Number(line.gstRate || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}%`} />
+            <Row label="CGST" value={formatInr(line.cgstAmount)} />
+            <Row label="SGST" value={formatInr(line.sgstAmount)} />
+            <Row label="IGST" value={formatInr(line.igstAmount)} />
+            <Row label="Total GST" value={formatInr(line.gstTotal)} />
             <Row label="Customer paid" value={formatInr(line.customerPaidTotal)} />
           </Section>
 
           <Section title="Settlement">
             <Row label="Commission base" value={moneyOrDash(b.commissionBase, !legacy)} />
             <Row
-              label="Commission %"
+              label="Platform commission %"
               value={legacy ? (line.commissionRate != null ? `${line.commissionRate}%` : '—') : `${b.commissionRate}%`}
             />
             <Row
-              label="Commission amount"
+              label="Platform commission"
               value={legacy ? formatInr(line.commissionAmount) : formatInr(b.commissionAmount)}
             />
             <Row
