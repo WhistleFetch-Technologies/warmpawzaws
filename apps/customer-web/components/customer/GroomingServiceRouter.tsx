@@ -46,10 +46,11 @@ import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import {
   gateServiceStyleNavigation,
-  isServiceStyleHidden,
+  isServiceStyleHiddenForBrowse,
   loadCustomerServiceLaunchCatalog,
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
+import { hasAuthenticatedCustomerSession } from '@/lib/guest-auth-gate';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 
 const GROOMING_STYLE_LAUNCH_MAP: Record<string, string> = {
@@ -391,10 +392,15 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     ];
       return cards.filter((service) => {
         const launchStatus = styleLaunchByCard[service.id];
-        if (launchStatus && isServiceStyleHidden(launchStatus)) {
+        if (launchStatus && isServiceStyleHiddenForBrowse(launchStatus)) {
           return false;
         }
-        if (shouldHideMarketplaceStyleTiles()) {
+        // Guests always see marketplace centre/home for browse. Authenticated + WAPPT hub replaces these tiles.
+        if (
+          hasAuthenticatedCustomerSession() &&
+          shouldHideMarketplaceStyleTiles() &&
+          isWarmpawzAppointmentsHubEnabled('grooming')
+        ) {
           return false;
         }
         return true;

@@ -33,6 +33,8 @@ type LaunchCache = {
 
 let cache: LaunchCache | null = null;
 let inflight: Promise<LaunchCache | null> | null = null;
+/** False when the last catalog fetch failed (401/network) — browse tiles stay visible. */
+let lastCatalogFetchOk = false;
 
 function locationKey(loc: CustomerLocation): string {
   return `${loc.state}|${loc.city}`.toLowerCase();
@@ -141,10 +143,16 @@ export async function loadCustomerServiceLaunchCatalog(
       const res = await apiClient
         .get(`/config/service-launch/customer?${params.toString()}`)
         .catch(() => null);
+      if (!res || (res as { success?: boolean }).success === false) {
+        lastCatalogFetchOk = false;
+        return null;
+      }
+      lastCatalogFetchOk = true;
       const catalog = ((res as any)?.services?.catalog || []) as ServiceLaunchCatalogEntry[];
       cache = { locationKey: key, catalog };
       return cache;
     } catch {
+      lastCatalogFetchOk = false;
       return null;
     } finally {
       inflight = null;
@@ -199,6 +207,12 @@ export function isServiceStyleHidden(status: LaunchStatusValue): boolean {
   return status === 'hidden';
 }
 
+/** Hide hub tiles only when catalog loaded successfully; failed fetch keeps tiles for guest browse. */
+export function isServiceStyleHiddenForBrowse(status: LaunchStatusValue): boolean {
+  if (!lastCatalogFetchOk) return false;
+  return isServiceStyleHidden(status);
+}
+
 export const SERVICE_STYLE_LAUNCH_BLOCKED_MESSAGE =
   'This service is coming soon in your area.';
 
@@ -218,6 +232,7 @@ export function serviceStyleLaunchBlockMessage(status: LaunchStatusValue): strin
 export function clearCustomerServiceLaunchCache(): void {
   cache = null;
   inflight = null;
+  lastCatalogFetchOk = false;
 }
 
 /** Returns true when navigation may proceed (launched/beta). False when hidden/coming_soon. */
@@ -227,6 +242,7 @@ export async function gateServiceStyleNavigation(
   serviceStyle: string,
   notify: (message: string) => void = () => {}
 ): Promise<boolean> {
+  if (!lastCatalogFetchOk) return true;
   const { status } = await resolveServiceStyleLaunch(phone, serviceId, serviceStyle);
   if (shouldBlockServiceStyleNavigation(status)) {
     notify(serviceStyleLaunchBlockMessage(status));

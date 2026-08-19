@@ -21,6 +21,26 @@ describe('resolveGuestPublicApiPath', () => {
     );
   });
 
+  it('rewrites by-style, discovery count, category-bootstrap, and service-launch for guests', () => {
+    expect(resolveGuestPublicApiPath('/customer/services/by-style?style=at_center&category=vet')).toBe(
+      '/public/services/by-style?style=at_center&category=vet'
+    );
+    expect(resolveGuestPublicApiPath('/customer/discovery/count?category=vet&serviceStyle=at_center')).toBe(
+      '/public/discovery/count?category=vet&serviceStyle=at_center'
+    );
+    expect(resolveGuestPublicApiPath('/customer/discovery/category-bootstrap?category=vet')).toBe(
+      '/public/discovery/category-bootstrap?category=vet'
+    );
+    expect(resolveGuestPublicApiPath('/config/service-launch/customer?state=Karnataka&city=Bengaluru')).toBe(
+      '/public/config/service-launch/customer?state=Karnataka&city=Bengaluru'
+    );
+    expect(
+      resolveGuestPublicApiPath(
+        '/customer/warmpawz-appointments/discovery/by-style?style=at_center&category=vet'
+      )
+    ).toBe('/public/warmpawz-appointments/discovery/by-style?style=at_center&category=vet');
+  });
+
   it('rewrites vendor services and slots for guests', () => {
     expect(resolveGuestPublicApiPath('/customer/vendor/abc/services')).toBe(
       '/public/vendor/abc/services'
@@ -64,6 +84,9 @@ describe('resolveGuestPublicApiPath', () => {
     getJwt.mockReturnValue('jwt');
     expect(resolveGuestPublicApiPath('/customer/discover-services')).toBe(
       '/customer/discover-services'
+    );
+    expect(resolveGuestPublicApiPath('/customer/services/by-style')).toBe(
+      '/customer/services/by-style'
     );
   });
 });
