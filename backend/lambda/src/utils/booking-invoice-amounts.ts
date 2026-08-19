@@ -1,5 +1,5 @@
 import { parseJsonMetaFromNotes } from './booking-notes-meta';
-import { inferExclusiveGstFromChargedDelta, splitGstAmount } from './gst-split';
+import { parseStoredInterstate, reconstructGstSplit } from './gst-split';
 
 function num(raw: unknown): number {
   const n = parseFloat(String(raw ?? '').replace(/,/g, ''));
@@ -13,6 +13,7 @@ export type BookingInvoicePaymentTax = {
   cgstAmount?: unknown;
   sgstAmount?: unknown;
   igstAmount?: unknown;
+  isInterState?: unknown;
 };
 
 export type BookingInvoiceAmountInput = {
@@ -30,7 +31,11 @@ export type BookingInvoiceAmountInput = {
     isInterState?: unknown;
   } | null;
   payment?: BookingInvoicePaymentTax | null;
-  isInterState: boolean;
+  isInterState?: boolean | null;
+  /**
+   * Ignored for historical invoices. Current Admin/catalogue GST must never
+   * rewrite a stored GST amount or rate (including explicit 0).
+   */
   catalogGstRate?: number;
 };
 
@@ -45,9 +50,20 @@ export type BookingInvoiceAmounts = {
 };
 
 /**
- * GST for booking invoices.
- * Bookings often store a tax-exclusive `total_amount` / `tax_amount=0` while the
- * completed payment row holds `gst_amount` and the all-in `total_amount` (ed864719).
+ * Historical invoice GST — stored snapshot only.
+ *
+ * Priority for a positive stored GST total:
+ *   1. Stored payment GST split / gst_amount
+ *   2. wp_financial_meta GST values
+ *   3. bookings.tax_amount
+ *   4. Reconstruct CGST/SGST/IGST only when a stored total exists and
+ *      stored jurisdiction is a known boolean
+ *
+ * When every stored GST total is 0 or absent, the invoice stays 0%.
+ * That explicit 0 is not "missing" and is never replaced by catalogGstRate.
+ *
+ * Never uses current vendor price, current Admin GST card, or catalogGstRate
+ * to invent or replace historical GST.
  */
 export function resolveBookingInvoiceAmounts(input: BookingInvoiceAmountInput): BookingInvoiceAmounts {
   const discount = num(input.discountAmount);
@@ -62,43 +78,42 @@ export function resolveBookingInvoiceAmounts(input: BookingInvoiceAmountInput): 
   const paySplit = num(pay?.cgstAmount) + num(pay?.sgstAmount) + num(pay?.igstAmount);
   const payTax = num(pay?.gstAmount) || paySplit;
 
-  let taxAmount = num(input.bookingTaxAmount);
+  // Positive stored totals only — explicit 0 is exact 0%, never inferred.
+  // Priority matches Admin reports: payment → wp_financial_meta → bookings.tax_amount.
+  let taxAmount = payTax;
   if (taxAmount <= 0.009) taxAmount = metaTax;
-  if (taxAmount <= 0.009) taxAmount = payTax;
+  if (taxAmount <= 0.009) taxAmount = num(input.bookingTaxAmount);
 
-  let cgst = num(meta?.cgst) || num(pay?.cgstAmount);
-  let sgst = num(meta?.sgst) || num(pay?.sgstAmount);
-  let igst = num(meta?.igst) || num(pay?.igstAmount);
+  let cgst = num(pay?.cgstAmount) || num(meta?.cgst);
+  let sgst = num(pay?.sgstAmount) || num(meta?.sgst);
+  let igst = num(pay?.igstAmount) || num(meta?.igst);
 
-  if (taxAmount <= 0.009) {
-    const charged = num(pay?.totalAmount) || num(pay?.amount) || num(input.bookingTotalAmount);
-    const inferred = inferExclusiveGstFromChargedDelta({
-      taxableValue,
-      chargedTotal: charged,
-      catalogGstRate: input.catalogGstRate,
-      isInterState: input.isInterState,
+  const storedJurisdiction = resolveStoredInvoiceInterstate({
+    isInterState: input.isInterState,
+    financialMeta: meta,
+    payment: pay,
+    cgst,
+    sgst,
+    igst,
+  });
+
+  if (taxAmount > 0.009 && cgst + sgst + igst <= 0.009) {
+    const split = reconstructGstSplit({
+      gstTotal: taxAmount,
+      cgstAmount: cgst,
+      sgstAmount: sgst,
+      igstAmount: igst,
+      isInterState: storedJurisdiction,
     });
-    if (inferred.splitAvailable !== false && inferred.gstTotal > 0.009) {
-      taxAmount = inferred.gstTotal;
-      cgst = inferred.cgstAmount;
-      sgst = inferred.sgstAmount;
-      igst = inferred.igstAmount;
-    } else if (inferred.gstTotal > 0.009) {
-      taxAmount = inferred.gstTotal;
-    }
-  }
-
-  if (taxAmount > 0.009 && cgst + sgst + igst <= 0.009 && typeof input.isInterState === 'boolean') {
-    const split = splitGstAmount(taxAmount, input.isInterState);
-    cgst = split.cgst;
-    sgst = split.sgst;
-    igst = split.igst;
+    cgst = split.cgstAmount;
+    sgst = split.sgstAmount;
+    igst = split.igstAmount;
   }
 
   const gstRate =
     taxAmount > 0.009 && taxableValue > 0.009
       ? Math.round((taxAmount / taxableValue) * 10000) / 100
-      : num(input.catalogGstRate);
+      : 0;
 
   const reconstructed = Math.max(0, Math.round((taxableValue + taxAmount - discount) * 100) / 100);
   const payTotal = num(pay?.totalAmount);
@@ -117,6 +132,31 @@ export function resolveBookingInvoiceAmounts(input: BookingInvoiceAmountInput): 
   return { taxableValue, taxAmount, cgst, sgst, igst, gstRate, total };
 }
 
+/**
+ * Stored interstate flag only. Live customer/vendor state is not a GST source.
+ * Split components can imply jurisdiction when they already exist.
+ */
+export function resolveStoredInvoiceInterstate(input: {
+  isInterState?: boolean | null;
+  financialMeta?: { isInterState?: unknown } | null;
+  payment?: BookingInvoicePaymentTax | null;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+}): boolean | undefined {
+  if (typeof input.isInterState === 'boolean') return input.isInterState;
+  const fromMeta = parseStoredInterstate(input.financialMeta?.isInterState);
+  if (fromMeta !== undefined) return fromMeta;
+  const fromPay = parseStoredInterstate(input.payment?.isInterState);
+  if (fromPay !== undefined) return fromPay;
+  const cgst = num(input.cgst);
+  const sgst = num(input.sgst);
+  const igst = num(input.igst);
+  if (igst > 0.009 && cgst + sgst <= 0.009) return true;
+  if (cgst + sgst > 0.009 && igst <= 0.009) return false;
+  return undefined;
+}
+
 export function paymentTaxFromBookingRow(booking: Record<string, unknown>): BookingInvoicePaymentTax | null {
   const gstAmount = num(booking.payment_gst_amount ?? booking.paymentGstAmount);
   const totalAmount = num(booking.payment_total_amount ?? booking.paymentTotalAmount);
@@ -124,10 +164,11 @@ export function paymentTaxFromBookingRow(booking: Record<string, unknown>): Book
   const cgstAmount = num(booking.payment_cgst_amount ?? booking.paymentCgstAmount);
   const sgstAmount = num(booking.payment_sgst_amount ?? booking.paymentSgstAmount);
   const igstAmount = num(booking.payment_igst_amount ?? booking.paymentIgstAmount);
+  const isInterState = booking.payment_is_inter_state ?? booking.paymentIsInterState;
   if (gstAmount <= 0 && totalAmount <= 0 && amount <= 0 && cgstAmount + sgstAmount + igstAmount <= 0) {
     return null;
   }
-  return { amount, totalAmount, gstAmount, cgstAmount, sgstAmount, igstAmount };
+  return { amount, totalAmount, gstAmount, cgstAmount, sgstAmount, igstAmount, isInterState };
 }
 
 export function financialMetaFromBookingNotes(notes: unknown): BookingInvoiceAmountInput['financialMeta'] {

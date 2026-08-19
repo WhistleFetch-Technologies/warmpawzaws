@@ -34,6 +34,7 @@ import {
   financialMetaFromBookingNotes,
   paymentTaxFromBookingRow,
   resolveBookingInvoiceAmounts,
+  resolveStoredInvoiceInterstate,
 } from '../utils/booking-invoice-amounts';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
@@ -292,7 +293,8 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
         });
       }
 
-      // Invoice exists — rebuild from live booking so HSN/tax/wording stay current
+      // Invoice exists — rebuild HSN wording from catalogue, but GST amounts
+      // come from the stored booking/payment/financial snapshot (not today's rate).
       const invoice = invoiceResult.rows[0];
       const refreshed = await rebuildBookingInvoiceFromDb(bookingId, invoice.invoice_number);
       const invoicePayload = refreshed || normalizeInvoiceDataForHtml(
@@ -373,7 +375,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
         }
       }
 
-      // Regenerate HTML on the fly (refresh booking invoices from live data)
+      // Regenerate HTML from the stored financial snapshot (HSN wording may refresh).
       let invoicePayload: InvoiceData | null = null;
       const storedRaw =
         typeof invoice.invoice_data === 'string'
@@ -1112,23 +1114,10 @@ async function buildBookingInvoiceData(params: {
   const discountAmount = parseFloat(booking.discount_amount || '0');
   const financialMeta = financialMetaFromBookingNotes(booking.notes);
   const paymentTax = paymentTaxFromBookingRow(booking);
-  const payCgst = parseFloat(String(paymentTax?.cgstAmount ?? 0)) || 0;
-  const paySgst = parseFloat(String(paymentTax?.sgstAmount ?? 0)) || 0;
-  const payIgst = parseFloat(String(paymentTax?.igstAmount ?? 0)) || 0;
-  const metaCgst = parseFloat(String(financialMeta?.cgst ?? 0)) || 0;
-  const storedInter =
-    financialMeta?.isInterState === true ||
-    financialMeta?.isInterState === 'true' ||
-    (payIgst > 0.009 && payCgst + paySgst <= 0.009);
-  const isInterState = storedInter
-    ? true
-    : payCgst + metaCgst > 0.009
-      ? false
-      : Boolean(
-          booking.customer_state &&
-            booking.vendor_state &&
-            String(booking.customer_state).toLowerCase() !== String(booking.vendor_state).toLowerCase()
-        );
+  const storedIsInterState = resolveStoredInvoiceInterstate({
+    financialMeta,
+    payment: paymentTax,
+  });
   const amounts = resolveBookingInvoiceAmounts({
     basePrice,
     bookingTaxAmount: parseFloat(booking.tax_amount || '0') || 0,
@@ -1136,10 +1125,10 @@ async function buildBookingInvoiceData(params: {
     discountAmount,
     financialMeta,
     payment: paymentTax,
-    isInterState,
-    catalogGstRate: serviceMeta.gstRate || 0,
+    isInterState: storedIsInterState,
   });
   const { taxAmount, cgst, sgst, igst, gstRate, total: totalAmount } = amounts;
+  const isInterState = storedIsInterState === true;
 
   const selectedServices = parseSelectedServices(booking.selected_services);
   const items =
@@ -1148,10 +1137,12 @@ async function buildBookingInvoiceData(params: {
           const qty = s.quantity ?? 1;
           const unitPrice = parseFloat(s.price) || 0;
           const taxableValue = unitPrice * qty;
-          const itemTax = taxAmount > 0 && basePrice > 0 ? (taxableValue / basePrice) * taxAmount : 0;
-          const itemCgst = isInterState ? 0 : itemTax / 2;
-          const itemSgst = isInterState ? 0 : itemTax / 2;
-          const itemIgst = isInterState ? itemTax : 0;
+          const share = taxAmount > 0 && basePrice > 0 ? taxableValue / basePrice : 0;
+          const itemCgst = share * cgst;
+          const itemSgst = share * sgst;
+          const itemIgst = share * igst;
+          const splitSum = itemCgst + itemSgst + itemIgst;
+          const itemTax = splitSum > 0.009 ? splitSum : share * taxAmount;
           return {
             name: s.name || s.serviceName || serviceMeta.serviceName || 'Service',
             hsn: serviceMeta.hsnCode,
