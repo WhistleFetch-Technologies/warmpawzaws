@@ -17,6 +17,13 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { DiscoveryLocationRequired } from '@/components/customer/shared/DiscoveryLocationRequired';
+import {
+  hasStoredDiscoveryCoords,
+  readStoredCustomerDiscoveryCoords,
+  resolveCustomerDiscoveryCoords,
+  LOCATION_UPDATED_EVENT,
+} from '@/lib/customer-discovery-coords';
 
 interface VendorDiscoveryByProblemProps {
   roleId: string;
@@ -84,6 +91,14 @@ export function VendorDiscoveryByProblem({
     loadVendors();
   }, [problem]);
 
+  useEffect(() => {
+    const onLoc = () => {
+      void loadVendors();
+    };
+    window.addEventListener(LOCATION_UPDATED_EVENT, onLoc);
+    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLoc);
+  }, [problem, roleId, phone]);
+
   const loadVendors = async () => {
     try {
       setLoading(true);
@@ -134,10 +149,25 @@ export function VendorDiscoveryByProblem({
         feeMax: '999999'
       });
 
-      // Add location if available
-      if (location) {
-        problemParams.append('lat', location.lat.toString());
-        problemParams.append('lon', location.lng.toString());
+      // Prefer prop location, then stored/GPS discovery coords
+      let lat = location?.lat;
+      let lng = location?.lng;
+      if (lat == null || lng == null) {
+        const stored = readStoredCustomerDiscoveryCoords();
+        if (stored.latitude && stored.longitude) {
+          lat = Number(stored.latitude);
+          lng = Number(stored.longitude);
+        } else {
+          const coords = await resolveCustomerDiscoveryCoords(phone);
+          if (coords.latitude && coords.longitude) {
+            lat = Number(coords.latitude);
+            lng = Number(coords.longitude);
+          }
+        }
+      }
+      if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
+        problemParams.append('lat', String(lat));
+        problemParams.append('lon', String(lng));
       }
 
       console.log('🌐 Calling universal-problem-discovery API:', problemParams.toString());
@@ -294,6 +324,13 @@ export function VendorDiscoveryByProblem({
 
         {/* Vendors List */}
         {vendors.length === 0 ? (
+          !hasStoredDiscoveryCoords() && !location ? (
+            <DiscoveryLocationRequired
+              title="Detect location for specialists"
+              description={`Set your location to find ${roleName}s for ${problem.displayName || problem.name || 'this need'} near you.`}
+              onLocationReady={() => void loadVendors()}
+            />
+          ) : (
           <div className="text-center py-12">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-4xl">😔</span>
@@ -309,6 +346,7 @@ export function VendorDiscoveryByProblem({
               Try Another Category
             </Button>
           </div>
+          )
         ) : (
           <div className="space-y-6">
             {/* ✅ NEW: CENTER-ONLY MODE (Groomers, Boarders) */}

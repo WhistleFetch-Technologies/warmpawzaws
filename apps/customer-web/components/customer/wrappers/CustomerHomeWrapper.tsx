@@ -5814,6 +5814,7 @@ export function CustomerHomeWrapper({
       <div className="h-[100dvh] w-full max-w-customer mx-auto flex flex-col overflow-hidden bg-gray-50">
         <SupportHelpCenter
           phone={phone}
+          isGuest={isGuest}
           onBack={handleSupportBack}
           onInternalBackReady={(fn) => { supportHelpInternalBackRef.current = fn; }}
           onChatbotNavigate={handleSupportHelpChatbotNavigate}

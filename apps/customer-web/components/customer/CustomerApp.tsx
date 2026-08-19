@@ -86,6 +86,7 @@ export function CustomerApp({
   }, []);
 
   useEffect(() => {
+    if (session.isGuest) return;
     const userId = getResolvedCustomerId();
     if (!userId) return;
     const pushOpts = {
@@ -97,7 +98,7 @@ export function CustomerApp({
     void ensureCapacitorPushRegistrationPipeline(pushOpts).then(() =>
       bootstrapPushNotifications(pushOpts)
     );
-  }, [session.customerId, session.phone]);
+  }, [session.isGuest, session.customerId, session.phone]);
 
   const handleLogoutNavigate = async (screen: string) => {
     if (screen === 'logout') {

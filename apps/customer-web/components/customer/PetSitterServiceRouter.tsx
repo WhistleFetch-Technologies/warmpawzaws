@@ -37,6 +37,8 @@ import {
 } from "@/lib/boarding-vendor-discovery-map";
 import { EMPTY_SERVICE_HEADER_STATS } from "@/lib/service-header-stats";
 import { HUB_SERVICE_ICON_WRAP } from "@/lib/hub-service-option-styles";
+import { DiscoveryLocationRequired } from "./shared/DiscoveryLocationRequired";
+import { hasStoredDiscoveryCoords } from "@/lib/customer-discovery-coords";
 
 const SITTING_IMG = "/images/home/Sitting";
 
@@ -636,11 +638,19 @@ export function PetSitterServiceRouter({
                   onPayOpenProfile={handleWarmpawzBookAppointment}
                   onMarketplaceOpenProfile={openSitterVendorProfile}
                   emptyState={
+                    !hasStoredDiscoveryCoords() ? (
+                      <DiscoveryLocationRequired
+                        title="Detect location for sitters"
+                        description="Set your location to see pet sitters near you."
+                        onLocationReady={() => void marketplaceDiscovery.loadVendors()}
+                      />
+                    ) : (
                     <Card className="p-8 text-center">
                       <div className="mb-3 text-4xl">🏠</div>
                       <p className="mb-2 text-gray-600">No pet sitters in your area yet</p>
                       <p className="text-sm text-gray-500">Check back soon for in-home sitting.</p>
                     </Card>
+                    )
                   }
                 />
               </div>

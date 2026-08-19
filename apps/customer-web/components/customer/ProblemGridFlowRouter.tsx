@@ -21,7 +21,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
-import { shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
 import { apiClient } from '@/lib/api-client';
 import { SpecializationDetailPage } from './specialization-detail/SpecializationDetailPage';
 import { VetSpecializationDetailPage } from './specialization-detail/vet/VetSpecializationDetailPage';
@@ -31,7 +30,7 @@ import { toast } from 'sonner';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
-import { getWapptAllowedDiscoveryStyles, getWapptDefaultDiscoveryStyle } from '@/lib/wappt-hub-registry';
+import { getWapptDefaultDiscoveryStyle } from '@/lib/wappt-hub-registry';
 import { resolveProblemGridWapptCategory } from '@/lib/problem-grid-wappt-navigation';
 import { problemGridAliasesForApi } from '@/lib/problem-grid-role-aliases';
 import { WarmpawzAppointmentsVendorList } from '@/components/customer/warmpawz-appointments/WarmpawzAppointmentsVendorList';
@@ -277,23 +276,9 @@ export function ProblemGridFlowRouter({
   const baseServiceStyles = groomingOnlyHomeAndCenter
     ? (['at_home', 'at_center'] as ServiceStyle[])
     : normalizedAvailableStyles;
-  const wapptKindForStyles = selectedProblem
-    ? pickProblemDiscoveryKind(selectedProblem, 'at_home')
-    : null;
-  const wapptCategoryForStyles = wapptKindForStyles
-    ? resolveProblemGridWapptCategory(wapptKindForStyles)
-    : null;
-  const wapptHubStylesActive =
-    Boolean(wapptCategoryForStyles) && isWarmpawzAppointmentsHubEnabled(wapptCategoryForStyles!);
-  const availableStyles = baseServiceStyles.filter((style) => {
-    if (!shouldHideMarketplaceStyleTiles()) return true;
-    if (wapptHubStylesActive && wapptCategoryForStyles) {
-      return getWapptAllowedDiscoveryStyles(wapptCategoryForStyles).includes(
-        style as 'at_home' | 'at_center',
-      );
-    }
-    return style === 'tele';
-  });
+  // Browse parity: always show marketplace style tiles (at_center / at_home / tele).
+  // Warmpawz Appointments still applies at booking; Pay must not hide Clinic/Home for guests.
+  const availableStyles = baseServiceStyles;
   const hasTeleOption = availableStyles.includes('tele');
   const wapptSkipStyleStep = shouldSkipServiceStyleStepForWappt(selectedProblem);
 

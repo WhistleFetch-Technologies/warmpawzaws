@@ -47,6 +47,8 @@ import {
 } from '@/lib/ecommerce/cart-product-helpers';
 import type { CheckoutAddress } from '@/components/customer/ecommerce/useEcommerceCheckout';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { buildAuthUrlWithReturn } from '@/lib/auth-redirect';
 import {
   deliveryBlockMessage,
   deliveryRegionsFromCartItem,
@@ -384,6 +386,19 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   };
 
   const handleProceedCheckout = () => {
+    if (!hasAuthenticatedCustomerSession()) {
+      emitGuestAuthAnalytics('login_prompt_shown');
+      emitGuestAuthAnalytics('login_started');
+      toast.info('Sign in to continue to payment');
+      if (typeof window !== 'undefined') {
+        const returnPath =
+          typeof window !== 'undefined'
+            ? `${window.location.pathname}${window.location.search || ''}` || '/cart'
+            : '/cart';
+        window.location.href = buildAuthUrlWithReturn(returnPath);
+      }
+      return;
+    }
     if (!selectedAddress?.id) {
       toast.error('Please add a delivery address before checkout');
       setShowAddressPicker(true);

@@ -15,6 +15,8 @@ import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { isWapptHubCategoryEnabled } from '@/lib/warmpawz-appointments-customer';
 import { WarmpawzAppointmentsVendorList } from '../warmpawz-appointments/WarmpawzAppointmentsVendorList';
+import { DiscoveryLocationRequired } from '../shared/DiscoveryLocationRequired';
+import { hasStoredDiscoveryCoords } from '@/lib/customer-discovery-coords';
 
 export type { BoardingPlanRow, BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 
@@ -37,6 +39,7 @@ export function BoardingVendorListView({
     loading,
     vendors,
     relaxedFilter,
+    loadVendors,
   } = useBoardingVendorDiscovery(phone, serviceSlug);
 
   const openVendorProfile = useCallback(
@@ -169,11 +172,19 @@ export function BoardingVendorListView({
             <p className="text-gray-500 text-sm mt-4">Finding boarding centers...</p>
           </div>
         ) : sortedVendors.length === 0 ? (
+          !hasStoredDiscoveryCoords() && !searchQuery ? (
+            <DiscoveryLocationRequired
+              title="Detect location for boarding"
+              description="Set your location to find boarding centers near you."
+              onLocationReady={() => void loadVendors()}
+            />
+          ) : (
           <div className="text-center py-16 px-4">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#FFF5EE] flex items-center justify-center text-3xl">🏠</div>
             <p className="text-gray-800 font-semibold">No boarding centers found</p>
             <p className="text-sm text-gray-500 mt-1">Try another service or check back soon</p>
           </div>
+          )
         ) : (
           <div className="space-y-4">
             <p className="text-sm font-medium text-gray-700">{sortedVendors.length} centers found</p>

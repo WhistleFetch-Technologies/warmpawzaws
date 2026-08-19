@@ -18,6 +18,8 @@ import { apiClient, supportCrmApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
 import { SUPPORT_INITIAL_TAB_KEY, clearSupportBookingContext, clearSupportMealOrderContext, consumeSupportOpenContactForm, resolveSupportContactContext, type SupportBookingContext, type SupportMealOrderContext } from '@/lib/support-contact';
+import { buildAuthUrlWithReturn } from '@/lib/auth-redirect';
+import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
 import {
   DEFAULT_LINKED_SUPPORT_CATEGORY,
   GENERAL_SUPPORT_TICKET_CATEGORIES,
@@ -59,6 +61,8 @@ interface Ticket {
 
 interface SupportHelpCenterProps {
   phone?: string;
+  /** Guest browsing: require login before creating/listing tickets. */
+  isGuest?: boolean;
   onBack: () => void;
   onCloseToHome?: () => void;
   /** Expose step-aware back for shell header / hardware back. */
@@ -74,6 +78,7 @@ interface SupportHelpCenterProps {
 
 export function SupportHelpCenter({
   phone,
+  isGuest = false,
   onBack,
   onCloseToHome,
   onInternalBackReady,
@@ -335,6 +340,15 @@ export function SupportHelpCenter({
   };
 
   const handleSubmitContact = async () => {
+    if (isGuest || !phone) {
+      emitGuestAuthAnalytics('login_prompt_shown');
+      emitGuestAuthAnalytics('login_started');
+      toast.info('Sign in to create and track support tickets');
+      if (typeof window !== 'undefined') {
+        window.location.href = buildAuthUrlWithReturn('/?open=support_help');
+      }
+      return;
+    }
     if (!contactForm.subject.trim() || !contactForm.message.trim()) {
       toast.error('Please fill in all required fields');
       return;

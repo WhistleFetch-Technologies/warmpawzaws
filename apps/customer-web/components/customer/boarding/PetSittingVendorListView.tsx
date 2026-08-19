@@ -17,6 +17,8 @@ import { EMPTY_SERVICE_HEADER_STATS } from "@/lib/service-header-stats";
 import { findBoardingListVendorByProfileKey } from "@/lib/boarding-vendor-discovery-map";
 import { isWapptHubCategoryEnabled } from "@/lib/warmpawz-appointments-customer";
 import { WarmpawzAppointmentsVendorList } from "../warmpawz-appointments/WarmpawzAppointmentsVendorList";
+import { DiscoveryLocationRequired } from "../shared/DiscoveryLocationRequired";
+import { hasStoredDiscoveryCoords } from "@/lib/customer-discovery-coords";
 
 const OPTION_TITLES: Record<string, string> = {
   overnight_sitting: "Overnight sitting",
@@ -44,6 +46,7 @@ export function PetSittingVendorListView({
     loading,
     vendors,
     relaxedFilter,
+    loadVendors,
   } = useHubVendorDiscovery(phone, HUB_DISCOVERY_SITTING, loadRows);
 
   const subtitle =
@@ -184,11 +187,19 @@ export function PetSittingVendorListView({
             <p className="mt-4 text-sm text-gray-500">Finding sitters...</p>
           </div>
         ) : sortedVendors.length === 0 ? (
+          !hasStoredDiscoveryCoords() && !searchQuery ? (
+            <DiscoveryLocationRequired
+              title="Detect location for sitters"
+              description="Set your location to find pet sitters near you."
+              onLocationReady={() => void loadVendors()}
+            />
+          ) : (
           <div className="px-4 py-16 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#FFF5EE] text-3xl">🏠</div>
             <p className="font-semibold text-gray-800">No sitters found</p>
             <p className="mt-1 text-sm text-gray-500">Try another filter or check back soon</p>
           </div>
+          )
         ) : (
           <div className="space-y-4">
             <p className="text-sm font-medium text-gray-700">{sortedVendors.length} sitters found</p>

@@ -18,6 +18,8 @@ import { StandardizedFooter } from './shared/StandardizedFooter';
 import { HubFeaturedVendorList } from './shared/HubFeaturedVendorList';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { DiscoveryLocationRequired } from './shared/DiscoveryLocationRequired';
+import { hasStoredDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
@@ -43,7 +45,7 @@ import {
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
-import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
 import { requestGuestAuth } from '@/lib/guest-auth-gate';
@@ -304,11 +306,9 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
     });
 
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
-      if (shouldHideMarketplaceStyleTiles()) {
-      return launchFiltered.filter((s) => s.id === 'tele');
-    }
-
-    return launchFiltered;
+      // Keep Clinic / Home / Tele browse tiles visible for guests + Pay mode.
+      // Booking still routes to WAPPT via profile/book handlers when Pay is active.
+      return launchFiltered;
     }
 
     return launchFiltered.filter((service) => {
@@ -674,10 +674,18 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
               onMarketplaceOpenProfile={openVetCenterProfile}
               onMarketplaceBookPlan={handleVetBookPlan}
               emptyState={
+                !hasStoredDiscoveryCoords() ? (
+                  <DiscoveryLocationRequired
+                    title="Detect location for vets"
+                    description="Set your location to see veterinarians near you."
+                    onLocationReady={() => void marketplaceDiscovery.loadVendors()}
+                  />
+                ) : (
                 <Card className="p-6 text-center bg-gray-50 border border-gray-200">
                   <p className="text-gray-500 text-sm">No veterinarians available in your area yet.</p>
                   <p className="text-gray-400 text-xs mt-1">Check back soon!</p>
                 </Card>
+                )
               }
             />
           </div>

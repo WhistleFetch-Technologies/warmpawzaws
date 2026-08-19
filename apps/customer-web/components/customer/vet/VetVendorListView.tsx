@@ -17,6 +17,8 @@ import {
   buildVetHubProviderProfileNav,
 } from "@/lib/vet-hub-vendor-nav";
 import type { BoardingServiceSlug } from "@/lib/boarding-service-types";
+import { DiscoveryLocationRequired } from "../shared/DiscoveryLocationRequired";
+import { hasStoredDiscoveryCoords } from "@/lib/customer-discovery-coords";
 
 const HUB_SLUG: BoardingServiceSlug = "all";
 const PROFILE_BACK_SCREEN = "vet-all-doctors" as const;
@@ -39,6 +41,7 @@ export function VetVendorListView({ phone, onBack, onNavigate }: VetVendorListVi
     setSelectedVendorId,
     toggleVendor,
     fetchingPlansFor,
+    loadVendors,
   } = useHubVendorDiscovery(phone, HUB_DISCOVERY_VET);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -162,6 +165,13 @@ export function VetVendorListView({ phone, onBack, onNavigate }: VetVendorListVi
             <p className="mt-4 text-sm text-gray-500">Finding veterinarians...</p>
           </div>
         ) : sortedVendors.length === 0 ? (
+          !hasStoredDiscoveryCoords() && !searchQuery ? (
+            <DiscoveryLocationRequired
+              title="Detect location for veterinarians"
+              description="Set your location to find veterinarians near you."
+              onLocationReady={() => void loadVendors()}
+            />
+          ) : (
           <div className="px-4 py-16 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#FFF5EE] text-3xl">
               🩺
@@ -169,6 +179,7 @@ export function VetVendorListView({ phone, onBack, onNavigate }: VetVendorListVi
             <p className="font-semibold text-gray-800">No veterinarians found</p>
             <p className="mt-1 text-sm text-gray-500">Try another filter or check back soon</p>
           </div>
+          )
         ) : (
           <div className="space-y-4">
             <p className="text-sm font-medium text-gray-700">

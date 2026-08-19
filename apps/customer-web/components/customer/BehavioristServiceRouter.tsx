@@ -20,6 +20,8 @@ import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { HUB_DISCOVERY_BEHAVIORIST } from '@/lib/service-hub-discovery-config';
 import { TRAINING_HEADER_BANNER as BEHAVIORIST_HEADER_BANNER } from './training/constants/training-hub-assets';
 import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
+import { DiscoveryLocationRequired } from './shared/DiscoveryLocationRequired';
+import { hasStoredDiscoveryCoords } from '@/lib/customer-discovery-coords';
 
 interface BehavioristServiceRouterProps {
   phone: string;
@@ -194,11 +196,19 @@ export function BehavioristServiceRouter({
                 onPayOpenProfile={handleWarmpawzBookAppointment}
                 onMarketplaceOpenProfile={openBehavioristDetails}
                 emptyState={
+                  !hasStoredDiscoveryCoords() ? (
+                    <DiscoveryLocationRequired
+                      title="Detect location for behaviorists"
+                      description="Set your location to see behaviorists near you."
+                      onLocationReady={() => void marketplaceDiscovery.loadVendors()}
+                    />
+                  ) : (
                   <Card className="p-8 text-center">
                     <div className="mb-3 text-4xl">🧠</div>
                     <p className="mb-2 text-gray-600">No behaviorists available in your area yet</p>
                     <p className="text-sm text-gray-500">Check back soon for behavior support options!</p>
                   </Card>
+                  )
                 }
               />
             </div>
