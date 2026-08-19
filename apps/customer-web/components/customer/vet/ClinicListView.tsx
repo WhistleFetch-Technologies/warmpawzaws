@@ -56,7 +56,6 @@ import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
 import {
   buildWarmpawzAppointmentsBookingNav,
-  isWarmpawzAppointmentsHubEnabled,
   resolveWarmpawzBookingScreen,
 } from '@/lib/warmpawz-appointments-customer';
 import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
@@ -215,12 +214,12 @@ function mapApiServiceToRow(p: any, vendorId: string, index: number, omitPrice: 
   };
 }
 
-function mapByStyleProvider(p: any, wapptVetHubEnabled: boolean): ClinicProvider | null {
+function mapByStyleProvider(p: any): ClinicProvider | null {
   if (isNonVetProviderRow(p)) return null;
   if (isSoloVendor(p)) return null;
   const id = String(p.providerId || p.vendorId || p.id || '');
   if (!id) return null;
-  const omitPrice = wapptVetHubEnabled && p.warmpawzAppointments === true;
+  const omitPrice = p.warmpawzAppointments === true;
   const rawServices = Array.isArray(p.services) ? p.services : [];
   const services = filterServicesForVetHub<ClinicServiceRow>(
     rawServices.map((s: any, i: number) => mapApiServiceToRow(s, id, i, omitPrice))
@@ -282,7 +281,6 @@ export function ClinicListView({
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
   const router = useRouter();
   const launchGate = useServiceStyleLaunchGate(phone, 'vet', 'at_center');
-  const wapptVetHubEnabled = isWarmpawzAppointmentsHubEnabled('vet');
 
   const fetchVendorServicesForClinic = useCallback(
     async (clinicId: string, append = false) => {
@@ -410,11 +408,10 @@ export function ClinicListView({
       })();
       if (!vendorMap.has(vendorId)) {
         const raw = service.services;
-        const appointmentsMode = wapptVetHubEnabled && service.warmpawzAppointments === true;
         let rows: ClinicServiceRow[] = [];
         if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'object') {
           rows = filterServicesForVetHub<ClinicServiceRow>(
-            raw.map((s: any, i: number) => mapApiServiceToRow(s, vendorId, i, appointmentsMode))
+            raw.map((s: any, i: number) => mapApiServiceToRow(s, vendorId, i, service.warmpawzAppointments === true))
           );
         }
         vendorMap.set(vendorId, {
@@ -457,7 +454,6 @@ export function ClinicListView({
           services: rows,
           needsServiceFetch: rows.length === 0,
           vendorType: service.vendorType,
-          warmpawzAppointments: appointmentsMode,
         });
       }
     });
@@ -494,9 +490,7 @@ export function ClinicListView({
         )) as any;
         if (!response.success) return { rows: [] as ClinicProvider[], cursor: null as string | null };
         const providerData = discoveryVendorList(response);
-        const rows = providerData
-          .map((p: any) => mapByStyleProvider(p, wapptVetHubEnabled))
-          .filter(Boolean) as ClinicProvider[];
+        const rows = providerData.map((p: any) => mapByStyleProvider(p)).filter(Boolean) as ClinicProvider[];
         return { rows, cursor: discoveryNextCursor(response) };
       };
 

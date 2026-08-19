@@ -26,6 +26,7 @@ import { HubFeaturedVendorList } from "./shared/HubFeaturedVendorList";
 import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
 import { HUB_DISCOVERY_SITTING } from "@/lib/service-hub-discovery-config";
 import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from "@/lib/warmpawz-appointments-customer";
+import { shouldHideDiscoveryPricing } from "@/lib/wappt-discovery-ui";
 import { buildWapptHubTile } from "@/lib/wappt-hub-registry";
 import { useWapptHubFeaturedVendors } from "@/hooks/useWapptHubFeaturedVendors";
 import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
@@ -319,7 +320,7 @@ export function PetSitterServiceRouter({
       type: "vendor",
     };
     const vid = pickCustomerVendorAccountId(row) || v.id;
-    if (wapptHubEnabled) {
+    if (wapptHubEnabled || shouldHideDiscoveryPricing(row)) {
       onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
         ...buildWarmpawzAppointmentsProfileNav({
           vendorId: vid,

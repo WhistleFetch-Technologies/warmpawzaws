@@ -45,6 +45,7 @@ import {
 } from '@/lib/boarding-vendor-discovery-map';
 import { resolveBoardingListVendorProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
@@ -230,7 +231,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       }
       const rawObj = (v.raw ?? {}) as Record<string, unknown>;
       const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
-      if (wapptHubEnabled) {
+      if (wapptHubEnabled || shouldHideDiscoveryPricing(rawObj)) {
         onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
           ...buildWarmpawzAppointmentsProfileNav({
             vendorId,
