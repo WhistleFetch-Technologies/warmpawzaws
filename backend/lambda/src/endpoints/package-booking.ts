@@ -51,7 +51,20 @@ import {
   vendorPackagePurchaseIdForRazorpayOrder,
   type VendorPackageComputation,
 } from '../utils/vendor-package-razorpay-flow';
-import { quotePackagePricing, resolvePackagePolicySnapshot } from '../utils/package-pricing';
+import { quotePackagePricing, resolvePackagePolicySnapshot, type PackagePricingResult } from '../utils/package-pricing';
+
+function packageGstPersistFields(pricing: PackagePricingResult | null | undefined) {
+  if (!pricing) return {};
+  return {
+    gstAmount: pricing.gstAmount,
+    cgstAmount: pricing.cgstAmount,
+    sgstAmount: pricing.sgstAmount,
+    igstAmount: pricing.igstAmount,
+    isInterState: pricing.isInterState,
+    gstRate: pricing.gstRate,
+    taxableAmount: pricing.basePrice,
+  };
+}
 import { computeWalletBookingSplit } from '../utils/booking-financial-gross';
 import { createPackageBookingsAfterPayment } from '../utils/package-bookings';
 import { fireVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
@@ -553,10 +566,25 @@ async function syncVendorPackagePurchaseToBookingAndNotify(params: {
     const bookingId = ins.rows?.[0]?.id != null ? String((ins.rows[0] as { id: string }).id) : null;
 
     if (bookingId && payUuid) {
-      await query(`UPDATE payments SET booking_id = $1::uuid WHERE id = $2::uuid AND booking_id IS NULL`, [
-        bookingId,
-        payUuid,
-      ]).catch(() => undefined);
+      const linked = await query(
+        `UPDATE payments SET booking_id = $1::uuid WHERE id = $2::uuid AND booking_id IS NULL RETURNING id`,
+        [bookingId, payUuid]
+      );
+      if (!linked.rows?.length) {
+        const existing = await query(
+          `SELECT booking_id::text AS booking_id FROM payments WHERE id = $1::uuid LIMIT 1`,
+          [payUuid]
+        );
+        const already = String(existing.rows?.[0]?.booking_id || '');
+        if (already && already !== bookingId) {
+          throw new Error(
+            `Package payment ${payUuid} is already linked to booking ${already}, expected ${bookingId}`
+          );
+        }
+        if (!already) {
+          throw new Error(`Failed to link package payment ${payUuid} to booking ${bookingId}`);
+        }
+      }
     }
 
     let customerName = 'Customer';
@@ -1905,6 +1933,12 @@ export function registerPackageBookingEndpoints(app: Hono) {
             vendor_id: comp.vendorId,
             amount: pricing ? pricing.basePrice : grossTotal,
             gst_amount: pricing ? pricing.gstAmount : 0,
+            cgst_amount: pricing ? pricing.cgstAmount : 0,
+            sgst_amount: pricing ? pricing.sgstAmount : 0,
+            igst_amount: pricing ? pricing.igstAmount : 0,
+            is_inter_state: pricing ? pricing.isInterState : null,
+            taxable_amount: pricing ? pricing.basePrice : null,
+            gst_rate: pricing ? pricing.gstRate : null,
             platform_fee: pricing ? pricing.platformFee : 0,
             convenience_fee: pricing ? pricing.convenienceFee : 0,
             total_amount: grossTotal,
@@ -1921,6 +1955,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
             paymentId: walletPaymentId || null,
             policy: policyInputForFinalize,
             totalCharged: grossTotal,
+            ...packageGstPersistFields(pricing),
           });
           const { parentBookingId } = await createPackageBookingsAfterPayment({
             customerId,
@@ -1993,6 +2028,12 @@ export function registerPackageBookingEndpoints(app: Hono) {
                   feeBreakdown: {
                     basePrice: pricing.basePrice,
                     gstAmount: pricing.gstAmount,
+                    cgstAmount: pricing.cgstAmount,
+                    sgstAmount: pricing.sgstAmount,
+                    igstAmount: pricing.igstAmount,
+                    isInterState: pricing.isInterState,
+                    gstRate: pricing.gstRate,
+                    taxableAmount: pricing.basePrice,
                     platformFee: pricing.platformFee,
                     convenienceFee: pricing.convenienceFee,
                     deliveryFee: pricing.deliveryFee,
@@ -2071,6 +2112,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
             paymentId: paymentIdForExisting,
             policy: policyInputForFinalize,
             totalCharged: grossTotal,
+            ...packageGstPersistFields(pricing),
           });
 
           const { parentBookingId } = await createPackageBookingsAfterPayment({
@@ -2126,6 +2168,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
           paymentId: String(payRow.id),
           policy: policyInputForFinalize,
           totalCharged: grossTotal,
+          ...packageGstPersistFields(pricing),
         });
 
         await query(
@@ -2805,6 +2848,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
         cgstAmount: pricing.cgstAmount,
         sgstAmount: pricing.sgstAmount,
         igstAmount: pricing.igstAmount,
+        isInterState: pricing.isInterState,
         taxBreakdown: pricing.taxBreakdown,
         platformFee: pricing.platformFee,
         convenienceFee: pricing.convenienceFee,

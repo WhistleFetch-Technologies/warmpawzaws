@@ -26,6 +26,8 @@ export type BookingInvoiceAmountInput = {
     igst?: unknown;
     totalTax?: unknown;
     finalPaid?: unknown;
+    taxableAmount?: unknown;
+    isInterState?: unknown;
   } | null;
   payment?: BookingInvoicePaymentTax | null;
   isInterState: boolean;
@@ -48,10 +50,12 @@ export type BookingInvoiceAmounts = {
  * completed payment row holds `gst_amount` and the all-in `total_amount` (ed864719).
  */
 export function resolveBookingInvoiceAmounts(input: BookingInvoiceAmountInput): BookingInvoiceAmounts {
-  const taxableValue = Math.max(0, num(input.basePrice));
   const discount = num(input.discountAmount);
   const meta = input.financialMeta;
   const pay = input.payment;
+  const metaTaxable = num((meta as { taxableAmount?: unknown } | null | undefined)?.taxableAmount);
+  const taxableValue =
+    metaTaxable > 0.009 ? metaTaxable : Math.max(0, num(input.basePrice) - discount);
 
   const metaSplit = num(meta?.cgst) + num(meta?.sgst) + num(meta?.igst);
   const metaTax = num(meta?.totalTax) || metaSplit;
@@ -67,23 +71,24 @@ export function resolveBookingInvoiceAmounts(input: BookingInvoiceAmountInput): 
   let igst = num(meta?.igst) || num(pay?.igstAmount);
 
   if (taxAmount <= 0.009) {
-    const taxableAfterDiscount = Math.max(0, num(taxableValue - discount));
     const charged = num(pay?.totalAmount) || num(pay?.amount) || num(input.bookingTotalAmount);
     const inferred = inferExclusiveGstFromChargedDelta({
-      taxableValue: taxableAfterDiscount,
+      taxableValue,
       chargedTotal: charged,
       catalogGstRate: input.catalogGstRate,
       isInterState: input.isInterState,
     });
-    if (inferred.gstTotal > 0.009) {
+    if (inferred.splitAvailable !== false && inferred.gstTotal > 0.009) {
       taxAmount = inferred.gstTotal;
       cgst = inferred.cgstAmount;
       sgst = inferred.sgstAmount;
       igst = inferred.igstAmount;
+    } else if (inferred.gstTotal > 0.009) {
+      taxAmount = inferred.gstTotal;
     }
   }
 
-  if (taxAmount > 0.009 && cgst + sgst + igst <= 0.009) {
+  if (taxAmount > 0.009 && cgst + sgst + igst <= 0.009 && typeof input.isInterState === 'boolean') {
     const split = splitGstAmount(taxAmount, input.isInterState);
     cgst = split.cgst;
     sgst = split.sgst;
@@ -134,5 +139,7 @@ export function financialMetaFromBookingNotes(notes: unknown): BookingInvoiceAmo
     igst: meta.igst,
     totalTax: meta.totalTax ?? meta.total_tax,
     finalPaid: meta.finalPaid ?? meta.final_paid,
+    taxableAmount: meta.taxableAmount ?? meta.taxable_amount,
+    isInterState: meta.isInterState ?? meta.is_inter_state,
   };
 }

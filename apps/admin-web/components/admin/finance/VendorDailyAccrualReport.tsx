@@ -51,6 +51,29 @@ function moneyCell(v: string | number | undefined | null) {
   return `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
+function gstBreakdownCell(
+  gstTotal: string | number | undefined | null,
+  cgst?: string | number | null,
+  sgst?: string | number | null,
+  igst?: string | number | null,
+) {
+  const c = Number(cgst || 0);
+  const s = Number(sgst || 0);
+  const i = Number(igst || 0);
+  return (
+    <div className="text-right">
+      <div className="tabular-nums">{moneyCell(gstTotal)}</div>
+      {i > 0.009 && c + s <= 0.009 ? (
+        <div className="text-xs text-gray-500">IGST {moneyCell(i)}</div>
+      ) : c + s > 0.009 ? (
+        <div className="text-xs text-gray-500">
+          CGST {moneyCell(c)} · SGST {moneyCell(s)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function VendorDailyAccrualReport() {
   const [reportDate, setReportDate] = useState(yesterdayYmd());
   const [loading, setLoading] = useState(false);
@@ -64,6 +87,9 @@ export function VendorDailyAccrualReport() {
     convenienceFee: number;
     deliveryFee: number;
     gstTotal: number;
+    cgstAmount: number;
+    sgstAmount: number;
+    igstAmount: number;
     vendorCount: number;
     platformFundedDiscount?: number;
     vendorFundedDiscount?: number;
@@ -95,6 +121,9 @@ export function VendorDailyAccrualReport() {
               convenienceFee: Number(t.convenienceFee) || 0,
               deliveryFee: Number(t.deliveryFee) || 0,
               gstTotal: Number(t.gstTotal) || 0,
+              cgstAmount: Number(t.cgstAmount) || 0,
+              sgstAmount: Number(t.sgstAmount) || 0,
+              igstAmount: Number(t.igstAmount) || 0,
               vendorCount: Number(t.vendorCount) || 0,
               platformFundedDiscount: Number(t.platformFundedDiscount) || 0,
               vendorFundedDiscount: Number(t.vendorFundedDiscount) || 0,
@@ -256,8 +285,15 @@ export function VendorDailyAccrualReport() {
               <div className="text-sm font-semibold">{moneyCell(totals.deliveryFee)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">GST</div>
+              <div className="text-xs text-gray-500">Customer GST</div>
               <div className="text-sm font-semibold">{moneyCell(totals.gstTotal)}</div>
+              {totals.igstAmount > 0.009 && totals.cgstAmount + totals.sgstAmount <= 0.009 ? (
+                <div className="text-xs text-gray-500">IGST {moneyCell(totals.igstAmount)}</div>
+              ) : totals.cgstAmount + totals.sgstAmount > 0.009 ? (
+                <div className="text-xs text-gray-500">
+                  CGST {moneyCell(totals.cgstAmount)} · SGST {moneyCell(totals.sgstAmount)}
+                </div>
+              ) : null}
             </div>
           </div>
           {(totals.platformFundedDiscount != null || totals.vendorFundedDiscount != null) && (
@@ -320,7 +356,9 @@ export function VendorDailyAccrualReport() {
                 <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.platform_fee)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.convenience_fee)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.delivery_fee)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.gst_total)}</td>
+                <td className="px-3 py-2">
+                  {gstBreakdownCell(r.gst_total, r.cgst_amount, r.sgst_amount, r.igst_amount)}
+                </td>
                 <td className="px-3 py-2 text-center">{r.earnings_line_count}</td>
                 <td className="px-3 py-2 text-center">{r.delivery_settlement_line_count ?? 0}</td>
                 <td className="px-3 py-2 text-center">{r.missing_earnings_booking_count}</td>

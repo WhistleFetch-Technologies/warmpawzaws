@@ -13,12 +13,12 @@ import {
 } from './delivery-settlement-finance';
 import { calculateFinalFees, mapCatalogCategoryToBusinessType } from './feeCalculator';
 import { resolveLockedBookingGrossFromNotes } from './booking-financial-gross';
-import { resolveServiceBookingTaxItem } from './resolve-service-booking-tax-item';
 import {
   gstFinancialIdentity,
   inferExclusiveGstFromChargedDelta,
   inferInclusiveGstFromListedPrice,
   isZeroRatedHealthcareHint,
+  parseStoredInterstate,
   reconstructGstSplit,
 } from './gst-split';
 
@@ -37,6 +37,9 @@ export const VENDOR_ACCRUAL_FEE_CSV_HEADERS = [
   'convenience_fee',
   'delivery_fee',
   'gst_total',
+  'cgst_amount',
+  'sgst_amount',
+  'igst_amount',
 ] as const;
 
 const EMPTY_BREAKDOWN: VendorAccrualFeeBreakdown = {
@@ -62,6 +65,7 @@ export type PaymentAccrualSnapshot = {
   sgst_amount?: unknown;
   igst_amount?: unknown;
   gst_amount?: unknown;
+  is_inter_state?: unknown;
   total_amount?: unknown;
   amount?: unknown;
   fee_breakdown?: unknown;
@@ -88,7 +92,8 @@ export type BookingAccrualResolveContext = {
   bookingNotes?: unknown;
   payment?: PaymentAccrualSnapshot | null;
   parentBookingId?: unknown;
-  isInterState?: boolean;
+  isInterState?: boolean | null;
+  is_inter_state?: unknown;
   gstIdentity?: string;
   gstAttributeBookingId?: string;
 };
@@ -114,8 +119,21 @@ function gstTotalFromParts(cgst: number, sgst: number, igst: number, gstOther: n
   return round2(splitSum > 0 ? splitSum : gstOther);
 }
 
+function resolveInterstateHint(
+  ...sources: unknown[]
+): boolean | undefined {
+  for (const source of sources) {
+    const parsed = parseStoredInterstate(source);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
 /** gst_total stores full GST when CGST/SGST/IGST are not split on the source row. */
-function rowToBreakdown(row: Record<string, unknown>, isInterState = false): VendorAccrualFeeBreakdown {
+function rowToBreakdown(
+  row: Record<string, unknown>,
+  isInterState?: boolean | null,
+): VendorAccrualFeeBreakdown {
   const cgst = safeMoneyAmount(row.cgst_amount);
   const sgst = safeMoneyAmount(row.sgst_amount);
   const igst = safeMoneyAmount(row.igst_amount);
@@ -125,7 +143,7 @@ function rowToBreakdown(row: Record<string, unknown>, isInterState = false): Ven
     sgstAmount: sgst,
     igstAmount: igst,
     gstTotal: gstTotalFromParts(cgst, sgst, igst, gstOther),
-    isInterState,
+    isInterState: resolveInterstateHint(isInterState, row.is_inter_state),
   });
   return {
     platformFee: safeMoneyAmount(row.platform_fee),
@@ -148,17 +166,17 @@ function pickJsonNumber(obj: Record<string, unknown>, keys: string[]): number {
   return 0;
 }
 
-/** Primary resolver: payment fee/GST columns. Reconstructs CGST/SGST when only gst_amount is stored. */
+/** Primary resolver: payment fee/GST columns. Reconstructs a split only when jurisdiction is known. */
 export function breakdownFromPaymentColumns(
   payment: PaymentAccrualSnapshot | null | undefined,
-  isInterState = false,
+  isInterState?: boolean | null,
 ): VendorAccrualFeeBreakdown {
   if (!payment) return { ...EMPTY_BREAKDOWN };
   return rowToBreakdown(payment as Record<string, unknown>, isInterState);
 }
 
 /** Secondary resolver: payments.fee_breakdown JSONB (camelCase or snake_case). */
-export function breakdownFromFeeBreakdownJson(raw: unknown, isInterState = false): VendorAccrualFeeBreakdown {
+export function breakdownFromFeeBreakdownJson(raw: unknown, isInterState?: boolean | null): VendorAccrualFeeBreakdown {
   if (raw == null) return { ...EMPTY_BREAKDOWN };
   let obj: Record<string, unknown>;
   if (typeof raw === 'string') {
@@ -182,7 +200,7 @@ export function breakdownFromFeeBreakdownJson(raw: unknown, isInterState = false
     sgstAmount: sgst,
     igstAmount: igst,
     gstTotal: gstTotalFromParts(cgst, sgst, igst, gstOther),
-    isInterState,
+    isInterState: resolveInterstateHint(isInterState, obj.isInterState, obj.is_inter_state),
   });
 
   return {
@@ -251,7 +269,7 @@ async function resolveGstForAccrual(
   feeBase: number,
   payment: PaymentAccrualSnapshot | null | undefined,
 ): Promise<Pick<VendorAccrualFeeBreakdown, 'cgstAmount' | 'sgstAmount' | 'igstAmount' | 'gstTotal'>> {
-  const isInterState = Boolean(ctx.isInterState);
+  const isInterState = resolveInterstateHint(ctx.isInterState, ctx.is_inter_state, payment?.is_inter_state);
   const fromPayment = breakdownFromPaymentColumns(payment, isInterState);
   if (fromPayment.gstTotal > 0.009) {
     return {
@@ -327,35 +345,9 @@ async function resolveGstForAccrual(
     return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
   }
 
-  try {
-    const { taxItem } = await resolveServiceBookingTaxItem({
-      serviceId: ctx.serviceId ? String(ctx.serviceId) : undefined,
-      vendorId: ctx.vendorId ? String(ctx.vendorId) : undefined,
-      bookingId: ctx.bookingId,
-      vendorRoleId: ctx.vendorRoleId ? String(ctx.vendorRoleId) : undefined,
-      amount: feeBase,
-      quantity: 1,
-      category: String(ctx.categoryName || ctx.vsCategory || ctx.serviceType || '') || undefined,
-      serviceStyle: String(ctx.serviceStyle || ctx.serviceType || '') || undefined,
-    });
-
-    const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
-    const taxResult = await taxCalculationService.calculateTax({
-      items: [taxItem],
-      vendorId: ctx.vendorId ? String(ctx.vendorId) : undefined,
-      serviceType: String(ctx.categoryName || ctx.vsCategory || ctx.serviceType || '') || undefined,
-      category: String(ctx.categoryName || ctx.vsCategory || ctx.serviceType || '') || undefined,
-    });
-
-    const cgst = round2(Number(taxResult.totalCGST) || 0);
-    const sgst = round2(Number(taxResult.totalSGST) || 0);
-    const igst = round2(Number(taxResult.totalIGST) || 0);
-    const gstTotal = gstTotalFromParts(cgst, sgst, igst, round2(Number(taxResult.totalTax) || 0));
-    return { cgstAmount: cgst, sgstAmount: sgst, igstAmount: igst, gstTotal };
-  } catch (err) {
-    console.warn('[vendor-accrual-fee-breakdown] tax recompute failed:', err);
-    return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
-  }
+  // Paid-transaction reporting must READ GST, not invent a jurisdiction via calculateTax
+  // without place-of-supply (that path historically defaulted to IGST or 50/50).
+  return { cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 };
 }
 
 /** Tertiary resolver: checkout pipeline (calculateFinalFees + GST fallbacks). */
@@ -422,12 +414,13 @@ export async function resolveBookingCustomerPaidFeeBreakdown(
 ): Promise<VendorAccrualFeeBreakdown> {
   const payment = ctx.payment;
 
-  const fromColumns = breakdownFromPaymentColumns(payment, Boolean(ctx.isInterState));
+  const interstate = resolveInterstateHint(ctx.isInterState, ctx.is_inter_state, payment?.is_inter_state);
+  const fromColumns = breakdownFromPaymentColumns(payment, interstate);
   if (hasMeaningfulCustomerPaidBreakdown(fromColumns)) {
     return fromColumns;
   }
 
-  const fromJson = breakdownFromFeeBreakdownJson(payment?.fee_breakdown, Boolean(ctx.isInterState));
+  const fromJson = breakdownFromFeeBreakdownJson(payment?.fee_breakdown, interstate);
   if (hasMeaningfulCustomerPaidBreakdown(fromJson)) {
     return fromJson;
   }
@@ -443,12 +436,13 @@ export async function resolveBookingCustomerPaidFeeBreakdownWithSource(
 ): Promise<{ breakdown: VendorAccrualFeeBreakdown; source: CustomerPaidFeeBreakdownSource }> {
   const payment = ctx.payment;
 
-  const fromColumns = breakdownFromPaymentColumns(payment, Boolean(ctx.isInterState));
+  const interstate = resolveInterstateHint(ctx.isInterState, ctx.is_inter_state, payment?.is_inter_state);
+  const fromColumns = breakdownFromPaymentColumns(payment, interstate);
   if (hasMeaningfulCustomerPaidBreakdown(fromColumns)) {
     return { breakdown: fromColumns, source: 'payment_columns' };
   }
 
-  const fromJson = breakdownFromFeeBreakdownJson(payment?.fee_breakdown, Boolean(ctx.isInterState));
+  const fromJson = breakdownFromFeeBreakdownJson(payment?.fee_breakdown, interstate);
   if (hasMeaningfulCustomerPaidBreakdown(fromJson)) {
     return { breakdown: fromJson, source: 'fee_breakdown_json' };
   }
@@ -501,6 +495,7 @@ export const SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL = `
      LEFT JOIN LATERAL (
        SELECT p.id, p.platform_fee, p.convenience_fee, p.delivery_fee,
               p.cgst_amount, p.sgst_amount, p.igst_amount, p.gst_amount,
+              p.is_inter_state,
               p.total_amount, p.amount, p.fee_breakdown, p.payment_status
        FROM payments p
        WHERE p.booking_id = COALESCE(
@@ -544,7 +539,7 @@ function rowToResolveContext(row: BookingAccrualRow): BookingAccrualResolveConte
     hsnCodeId: row.hsn_code_id,
     bookingNotes: row.booking_notes,
     parentBookingId,
-    isInterState: row.is_inter_state === true || row.is_inter_state === 't' || row.is_inter_state === 'true',
+    isInterState: parseStoredInterstate(row.is_inter_state),
     gstIdentity:
       String(row.gst_identity || '') ||
       gstFinancialIdentity({
@@ -562,6 +557,7 @@ function rowToResolveContext(row: BookingAccrualRow): BookingAccrualResolveConte
       sgst_amount: row.sgst_amount,
       igst_amount: row.igst_amount,
       gst_amount: row.gst_amount,
+      is_inter_state: row.is_inter_state,
       total_amount: row.payment_total_amount,
       amount: row.payment_amount,
       fee_breakdown: row.fee_breakdown,
@@ -661,6 +657,7 @@ async function aggregateBookingFeeBreakdownsForIstRange(
               p.sgst_amount,
               p.igst_amount,
               p.gst_amount,
+              p.is_inter_state,
               p.total_amount AS payment_total_amount,
               p.amount AS payment_amount,
               p.fee_breakdown,
@@ -720,14 +717,15 @@ export async function fetchVendorAccrualFeeBreakdownForIstRange(
             COALESCE(SUM(COALESCE(NULLIF(ds.platform_fee, 0), mo.platform_fee, 0)), 0)::numeric(14,2) AS platform_fee,
             COALESCE(SUM(COALESCE(NULLIF(ds.convenience_fee, 0), 0)), 0)::numeric(14,2) AS convenience_fee,
             COALESCE(SUM(COALESCE(NULLIF(ds.delivery_fee_collected, 0), mo.delivery_fee, 0)), 0)::numeric(14,2) AS delivery_fee,
-            COALESCE(SUM(COALESCE(pp.cgst_amount, 0)), 0)::numeric(14,2) AS cgst_amount,
-            COALESCE(SUM(COALESCE(pp.sgst_amount, 0)), 0)::numeric(14,2) AS sgst_amount,
-            COALESCE(SUM(COALESCE(pp.igst_amount, 0)), 0)::numeric(14,2) AS igst_amount,
+            COALESCE(SUM(COALESCE(NULLIF(pp.cgst_amount, 0), mo.cgst_amount, 0)), 0)::numeric(14,2) AS cgst_amount,
+            COALESCE(SUM(COALESCE(NULLIF(pp.sgst_amount, 0), mo.sgst_amount, 0)), 0)::numeric(14,2) AS sgst_amount,
+            COALESCE(SUM(COALESCE(NULLIF(pp.igst_amount, 0), mo.igst_amount, 0)), 0)::numeric(14,2) AS igst_amount,
             COALESCE(SUM(
               CASE
                 WHEN COALESCE(pp.cgst_amount, 0) + COALESCE(pp.sgst_amount, 0) + COALESCE(pp.igst_amount, 0) > 0
+                  OR COALESCE(mo.cgst_amount, 0) + COALESCE(mo.sgst_amount, 0) + COALESCE(mo.igst_amount, 0) > 0
                   THEN 0
-                ELSE COALESCE(NULLIF(ds.gst_amount, 0), 0) + COALESCE(pp.gst_amount, 0)
+                ELSE COALESCE(NULLIF(ds.gst_amount, 0), 0) + COALESCE(pp.gst_amount, 0) + COALESCE(mo.tax_amount, 0)
               END
             ), 0)::numeric(14,2) AS gst_other
      FROM delivery_settlements ds
@@ -767,23 +765,51 @@ export function feeBreakdownForVendor(
   return map.get(String(vendorId)) ?? { ...EMPTY_BREAKDOWN };
 }
 
+function hasPersistedCustomerGst(row: Record<string, unknown>): boolean {
+  return row.gst_amount != null && row.gst_amount !== '';
+}
+
 export function mergeFeeBreakdownIntoAccrualRows(
   rows: Record<string, unknown>[],
   feeByVendor: Map<string, VendorAccrualFeeBreakdown>,
 ): Record<string, unknown>[] {
   return rows.map((r) => {
     const fb = feeBreakdownForVendor(feeByVendor, String(r.vendor_id));
+    const stored = hasPersistedCustomerGst(r);
     return {
       ...r,
-      platform_fee: fb.platformFee,
-      convenience_fee: fb.convenienceFee,
-      delivery_fee: fb.deliveryFee,
-      cgst_amount: fb.cgstAmount,
-      sgst_amount: fb.sgstAmount,
-      igst_amount: fb.igstAmount,
-      gst_total: fb.gstTotal,
+      platform_fee: r.platform_fee ?? fb.platformFee,
+      convenience_fee: r.convenience_fee ?? fb.convenienceFee,
+      delivery_fee: r.delivery_fee ?? fb.deliveryFee,
+      cgst_amount: stored ? r.cgst_amount : fb.cgstAmount,
+      sgst_amount: stored ? r.sgst_amount : fb.sgstAmount,
+      igst_amount: stored ? r.igst_amount : fb.igstAmount,
+      gst_total: stored ? (r.gst_total ?? r.gst_amount ?? fb.gstTotal) : fb.gstTotal,
     };
   });
+}
+
+export async function persistDailyAccrualCustomerGst(
+  reportDate: string,
+  periodEndExclusiveYmd: string,
+): Promise<void> {
+  const feeByVendor = await fetchVendorAccrualFeeBreakdownForIstRange(reportDate, periodEndExclusiveYmd);
+  for (const [vendorId, fees] of feeByVendor) {
+    if (!vendorId) continue;
+    await query(
+      `UPDATE vendor_daily_accrual
+          SET gst_amount = $1::numeric(14,2),
+              cgst_amount = $2::numeric(14,2),
+              sgst_amount = $3::numeric(14,2),
+              igst_amount = $4::numeric(14,2)
+        WHERE report_date = $5::date
+          AND vendor_id = $6::uuid`,
+      [fees.gstTotal, fees.cgstAmount, fees.sgstAmount, fees.igstAmount, reportDate, vendorId],
+    ).catch((err: { code?: string }) => {
+      if (err?.code === '42703') return;
+      throw err;
+    });
+  }
 }
 
 export function sumAccrualFeeBreakdowns(rows: Record<string, unknown>[]): VendorAccrualFeeBreakdown {
@@ -808,6 +834,9 @@ export function feeBreakdownCsvCells(row: Record<string, unknown>): string[] {
     String(row.convenience_fee ?? ''),
     String(row.delivery_fee ?? ''),
     String(row.gst_total ?? ''),
+    String(row.cgst_amount ?? ''),
+    String(row.sgst_amount ?? ''),
+    String(row.igst_amount ?? ''),
   ];
 }
 

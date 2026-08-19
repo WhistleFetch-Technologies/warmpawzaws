@@ -12,6 +12,7 @@ import {
   resolveServicePackageDisplayName,
 } from './service-package-sessions';
 import { resolveVendorId } from './vendor-resolve';
+import { resolvePackageCustomerSellingPrice } from './resolve-booking-list-price';
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
   if (!raw) return null;
@@ -189,7 +190,7 @@ export async function computeVendorPackagePurchase(params: {
 
   const vsRows = await query(
     `SELECT vs.id, vs.vendor_id, vs.service_id, vs.service_name, vs.metadata, vs.service_style,
-            vs.price, vs.duration_minutes, vs.category
+            vs.price, vs.custom_price, vs.duration_minutes, vs.category
      FROM vendor_services vs
      WHERE vs.id = $1::uuid`,
     [vendorServiceId]
@@ -232,10 +233,12 @@ export async function computeVendorPackagePurchase(params: {
     (Number(details.totalSessions) < 0 && Number.isFinite(Number(details.totalSessions))) ||
     (Number(meta.sessionCount) < 0 && Number.isFinite(Number(meta.sessionCount)));
 
-  const priceNum = Math.max(
-    0,
-    Number(details.price ?? details.packagePrice ?? vs.price ?? vs.custom_price ?? 0) || 0
-  );
+  const priceNum = resolvePackageCustomerSellingPrice({
+    vendorCustomPrice: vs.custom_price,
+    vendorPrice: vs.price,
+    packageDetailsPrice: details.price ?? details.packagePrice,
+    packagePrice: meta.packagePrice ?? meta.price,
+  });
   const displayName = String(vs.service_name || meta.serviceName || 'Package').trim() || 'Package';
   const serviceType = String(vs.category || meta.serviceType || 'walking')
     .toLowerCase()
@@ -377,6 +380,13 @@ export async function insertPackagePurchaseRows(
     policy?: PackagePurchasePolicyInput | null;
     /** Optional total charged including GST + platform fees, written to `total_with_tax`. */
     totalCharged?: number | null;
+    gstAmount?: number | null;
+    cgstAmount?: number | null;
+    sgstAmount?: number | null;
+    igstAmount?: number | null;
+    isInterState?: boolean | null;
+    gstRate?: number | null;
+    taxableAmount?: number | null;
   }
 ): Promise<{ purchase: Record<string, unknown> }> {
   const {
@@ -478,6 +488,34 @@ export async function insertPackagePurchaseRows(
     if (totalCharged != null) {
       cols.push('total_with_tax');
       vals.push(totalCharged);
+    }
+    if (opts.taxableAmount != null) {
+      cols.push('taxable_amount');
+      vals.push(opts.taxableAmount);
+    }
+    if (opts.gstRate != null) {
+      cols.push('tax_rate');
+      vals.push(opts.gstRate);
+    }
+    if (opts.gstAmount != null) {
+      cols.push('tax_amount');
+      vals.push(opts.gstAmount);
+    }
+    if (opts.cgstAmount != null) {
+      cols.push('cgst_amount');
+      vals.push(opts.cgstAmount);
+    }
+    if (opts.sgstAmount != null) {
+      cols.push('sgst_amount');
+      vals.push(opts.sgstAmount);
+    }
+    if (opts.igstAmount != null) {
+      cols.push('igst_amount');
+      vals.push(opts.igstAmount);
+    }
+    if (opts.isInterState === true || opts.isInterState === false) {
+      cols.push('is_inter_state');
+      vals.push(opts.isInterState);
     }
 
     const ph = cols.map((_, i) => `$${i + 1}`).join(', ');
@@ -600,6 +638,12 @@ function isValidUuid(s: string): boolean {
 export type PackageRazorpayFeeBreakdown = {
   basePrice: number;
   gstAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  isInterState?: boolean;
+  gstRate?: number;
+  taxableAmount?: number;
   platformFee?: number;
   convenienceFee?: number;
   deliveryFee?: number;
@@ -675,6 +719,14 @@ export async function createRazorpayOrderForVendorPackage(params: {
   };
   if (feeBreakdown) {
     if (feeBreakdown.gstAmount != null) paymentRow.gst_amount = feeBreakdown.gstAmount;
+    if (feeBreakdown.cgstAmount != null) paymentRow.cgst_amount = feeBreakdown.cgstAmount;
+    if (feeBreakdown.sgstAmount != null) paymentRow.sgst_amount = feeBreakdown.sgstAmount;
+    if (feeBreakdown.igstAmount != null) paymentRow.igst_amount = feeBreakdown.igstAmount;
+    if (feeBreakdown.isInterState === true || feeBreakdown.isInterState === false) {
+      paymentRow.is_inter_state = feeBreakdown.isInterState;
+    }
+    if (feeBreakdown.taxableAmount != null) paymentRow.taxable_amount = feeBreakdown.taxableAmount;
+    if (feeBreakdown.gstRate != null) paymentRow.gst_rate = feeBreakdown.gstRate;
     if (feeBreakdown.platformFee != null) paymentRow.platform_fee = feeBreakdown.platformFee;
     if (feeBreakdown.convenienceFee != null) paymentRow.convenience_fee = feeBreakdown.convenienceFee;
     paymentRow.total_amount = amt;

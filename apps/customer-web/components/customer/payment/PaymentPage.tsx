@@ -153,31 +153,29 @@ export function PaymentPage({
     isInterState: false,
   });
 
-  const applyDefaultGstBreakdown = useCallback(
-    (ratePct: number) => {
-      const totalTax = (baseAmount * ratePct) / 100;
-      setTaxBreakdown({
-        subtotal: baseAmount,
-        cgst: totalTax / 2,
-        sgst: totalTax / 2,
-        igst: 0,
-        totalTax,
-        total: baseAmount + totalTax,
-        taxRate: ratePct,
-        isInterState: false,
-      });
-    },
-    [baseAmount]
-  );
+  const clearAuthoritativeGstBreakdown = useCallback(() => {
+    setTaxBreakdown({
+      subtotal: baseAmount,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      totalTax: 0,
+      total: baseAmount,
+      taxRate: 0,
+      isInterState: false,
+    });
+  }, [baseAmount]);
 
   const calculateTax = useCallback(async () => {
     const addr = address;
+    const hasState = Boolean(addr?.state && String(addr.state).trim());
+    const hasCity = Boolean(addr?.city && String(addr.city).trim());
     const customerLocation =
-      addr?.state && String(addr.state).trim()
+      hasState || hasCity
         ? {
-            state: String(addr.state).trim(),
-            city: addr.city,
-            pincode: addr.pincode,
+            state: hasState ? String(addr.state).trim() : undefined,
+            city: addr?.city,
+            pincode: addr?.pincode,
           }
         : undefined;
 
@@ -197,6 +195,7 @@ export function PaymentPage({
         customerId,
         customerPhone,
         customerLocation,
+        addressId,
       });
 
       if (taxCalculateResponseHasPayload(taxRes)) {
@@ -205,12 +204,12 @@ export function PaymentPage({
         const igst = taxRes.totalIGST || 0;
         const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
         const rawRate = Number(taxRes.items?.[0]?.taxRate);
-        const declaredRate = Number.isFinite(rawRate) ? rawRate : 18;
+        const declaredRate = Number.isFinite(rawRate) ? rawRate : 0;
         const taxRate = resolveGstDisplayRatePercent(
           baseAmount,
           totalTax,
           declaredRate,
-          18
+          0
         );
         const interState =
           typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0;
@@ -229,18 +228,19 @@ export function PaymentPage({
       }
 
       if (baseAmount > 0) {
-        console.warn('Tax calculate returned no usable items; using default 18% split', taxRes);
-        applyDefaultGstBreakdown(18);
+        console.warn('Tax calculate returned no usable items; not applying a fallback GST split', taxRes);
+        clearAuthoritativeGstBreakdown();
       }
     } catch (error) {
-      console.error('Tax calculation error, using default 18%:', error);
+      console.error('Tax calculation error; not applying a fallback GST split:', error);
       if (baseAmount > 0) {
-        applyDefaultGstBreakdown(18);
+        clearAuthoritativeGstBreakdown();
       }
     }
   }, [
     address,
-    applyDefaultGstBreakdown,
+    addressId,
+    clearAuthoritativeGstBreakdown,
     baseAmount,
     customerId,
     customerPhone,

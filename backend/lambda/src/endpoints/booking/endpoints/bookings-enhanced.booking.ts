@@ -76,6 +76,8 @@ import {
 import { reversePendingPackageSessionEarnings } from '../../../utils/package-session-earnings-reverse';
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
+import { calculateAuthoritativeServiceGst } from '../../../utils/calculate-authoritative-service-gst';
+import { snapshotToFinancialMeta } from '../../../utils/canonical-gst-snapshot';
 import {
   computeWalletBookingSplit,
   resolveBookingFinancialDiscountBuckets,
@@ -394,7 +396,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       
       totalSelectedServicesAmount = selectedServices.reduce((sum, s) => {
         const quantity = s.quantity || 1;
-        const price = s.price || 0;
+        const price = Number(s.originalPrice ?? s.original_price ?? s.price ?? 0) || 0;
         return sum + (price * quantity);
       }, 0);
       
@@ -528,53 +530,38 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     // Validate service exists and belongs to vendor
-    // ✅ CRITICAL FIX: Frontend sends serviceId which is service.service_id (base service UUID)
-    // NOT vendor_services.id. We need to look up by service_id column in vendor_services table.
-    // ✅ Diagnostics: when serviceId is 'diagnostics', resolve to a diagnostics vendor_service for this vendor
+    // Frontend may send vendor_services.id or catalog service UUID.
+    // Legacy diagnostics clients sent serviceId='diagnostics' — resolve only a
+    // diagnostic/lab vendor_services row (never the vendor's first service of any kind).
     let resolvedServiceId = serviceId;
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(serviceId || ''));
-    if (!isUUID && (String(serviceId).toLowerCase() === 'diagnostics' || String(serviceId).toLowerCase() === 'diagnostic')) {
-      const diagResult = await query(
-        `SELECT * FROM vendor_services WHERE vendor_id = $1::uuid AND (is_enabled = true OR is_enabled IS NULL) ORDER BY created_at ASC LIMIT 1`,
-        [vendorId]
-      );
-      if (diagResult.rows?.length > 0) {
-        const row = diagResult.rows[0];
-        resolvedServiceId = row.service_id || row.id;
-        console.log(`[BOOKING] Resolved diagnostics serviceId to ${resolvedServiceId} for vendor ${vendorId}`);
-      } else {
-        // Fallback: diagnostics center has tests but no vendor_services - create service + vendor_service
-        const diagTests = await query(
-          `SELECT id, price FROM diagnostic_tests WHERE vendor_id = $1::uuid LIMIT 1`,
-          [vendorId]
+    if (
+      !isUUID &&
+      (String(serviceId).toLowerCase() === 'diagnostics' || String(serviceId).toLowerCase() === 'diagnostic')
+    ) {
+      const {
+        resolveOrEnsureDiagnosticVendorService,
+      } = await import('../../../utils/resolve-diagnostic-vendor-service');
+      const diagnosticVs = await resolveOrEnsureDiagnosticVendorService(String(vendorId));
+      if (diagnosticVs?.vendorServiceId) {
+        resolvedServiceId = diagnosticVs.vendorServiceId;
+        console.log(
+          `[BOOKING] Resolved diagnostics serviceId to vendor_services ${resolvedServiceId} for vendor ${vendorId}`,
         );
-        if (diagTests.rows?.length > 0) {
-          const test = diagTests.rows[0];
-          const labServiceId = 'a1b2c3d4-e5f6-4789-a012-345678901234';
-          await query(
-            `INSERT INTO services (id, name, description, category, price, duration_minutes, is_active, created_at, updated_at)
-             VALUES ($1, 'Lab Tests', 'Diagnostic lab tests', 'diagnostics', $2, 30, true, NOW(), NOW())
-             ON CONFLICT (id) DO UPDATE SET updated_at = NOW()`,
-            [labServiceId, test.price || 0]
-          );
-          try {
-            await query(
-              `INSERT INTO vendor_services (vendor_id, service_id, service_name, service_style, publish_status, is_enabled, created_at, updated_at)
-               VALUES ($1, $2, 'Lab Tests', 'at_center', 'published', true, NOW(), NOW())`,
-              [vendorId, labServiceId]
-            );
-          } catch (insErr: any) {
-            if (!insErr.message?.includes('unique') && insErr.code !== '23505') {
-              console.warn('[BOOKING] vendor_services insert:', insErr.message);
-            }
-          }
-          resolvedServiceId = labServiceId;
-          console.log(`[BOOKING] Diagnostics: created lab service + vendor_service for vendor ${vendorId}`);
-        }
       }
     }
-    if (!isUUID && resolvedServiceId === serviceId && String(serviceId).toLowerCase() === 'diagnostics') {
-      return this.error('Diagnostics service not found for this vendor. Vendor must have diagnostic tests or services configured.', 404, 'NOT_FOUND', undefined, requestId);
+    if (
+      !isUUID &&
+      resolvedServiceId === serviceId &&
+      (String(serviceId).toLowerCase() === 'diagnostics' || String(serviceId).toLowerCase() === 'diagnostic')
+    ) {
+      return this.error(
+        'Diagnostics service not found for this vendor. Vendor must have diagnostic tests or a diagnostic catalogue service configured.',
+        404,
+        'NOT_FOUND',
+        undefined,
+        requestId,
+      );
     }
     const lookupServiceId = resolvedServiceId;
 
@@ -1788,6 +1775,47 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             0,
             Math.round((servicePriceForMeta - vendorDisc - platformDisc - couponDisc) * 100) / 100
           );
+          let authoritativeGst: Awaited<ReturnType<typeof calculateAuthoritativeServiceGst>> | null = null;
+          try {
+            authoritativeGst = await calculateAuthoritativeServiceGst({
+              taxableAmount: derivedSubtotalAfterDiscounts,
+              vendorId: settlementVendorId || String(bookingData.vendor_id ?? body.vendorId ?? ''),
+              serviceId: String(bookingData.service_id ?? body.serviceId ?? ''),
+              customerId: String(bookingData.customer_id ?? customerId ?? ''),
+              addressId: addressIdToStore,
+              customerState: body.state || body.customerState || undefined,
+              customerCity: body.city || body.customerCity || undefined,
+              serviceStyle: String(bookingData.service_type ?? body.serviceType ?? ''),
+              category: String(body.serviceCategory ?? body.category ?? ''),
+            });
+          } catch (gstErr) {
+            console.error('[BOOKING] Authoritative GST calculation failed:', gstErr);
+            const { isGstConfigurationError } = await import(
+              '../../../lib/services/gst-catalog-role-resolution'
+            );
+            const { isGstPlaceOfSupplyError } = await import('../../../lib/gst-place-of-supply');
+            const message =
+              isGstConfigurationError(gstErr) || isGstPlaceOfSupplyError(gstErr)
+                ? gstErr.message
+                : 'Unable to calculate GST for this booking. Please retry.';
+            const code = isGstPlaceOfSupplyError(gstErr)
+              ? 'GST_PLACE_OF_SUPPLY_UNKNOWN'
+              : 'GST_CONFIGURATION_MISSING';
+            return this.error(message, 400, code, undefined, requestId);
+          }
+          const gstMeta = snapshotToFinancialMeta(authoritativeGst);
+          bookingData.tax_amount = gstMeta.totalTax;
+          const gstFinalPaid = Math.round(
+            (derivedSubtotalAfterDiscounts +
+              gstMeta.totalTax +
+              (parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0) +
+              (parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0) +
+              (parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0)) *
+              100
+          ) / 100;
+          // Backend-authoritative all-in: keep booking.total_amount and wp_financial_meta.finalPaid aligned.
+          const authoritativeFinalPaid = gstFinalPaid;
+          bookingData.total_amount = authoritativeFinalPaid;
           let enrichedMeta = settlementVendorId
             ? await enrichFinancialMetaWithSettlement({
                 vendorId: settlementVendorId,
@@ -1799,15 +1827,15 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 platformPromotionId: resolvedBookingPromotions?.platformPromotionId,
                 couponFundingType,
                 subtotalAfterDiscounts: derivedSubtotalAfterDiscounts,
-                cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
-                sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
-                igst: parseFloat(String(fm.igst ?? 0)) || 0,
-                totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+                cgst: gstMeta.cgst,
+                sgst: gstMeta.sgst,
+                igst: gstMeta.igst,
+                totalTax: gstMeta.totalTax,
                 platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
                 convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
                 deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
                 walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
-                finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+                finalPaid: authoritativeFinalPaid,
               })
             : {
                 servicePrice: servicePriceForMeta,
@@ -1815,38 +1843,46 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 platformDiscount: platformDisc,
                 couponDiscount: couponDisc,
                 subtotalAfterDiscounts: derivedSubtotalAfterDiscounts || undefined,
-                cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
-                sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
-                igst: parseFloat(String(fm.igst ?? 0)) || 0,
-                totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+                cgst: gstMeta.cgst,
+                sgst: gstMeta.sgst,
+                igst: gstMeta.igst,
+                totalTax: gstMeta.totalTax,
                 platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
                 convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
                 deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
                 walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
-                finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+                finalPaid: authoritativeFinalPaid,
               };
           if (!settlementVendorId) {
             Object.assign(enrichedMeta, {
               subtotalAfterDiscounts: derivedSubtotalAfterDiscounts || undefined,
-              cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
-              sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
-              igst: parseFloat(String(fm.igst ?? 0)) || 0,
-              totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+              cgst: gstMeta.cgst,
+              sgst: gstMeta.sgst,
+              igst: gstMeta.igst,
+              totalTax: gstMeta.totalTax,
+              isInterState: gstMeta.isInterState,
+              taxableAmount: gstMeta.taxableAmount,
+              gstRate: gstMeta.gstRate,
+              gstAuthority: 'backend',
               platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
               convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
               deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
               walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
-              finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+              finalPaid: authoritativeFinalPaid,
             });
           } else {
             enrichedMeta.subtotalAfterDiscounts =
               parseFloat(String(enrichedMeta.subtotalAfterDiscounts ?? 0)) ||
               derivedSubtotalAfterDiscounts;
-            enrichedMeta.finalPaid = Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount;
-            enrichedMeta.cgst = parseFloat(String(fm.cgst ?? 0)) || 0;
-            enrichedMeta.sgst = parseFloat(String(fm.sgst ?? 0)) || 0;
-            enrichedMeta.igst = parseFloat(String(fm.igst ?? 0)) || 0;
-            enrichedMeta.totalTax = parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0;
+            enrichedMeta.finalPaid = authoritativeFinalPaid;
+            enrichedMeta.cgst = gstMeta.cgst;
+            enrichedMeta.sgst = gstMeta.sgst;
+            enrichedMeta.igst = gstMeta.igst;
+            enrichedMeta.totalTax = gstMeta.totalTax;
+            (enrichedMeta as Record<string, unknown>).isInterState = gstMeta.isInterState;
+            (enrichedMeta as Record<string, unknown>).taxableAmount = gstMeta.taxableAmount;
+            (enrichedMeta as Record<string, unknown>).gstRate = gstMeta.gstRate;
+            (enrichedMeta as Record<string, unknown>).gstAuthority = 'backend';
             enrichedMeta.platformFee = parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0;
             enrichedMeta.convenienceFee =
               parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0;

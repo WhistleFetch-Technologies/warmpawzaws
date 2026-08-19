@@ -192,10 +192,26 @@ export async function createPackageBookingsAfterPayment(
     }
 
     if (payUuid) {
-      await query(
-        `UPDATE payments SET booking_id = $1::uuid WHERE id = $2::uuid AND booking_id IS NULL`,
+      const linked = await query(
+        `UPDATE payments SET booking_id = $1::uuid WHERE id = $2::uuid AND booking_id IS NULL
+         RETURNING id`,
         [parentBookingId, payUuid]
-      ).catch(() => undefined);
+      );
+      if (!linked.rows?.length) {
+        const existing = await query(
+          `SELECT booking_id::text AS booking_id FROM payments WHERE id = $1::uuid LIMIT 1`,
+          [payUuid]
+        );
+        const already = String(existing.rows?.[0]?.booking_id || '');
+        if (already && already !== parentBookingId) {
+          throw new Error(
+            `Package payment ${payUuid} is already linked to booking ${already}, expected ${parentBookingId}`
+          );
+        }
+        if (!already) {
+          throw new Error(`Failed to link package payment ${payUuid} to parent booking ${parentBookingId}`);
+        }
+      }
     }
 
     // Vendor notification — package-level

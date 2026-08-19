@@ -103,16 +103,106 @@ export function displayStateFromKey(key: string): string {
   return DISPLAY_NAME[key] || key.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export type GstSupplyClassification = 'intra_state' | 'inter_state' | 'unknown';
+
+/**
+ * Classify place of supply. Unknown is not inter-state — callers must fail closed
+ * for service/package GST instead of silently charging IGST.
+ */
+export function classifyGstPlaceOfSupply(
+  customerStateKey: string | undefined,
+  vendorStateKey: string | undefined
+): GstSupplyClassification {
+  if (!customerStateKey || !vendorStateKey) return 'unknown';
+  return customerStateKey === vendorStateKey ? 'intra_state' : 'inter_state';
+}
+
 /**
  * Inter-state supply → IGST. Intra-state (same normalized state key) → CGST + SGST.
- * If either place of supply is unknown, defaults to inter-state (IGST) — conservative compliance fallback.
+ * Product/legacy callers still treat unknown as inter-state. Service and package
+ * GST must use {@link classifyGstPlaceOfSupply} and fail closed on `unknown`
+ * so a known same-state deal is never silently converted to IGST.
  */
 export function isGstInterstateSupply(
   customerStateKey: string | undefined,
   vendorStateKey: string | undefined
 ): boolean {
-  if (!customerStateKey || !vendorStateKey) return true;
-  return customerStateKey !== vendorStateKey;
+  const kind = classifyGstPlaceOfSupply(customerStateKey, vendorStateKey);
+  if (kind === 'unknown') return true;
+  return kind === 'inter_state';
+}
+
+export class GstPlaceOfSupplyError extends Error {
+  readonly code = 'GST_PLACE_OF_SUPPLY_UNKNOWN';
+  constructor(message: string) {
+    super(message);
+    this.name = 'GstPlaceOfSupplyError';
+  }
+}
+
+export function isGstPlaceOfSupplyError(err: unknown): err is GstPlaceOfSupplyError {
+  return (
+    err instanceof GstPlaceOfSupplyError ||
+    (typeof err === 'object' &&
+      err != null &&
+      (err as { code?: string }).code === 'GST_PLACE_OF_SUPPLY_UNKNOWN')
+  );
+}
+
+export function missingGstPlaceOfSupplyError(): GstPlaceOfSupplyError {
+  return new GstPlaceOfSupplyError(
+    'Unable to determine GST place of supply. Vendor and customer state are required to choose CGST+SGST or IGST.',
+  );
+}
+
+/**
+ * Build a GST location from stored vendor/customer fields.
+ * Order: structured state/city columns, then JSON address, then plain-text inference.
+ * Does not invent Karnataka from "Bangalore vendor" unless city/address actually maps.
+ */
+export function locationFromStoredFields(params: {
+  state?: unknown;
+  city?: unknown;
+  address?: unknown;
+}): { state?: string; city?: string } | undefined {
+  const state = params.state != null ? String(params.state).trim() : '';
+  const city = params.city != null ? String(params.city).trim() : '';
+  if (state || city) {
+    return { state: state || undefined, city: city || undefined };
+  }
+
+  const raw = params.address;
+  if (raw == null || raw === '') return undefined;
+
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    const st = o.state != null ? String(o.state).trim() : '';
+    const ct = o.city != null ? String(o.city).trim() : '';
+    if (st || ct) return { state: st || undefined, city: ct || undefined };
+    return undefined;
+  }
+
+  if (typeof raw !== 'string') return undefined;
+  const s = raw.trim();
+  if (!s) return undefined;
+  if (s.startsWith('{') || s.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(s) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const st = parsed.state != null ? String(parsed.state).trim() : '';
+        const ct = parsed.city != null ? String(parsed.city).trim() : '';
+        if (st || ct) return { state: st || undefined, city: ct || undefined };
+      }
+    } catch {
+      /* fall through to plain-text inference */
+    }
+  }
+  const inferred = inferStateFromPlainAddressText(s);
+  if (!inferred) return undefined;
+  return {
+    state: displayStateFromKey(inferred.stateKey),
+    city: inferred.city,
+  };
 }
 
 /** Infer state (and optional city) from a single free-text address line. */

@@ -7,8 +7,13 @@
 
 import { query, select } from '../database/rds-connection';
 import { isValidUUID } from '../types/entities';
-import { resolveCatalogCategoryUuidFromRef } from '../lib/services/gst-catalog-role-resolution';
+import {
+  aliasGstCatalogCategoryRef,
+  resolveCatalogCategoryUuidFromRef,
+} from '../lib/services/gst-catalog-role-resolution';
 import type { TaxItem } from '../lib/services/tax-calculation-service';
+
+export { aliasGstCatalogCategoryRef };
 
 /** Vendor roles that receive 0% GST on service_booking when catalogue category is missing. */
 export const VET_VENDOR_ROLE_NAMES = [
@@ -103,10 +108,12 @@ export async function resolveGstCatalogCategoryRefForBooking(params: {
   }
 
   const catRef = params.categoryIdFromCatalog ? String(params.categoryIdFromCatalog).trim() : '';
-  if (catRef) return catRef;
+  if (catRef) return aliasGstCatalogCategoryRef(catRef);
 
   const fallback = params.categoryFallback ? String(params.categoryFallback).trim() : '';
-  if (fallback && fallback.toLowerCase() !== 'pet_services') return fallback;
+  if (fallback && fallback.toLowerCase() !== 'pet_services') {
+    return aliasGstCatalogCategoryRef(fallback);
+  }
 
   // Last resort: vet vendors with no service/catalog category signal → veterinary (0%).
   if (isVetVendorRoleName(params.vendorRoleName)) {
