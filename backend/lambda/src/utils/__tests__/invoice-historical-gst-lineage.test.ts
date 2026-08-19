@@ -297,15 +297,6 @@ describe('historical invoice GST lineage vs Admin reports', () => {
   });
 
   test('stored invoice document and regeneration share the same historical GST', () => {
-    const storedInvoice = {
-      taxableValue: 1000,
-      taxAmount: 0,
-      cgst: 0,
-      sgst: 0,
-      igst: 0,
-      gstRate: 0,
-      total: 1000,
-    };
     const regenerated = resolveBookingInvoiceAmounts({
       basePrice: 1000,
       bookingTaxAmount: 0,
@@ -313,6 +304,49 @@ describe('historical invoice GST lineage vs Admin reports', () => {
       catalogGstRate: 18,
       payment: { gstAmount: 0, amount: 1000, totalAmount: 1000 },
     });
-    expect(regenerated).toEqual(storedInvoice);
+    expect(regenerated).toMatchObject({
+      taxableValue: 1000,
+      taxAmount: 0,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      gstRate: 0,
+      total: 1000,
+      unexplainedVariance: 0,
+    });
+  });
+
+  test('captured payment is authoritative; unexplained extra is not GST', () => {
+    const invoice = resolveBookingInvoiceAmounts({
+      basePrice: 1485,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1485,
+      catalogGstRate: 18,
+      payment: { gstAmount: 0, amount: 1752.3, totalAmount: 1752.3 },
+    });
+    expect(invoice.total).toBe(1752.3);
+    expect(invoice.taxAmount).toBe(0);
+    expect(invoice.unexplainedVariance).toBe(267.3);
+    expect(invoice.reconciliationNote).toBeTruthy();
+  });
+
+  test('stored platform fee plus GST reconciles to captured payment', () => {
+    const invoice = resolveBookingInvoiceAmounts({
+      basePrice: 1000,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1000,
+      isInterState: false,
+      payment: {
+        gstAmount: 180,
+        cgstAmount: 90,
+        sgstAmount: 90,
+        platformFee: 40,
+        totalAmount: 1220,
+      },
+    });
+    expect(invoice.taxAmount).toBe(180);
+    expect(invoice.platformFee).toBe(40);
+    expect(invoice.total).toBe(1220);
+    expect(invoice.unexplainedVariance).toBe(0);
   });
 });

@@ -792,6 +792,8 @@ interface InvoiceData {
   totalTax: number;
   shipping: number;
   discount: number;
+  platformFee?: number;
+  convenienceFee?: number;
   total: number;
   isInterState: boolean;
   placeOfSupply: string;
@@ -800,6 +802,7 @@ interface InvoiceData {
    * Ecommerce Settlement Engine plan §0: GST is fixed to the original price even when
    * the customer paid less, which is a non-default treatment under Section 15 CGST Act). */
   discountComplianceNote?: string;
+  reconciliationNote?: string;
 }
 
 /** Compatible with migration 021 invoices table; extended columns live in invoice_data until 1047 is applied. */
@@ -975,7 +978,10 @@ const BOOKING_FOR_INVOICE_SQL = `
          pay.gst_amount as payment_gst_amount,
          pay.cgst_amount as payment_cgst_amount,
          pay.sgst_amount as payment_sgst_amount,
-         pay.igst_amount as payment_igst_amount
+         pay.igst_amount as payment_igst_amount,
+         pay.platform_fee as payment_platform_fee,
+         pay.convenience_fee as payment_convenience_fee,
+         pay.delivery_fee as payment_delivery_fee
   FROM bookings b
   LEFT JOIN vendors v ON b.vendor_id = v.id
   LEFT JOIN customers c ON b.customer_id = c.id
@@ -983,7 +989,8 @@ const BOOKING_FOR_INVOICE_SQL = `
   LEFT JOIN service_catalog sc ON sc.id = COALESCE(vs.service_id, b.service_id)
   LEFT JOIN services s ON s.id = b.service_id
   LEFT JOIN LATERAL (
-    SELECT p.amount, p.total_amount, p.gst_amount, p.cgst_amount, p.sgst_amount, p.igst_amount
+    SELECT p.amount, p.total_amount, p.gst_amount, p.cgst_amount, p.sgst_amount, p.igst_amount,
+           p.platform_fee, p.convenience_fee, p.delivery_fee
     FROM payments p
     WHERE p.booking_id = b.id
     ORDER BY
@@ -1128,6 +1135,9 @@ async function buildBookingInvoiceData(params: {
     isInterState: storedIsInterState,
   });
   const { taxAmount, cgst, sgst, igst, gstRate, total: totalAmount } = amounts;
+  const platformFee = amounts.platformFee || 0;
+  const convenienceFee = amounts.convenienceFee || 0;
+  const deliveryFee = amounts.deliveryFee || 0;
   const isInterState = storedIsInterState === true;
 
   const selectedServices = parseSelectedServices(booking.selected_services);
@@ -1206,12 +1216,15 @@ async function buildBookingInvoiceData(params: {
     sgst,
     igst,
     totalTax: taxAmount,
-    shipping: 0,
+    shipping: deliveryFee,
+    platformFee,
+    convenienceFee,
     discount: discountAmount,
     total,
     isInterState,
     placeOfSupply: booking.customer_state || booking.vendor_state || '',
     amountInWords: numberToWords(Math.round(total)),
+    reconciliationNote: amounts.reconciliationNote,
   };
 }
 
@@ -1290,12 +1303,15 @@ function normalizeInvoiceDataForHtml(raw: Record<string, any>): InvoiceData {
     igst: Number(raw.igst) || 0,
     totalTax: Number(raw.totalTax ?? raw.tax_amount) || 0,
     shipping: Number(raw.shipping) || 0,
+    platformFee: Number(raw.platformFee ?? raw.platform_fee) || 0,
+    convenienceFee: Number(raw.convenienceFee ?? raw.convenience_fee) || 0,
     discount: Number(raw.discount) || 0,
     total,
     isInterState: Boolean(raw.isInterState ?? raw.is_inter_state),
     placeOfSupply: raw.placeOfSupply || raw.place_of_supply || '',
     amountInWords: raw.amountInWords || numberToWords(Math.round(total)),
     discountComplianceNote: raw.discountComplianceNote || raw.discount_compliance_note || undefined,
+    reconciliationNote: raw.reconciliationNote || raw.reconciliation_note || undefined,
   };
 }
 
@@ -1453,9 +1469,21 @@ function generateInvoiceHTML(data: InvoiceData): string {
             <td class="text-right">₹${data.sgst.toFixed(2)}</td>
           </tr>
         `}
+        ${data.platformFee && data.platformFee > 0 ? `
+          <tr>
+            <td>Platform fee</td>
+            <td class="text-right">₹${data.platformFee.toFixed(2)}</td>
+          </tr>
+        ` : ''}
+        ${data.convenienceFee && data.convenienceFee > 0 ? `
+          <tr>
+            <td>Convenience fee</td>
+            <td class="text-right">₹${data.convenienceFee.toFixed(2)}</td>
+          </tr>
+        ` : ''}
         ${data.shipping > 0 ? `
           <tr>
-            <td>Shipping</td>
+            <td>Delivery / Shipping</td>
             <td class="text-right">₹${data.shipping.toFixed(2)}</td>
           </tr>
         ` : ''}
@@ -1479,6 +1507,11 @@ function generateInvoiceHTML(data: InvoiceData): string {
     ${data.discountComplianceNote ? `
     <div class="compliance-note" style="margin-top: 12px; padding: 10px 14px; background: #fff8e1; border: 1px solid #f0d795; border-radius: 6px; font-size: 11px; color: #5c4a1a; line-height: 1.5;">
       <strong>Note on GST &amp; Discount:</strong> ${data.discountComplianceNote}
+    </div>
+    ` : ''}
+    ${data.reconciliationNote ? `
+    <div class="compliance-note" style="margin-top: 12px; padding: 10px 14px; background: #f4f6f8; border: 1px solid #d0d7de; border-radius: 6px; font-size: 11px; color: #333; line-height: 1.5;">
+      <strong>Payment reconciliation:</strong> ${data.reconciliationNote}
     </div>
     ` : ''}
 

@@ -14,6 +14,24 @@ export type BookingInvoicePaymentTax = {
   sgstAmount?: unknown;
   igstAmount?: unknown;
   isInterState?: unknown;
+  platformFee?: unknown;
+  convenienceFee?: unknown;
+  deliveryFee?: unknown;
+  walletAmount?: unknown;
+};
+
+export type BookingInvoiceFinancialMeta = {
+  cgst?: unknown;
+  sgst?: unknown;
+  igst?: unknown;
+  totalTax?: unknown;
+  finalPaid?: unknown;
+  taxableAmount?: unknown;
+  isInterState?: unknown;
+  platformFee?: unknown;
+  convenienceFee?: unknown;
+  deliveryFee?: unknown;
+  walletAmount?: unknown;
 };
 
 export type BookingInvoiceAmountInput = {
@@ -21,15 +39,7 @@ export type BookingInvoiceAmountInput = {
   bookingTaxAmount: number;
   bookingTotalAmount: number;
   discountAmount?: number;
-  financialMeta?: {
-    cgst?: unknown;
-    sgst?: unknown;
-    igst?: unknown;
-    totalTax?: unknown;
-    finalPaid?: unknown;
-    taxableAmount?: unknown;
-    isInterState?: unknown;
-  } | null;
+  financialMeta?: BookingInvoiceFinancialMeta | null;
   payment?: BookingInvoicePaymentTax | null;
   isInterState?: boolean | null;
   /**
@@ -46,6 +56,13 @@ export type BookingInvoiceAmounts = {
   sgst: number;
   igst: number;
   gstRate: number;
+  platformFee: number;
+  convenienceFee: number;
+  deliveryFee: number;
+  explainedTotal: number;
+  customerPaid: number;
+  unexplainedVariance: number;
+  reconciliationNote?: string;
   total: number;
 };
 
@@ -62,6 +79,10 @@ export type BookingInvoiceAmounts = {
  * When every stored GST total is 0 or absent, the invoice stays 0%.
  * That explicit 0 is not "missing" and is never replaced by catalogGstRate.
  *
+ * The invoice total is the captured customer-paid amount. Stored GST/fees
+ * explain that total when they can. An unexplained remainder is reported,
+ * never reclassified as GST from today's catalogue rate.
+ *
  * Never uses current vendor price, current Admin GST card, or catalogGstRate
  * to invent or replace historical GST.
  */
@@ -69,7 +90,7 @@ export function resolveBookingInvoiceAmounts(input: BookingInvoiceAmountInput): 
   const discount = num(input.discountAmount);
   const meta = input.financialMeta;
   const pay = input.payment;
-  const metaTaxable = num((meta as { taxableAmount?: unknown } | null | undefined)?.taxableAmount);
+  const metaTaxable = num(meta?.taxableAmount);
   const taxableValue =
     metaTaxable > 0.009 ? metaTaxable : Math.max(0, num(input.basePrice) - discount);
 
@@ -115,21 +136,63 @@ export function resolveBookingInvoiceAmounts(input: BookingInvoiceAmountInput): 
       ? Math.round((taxAmount / taxableValue) * 10000) / 100
       : 0;
 
-  const reconstructed = Math.max(0, Math.round((taxableValue + taxAmount - discount) * 100) / 100);
+  const platformFee = num(pay?.platformFee) || num(meta?.platformFee);
+  const convenienceFee = num(pay?.convenienceFee) || num(meta?.convenienceFee);
+  const deliveryFee = num(pay?.deliveryFee) || num(meta?.deliveryFee);
+  const explainedTotal = Math.max(
+    0,
+    Math.round((taxableValue + taxAmount + platformFee + convenienceFee + deliveryFee) * 100) / 100,
+  );
+  const customerPaid = resolveHistoricalCustomerPaid(input, explainedTotal);
+  const rawVariance = customerPaid > 0.009 ? Math.round((customerPaid - explainedTotal) * 100) / 100 : 0;
+  const unexplainedVariance = Math.abs(rawVariance) <= 0.05 ? 0 : rawVariance;
+  const total = customerPaid > 0.009 ? customerPaid : explainedTotal;
+  const reconciliationNote =
+    unexplainedVariance !== 0
+      ? `Captured payment of ₹${total.toFixed(2)} differs from classified historical components ` +
+        `(taxable ₹${taxableValue.toFixed(2)} + GST ₹${taxAmount.toFixed(2)} + fees ₹${(platformFee + convenienceFee + deliveryFee).toFixed(2)}) ` +
+        `by ₹${unexplainedVariance.toFixed(2)}. The difference is not treated as GST.`
+      : undefined;
+
+  return {
+    taxableValue,
+    taxAmount,
+    cgst,
+    sgst,
+    igst,
+    gstRate,
+    platformFee,
+    convenienceFee,
+    deliveryFee,
+    explainedTotal,
+    customerPaid,
+    unexplainedVariance,
+    reconciliationNote,
+    total,
+  };
+}
+
+function resolveHistoricalCustomerPaid(
+  input: BookingInvoiceAmountInput,
+  explainedTotal: number,
+): number {
+  const pay = input.payment;
+  const meta = input.financialMeta;
   const payTotal = num(pay?.totalAmount);
-  const bookingTotal = num(input.bookingTotalAmount);
+  if (payTotal > 0.009) return payTotal;
+  const payAmount = num(pay?.amount);
+  if (payAmount > 0.009) return payAmount;
   const metaPaid = num(meta?.finalPaid);
-
-  let total = reconstructed;
-  if (payTotal > 0.009 && Math.abs(payTotal - reconstructed) <= 0.05) {
-    total = payTotal;
-  } else if (metaPaid > 0.009 && Math.abs(metaPaid - reconstructed) <= 0.05) {
-    total = metaPaid;
-  } else if (taxAmount <= 0.009 && bookingTotal > 0.009) {
-    total = bookingTotal;
+  const wallet = num(pay?.walletAmount) || num(meta?.walletAmount);
+  if (metaPaid > 0.009 && wallet > 0.009) {
+    const cashPlusWallet = Math.round((metaPaid + wallet) * 100) / 100;
+    if (Math.abs(metaPaid - explainedTotal) <= 0.05) return metaPaid;
+    if (Math.abs(cashPlusWallet - explainedTotal) <= 0.05) return cashPlusWallet;
+    if (metaPaid + 0.01 < explainedTotal) return cashPlusWallet;
+    return metaPaid;
   }
-
-  return { taxableValue, taxAmount, cgst, sgst, igst, gstRate, total };
+  if (metaPaid > 0.009) return metaPaid;
+  return num(input.bookingTotalAmount);
 }
 
 /**
@@ -165,10 +228,32 @@ export function paymentTaxFromBookingRow(booking: Record<string, unknown>): Book
   const sgstAmount = num(booking.payment_sgst_amount ?? booking.paymentSgstAmount);
   const igstAmount = num(booking.payment_igst_amount ?? booking.paymentIgstAmount);
   const isInterState = booking.payment_is_inter_state ?? booking.paymentIsInterState;
-  if (gstAmount <= 0 && totalAmount <= 0 && amount <= 0 && cgstAmount + sgstAmount + igstAmount <= 0) {
+  const platformFee = num(booking.payment_platform_fee ?? booking.paymentPlatformFee);
+  const convenienceFee = num(booking.payment_convenience_fee ?? booking.paymentConvenienceFee);
+  const deliveryFee = num(booking.payment_delivery_fee ?? booking.paymentDeliveryFee);
+  const walletAmount = num(booking.payment_wallet_amount ?? booking.paymentWalletAmount);
+  if (
+    gstAmount <= 0 &&
+    totalAmount <= 0 &&
+    amount <= 0 &&
+    cgstAmount + sgstAmount + igstAmount <= 0 &&
+    platformFee + convenienceFee + deliveryFee + walletAmount <= 0
+  ) {
     return null;
   }
-  return { amount, totalAmount, gstAmount, cgstAmount, sgstAmount, igstAmount, isInterState };
+  return {
+    amount,
+    totalAmount,
+    gstAmount,
+    cgstAmount,
+    sgstAmount,
+    igstAmount,
+    isInterState,
+    platformFee,
+    convenienceFee,
+    deliveryFee,
+    walletAmount,
+  };
 }
 
 export function financialMetaFromBookingNotes(notes: unknown): BookingInvoiceAmountInput['financialMeta'] {
@@ -182,5 +267,9 @@ export function financialMetaFromBookingNotes(notes: unknown): BookingInvoiceAmo
     finalPaid: meta.finalPaid ?? meta.final_paid,
     taxableAmount: meta.taxableAmount ?? meta.taxable_amount,
     isInterState: meta.isInterState ?? meta.is_inter_state,
+    platformFee: meta.platformFee ?? meta.platform_fee,
+    convenienceFee: meta.convenienceFee ?? meta.convenience_fee,
+    deliveryFee: meta.deliveryFee ?? meta.delivery_fee,
+    walletAmount: meta.walletAmount ?? meta.wallet_amount,
   };
 }

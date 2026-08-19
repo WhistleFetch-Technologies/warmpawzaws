@@ -123,5 +123,55 @@ describe('resolveBookingInvoiceAmounts', () => {
     expect(amounts.igst).toBe(0);
     expect(amounts.gstRate).toBe(0);
     expect(amounts.total).toBe(1752.3);
+    expect(amounts.unexplainedVariance).toBe(267.3);
+    expect(amounts.reconciliationNote).toContain('not treated as GST');
+  });
+
+  it('explains a higher captured payment with stored platform fee, not GST', () => {
+    const amounts = resolveBookingInvoiceAmounts({
+      basePrice: 1000,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1000,
+      catalogGstRate: 18,
+      payment: {
+        gstAmount: 0,
+        amount: 1040,
+        totalAmount: 1040,
+        platformFee: 40,
+      },
+    });
+    expect(amounts.taxAmount).toBe(0);
+    expect(amounts.platformFee).toBe(40);
+    expect(amounts.unexplainedVariance).toBe(0);
+    expect(amounts.total).toBe(1040);
+    expect(amounts.reconciliationNote).toBeUndefined();
+  });
+
+  it('keeps stored GST when it explains the captured payment', () => {
+    const amounts = resolveBookingInvoiceAmounts({
+      basePrice: 1000,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1000,
+      isInterState: false,
+      catalogGstRate: 0,
+      payment: { gstAmount: 180, cgstAmount: 90, sgstAmount: 90, totalAmount: 1180 },
+    });
+    expect(amounts.taxAmount).toBe(180);
+    expect(amounts.total).toBe(1180);
+    expect(amounts.unexplainedVariance).toBe(0);
+  });
+
+  it('does not use today\'s GST rate to explain an unexplained payment gap', () => {
+    const amounts = resolveBookingInvoiceAmounts({
+      basePrice: 1000,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1000,
+      catalogGstRate: 18,
+      payment: { gstAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, totalAmount: 1180 },
+    });
+    expect(amounts.taxAmount).toBe(0);
+    expect(amounts.gstRate).toBe(0);
+    expect(amounts.total).toBe(1180);
+    expect(amounts.unexplainedVariance).toBe(180);
   });
 });
