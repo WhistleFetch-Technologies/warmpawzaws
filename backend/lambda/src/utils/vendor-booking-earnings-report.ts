@@ -131,6 +131,7 @@ type RawEarningsRow = {
   is_inter_state?: unknown;
   payment_total_amount?: unknown;
   payment_amount?: unknown;
+  payment_wallet_amount_used?: unknown;
   fee_breakdown?: unknown;
   earnings_metadata?: unknown;
   settlement_id?: unknown;
@@ -187,6 +188,7 @@ function rowToResolveContext(row: RawEarningsRow): BookingAccrualResolveContext 
       is_inter_state: row.is_inter_state,
       total_amount: row.payment_total_amount,
       amount: row.payment_amount,
+      wallet_amount_used: row.payment_wallet_amount_used,
       fee_breakdown: row.fee_breakdown,
     },
   };
@@ -204,22 +206,42 @@ export function resolveDiscountAmount(row: RawEarningsRow): number {
   return round2(Math.max(0, safeMoneyAmount(row.discount_amount)));
 }
 
+export type CustomerPaidOptions = {
+  bookingTotal?: number;
+  refundedAmount?: number;
+  packageSessionUnattributed?: boolean;
+};
+
+/**
+ * Admin Booking Earnings "Customer Paid" is captured customer money.
+ * Never reconstruct as serviceBase + inferred GST + fees.
+ * Never use vendor net, commission, or today's Admin GST card.
+ */
 export function computeCustomerPaidTotal(
-  serviceBase: number,
-  discountAmount: number,
-  fees: VendorAccrualFeeBreakdown,
+  _serviceBase: number,
+  _discountAmount: number,
+  _fees: VendorAccrualFeeBreakdown,
   payment?: PaymentAccrualSnapshot | null,
+  options?: CustomerPaidOptions,
 ): number {
-  const payTotal = safeMoneyAmount(payment?.total_amount);
-  if (payTotal > 0) return round2(payTotal);
+  if (options?.packageSessionUnattributed) return 0;
 
-  const payAmount = safeMoneyAmount(payment?.amount);
-  if (payAmount > 0) return round2(payAmount);
+  const refunded = round2(Math.max(0, safeMoneyAmount(options?.refundedAmount)));
+  const captured = safeMoneyAmount(payment?.amount);
+  const storedTotal = safeMoneyAmount(payment?.total_amount);
+  const wallet = safeMoneyAmount(payment?.wallet_amount_used ?? payment?.wallet_amount);
 
-  const taxableBase = round2(Math.max(0, serviceBase - discountAmount));
-  return round2(
-    taxableBase + fees.gstTotal + fees.platformFee + fees.convenienceFee + fees.deliveryFee,
-  );
+  if (captured > 0.009) {
+    return round2(Math.max(0, captured + wallet - refunded));
+  }
+  if (storedTotal > 0.009) {
+    return round2(Math.max(0, storedTotal - refunded));
+  }
+  const bookingTotal = safeMoneyAmount(options?.bookingTotal);
+  if (bookingTotal > 0.009) {
+    return round2(Math.max(0, bookingTotal - refunded));
+  }
+  return 0;
 }
 
 function emptyDayTotals(): VendorBookingEarningsDayTotals {
@@ -408,6 +430,7 @@ async function fetchRawEarningsRowsForIstRange(
             p.is_inter_state,
             p.total_amount AS payment_total_amount,
             p.amount AS payment_amount,
+            p.wallet_amount_used AS payment_wallet_amount_used,
             p.fee_breakdown,
             COALESCE(p.id::text, b.parent_booking_id::text, ve.booking_id::text) AS gst_identity
      FROM vendor_earnings ve
@@ -489,8 +512,9 @@ export async function buildVendorBookingEarningsLine(
     gstTotal: 0,
   };
   const breakdown = attributed ? resolvedBreakdown : emptyFees;
+  const isPackageSession = row.is_package_session === true || row.is_package_session === 't';
   const allocated = allocatedEarningsFromStored({
-    isPackageSession: row.is_package_session === true || row.is_package_session === 't',
+    isPackageSession,
     unlimited: row.unlimited_usage === true || row.unlimited_usage === 't',
     parentService: safeMoneyAmount(row.parent_service),
     sessionCount: Number(row.session_n || 0),
@@ -500,13 +524,16 @@ export async function buildVendorBookingEarningsLine(
     storedNet: safeMoneyAmount(row.earning_net_amount),
     commissionRate: safeMoneyAmount(row.commission_rate) || null,
   });
-  const serviceBase = allocated.gross > 0.009 && (row.is_package_session === true || row.is_package_session === 't')
+  const serviceBase = allocated.gross > 0.009 && isPackageSession
     ? allocated.gross
     : resolveServiceBase(row);
   const discountAmount = resolveDiscountAmount(row);
   const payment = attributed ? ctx.payment : null;
 
-  const customerPaidTotal = computeCustomerPaidTotal(serviceBase, discountAmount, breakdown, payment);
+  const customerPaidTotal = computeCustomerPaidTotal(serviceBase, discountAmount, breakdown, payment, {
+    bookingTotal: safeMoneyAmount(row.total_amount),
+    packageSessionUnattributed: isPackageSession && !attributed,
+  });
   const settlementBreakdown = resolveSettlementBreakdownForReport({
     earningsMetadata: row.earnings_metadata,
     bookingNotes: row.booking_notes,
