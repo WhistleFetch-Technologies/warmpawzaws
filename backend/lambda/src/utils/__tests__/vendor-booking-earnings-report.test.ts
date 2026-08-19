@@ -36,12 +36,22 @@ describe('vendor-booking-earnings-report', () => {
     ).toBe(0);
   });
 
-  test('computeCustomerPaidTotal uses payment total_amount when present', () => {
+  test('computeCustomerPaidTotal prefers Razorpay captured amount over stored total_amount', () => {
     const total = computeCustomerPaidTotal(
       1000,
       0,
       { platformFee: 20, convenienceFee: 0, deliveryFee: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 180 },
       { total_amount: 1200, amount: 1000 },
+    );
+    expect(total).toBe(1000);
+  });
+
+  test('computeCustomerPaidTotal adds wallet on top of captured amount', () => {
+    const total = computeCustomerPaidTotal(
+      1000,
+      0,
+      { platformFee: 0, convenienceFee: 0, deliveryFee: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstTotal: 0 },
+      { amount: 1000, wallet_amount_used: 200 },
     );
     expect(total).toBe(1200);
   });
@@ -98,6 +108,9 @@ describe('vendor-booking-earnings-report', () => {
     expect(first.gstTotal).toBe(2288.16);
     expect(second.gstTotal).toBe(0);
     expect(third.gstTotal).toBe(0);
+    expect(first.customerPaidTotal).toBe(15000.16);
+    expect(second.customerPaidTotal).toBe(0);
+    expect(third.customerPaidTotal).toBe(0);
     expect(first.vendorGross + second.vendorGross + third.vendorGross).toBe(12712);
     expect(first.vendorGross).toBe(4237.33);
     expect(third.vendorGross).toBe(4237.34);
@@ -255,5 +268,194 @@ describe('vendor-booking-earnings-report', () => {
       is_package_session: false,
     });
     expect(line.gstTotal).toBe(0);
+  });
+});
+
+const EMPTY_FEES = {
+  platformFee: 0,
+  convenienceFee: 0,
+  deliveryFee: 0,
+  cgstAmount: 0,
+  sgstAmount: 0,
+  igstAmount: 0,
+  gstTotal: 0,
+};
+
+describe('Booking Earnings Customer Paid uses captured payment', () => {
+  const inferredInclusive = (listed: number) =>
+    Math.round((listed + listed - listed / 1.18) * 100) / 100;
+
+  test('A. Nail Clipping captured ₹275 stays ₹275, not reconstructed ₹316.95', async () => {
+    expect(inferredInclusive(275)).toBe(316.95);
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'paws-us',
+      booking_id: '7d19e448-086c-45f0-a105-5cee9ef1820c',
+      base_price: 275,
+      total_amount: 275,
+      tax_amount: 0,
+      earning_total_amount: 275,
+      earning_commission_amount: 27.5,
+      earning_net_amount: 247.5,
+      payment_amount: 275,
+      gst_amount: 0,
+      category_name: 'Grooming',
+      is_package_session: false,
+    });
+    expect(line.customerPaidTotal).toBe(275);
+    expect(line.customerPaidTotal).not.toBe(316.95);
+    expect(line.gstTotal).toBe(0);
+    expect(line.vendorNet).toBe(247.5);
+  });
+
+  test('B. Swimming captured ₹1,800 stays ₹1,800, not reconstructed ₹2,074.58', async () => {
+    expect(inferredInclusive(1800)).toBe(2074.58);
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'k9',
+      booking_id: '6b49e9bd-18bf-4bd2-a01c-f022b26361ea',
+      base_price: 1800,
+      total_amount: 1800,
+      tax_amount: 0,
+      earning_total_amount: 1800,
+      earning_commission_amount: 180,
+      earning_net_amount: 1620,
+      payment_amount: 1800,
+      gst_amount: 0,
+      category_name: 'Boarding',
+      is_package_session: false,
+    });
+    expect(line.customerPaidTotal).toBe(1800);
+    expect(line.customerPaidTotal).not.toBe(2074.58);
+    expect(line.gstTotal).toBe(0);
+    expect(line.vendorGross).toBe(1800);
+    expect(line.commissionAmount).toBe(180);
+    expect(line.vendorNet).toBe(1620);
+  });
+
+  test('C. Beagle bath captured ₹1,620 stays ₹1,620, not reconstructed ₹1,836', async () => {
+    expect(Math.round((1593 + 1593 - 1593 / 1.18) * 100) / 100).toBe(1836);
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'pawsome',
+      booking_id: 'e1652035-33d8-4e3b-8afa-1f7d7a6dc013',
+      base_price: 1593,
+      total_amount: 1620,
+      tax_amount: 0,
+      earning_total_amount: 1350,
+      earning_commission_amount: 135,
+      earning_net_amount: 1215,
+      payment_amount: 1620,
+      gst_amount: 0,
+      category_name: 'Grooming',
+      is_package_session: false,
+    });
+    expect(line.customerPaidTotal).toBe(1620);
+    expect(line.customerPaidTotal).not.toBe(1836);
+    expect(line.customerPaidTotal).not.toBe(1836.05);
+    expect(line.gstTotal).toBe(0);
+    expect(line.serviceBase).toBe(1593);
+    expect(line.vendorNet).toBe(1215);
+  });
+
+  test('D. Refund reduces captured Customer Paid', () => {
+    expect(
+      computeCustomerPaidTotal(1620, 0, EMPTY_FEES, { amount: 1620 }, { refundedAmount: 200 }),
+    ).toBe(1420);
+  });
+
+  test('E. Customer Paid never uses vendor net', async () => {
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'walker',
+      booking_id: 'da326e65',
+      base_price: 21600,
+      total_amount: 21600,
+      tax_amount: 0,
+      earning_total_amount: 21600,
+      earning_commission_amount: 2160,
+      earning_net_amount: 19440,
+      payment_amount: 21600,
+      gst_amount: 0,
+      is_package_session: false,
+    });
+    expect(line.customerPaidTotal).toBe(21600);
+    expect(line.customerPaidTotal).not.toBe(line.vendorNet);
+    expect(line.vendorNet).toBe(19440);
+  });
+
+  test('F. Customer Paid never includes platform commission', () => {
+    expect(
+      computeCustomerPaidTotal(
+        1800,
+        0,
+        { ...EMPTY_FEES, platformFee: 180 },
+        { amount: 1800 },
+      ),
+    ).toBe(1800);
+  });
+
+  test('G. Customer Paid never gets GST added a second time', () => {
+    expect(
+      computeCustomerPaidTotal(
+        275,
+        0,
+        { ...EMPTY_FEES, gstTotal: 41.95 },
+        { amount: 275 },
+      ),
+    ).toBe(275);
+  });
+
+  test('E. Missing payment.amount does not add inferred 18% GST to Customer Paid', () => {
+    expect(
+      computeCustomerPaidTotal(
+        275,
+        0,
+        { ...EMPTY_FEES, gstTotal: 41.95, platformFee: 20 },
+        {},
+        { bookingTotal: 275 },
+      ),
+    ).toBe(275);
+  });
+
+  test('H. Package purchase Customer Paid comes from captured package payment', async () => {
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'vendor-1',
+      booking_id: '9fa3bab6',
+      parent_booking_id: 'ed864719',
+      payment_id: 'pay-1',
+      gst_identity: 'pay-1',
+      gst_attribute_booking_id: '9fa3bab6',
+      gst_amount: 2288.16,
+      payment_amount: 15000.16,
+      is_package_session: true,
+      parent_service: 12712,
+      session_n: 3,
+      session_seq: 1,
+      earning_total_amount: 4237.33,
+      earning_commission_amount: 423.73,
+      earning_net_amount: 3813.6,
+    });
+    expect(line.customerPaidTotal).toBe(15000.16);
+    expect(line.gstTotal).toBe(2288.16);
+  });
+
+  test('I. Later package session rows do not duplicate Customer Paid', async () => {
+    const line = await buildVendorBookingEarningsLine({
+      vendor_id: 'vendor-1',
+      booking_id: 'ed276f26',
+      parent_booking_id: 'ed864719',
+      payment_id: 'pay-1',
+      gst_identity: 'pay-1',
+      gst_attribute_booking_id: '9fa3bab6',
+      gst_amount: 2288.16,
+      payment_amount: 15000.16,
+      is_package_session: true,
+      parent_service: 12712,
+      session_n: 3,
+      session_seq: 2,
+      earning_total_amount: 4237.33,
+      earning_commission_amount: 423.73,
+      earning_net_amount: 3813.6,
+    });
+    expect(line.customerPaidTotal).toBe(0);
+    expect(line.gstTotal).toBe(0);
+    expect(line.vendorGross).toBeGreaterThan(0);
   });
 });

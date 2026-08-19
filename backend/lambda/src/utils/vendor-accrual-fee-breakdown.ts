@@ -65,6 +65,8 @@ export type PaymentAccrualSnapshot = {
   is_inter_state?: unknown;
   total_amount?: unknown;
   amount?: unknown;
+  wallet_amount_used?: unknown;
+  wallet_amount?: unknown;
   fee_breakdown?: unknown;
 };
 
@@ -431,6 +433,7 @@ type BookingAccrualRow = {
   gst_amount?: unknown;
   payment_total_amount?: unknown;
   payment_amount?: unknown;
+  payment_wallet_amount_used?: unknown;
   fee_breakdown?: unknown;
   payment_id?: unknown;
   parent_booking_id?: unknown;
@@ -446,7 +449,7 @@ export const SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL = `
        SELECT p.id, p.platform_fee, p.convenience_fee, p.delivery_fee,
               p.cgst_amount, p.sgst_amount, p.igst_amount, p.gst_amount,
               p.gst_rate, p.is_inter_state,
-              p.total_amount, p.amount, p.fee_breakdown, p.payment_status
+              p.total_amount, p.amount, p.wallet_amount_used, p.fee_breakdown, p.payment_status
        FROM payments p
        WHERE p.booking_id = COALESCE(
                CASE WHEN COALESCE(b.is_package_session, false) THEN parent_b.id END,
@@ -510,6 +513,7 @@ function rowToResolveContext(row: BookingAccrualRow): BookingAccrualResolveConte
       is_inter_state: row.is_inter_state,
       total_amount: row.payment_total_amount,
       amount: row.payment_amount,
+      wallet_amount_used: row.payment_wallet_amount_used,
       fee_breakdown: row.fee_breakdown,
     },
   };

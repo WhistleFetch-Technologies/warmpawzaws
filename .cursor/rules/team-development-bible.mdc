@@ -7,7 +7,7 @@ alwaysApply: true
 
 This rule is the **authoritative guide** for Cursor agents helping team members work on personal feature branches. Follow it unless the user explicitly overrides a specific step.
 
-**Related rules:** `branch-health.mdc` (personal dev branch + feature branches), `deployment.mdc` (deploy scripts), `git-cli.mdc` (git CLI), `customer-navigation.mdc` (customer-web nav stack), `endpoint-4-layer-parity.mdc` (customer API 4-layer split — **required** for any `backend/lambda/src/endpoints/customer/**` work), `optimization-exit-criteria.mdc` (measurable refactor sign-off — **required** for discovery/payload/pagination work; see `docs/optimization-exit-criteria.md`).
+**Related rules:** `branch-health.mdc` (personal dev branch + feature branches), `deployment.mdc` (deploy scripts), `git-cli.mdc` (git CLI), `customer-navigation.mdc` (customer-web nav stack), `endpoint-4-layer-parity.mdc` (customer API 4-layer split — **required** for any `backend/lambda/src/endpoints/customer/**` work), `optimization-exit-criteria.mdc` (measurable refactor sign-off — **required** for discovery/payload/pagination work; see `docs/optimization-exit-criteria.md`), `gst-financial-lineage-guard.mdc` (GST / Customer Paid / invoice / earnings **code** is protected — read `docs/GST_FINANCIAL_LINEAGE_GUARD.md` before editing; Admin GST cards are not blocked).
 
 ---
 
