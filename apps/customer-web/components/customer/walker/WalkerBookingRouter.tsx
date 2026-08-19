@@ -47,6 +47,9 @@ import {
   getWapptBookingSteps,
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 
@@ -62,6 +65,8 @@ interface WalkerBookingRouterProps {
   price?: number; // ✅ FIX: Add price
   duration?: number; // ✅ FIX: Add duration
   appointmentsMode?: boolean;
+  bookingDate?: string;
+  bookingTime?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -123,6 +128,8 @@ export function WalkerBookingRouter({
   price,
   duration,
   appointmentsMode = false,
+  bookingDate: preFilledDate,
+  bookingTime: preFilledTime,
   onBack, 
   onNavigate, 
   onViewBooking,
@@ -157,8 +164,8 @@ export function WalkerBookingRouter({
   const [selectedVendorServiceId, setSelectedVendorServiceId] = useState<string>(() =>
     serviceId ? String(serviceId) : selectedService ? String(selectedService) : ''
   );
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
+  const [selectedDate, setSelectedDate] = useState(preFilledDate || '');
+  const [selectedTime, setSelectedTime] = useState(preFilledTime || '');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [selectedAddress, setSelectedAddress] = useState<any>(null);
   const [pets, setPets] = useState<Pet[]>([]);
@@ -299,6 +306,32 @@ export function WalkerBookingRouter({
       setTimeSlots([]);
     }
   }, [selectedDate, vendorId, bookingServiceStyle]);
+
+  useEffect(() => {
+    if (!vendorId && !selectedDate && !selectedTime) return;
+    updateGuestBookingProgress({
+      kind: 'booking',
+      persona: 'walker',
+      vendorId: vendorId || undefined,
+      serviceId: serviceId || undefined,
+      serviceStyle: bookingServiceStyle || serviceStyle || undefined,
+      category: 'walker',
+      date: selectedDate || undefined,
+      time: selectedTime || undefined,
+      wapptMode: appointmentsMode === true,
+      resumeScreen: 'walker-booking',
+      returnPath: '/',
+      requiresPet: appointmentsMode !== true,
+    });
+  }, [vendorId, serviceId, bookingServiceStyle, serviceStyle, selectedDate, selectedTime, appointmentsMode]);
+
+  useEffect(() => {
+    if (!selectedTime || timeSlots.length === 0) return;
+    if (!isSelectedSlotStillAvailable(selectedTime, timeSlots)) {
+      setSelectedTime('');
+      toast.error('That time is no longer available. Please choose another slot.');
+    }
+  }, [timeSlots, selectedTime]);
 
   const loadTimeSlots = async (date: string) => {
     if (!vendorId) return;
@@ -623,6 +656,24 @@ export function WalkerBookingRouter({
   };
 
   const handleContinueFromBookingDetails = () => {
+    if (!hasAuthenticatedCustomerSession()) {
+      emitGuestAuthAnalytics('login_prompt_shown');
+      window.location.href = buildGuestAuthUrlForBooking({
+        kind: 'booking',
+        persona: 'walker',
+        category: 'walker',
+        vendorId,
+        serviceId,
+        serviceStyle: bookingServiceStyle,
+        date: selectedDate,
+        time: selectedTime,
+        wapptMode: appointmentsMode === true,
+        returnPath: '/',
+        resumeScreen: 'walker-booking',
+        requiresPet: appointmentsMode !== true,
+      });
+      return;
+    }
     if (!selectedDate || !selectedTime) {
       toast.error('Please select date and time');
       return;
@@ -632,7 +683,7 @@ export function WalkerBookingRouter({
       toast.error('This time slot is already booked. Please select a different time.');
       return;
     }
-    if (!selectedPet) {
+    if (!appointmentsMode && !selectedPet) {
       toast.error('Please select a pet');
       return;
     }

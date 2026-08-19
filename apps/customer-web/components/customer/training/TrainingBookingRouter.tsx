@@ -41,6 +41,9 @@ import {
   getWapptBookingSteps,
 } from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
 
@@ -462,6 +465,32 @@ export function TrainingBookingRouter({
   }, [selectedDate, vendorId, selectedServiceType, slotDurationMinutes, selectedVendorService?.id, serviceId]);
 
   useEffect(() => {
+    if (!vendorId && !selectedDate && !selectedTime) return;
+    updateGuestBookingProgress({
+      kind: 'booking',
+      persona: 'training',
+      vendorId: vendorId || undefined,
+      serviceId: serviceId || undefined,
+      serviceStyle: selectedServiceType || serviceStyle || undefined,
+      category: 'training',
+      date: selectedDate || undefined,
+      time: selectedTime || undefined,
+      wapptMode: appointmentsMode === true,
+      resumeScreen: 'training-booking',
+      returnPath: '/',
+      requiresPet: appointmentsMode !== true,
+    });
+  }, [vendorId, serviceId, selectedServiceType, serviceStyle, selectedDate, selectedTime, appointmentsMode]);
+
+  useEffect(() => {
+    if (!selectedTime || timeSlots.length === 0) return;
+    if (!isSelectedSlotStillAvailable(selectedTime, timeSlots)) {
+      setSelectedTime('');
+      toast.error('That time is no longer available. Please choose another slot.');
+    }
+  }, [timeSlots, selectedTime]);
+
+  useEffect(() => {
     loadCustomerData();
     if (vendorId && !appointmentsMode) {
       loadVendorServices();
@@ -622,6 +651,24 @@ export function TrainingBookingRouter({
   };
 
   const handleContinueFromBookingDetails = () => {
+    if (!hasAuthenticatedCustomerSession()) {
+      emitGuestAuthAnalytics('login_prompt_shown');
+      window.location.href = buildGuestAuthUrlForBooking({
+        kind: 'booking',
+        persona: 'training',
+        category: 'training',
+        vendorId,
+        serviceId,
+        serviceStyle: selectedServiceType,
+        date: selectedDate,
+        time: selectedTime,
+        wapptMode: appointmentsMode === true,
+        returnPath: '/',
+        resumeScreen: 'training-booking',
+        requiresPet: appointmentsMode !== true,
+      });
+      return;
+    }
     if (!selectedDate || !selectedTime) {
       toast.error('Please select date and time');
       return;
@@ -631,7 +678,7 @@ export function TrainingBookingRouter({
       toast.error('This time slot is already booked. Please select a different time.');
       return;
     }
-    if (!selectedPet) {
+    if (!appointmentsMode && !selectedPet) {
       toast.error('Please select a pet');
       return;
     }

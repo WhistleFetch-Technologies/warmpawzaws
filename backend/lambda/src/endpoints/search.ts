@@ -799,17 +799,51 @@ class UniversalSearchHandler extends BaseHandler {
 // HONO ROUTER SETUP
 // ============================================================================
 
+function stripPublicSearchSecrets(row: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!row || typeof row !== 'object') return row ?? null;
+  const next = { ...row };
+  delete next.phone;
+  delete next.email;
+  delete next.ownerPhone;
+  delete next.customerId;
+  delete next.customer_id;
+  delete next.ownerEmail;
+  return next;
+}
+
+function sanitizePublicSearchBody(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return body;
+  const parsed = body as Record<string, unknown>;
+  const vendors = Array.isArray(parsed.vendors)
+    ? parsed.vendors.map((v) => stripPublicSearchSecrets(v as Record<string, unknown>))
+    : parsed.vendors;
+  const services = Array.isArray(parsed.services)
+    ? parsed.services.map((s) => stripPublicSearchSecrets(s as Record<string, unknown>))
+    : parsed.services;
+  const products = Array.isArray(parsed.products)
+    ? parsed.products.map((p) => stripPublicSearchSecrets(p as Record<string, unknown>))
+    : parsed.products;
+  return { ...parsed, vendors, services, products };
+}
+
+async function executeUniversalSearch(c: any, searchHandler: UniversalSearchHandler, publicRead: boolean) {
+  const event = createApiGatewayEvent(c.req);
+  const context = createLambdaContext();
+  const result = await searchHandler.execute(event, context);
+  const parsed = JSON.parse(result.body);
+  const body = publicRead ? sanitizePublicSearchBody(parsed) : parsed;
+  return c.json(body, result.statusCode);
+}
+
 export function registerSearchEndpoints(app: Hono) {
   const searchHandler = new UniversalSearchHandler();
 
-  app.get('/search', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result = await searchHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
-  });
+  app.get('/search', async (c) => executeUniversalSearch(c, searchHandler, false));
 
-  app.get('/search/autocomplete', async (c) => {
+  /** Guest discovery alias — auth-middleware already treats /public/* as public-read. */
+  app.get('/public/search', async (c) => executeUniversalSearch(c, searchHandler, true));
+
+  const autocomplete = async (c: any) => {
     try {
       const term = (c.req.query('q') || '').trim();
       if (term.length < 2) {
@@ -834,7 +868,10 @@ export function registerSearchEndpoints(app: Hono) {
       console.error('[search/autocomplete] Error:', error);
       return c.json({ success: true, suggestions: [] });
     }
-  });
+  };
+
+  app.get('/search/autocomplete', autocomplete);
+  app.get('/public/search/autocomplete', autocomplete);
 }
 
 function createApiGatewayEvent(req: any): any {

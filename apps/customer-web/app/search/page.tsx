@@ -14,6 +14,8 @@ import { filterSearchRowsByLaunch } from '@/lib/search-filter-by-launch';
 import { resolveCustomerDiscoveryPhone } from '@/lib/customer-discovery-coords';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import { saveSearchContext } from '@/lib/search-context';
+import { saveGuestBookingIntent } from '@/lib/guest-booking-intent';
+import { emitGuestAuthAnalytics, isGuestApplicationState } from '@/lib/guest-auth-gate';
 import type { SearchVendorCardData } from '@/lib/search-vendor-card-data';
 import {
   buildSearchVendorDetailsUrl,
@@ -329,6 +331,18 @@ function SearchContent() {
   /** Bumps on explicit Search submit / Try again so the same query refetches. */
   const [searchNonce, setSearchNonce] = useState(0);
 
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set('q', query.trim());
+    if (category) params.set('category', category);
+    if (vendorIdParam) params.set('vendorId', vendorIdParam);
+    const next = params.toString() ? `/search?${params.toString()}` : '/search';
+    const current = `${window.location.pathname}${window.location.search || ''}`;
+    if (current !== next) {
+      router.replace(next, { scroll: false });
+    }
+  }, [query, category, vendorIdParam, router]);
+
   const categoryRef = React.useRef(category);
   const queryRef = React.useRef(query);
   const apiResultsRef = React.useRef(apiResults);
@@ -581,6 +595,9 @@ function SearchContent() {
         } else {
           params.set('limit', '50');
         }
+        if (searchFetchTrigger.kind === 'keyword') {
+          emitGuestAuthAnalytics('search_started', { q: searchFetchTrigger.q });
+        }
         const response = await apiClient.get<any>(`/search?${params.toString()}`);
         if (cancelled) return;
         let mapped = mapSearchApiToResults(response);
@@ -646,6 +663,24 @@ function SearchContent() {
 
         setNutritionVendors(mergedNutrition);
         setApiResults(mapped);
+        emitGuestAuthAnalytics('search_result_viewed', {
+          kind: searchFetchTrigger.kind,
+          count: mapped.length,
+        });
+        if (isGuestApplicationState()) {
+          saveGuestBookingIntent({
+            kind: 'search',
+            requiresPet: false,
+            returnPath: `/search?${params.toString()}`,
+            search: {
+              q: searchFetchTrigger.kind === 'keyword' ? searchFetchTrigger.q : undefined,
+              category:
+                searchFetchTrigger.kind === 'hub'
+                  ? searchFetchTrigger.c
+                  : categoryRef.current.trim() || undefined,
+            },
+          });
+        }
         if (searchFetchTrigger.kind === 'keyword') {
           const qStr = searchFetchTrigger.q;
           const hub = categoryRef.current.trim();

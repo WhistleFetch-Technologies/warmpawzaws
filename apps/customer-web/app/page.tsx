@@ -13,6 +13,8 @@ import {
   resetHomeBootstrapForPhone,
 } from '@/lib/customer-home-bootstrap';
 import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
+import { isGuestApplicationState } from '@/lib/guest-auth-gate';
+import { readGuestBookingIntent, shouldDeferHomeOnboarding } from '@/lib/guest-booking-intent';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
 
@@ -112,7 +114,7 @@ export default function HomePage() {
       return;
     }
 
-    if (isGuestBrowsingEnabled()) {
+    if (isGuestApplicationState() || isGuestBrowsingEnabled()) {
       setSession(GUEST_SESSION);
       setHomeGateReady(true);
     }
@@ -121,7 +123,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (isLoading || session || hasRedirected.current) return;
-    if (isGuestBrowsingEnabled()) {
+    if (isGuestApplicationState() || isGuestBrowsingEnabled()) {
       setSession(GUEST_SESSION);
       setHomeGateReady(true);
       return;
@@ -137,13 +139,25 @@ export default function HomePage() {
       return;
     }
     if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
-      const pwdNext = readProfileCompleted() ? '/' : '/profile';
+      const pending = readGuestBookingIntent();
+      const pwdNext =
+        pending?.returnPath && String(pending.returnPath).startsWith('/')
+          ? pending.returnPath
+          : readProfileCompleted()
+            ? '/'
+            : '/profile';
       router.replace('/auth/set-password?next=' + encodeURIComponent(pwdNext));
       return;
     }
     const sp = new URLSearchParams(window.location.search);
     // Preserve service deep links (e.g. tele) — do not strip query via profile/onboarding redirects
     if (sp.get('service')) {
+      setHomeGateReady(true);
+      return;
+    }
+    // Pending guest conversion: restore journey first. Do not dump at profile/onboarding
+    // or force pet creation. Transaction-specific pet happens after restore.
+    if (shouldDeferHomeOnboarding()) {
       setHomeGateReady(true);
       return;
     }

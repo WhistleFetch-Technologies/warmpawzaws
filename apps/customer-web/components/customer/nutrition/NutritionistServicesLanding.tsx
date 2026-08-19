@@ -200,8 +200,12 @@ export function NutritionistServicesLanding({ phone, isGuest = false, onBack, on
         emitGuestAuthAnalytics('login_prompt_shown');
         emitGuestAuthAnalytics('login_started');
         window.location.href = buildGuestAuthUrlForBooking({
+          kind: 'booking',
+          persona: 'nutrition',
+          category: 'nutrition',
           returnPath: '/',
-          resumeScreen: 'nutritionist',
+          resumeScreen: 'nutritionist-booking',
+          requiresPet: true,
         });
         return;
       }

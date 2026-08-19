@@ -368,8 +368,12 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
         emitGuestAuthAnalytics('login_prompt_shown');
         emitGuestAuthAnalytics('login_started');
         window.location.href = buildGuestAuthUrlForBooking({
+          kind: 'booking',
+          persona: 'vet',
+          category: 'vet',
           returnPath: '/',
-          resumeScreen: 'vet',
+          resumeScreen: 'vet-booking',
+          requiresPet: true,
         });
         return;
       }

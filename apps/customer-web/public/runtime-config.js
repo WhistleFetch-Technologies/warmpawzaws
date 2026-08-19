@@ -33,7 +33,8 @@
       customerEcommerceEnabled: true,
       // Phase 1 guest foundation — local/dev defaults on; prod remains off unless deploy sets flags
       guestBrowsingEnabled: true,
-      guestLocationEnabled: true
+      guestLocationEnabled: true,
+      guestBookingEnabled: false
     });
     console.log('🔧 Runtime config loaded (localhost - using env var for API URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     return;
@@ -54,7 +55,8 @@
       environment: 'development',
       customerEcommerceEnabled: true,
       guestBrowsingEnabled: true,
-      guestLocationEnabled: true
+      guestLocationEnabled: true,
+      guestBookingEnabled: false
     },
   };
 
@@ -66,7 +68,8 @@
       environment: mapped.environment,
       customerEcommerceEnabled: mapped.customerEcommerceEnabled !== false,
       guestBrowsingEnabled: mapped.guestBrowsingEnabled === true,
-      guestLocationEnabled: mapped.guestLocationEnabled === true
+      guestLocationEnabled: mapped.guestLocationEnabled === true,
+      guestBookingEnabled: mapped.guestBookingEnabled === true
     });
   } else {
     // Production customer web — guest browsing off until explicitly enabled at deploy
@@ -76,7 +79,8 @@
       environment: 'production',
       customerEcommerceEnabled: true,
       guestBrowsingEnabled: false,
-      guestLocationEnabled: false
+      guestLocationEnabled: false,
+      guestBookingEnabled: false
     });
   }
   console.log('🔧 Runtime config loaded (deployed):', window.__WARMPAWZ_RUNTIME_CONFIG__);

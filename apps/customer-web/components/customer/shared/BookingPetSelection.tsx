@@ -237,8 +237,10 @@ export function BookingPetSelection<T extends BookingPet = BookingPet>({
           : '/');
       window.location.href = buildGuestAuthUrlForBooking({
         ...(guestAuthContext || {}),
+        kind: guestAuthContext?.kind || 'add_pet',
         returnPath,
         openAddPet: true,
+        requiresPet: true,
         resumeScreen: guestAuthContext?.resumeScreen || 'add-pet',
       });
       return;

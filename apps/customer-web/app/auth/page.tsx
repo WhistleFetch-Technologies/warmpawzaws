@@ -39,7 +39,15 @@ import {
 import { resolveAuthModeFromParams, resolveSafeAuthReturnPath } from '@/lib/auth-redirect';
 import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
 import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { readGuestBookingIntent } from '@/lib/guest-booking-intent';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
+
+function resolvePostAuthPath(fallback: string | null): string {
+  const intent = readGuestBookingIntent();
+  if (intent?.returnPath && intent.returnPath.startsWith('/')) return intent.returnPath;
+  if (fallback && fallback.startsWith('/')) return fallback;
+  return '/';
+}
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -440,9 +448,7 @@ function AuthPageContent() {
 
       emitGuestAuthAnalytics('login_completed');
       emitGuestAuthAnalytics('identity_authenticated');
-      const redirectPath =
-        redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
-      router.push(redirectPath);
+      router.push(resolvePostAuthPath(redirectAfterLogin));
     } catch (err: any) {
       const code = err?.responseData?.error?.code || err?.code;
       if (code === 'PASSWORD_NOT_SET') {
@@ -837,20 +843,21 @@ function AuthPageContent() {
           (unifiedProfileForAuth as { has_password?: boolean } | undefined)?.has_password ??
             otpPayloadProfile?.has_password
         );
-        const redirectPath =
-          redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
+        const redirectPath = resolvePostAuthPath(redirectAfterLogin);
 
         emitGuestAuthAnalytics('login_completed');
         emitGuestAuthAnalytics('identity_authenticated');
         if (!hasPassword) {
           setNeedsPasswordSetupAfterOtp();
+          const pendingJourney = readGuestBookingIntent();
           const profileCompleted =
             localStorage.getItem('profile_completed') === 'true' ||
             localStorage.getItem('onboarding_completed') === 'true';
           const onboardingDone =
             localStorage.getItem('customerOnboardingComplete') === 'true';
-          const afterPwd =
-            !profileCompleted && !onboardingDone
+          const afterPwd = pendingJourney
+            ? redirectPath
+            : !profileCompleted && !onboardingDone
               ? '/profile'
               : onboardingDone
                 ? '/'

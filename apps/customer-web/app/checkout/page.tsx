@@ -7,6 +7,7 @@ import { CheckoutFlow } from '@/components/ecommerce/checkout/CheckoutFlow';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
+import { hasAuthenticatedCustomerSession } from '@/lib/guest-auth-gate';
 
 function CheckoutPageContent() {
   const nav = useCustomerNavigation();
@@ -50,7 +51,7 @@ function CheckoutPageContent() {
     );
   }
 
-  if (!phone) {
+  if (!phone || !hasAuthenticatedCustomerSession()) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6 max-w-customer mx-auto">
         <p className="text-center text-gray-600">

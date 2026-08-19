@@ -82,7 +82,22 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
         (typeof window !== 'undefined'
           ? `${window.location.pathname}${window.location.search || ''}`
           : '/');
-      router.replace(buildAuthUrlWithReturn(path.startsWith('/') ? path : '/'));
+      const safe = path.startsWith('/') ? path : '/';
+      if (safe.startsWith('/checkout') || safe.startsWith('/cart')) {
+        const { saveGuestBookingIntent } = require('../guest-booking-intent');
+        const { emitGuestAuthAnalytics } = require('../guest-auth-gate');
+        saveGuestBookingIntent({
+          kind: 'cart',
+          returnPath: '/checkout',
+          requiresPet: false,
+          resumeScreen: undefined,
+          funnelStarted: 'checkout',
+        });
+        emitGuestAuthAnalytics('checkout_started');
+        emitGuestAuthAnalytics('login_prompt_shown');
+        emitGuestAuthAnalytics('login_started');
+      }
+      router.replace(buildAuthUrlWithReturn(safe));
     },
 
     /** Celebration screen after payment — hard replace clears checkout from history. */

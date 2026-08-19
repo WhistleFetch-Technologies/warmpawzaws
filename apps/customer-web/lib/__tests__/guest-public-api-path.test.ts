@@ -46,6 +46,15 @@ describe('resolveGuestPublicApiPath', () => {
     expect(resolveGuestPublicApiPath('/ecommerce/products/p1')).toBe('/public/ecommerce/products/p1');
   });
 
+  it('rewrites marketplace search to the public alias', () => {
+    expect(resolveGuestPublicApiPath('/search?q=grooming&category=vet')).toBe(
+      '/public/search?q=grooming&category=vet'
+    );
+    expect(resolveGuestPublicApiPath('/search/autocomplete?q=gr')).toBe(
+      '/public/search/autocomplete?q=gr'
+    );
+  });
+
   it('does not rewrite customer-owned write paths', () => {
     expect(resolveGuestPublicApiPath('/customer/pets')).toBe('/customer/pets');
     expect(resolveGuestPublicApiPath('/ecommerce/orders')).toBe('/ecommerce/orders');

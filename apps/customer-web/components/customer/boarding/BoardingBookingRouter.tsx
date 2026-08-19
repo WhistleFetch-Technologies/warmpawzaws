@@ -60,6 +60,8 @@ import {
   serviceNameLooksLikeSwimming,
 } from '@/lib/boarding-service-types';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
+import { buildGuestAuthUrlForBooking, updateGuestBookingProgress } from '@/lib/guest-booking-intent';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
 import { mapBookingPetFromApi, resolvePetDisplayPhotoUrl } from '@/lib/pet-display-photo';
 
 interface BoardingBookingRouterProps {
@@ -880,6 +882,33 @@ export function BoardingBookingRouter({
   }, [phone, vendorId, apiCategory, appointmentsMode]);
 
   useEffect(() => {
+    if (!vendorId && !checkInDate) return;
+    updateGuestBookingProgress({
+      kind: 'booking',
+      persona: isPetSitting ? 'sitting' : 'boarding',
+      vendorId: vendorId || undefined,
+      serviceId: serviceId || undefined,
+      serviceStyle: wapptServiceStyle || serviceStyle || undefined,
+      category: isPetSitting ? 'sitting' : 'boarding',
+      date: checkInDate || undefined,
+      time: checkInTime || undefined,
+      wapptMode: appointmentsMode === true,
+      resumeScreen: isPetSitting ? 'pet-sitter-booking' : 'boarding-booking',
+      returnPath: '/',
+      requiresPet: appointmentsMode !== true,
+    });
+  }, [
+    vendorId,
+    serviceId,
+    wapptServiceStyle,
+    serviceStyle,
+    checkInDate,
+    checkInTime,
+    appointmentsMode,
+    isPetSitting,
+  ]);
+
+  useEffect(() => {
     if (vendorServices.length === 0) return;
     const ids = vendorServices
       .map((s) => s.id || s.serviceId)
@@ -1238,6 +1267,23 @@ export function BoardingBookingRouter({
   };
 
   const handleContinueFromWapptDetails = () => {
+    if (!hasAuthenticatedCustomerSession()) {
+      emitGuestAuthAnalytics('login_prompt_shown');
+      window.location.href = buildGuestAuthUrlForBooking({
+        kind: 'booking',
+        persona: isPetSitting ? 'sitting' : 'boarding',
+        category: isPetSitting ? 'sitting' : 'boarding',
+        vendorId,
+        serviceId,
+        date: checkInDate,
+        time: checkInTime,
+        wapptMode: true,
+        returnPath: '/',
+        resumeScreen: isPetSitting ? 'pet-sitter-booking' : 'boarding-booking',
+        requiresPet: false,
+      });
+      return;
+    }
     if (!checkInDate || !checkInTime) {
       toast.error('Please select date and time');
       return;
@@ -1245,10 +1291,6 @@ export function BoardingBookingRouter({
     const selectedSlot = wapptSlots.timeSlots.find((s) => s.time === checkInTime);
     if (selectedSlot && !selectedSlot.available) {
       toast.error('This time slot is already booked. Please select a different time.');
-      return;
-    }
-    if (!selectedPet) {
-      toast.error('Please select a pet');
       return;
     }
     setCheckOutDate(checkInDate);
@@ -1262,12 +1304,25 @@ export function BoardingBookingRouter({
   };
 
   const handleContinueFromWapptBoardingDetails = () => {
-    if (!checkInDate || !checkOutDate || !checkInTime || !checkOutTime) {
-      toast.error('Please select check-in and check-out dates and times');
+    if (!hasAuthenticatedCustomerSession()) {
+      emitGuestAuthAnalytics('login_prompt_shown');
+      window.location.href = buildGuestAuthUrlForBooking({
+        kind: 'booking',
+        persona: 'boarding',
+        category: 'boarding',
+        vendorId,
+        serviceId,
+        date: checkInDate,
+        time: checkInTime,
+        wapptMode: true,
+        returnPath: '/',
+        resumeScreen: 'boarding-booking',
+        requiresPet: false,
+      });
       return;
     }
-    if (!selectedPet) {
-      toast.error('Please select a pet');
+    if (!checkInDate || !checkOutDate || !checkInTime || !checkOutTime) {
+      toast.error('Please select check-in and check-out dates and times');
       return;
     }
     if (getBilledMinutes() < 1) {

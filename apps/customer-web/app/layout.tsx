@@ -53,6 +53,11 @@ export default function RootLayout({
   ).toLowerCase();
   const guestLocationEnabled =
     guestLocationEnabledRaw === 'true' || guestLocationEnabledRaw === '1';
+  const guestBookingEnabledRaw = (
+    process.env.NEXT_PUBLIC_GUEST_BOOKING_ENABLED ?? 'false'
+  ).toLowerCase();
+  const guestBookingEnabled =
+    guestBookingEnabledRaw === 'true' || guestBookingEnabledRaw === '1';
 
   return (
     <html lang="en">
@@ -128,7 +133,8 @@ export default function RootLayout({
                   customerMealPlansEnabled: ${JSON.stringify(customerMealPlansEnabled)},
                   customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)},
                   guestBrowsingEnabled: ${JSON.stringify(guestBrowsingEnabled)},
-                  guestLocationEnabled: ${JSON.stringify(guestLocationEnabled)}
+                  guestLocationEnabled: ${JSON.stringify(guestLocationEnabled)},
+                  guestBookingEnabled: ${JSON.stringify(guestBookingEnabled)}
                 };
               `,
           }}

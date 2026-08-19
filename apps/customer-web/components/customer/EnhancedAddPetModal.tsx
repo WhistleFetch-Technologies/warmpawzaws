@@ -302,8 +302,11 @@ export function EnhancedAddPetModal({
         ? `${window.location.pathname}${window.location.search || ''}` || '/'
         : '/';
     window.location.href = buildGuestAuthUrlForBooking({
+      kind: 'add_pet',
       returnPath,
       resumeScreen: 'add-pet',
+      openAddPet: true,
+      requiresPet: true,
     });
   }, [isOpen, editPet]);
 

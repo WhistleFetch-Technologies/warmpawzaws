@@ -43,6 +43,8 @@ import {
   buildGuestAuthUrlForBooking,
   clearGuestBookingIntent,
   consumeGuestBookingIntentForRestore,
+  resolveResumeScreen,
+  transactionRequiresPet,
 } from '@/lib/guest-booking-intent';
 import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
 import {
@@ -916,27 +918,80 @@ export function CustomerHomeWrapper({
   /** After guest login: restore booking draft (vendor/date/slot) then reopen shell screen. */
   useEffect(() => {
     if (pathname !== '/' || typeof window === 'undefined' || isGuest) return;
+    const openAddPetQuery = new URLSearchParams(window.location.search).get('open') === 'add-pet';
     const intent = consumeGuestBookingIntentForRestore();
-    if (!intent) return;
-    emitGuestAuthAnalytics('booking_resumed');
-    if (intent.vendorId || intent.date || intent.time || intent.serviceId) {
-      setVetServiceData((prev: any) => ({
-        ...(prev && typeof prev === 'object' ? prev : {}),
-        vendorId: intent.vendorId || prev?.vendorId,
-        serviceId: intent.serviceId || prev?.serviceId,
-        serviceStyle: intent.serviceStyle || prev?.serviceStyle,
-        serviceType: intent.category || prev?.serviceType,
-        bookingDate: intent.date || prev?.bookingDate,
-        bookingTime: intent.time || prev?.bookingTime,
-        appointmentsMode:
-          intent.wapptMode === true || prev?.appointmentsMode === true,
-        price: intent.price ?? prev?.price,
-        openAddPetAfterRestore: intent.openAddPet === true || intent.resumeScreen === 'add-pet',
-      }));
+    if (!intent && !openAddPetQuery) return;
+    if (intent?.kind === 'search' && intent.search) {
+      const q = new URLSearchParams();
+      if (intent.search.q) q.set('q', intent.search.q);
+      if (intent.search.category) q.set('category', intent.search.category);
+      if (intent.vendorId) q.set('vendorId', intent.vendorId);
+      clearGuestBookingIntent();
+      emitGuestAuthAnalytics('booking_resumed', { kind: 'search' });
+      router.replace(q.toString() ? `/search?${q.toString()}` : '/search');
+      return;
     }
-    // Booking screens are not in WARMPAWZ_HOME_RESUME_SCREENS — navigate explicitly.
-    const resume = intent.resumeScreen;
-    if (resume === 'grooming-booking' || resume === 'vet-booking' || resume === 'training-booking' || resume === 'add-pet') {
+    if (intent?.kind === 'cart') {
+      clearGuestBookingIntent();
+      emitGuestAuthAnalytics('booking_resumed', { kind: 'cart' });
+      router.replace(intent.returnPath || '/checkout');
+      return;
+    }
+    if (intent) {
+      emitGuestAuthAnalytics('booking_resumed', { kind: intent.kind || 'booking' });
+      if (intent.vendorId || intent.date || intent.time || intent.serviceId) {
+        setVetServiceData((prev: any) => ({
+          ...(prev && typeof prev === 'object' ? prev : {}),
+          vendorId: intent.vendorId || prev?.vendorId,
+          serviceId: intent.serviceId || prev?.serviceId,
+          serviceStyle: intent.serviceStyle || prev?.serviceStyle,
+          serviceType: intent.persona || intent.category || prev?.serviceType,
+          bookingDate: intent.date || prev?.bookingDate,
+          bookingTime: intent.time || prev?.bookingTime,
+          appointmentsMode:
+            intent.wapptMode === true || prev?.appointmentsMode === true,
+          price: intent.price ?? prev?.price,
+          offerId: intent.offerId || prev?.offerId,
+          promotionId: intent.promotionId || prev?.promotionId,
+          packageId: intent.packageId || prev?.packageId,
+          variantId: intent.variantId || prev?.variantId,
+          slotNeedsRevalidation: true,
+          openAddPetAfterRestore: transactionRequiresPet(intent),
+        }));
+        const persona = String(intent.persona || intent.category || '').toLowerCase();
+        if (persona === 'walker' || intent.resumeScreen === 'walker-booking') {
+          setWalkerServiceData((prev: any) => ({
+            ...(prev && typeof prev === 'object' ? prev : {}),
+            vendorId: intent.vendorId || prev?.vendorId,
+            serviceId: intent.serviceId || prev?.serviceId,
+            serviceStyle: intent.serviceStyle || prev?.serviceStyle,
+            bookingDate: intent.date || prev?.bookingDate,
+            bookingTime: intent.time || prev?.bookingTime,
+            appointmentsMode: intent.wapptMode === true || prev?.appointmentsMode === true,
+            slotNeedsRevalidation: true,
+          }));
+        }
+      }
+    }
+    const resume = intent ? resolveResumeScreen(intent) : openAddPetQuery ? 'add-pet' : undefined;
+    const resumeScreens = new Set([
+      'grooming-booking',
+      'vet-booking',
+      'training-booking',
+      'boarding-booking',
+      'walker-booking',
+      'pet-sitter-booking',
+      'nutritionist-booking',
+      'add-pet',
+    ]);
+    if (resume === 'add-pet' || (openAddPetQuery && (!intent || intent.kind === 'add_pet'))) {
+      try {
+        sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+      } catch {
+        /* ignore */
+      }
+      shellNav.navigateToScreen('add-pet' as ScreenType);
+    } else if (resume && resumeScreens.has(resume)) {
       try {
         sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
       } catch {
@@ -945,7 +1000,7 @@ export function CustomerHomeWrapper({
       shellNav.navigateToScreen(resume as ScreenType);
     }
     clearGuestBookingIntent();
-  }, [pathname, isGuest, shellNav]);
+  }, [pathname, isGuest, shellNav, router]);
 
   /** After `/shop` or `/promotions` back: restore embedded screen (same URL `/` as home). */
   useEffect(() => {
@@ -1347,8 +1402,11 @@ export function CustomerHomeWrapper({
       emitGuestAuthAnalytics('pet_add_attempted');
       emitGuestAuthAnalytics('pet_add_auth_required');
       window.location.href = buildGuestAuthUrlForBooking({
+        kind: 'add_pet',
         returnPath: '/?open=add-pet',
         resumeScreen: 'add-pet',
+        openAddPet: true,
+        requiresPet: true,
       });
       return;
     }
@@ -3096,8 +3154,11 @@ export function CustomerHomeWrapper({
       if (typeof window !== 'undefined') {
         emitGuestAuthAnalytics('pet_add_auth_required');
         window.location.href = buildGuestAuthUrlForBooking({
+          kind: 'add_pet',
           returnPath: '/?open=add-pet',
           resumeScreen: 'add-pet',
+          openAddPet: true,
+          requiresPet: true,
         });
       }
       return null;
@@ -3154,6 +3215,8 @@ export function CustomerHomeWrapper({
         price={walkerServiceData?.price}
         duration={walkerServiceData?.duration}
         appointmentsMode={walkerServiceData?.appointmentsMode === true}
+        bookingDate={walkerServiceData?.bookingDate || vetServiceData?.bookingDate}
+        bookingTime={walkerServiceData?.bookingTime || vetServiceData?.bookingTime}
         onBack={() => backFromBannerOr(handleBack, walkerServiceData, vetServiceData)}
         onInternalBackReady={(fn) => { walkerBookingInternalBackRef.current = fn; }}
         onNavigate={(screen, data) => {
@@ -3408,7 +3471,7 @@ export function CustomerHomeWrapper({
       { title: 'Veterinary Services', subtitle: 'Professional pet healthcare', showBackButton: true, skipHeader: true }
     );
   }
-  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} appointmentsMode={vetServiceData?.appointmentsMode === true} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
+  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} bookingDate={vetServiceData?.bookingDate} bookingTime={vetServiceData?.bookingTime} appointmentsMode={vetServiceData?.appointmentsMode === true} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'vet-doctor-details')
     return (
       <VetDoctorDetails
@@ -4692,6 +4755,8 @@ export function CustomerHomeWrapper({
         price={vetServiceData?.price}
         duration={vetServiceData?.duration}
         appointmentsMode={vetServiceData?.appointmentsMode === true}
+        bookingDate={vetServiceData?.bookingDate}
+        bookingTime={vetServiceData?.bookingTime}
         onBack={() => backFromBannerOr(handleBack, vetServiceData)}
         onInternalBackReady={(fn) => { nutritionistBookingInternalBackRef.current = fn; }}
         onNavigate={(screen, data) => {
@@ -5656,6 +5721,8 @@ export function CustomerHomeWrapper({
     duration={vetServiceData?.duration}
     appointmentsMode={vetServiceData?.appointmentsMode === true}
     category={vetServiceData?.category || vetServiceData?.serviceType || 'training'}
+    bookingDate={vetServiceData?.bookingDate}
+    bookingTime={vetServiceData?.bookingTime}
     onBack={() => backFromBannerOr(handleBack, vetServiceData)} 
     onInternalBackReady={(fn) => {
       trainingBookingInternalBackRef.current = fn;

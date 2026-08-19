@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { readGuestBookingIntent, transactionRequiresPet } from '@/lib/guest-booking-intent';
 
 interface CustomerOnboardingProps {
   onBack?: () => void;
@@ -23,12 +24,26 @@ export function CustomerOnboarding({ onBack, onNoPetComplete }: CustomerOnboardi
 
   const goHavePet = useCallback(() => {
     persistStageOnboardingDone();
+    const intent = readGuestBookingIntent();
+    if (intent?.kind === 'add_pet' || transactionRequiresPet(intent) || intent?.openAddPet) {
+      router.push('/add-pet');
+      return;
+    }
+    if (intent?.returnPath?.startsWith('/')) {
+      router.replace(intent.returnPath);
+      return;
+    }
     router.push('/add-pet');
   }, [router]);
 
   const goNoPet = useCallback(() => {
     persistStageOnboardingDone();
     onNoPetComplete();
+    const intent = readGuestBookingIntent();
+    if (intent?.returnPath?.startsWith('/')) {
+      router.replace(intent.returnPath);
+      return;
+    }
     router.replace('/');
   }, [router, onNoPetComplete]);
 
