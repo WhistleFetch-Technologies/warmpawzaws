@@ -18,6 +18,7 @@ import { CommerceConfigProvider } from '@/lib/commerce-config-provider';
 import { LocationProvider } from '@/context/LocationContext';
 import { GuestLocationPrompt } from '@/components/customer/GuestLocationPrompt';
 import { GuestSessionAnalyticsBootstrap } from '@/components/customer/GuestSessionAnalyticsBootstrap';
+import { GuestAuthModalProvider } from '@/components/customer/auth/GuestAuthModalProvider';
 
 // Lazy load DevTools - only imported in development mode
 const ReactQueryDevtools = lazy(() =>
@@ -55,20 +56,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <SearchContextProvider>
             <CommerceConfigProvider>
               <LocationProvider>
-                <GuestSessionAnalyticsBootstrap />
-                <ScrollToTop />
-                <Suspense fallback={null}>
-                  <AnalyticsRouteTracker />
-                </Suspense>
-                {children}
-                <GuestLocationPrompt />
-                <Toaster position="top-right" />
-                {/* Only load DevTools in development mode - prevents bundle bloat in production */}
-                {process.env.NODE_ENV === 'development' && (
+                <GuestAuthModalProvider>
+                  <GuestSessionAnalyticsBootstrap />
+                  <ScrollToTop />
                   <Suspense fallback={null}>
-                    <ReactQueryDevtools initialIsOpen={false} />
+                    <AnalyticsRouteTracker />
                   </Suspense>
-                )}
+                  {children}
+                  <GuestLocationPrompt />
+                  <Toaster position="top-right" />
+                  {/* Only load DevTools in development mode - prevents bundle bloat in production */}
+                  {process.env.NODE_ENV === 'development' && (
+                    <Suspense fallback={null}>
+                      <ReactQueryDevtools initialIsOpen={false} />
+                    </Suspense>
+                  )}
+                </GuestAuthModalProvider>
               </LocationProvider>
             </CommerceConfigProvider>
           </SearchContextProvider>

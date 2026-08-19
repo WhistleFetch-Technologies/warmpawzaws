@@ -41,8 +41,7 @@ import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, 
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
-import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
-import { buildGuestAuthUrlForBooking } from '@/lib/guest-booking-intent';
+import { requestGuestAuth } from '@/lib/guest-auth-gate';
 
 function hasCustomerPhone(phone: string): boolean {
   return (phone?.replace(/\D/g, '') ?? '').length >= 10;
@@ -197,9 +196,8 @@ export function NutritionistServicesLanding({ phone, isGuest = false, onBack, on
   const handleNutritionistSelect = (nutritionist: any) => {
     if (!hasPets || pets.length === 0) {
       if (isGuest || !hasCustomerPhone(phone)) {
-        emitGuestAuthAnalytics('login_prompt_shown');
-        emitGuestAuthAnalytics('login_started');
-        window.location.href = buildGuestAuthUrlForBooking({
+        requestGuestAuth({
+          mode: 'signup',
           returnPath: '/',
           resumeScreen: 'nutritionist',
         });

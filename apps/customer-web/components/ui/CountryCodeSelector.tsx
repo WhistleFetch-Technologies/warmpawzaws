@@ -82,13 +82,16 @@ interface CountryCodeSelectorProps {
   onSelect: (code: string) => void;
   disabled?: boolean;
   className?: string;
+  /** Slim trigger styling for auth modal phone row (visual only). */
+  compact?: boolean;
 }
 
 export function CountryCodeSelector({ 
   selectedCode, 
   onSelect, 
   disabled = false,
-  className = ''
+  className = '',
+  compact = false,
 }: CountryCodeSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -134,17 +137,16 @@ export function CountryCodeSelector({
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`
-          flex items-center gap-2 h-full px-3 py-3
-          bg-gray-50 border-r border-gray-200
-          rounded-l-2xl
-          hover:bg-gray-100 transition-colors
-          disabled:opacity-50 disabled:cursor-not-allowed
-          min-w-[90px]
-        `}
+        className={
+          compact
+            ? 'flex h-full min-w-[84px] items-center gap-1 border-r border-gray-200 bg-white px-2 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50'
+            : 'flex h-full min-w-[90px] items-center gap-2 rounded-l-2xl border-r border-gray-200 bg-gray-50 px-3 py-3 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50'
+        }
       >
-        <span className="text-xl">{selectedCountry.flag}</span>
-        <span className="text-gray-700 font-medium text-sm">{selectedCountry.code}</span>
+        <span className={compact ? 'text-lg' : 'text-xl'}>{selectedCountry.flag}</span>
+        <span className="text-sm font-medium text-gray-700">
+          {selectedCountry.code}
+        </span>
         <svg 
           className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           fill="none" 

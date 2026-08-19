@@ -46,8 +46,7 @@ import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
-import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
-import { buildGuestAuthUrlForBooking } from '@/lib/guest-booking-intent';
+import { requestGuestAuth } from '@/lib/guest-auth-gate';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -365,9 +364,8 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
     
     if (requiresPet && (!hasPets || pets.length === 0)) {
       if (isGuest || !hasCustomerPhone(phone)) {
-        emitGuestAuthAnalytics('login_prompt_shown');
-        emitGuestAuthAnalytics('login_started');
-        window.location.href = buildGuestAuthUrlForBooking({
+        requestGuestAuth({
+          mode: 'signup',
           returnPath: '/',
           resumeScreen: 'vet',
         });

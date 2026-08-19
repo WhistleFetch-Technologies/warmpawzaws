@@ -109,11 +109,12 @@ export function clearGuestBookingIntent(): void {
 }
 
 /**
- * Persist intent (+ progress merge), seed shell screen resume, return safe /auth?redirect= URL.
+ * Persist intent (+ progress merge), seed shell screen resume.
+ * Shared by full-page /auth redirect and in-app guest auth modal.
  */
-export function buildGuestAuthUrlForBooking(
+export function persistGuestBookingIntentForAuth(
   intent: Omit<GuestBookingIntentV1, 'v' | 'savedAt'>
-): string {
+): Omit<GuestBookingIntentV1, 'v' | 'savedAt'> {
   const progress = readGuestBookingProgress() || {};
   const merged: Omit<GuestBookingIntentV1, 'v' | 'savedAt'> = {
     ...progress,
@@ -128,6 +129,16 @@ export function buildGuestAuthUrlForBooking(
       // ignore
     }
   }
+  return merged;
+}
+
+/**
+ * Persist intent (+ progress merge), seed shell screen resume, return safe /auth?redirect= URL.
+ */
+export function buildGuestAuthUrlForBooking(
+  intent: Omit<GuestBookingIntentV1, 'v' | 'savedAt'>
+): string {
+  const merged = persistGuestBookingIntentForAuth(intent);
   return buildAuthUrlWithReturn(merged.returnPath || '/');
 }
 

@@ -5,11 +5,8 @@ import { Cat, Check, Dog, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { resolvePetDisplayPhotoUrl } from '@/lib/pet-display-photo';
-import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
-import {
-  buildGuestAuthUrlForBooking,
-  type GuestBookingIntentV1,
-} from '@/lib/guest-booking-intent';
+import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics, requestGuestAuth } from '@/lib/guest-auth-gate';
+import { type GuestBookingIntentV1 } from '@/lib/guest-booking-intent';
 
 export interface BookingPet {
   id: string;
@@ -235,7 +232,8 @@ export function BookingPetSelection<T extends BookingPet = BookingPet>({
         (typeof window !== 'undefined'
           ? `${window.location.pathname}${window.location.search || ''}` || '/'
           : '/');
-      window.location.href = buildGuestAuthUrlForBooking({
+      requestGuestAuth({
+        mode: 'signup',
         ...(guestAuthContext || {}),
         returnPath,
         openAddPet: true,
