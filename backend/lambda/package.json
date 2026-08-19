@@ -10,6 +10,8 @@
     "build:ts": "tsc --noEmit",
     "validate:customer-layers": "node scripts/validate-customer-layers.js",
     "validate:commerce-switch": "node scripts/validate-commerce-switch.js",
+    "validate:gst-financial": "node scripts/gst-financial-lineage-guard.js",
+    "test:gst-financial": "jest --testPathPattern \"vendor-booking-earnings-report|booking-invoice-amounts|invoice-historical-gst-lineage|gst-financial-lineage|gst-split|canonical-gst-snapshot-lock|authoritative-final-paid|vendor-accrual-fee-breakdown|package-session-earnings-allocation|funding-aware-ledger-correction|invoice-row-gst|invoice-gst-rate|gst-place-of-supply|gst-catalog-role-resolution|tax-calculation-admin-gst-rate|resolve-booking-list-price|resolve-service-booking-tax-item|booking-financial-gross|vendor-earnings-settlement-snapshot|tax-category-display-rate\" --no-coverage",
     "release-verify:commerce-switch": "node scripts/commerce-switch-release-verify.js",
     "smoke:commerce-switch": "node scripts/commerce-switch-smoke.js",
     "build:skip-ts": "npm run clean && npm run build:bundle && npm run package",

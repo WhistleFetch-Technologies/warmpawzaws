@@ -1,0 +1,47 @@
+name: GST Financial Lineage Guard
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+      - prod
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  gst-financial-lineage:
+    name: GST financial-lineage guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR base
+        run: git fetch origin ${{ github.base_ref }} --depth=1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/lambda/package-lock.json
+
+      - name: Install Lambda dependencies
+        working-directory: backend/lambda
+        run: npm ci
+
+      - name: Validate GST financial-lineage guard
+        id: guard
+        working-directory: backend/lambda
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: npm run validate:gst-financial
+
+      - name: Run protected GST financial regression suite
+        if: steps.guard.outputs.run_suite == 'true'
+        working-directory: backend/lambda
+        run: npm run test:gst-financial
