@@ -6,4 +6,9 @@ export function registerDiscoveryByStyleGetRoute(app: Hono) {
     '/customer/warmpawz-appointments/discovery/by-style',
     discoveryByStyleGetHandler
   );
+  /** Guest-safe alias — same handler (JWT not required via /public/). */
+  app.get(
+    '/public/warmpawz-appointments/discovery/by-style',
+    discoveryByStyleGetHandler
+  );
 }

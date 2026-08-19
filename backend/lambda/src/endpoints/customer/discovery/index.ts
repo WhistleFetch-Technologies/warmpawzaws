@@ -8,6 +8,12 @@ import { registerCustomerServicesRoute } from './routes/customer-services.route'
 import { registerCustomerServicesPlatformRoute } from './routes/customer-services-platform.route';
 import { registerDiscoverServicesRoute } from './routes/discover-services.route';
 import { registerPublicDiscoverServicesRoute } from './routes/public-discover-services.route';
+import { registerPublicServicesByStyleRoute } from './routes/public-services-by-style.route';
+import { registerPublicDiscoveryCountRoute } from './routes/public-discovery-count.route';
+import { registerPublicCategoryBootstrapRoute } from './routes/public-category-bootstrap.route';
+import { registerPublicServicesByStyleRoute } from './routes/public-services-by-style.route';
+import { registerPublicDiscoveryCountRoute } from './routes/public-discovery-count.route';
+import { registerPublicCategoryBootstrapRoute } from './routes/public-category-bootstrap.route';
 import { registerVendorAvailableSlotsRoute } from './routes/vendor-available-slots.route';
 import { registerPublicVendorAvailableSlotsRoute } from './routes/public-vendor-available-slots.route';
 import { registerVendorServicesRoute } from './routes/vendor-services.route';
@@ -41,6 +47,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   registerCustomerServicesPlatformRoute(app);
   registerDiscoverServicesRoute(app);
   registerPublicDiscoverServicesRoute(app);
+  registerPublicServicesByStyleRoute(app);
+  registerPublicDiscoveryCountRoute(app);
+  registerPublicCategoryBootstrapRoute(app);
+  registerPublicServicesByStyleRoute(app);
+  registerPublicDiscoveryCountRoute(app);
+  registerPublicCategoryBootstrapRoute(app);
   registerVendorAvailableSlotsRoute(app);
   registerPublicVendorAvailableSlotsRoute(app);
   registerVendorServicesRoute(app);

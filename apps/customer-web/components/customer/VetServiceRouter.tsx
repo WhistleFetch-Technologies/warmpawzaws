@@ -37,7 +37,7 @@ import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import {
   gateServiceStyleNavigation,
   isServiceStyleComingSoon,
-  isServiceStyleHidden,
+  isServiceStyleHiddenForBrowse,
   isServiceStyleNavigable,
   loadCustomerServiceLaunchCatalog,
   resolveServiceStyleLaunchFromCatalog,
@@ -45,7 +45,7 @@ import {
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
-import { requestGuestAuth } from '@/lib/guest-auth-gate';
+import { requestGuestAuth, hasAuthenticatedCustomerSession } from '@/lib/guest-auth-gate';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -296,7 +296,7 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
 
     const launchFiltered = allServiceTypes.filter((service) => {
       const launchStatus = styleLaunchByCard[service.id];
-      if (launchStatus && isServiceStyleHidden(launchStatus)) {
+      if (launchStatus && isServiceStyleHiddenForBrowse(launchStatus)) {
         return false;
       }
       return true;
@@ -304,10 +304,13 @@ export function VetServiceRouter({ phone, isGuest = false, onBack, onNavigate, d
 
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
       if (shouldHideMarketplaceStyleTiles()) {
-      return launchFiltered.filter((s) => s.id === 'tele');
-    }
+        if (!hasAuthenticatedCustomerSession()) {
+          return launchFiltered;
+        }
+        return launchFiltered.filter((s) => s.id === 'tele');
+      }
 
-    return launchFiltered;
+      return launchFiltered;
     }
 
     return launchFiltered.filter((service) => {

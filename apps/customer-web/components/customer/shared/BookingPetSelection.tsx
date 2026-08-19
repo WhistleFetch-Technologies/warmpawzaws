@@ -234,12 +234,14 @@ export function BookingPetSelection<T extends BookingPet = BookingPet>({
           : '/');
       requestGuestAuth({
         mode: 'signup',
-        ...(guestAuthContext || {}),
-        kind: guestAuthContext?.kind || 'add_pet',
         returnPath,
         openAddPet: true,
-        requiresPet: true,
         resumeScreen: guestAuthContext?.resumeScreen || 'add-pet',
+        guestBookingIntent: {
+          ...(guestAuthContext || {}),
+          kind: guestAuthContext?.kind || 'add_pet',
+          requiresPet: true,
+        },
       });
       return;
     }

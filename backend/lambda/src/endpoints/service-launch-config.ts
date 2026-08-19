@@ -572,6 +572,55 @@ function bucketDashboardServicesByCustomerStatus(catalog: DashboardLaunchService
   return { visibleServices, comingSoonServices, hiddenServices };
 }
 
+/** Shared handler for GET /config/service-launch/customer and public alias. */
+async function customerServiceLaunchConfigHandler(c: import('hono').Context) {
+  try {
+    const state = c.req.query('state') || '';
+    const city = c.req.query('city') || '';
+    const stateCode = resolveStateCodeFromName(state);
+
+    const catalog = await buildDashboardServiceCatalog(stateCode, city);
+    const { visibleServices, comingSoonServices, hiddenServices } =
+      bucketDashboardServicesByCustomerStatus(catalog);
+
+    return c.json({
+      success: true,
+      location: {
+        state: state || null,
+        stateCode: stateCode || null,
+        city: city || null,
+      },
+      services: {
+        catalog: catalog.map((svc) => ({
+          serviceId: svc.serviceId,
+          displayName: svc.displayName,
+          icon: svc.icon,
+          categoryId: svc.categoryId,
+          effectiveStatus: svc.effectiveStatus,
+          rolloutPercentage: svc.effectiveRolloutPercentage,
+          supportedStyles: svc.supportedStyles,
+          effectiveStyles: svc.effectiveStyles,
+        })),
+        visible: visibleServices,
+        comingSoon: comingSoonServices,
+        hidden: hiddenServices,
+      },
+      buttons: [
+        ...visibleServices.map(s => ({ id: s.serviceId, enabled: true, launchPhase: s.status === 'beta' ? 'beta' : 'full' })),
+        ...comingSoonServices.map(s => ({ id: s.serviceId, enabled: false, launchPhase: 'coming_soon' })),
+      ],
+    });
+  } catch (error: any) {
+    console.error('Error fetching customer service launch config:', error);
+    return c.json({
+      success: true,
+      location: { state: null, stateCode: null, city: null },
+      services: { visible: [], comingSoon: [], hidden: [], catalog: [] },
+      buttons: [],
+    }, 200);
+  }
+}
+
 export function registerServiceLaunchConfigEndpoints(app: Hono) {
   
   /**
@@ -889,57 +938,12 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
    * GET /config/service-launch/customer
    * Get visible services for a customer based on their location
    * Query params: state, city
-   * 
+   *
    * This endpoint is used by the customer web app to determine
    * which services to show on the dashboard
    */
-  app.get('/config/service-launch/customer', async (c) => {
-    try {
-      const state = c.req.query('state') || '';
-      const city = c.req.query('city') || '';
-      const stateCode = resolveStateCodeFromName(state);
+  app.get('/config/service-launch/customer', customerServiceLaunchConfigHandler);
 
-      const catalog = await buildDashboardServiceCatalog(stateCode, city);
-      const { visibleServices, comingSoonServices, hiddenServices } =
-        bucketDashboardServicesByCustomerStatus(catalog);
-
-      return c.json({
-        success: true,
-        location: {
-          state: state || null,
-          stateCode: stateCode || null,
-          city: city || null,
-        },
-        services: {
-          catalog: catalog.map((svc) => ({
-            serviceId: svc.serviceId,
-            displayName: svc.displayName,
-            icon: svc.icon,
-            categoryId: svc.categoryId,
-            effectiveStatus: svc.effectiveStatus,
-            rolloutPercentage: svc.effectiveRolloutPercentage,
-            supportedStyles: svc.supportedStyles,
-            effectiveStyles: svc.effectiveStyles,
-          })),
-          visible: visibleServices,
-          comingSoon: comingSoonServices,
-          hidden: hiddenServices,
-        },
-        // For backward compatibility with old dashboard config format
-        buttons: [
-          ...visibleServices.map(s => ({ id: s.serviceId, enabled: true, launchPhase: s.status === 'beta' ? 'beta' : 'full' })),
-          ...comingSoonServices.map(s => ({ id: s.serviceId, enabled: false, launchPhase: 'coming_soon' })),
-        ],
-      });
-    } catch (error: any) {
-      console.error('Error fetching customer service launch config:', error);
-      // Graceful degradation: return 200 with defaults so customer home loads
-      return c.json({
-        success: true,
-        location: { state: null, stateCode: null, city: null },
-        services: { visible: [], comingSoon: [], hidden: [], catalog: [] },
-        buttons: [],
-      }, 200);
-    }
-  });
+  /** Guest-safe alias — same handler (JWT not required via /public/). */
+  app.get('/public/config/service-launch/customer', customerServiceLaunchConfigHandler);
 }

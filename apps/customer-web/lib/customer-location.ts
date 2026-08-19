@@ -1,5 +1,7 @@
 import { apiClient } from '@/lib/api-client';
 import { serviceBaseOnpincode } from '@/components/customer/homepage/constants/helpers';
+import { readPersistedLocation } from '@/lib/location-storage';
+import { readStoredCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 
 export interface CustomerLocation {
   city: string;
@@ -62,6 +64,36 @@ function readCachedProfileForLocation(): Record<string, unknown> | null {
   }
 }
 
+function hasUsablePhone(phone: string): boolean {
+  return (phone?.replace(/\D/g, '') ?? '').length >= 8;
+}
+
+async function resolveGuestLocationFallback(): Promise<CustomerLocation> {
+  const persisted = readPersistedLocation();
+  let city = cleanStateName(String(persisted?.city || '').trim());
+  let state = cleanStateName(String(persisted?.state || '').trim());
+
+  if (city && state) {
+    return { city, state };
+  }
+
+  const coords = readStoredCustomerDiscoveryCoords();
+  const lat = coords.latitude != null ? Number(coords.latitude) : NaN;
+  const lng = coords.longitude != null ? Number(coords.longitude) : NaN;
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    try {
+      const { reverseGeocodeCoordinates } = await import('@/lib/address-from-geolocation');
+      const geo = await reverseGeocodeCoordinates(lat, lng);
+      if (!city && geo.city) city = cleanStateName(String(geo.city).trim());
+      if (!state && geo.state) state = cleanStateName(String(geo.state).trim());
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { city, state };
+}
+
 /** Single shared location resolver per phone (dedupes parallel home fetches). */
 export async function resolveCustomerLocation(phone: string): Promise<CustomerLocation> {
   const key = cacheKey(phone);
@@ -73,20 +105,22 @@ export async function resolveCustomerLocation(phone: string): Promise<CustomerLo
     let state = '';
 
     try {
-      const addressesResponse = (await apiClient
-        .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
-        .catch(() => null)) as { addresses?: Array<{ city?: string; state?: string; isDefault?: boolean }> } | null;
-      const addresses = addressesResponse?.addresses || [];
-      const defaultAddress = addresses.find((a) => a.isDefault) || addresses[0];
-      if (defaultAddress) {
-        city = cleanStateName((defaultAddress.city || '').trim());
-        state = cleanStateName((defaultAddress.state || '').trim());
+      if (hasUsablePhone(phone)) {
+        const addressesResponse = (await apiClient
+          .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
+          .catch(() => null)) as { addresses?: Array<{ city?: string; state?: string; isDefault?: boolean }> } | null;
+        const addresses = addressesResponse?.addresses || [];
+        const defaultAddress = addresses.find((a) => a.isDefault) || addresses[0];
+        if (defaultAddress) {
+          city = cleanStateName((defaultAddress.city || '').trim());
+          state = cleanStateName((defaultAddress.state || '').trim());
+        }
       }
     } catch {
       /* keep fallback */
     }
 
-    if (!city || !state) {
+    if ((!city || !state) && hasUsablePhone(phone)) {
       const { getHomeBootstrapReady } = await import('@/lib/customer-home-bootstrap');
       await getHomeBootstrapReady().catch(() => undefined);
       const cachedProfile = readCachedProfileForLocation();
@@ -98,6 +132,12 @@ export async function resolveCustomerLocation(phone: string): Promise<CustomerLo
         if (!city && profileLocation.city) city = cleanStateName(String(profileLocation.city).trim());
         if (!state && profileLocation.state) state = cleanStateName(String(profileLocation.state).trim());
       }
+    }
+
+    if (!city || !state) {
+      const guestLoc = await resolveGuestLocationFallback();
+      if (!city && guestLoc.city) city = guestLoc.city;
+      if (!state && guestLoc.state) state = guestLoc.state;
     }
 
     const location = { city, state };

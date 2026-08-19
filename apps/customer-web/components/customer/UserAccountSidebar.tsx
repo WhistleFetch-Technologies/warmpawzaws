@@ -521,7 +521,7 @@ function formatServiceTypeLabel(serviceType: string | undefined): string {
 
 interface UserAccountSidebarProps {
   phone: string;
-  /** Guest browse session — show Login / Sign Up / Help only */
+  /** Guest browse session — show Login / Sign Up only */
   isGuest?: boolean;
   onClose: () => void;
   /** X button: exit to app home (full shell reset). Falls back to closing the sheet if omitted. */
@@ -1480,43 +1480,8 @@ export function UserAccountSidebar({
                   </div>
                   <ChevronRight className="h-4 w-4 text-gray-400" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onNavigate) {
-                      onNavigate('support_help');
-                      handleClose();
-                    } else {
-                      setActiveView('help');
-                    }
-                  }}
-                  className="flex h-[72px] w-full items-center justify-between gap-3 rounded-[20px] border border-[#F1F1F1] bg-white px-3.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-gray-100">
-                      <HelpCircle className="h-6 w-6 text-gray-600" strokeWidth={2} />
-                    </div>
-                    <span className="text-[15px] font-semibold text-gray-900">Help & Support</span>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-gray-400" />
-                </button>
               </div>
             </ProfileMenuFloatingSheet>
-            {activeView === 'help' ? (
-              <div className="p-5">
-                <button
-                  type="button"
-                  className="mb-4 text-sm font-medium text-[#FF8C42]"
-                  onClick={() => setActiveView('menu')}
-                >
-                  ← Back
-                </button>
-                <h3 className="text-lg font-bold text-gray-800">Help & Support</h3>
-                <p className="mt-2 text-sm text-gray-600">
-                  Need help? Sign in for account-specific support, or contact us from the Help centre after login.
-                </p>
-              </div>
-            ) : null}
           </div>
         </div>
       </div>
