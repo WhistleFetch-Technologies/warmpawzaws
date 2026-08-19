@@ -10,12 +10,6 @@ import { NutritionistBookingRouter } from './NutritionistBookingRouter';
 import { DietConsultationVendorsProps, Vendor } from './constants/interface';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { discoveryVendorList } from '@/lib/discovery-list';
-import { DiscoveryLocationRequired } from '@/components/customer/shared/DiscoveryLocationRequired';
-import {
-  hasStoredDiscoveryCoords,
-  LOCATION_UPDATED_EVENT,
-  resolveCustomerDiscoveryCoords,
-} from '@/lib/customer-discovery-coords';
 
 
 
@@ -27,25 +21,13 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
   const [nutritionist, setNutritionist] = useState<any>(null);
   const [loadingVendor, setLoadingVendor] = useState(false);
-  const [locationEpoch, setLocationEpoch] = useState(0);
-
-  useEffect(() => {
-    const onLoc = () => setLocationEpoch((n) => n + 1);
-    window.addEventListener(LOCATION_UPDATED_EVENT, onLoc);
-    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLoc);
-  }, []);
 
   useEffect(() => {
     fetchPets();
     loadVendors();
-  }, [phone, locationEpoch]);
+  }, [phone]);
 
   const fetchPets = async () => {
-    if (!phone || String(phone).replace(/\D/g, '').length < 8) {
-      setPets([]);
-      setHasPets(false);
-      return;
-    }
     try {
       const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
       const petsList = petsData?.pets || [];
@@ -64,9 +46,10 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
       // Get customer location for distance-based sorting
       let locationParams = '';
       try {
-        const coords = await resolveCustomerDiscoveryCoords(phone);
-        if (coords.latitude && coords.longitude) {
-          locationParams = `&latitude=${coords.latitude}&longitude=${coords.longitude}`;
+        const customerLat = localStorage.getItem('customer_latitude');
+        const customerLng = localStorage.getItem('customer_longitude');
+        if (customerLat && customerLng) {
+          locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
         }
       } catch (e) {
         console.log('Could not get customer location');
@@ -224,19 +207,11 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
               <p className="text-gray-600">Loading nutritionists...</p>
             </Card>
           ) : vendors.length === 0 ? (
-            !hasStoredDiscoveryCoords() ? (
-              <DiscoveryLocationRequired
-                title="Detect location for diet consultation"
-                description="Set your location to find nutritionists near you."
-                onLocationReady={() => setLocationEpoch((n) => n + 1)}
-              />
-            ) : (
             <Card className="p-8 text-center">
               <div className="text-4xl mb-3">🥗</div>
               <p className="text-gray-600 mb-2">No nutritionists available</p>
               <p className="text-gray-500 text-sm">Check back soon for diet consultation services!</p>
             </Card>
-            )
           ) : (
             <div className="space-y-3">
               {vendors.map((vendor, index) => (

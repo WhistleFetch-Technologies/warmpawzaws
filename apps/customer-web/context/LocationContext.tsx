@@ -11,8 +11,9 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  fillAddressFromCurrentLocation,
   geolocationErrorMessage,
+  resolveCurrentGeolocationCoords,
+  reverseGeocodeCoordinates,
 } from '@/lib/address-from-geolocation';
 import { isGuestLocationEnabled } from '@/lib/guest-location-flag';
 import {
@@ -30,16 +31,6 @@ import {
   writePersistedLocation,
   type PersistedLocationV1,
 } from '@/lib/location-storage';
-import { LOCATION_UPDATED_EVENT } from '@/lib/customer-discovery-coords';
-
-function emitLocationUpdated(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.dispatchEvent(new CustomEvent(LOCATION_UPDATED_EVENT));
-  } catch {
-    /* ignore */
-  }
-}
 
 export type LocationState = {
   latitude: number | null;
@@ -165,7 +156,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           LOCATION_MOVE_REFRESH_M &&
         now - prev.at < LOCATION_STALE_MS
       ) {
-        // Same neighbourhood — keep coords, but still apply city/pincode from reverse geocode.
+        // Same neighbourhood — keep coords, bump freshness only if needed
         setState((s) => {
           const next = {
             ...s,
@@ -173,17 +164,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             locationStatus: 'fresh' as const,
             isStale: false,
             permissionStatus: coords.permissionStatus || s.permissionStatus,
-            locality: coords.locality || s.locality,
-            city: coords.city || s.city,
-            pincode: coords.pincode || s.pincode,
-            state: coords.state || s.state,
             error: null,
           };
           persist(next);
           return next;
         });
         lastSampleRef.current = { lat: coords.latitude, lng: coords.longitude, at: now };
-        emitLocationUpdated();
         return;
       }
 
@@ -206,19 +192,13 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       };
       setState(next);
       persist(next);
-      emitLocationUpdated();
     },
     [persist]
   );
 
   const requestForegroundLocation = useCallback(
     async (opts?: { force?: boolean }): Promise<boolean> => {
-      // Permission dialogs can hide the tab; only skip backgrounded auto-refresh (force unset).
-      if (
-        !opts?.force &&
-        typeof document !== 'undefined' &&
-        document.visibilityState === 'hidden'
-      ) {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         return false;
       }
       if (requestingRef.current) return false;
@@ -231,18 +211,30 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Same Capacitor + reverse-geocode path as address book "Detect location".
-        const result = await fillAddressFromCurrentLocation();
+        const { latitude, longitude } = await resolveCurrentGeolocationCoords();
         applyCoords({
-          latitude: result.latitude,
-          longitude: result.longitude,
+          latitude,
+          longitude,
           source: 'gps',
           permissionStatus: 'granted',
-          locality: result.addressLine2,
-          city: result.city,
-          pincode: result.pincode,
-          state: result.state,
         });
+        // Best-effort reverse geocode for human-readable header (coords remain source of truth for discovery).
+        void reverseGeocodeCoordinates(latitude, longitude)
+          .then((geo) => {
+            applyCoords({
+              latitude,
+              longitude,
+              source: 'gps',
+              permissionStatus: 'granted',
+              locality: geo.addressLine2,
+              city: geo.city,
+              pincode: geo.pincode,
+              state: geo.state,
+            });
+          })
+          .catch(() => {
+            // coords already applied
+          });
         try {
           sessionStorage.removeItem('warmpawz_geolocation_denied');
         } catch {
@@ -303,9 +295,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       }
       setState(next);
       persist(next);
-      if (lat != null && lng != null) {
-        emitLocationUpdated();
-      }
     },
     [persist, state.permissionStatus]
   );

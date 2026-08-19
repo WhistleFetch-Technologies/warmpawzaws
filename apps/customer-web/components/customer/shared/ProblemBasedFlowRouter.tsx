@@ -17,12 +17,6 @@ import { UniversalServiceProviderList } from './UniversalServiceProviderList';
 import { UniversalProviderProfile } from './UniversalProviderProfile';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
-import { DiscoveryLocationRequired } from './DiscoveryLocationRequired';
-import {
-  hasStoredDiscoveryCoords,
-  LOCATION_UPDATED_EVENT,
-  resolveCustomerDiscoveryCoords,
-} from '@/lib/customer-discovery-coords';
 
 // ============================================================================
 // TYPES
@@ -103,7 +97,6 @@ interface ServiceStyleSelectorProps {
   loading: boolean;
   onSelectStyle: (style: string) => void;
   onBack: () => void;
-  onLocationReady?: () => void;
 }
 
 function ServiceStyleSelector({ 
@@ -115,8 +108,7 @@ function ServiceStyleSelector({
   styles, 
   loading, 
   onSelectStyle, 
-  onBack,
-  onLocationReady,
+  onBack 
 }: ServiceStyleSelectorProps) {
   // Get category config with 2D Lucide icons (NO emojis or 3D icons)
   const getCategoryConfig = (): { Icon: React.ComponentType<any>; iconBg: string } => {
@@ -180,12 +172,6 @@ function ServiceStyleSelector({
               <div key={i} className="h-20 bg-gray-100 rounded-2xl animate-pulse" />
             ))}
           </div>
-        ) : !hasStoredDiscoveryCoords() && availableStyles.length === 0 ? (
-          <DiscoveryLocationRequired
-            title="Detect location for specialists"
-            description={`Set your location to find providers for ${problemTitle} near you.`}
-            onLocationReady={onLocationReady}
-          />
         ) : availableStyles.length === 0 ? (
           <div className="p-8 text-center bg-gray-50 rounded-2xl">
             <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -196,6 +182,20 @@ function ServiceStyleSelector({
             <p className="text-gray-400 text-xs">
               Try selecting a different service type or check back later.
             </p>
+          </div>
+        ) : availableStyles.filter(s => s.available).length === 0 ? (
+          <div className="p-8 text-center bg-gray-50 rounded-2xl">
+            <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <h3 className="font-bold text-gray-900 mb-2">No Service Types Available</h3>
+            <p className="text-gray-500 text-sm mb-4">
+              No providers are currently offering <span className="font-semibold">{problemTitle}</span> for any service type in your area.
+            </p>
+            <button
+              onClick={onBack}
+              className="mt-4 px-4 py-2 bg-[#FF8C42] text-white rounded-xl text-sm font-semibold hover:bg-[#FF7A29] transition"
+            >
+              Go Back
+            </button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -390,14 +390,6 @@ export function ProblemBasedFlowRouter({
     loadAvailableStyles();
   }, [problemId, category, roleId]);
 
-  useEffect(() => {
-    const onLoc = () => {
-      void loadAvailableStyles();
-    };
-    window.addEventListener(LOCATION_UPDATED_EVENT, onLoc);
-    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLoc);
-  }, [problemId, category, roleId, phone]);
-
   const loadAvailableStyles = async () => {
     try {
       setLoadingStyles(true);
@@ -449,9 +441,6 @@ export function ProblemBasedFlowRouter({
       };
 
       const allowedStyles = categoryStyleMap[category] || ['at_center'];
-
-      // Ensure discovery coords are resolved (guest Detect location / GPS / profile)
-      await resolveCustomerDiscoveryCoords(phone);
 
       // Fetch provider counts for each allowed style
       const locationParams = getLocationParams();
@@ -648,7 +637,6 @@ export function ProblemBasedFlowRouter({
           loading={loadingStyles}
           onSelectStyle={handleSelectStyle}
           onBack={onBack}
-          onLocationReady={() => void loadAvailableStyles()}
         />
       );
 
@@ -721,7 +709,6 @@ export function ProblemBasedFlowRouter({
           loading={loadingStyles}
           onSelectStyle={handleSelectStyle}
           onBack={onBack}
-          onLocationReady={() => void loadAvailableStyles()}
         />
       );
   }

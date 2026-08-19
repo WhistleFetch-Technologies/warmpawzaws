@@ -31,11 +31,6 @@ const RETRY_DELAYS_MS = [2_000, 5_000, 10_000, 20_000];
  */
 export function PushSessionRegistrar() {
   useEffect(() => {
-    const cap = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
-    if (!cap?.isNativePlatform?.()) {
-      return;
-    }
-
     let cancelled = false;
     let customerIdPollTimer: number | undefined;
 
@@ -86,14 +81,7 @@ export function PushSessionRegistrar() {
     }, 5_000);
 
     const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      // Browser geolocation permission dialogs fire visibilitychange; do not
-      // re-bootstrap FCM on web (unregistered-token noise, not a mobile device).
-      const cap = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } })
-        .Capacitor;
-      if (!cap?.isNativePlatform?.()) return;
-      if (!hasCustomerAppSession()) return;
-      void registerSession(0, true);
+      if (document.visibilityState === 'visible') void registerSession(0, true);
     };
     document.addEventListener('visibilitychange', onVisible);
 

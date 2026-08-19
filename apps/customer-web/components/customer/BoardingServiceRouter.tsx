@@ -45,8 +45,6 @@ import {
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
-import { DiscoveryLocationRequired } from './shared/DiscoveryLocationRequired';
-import { hasStoredDiscoveryCoords } from '@/lib/customer-discovery-coords';
 
 const BOARDING_IMG = '/images/home/Boarding';
 
@@ -603,19 +601,11 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   onPayOpenProfile={handleWarmpawzBookAppointment}
                   onMarketplaceOpenProfile={openVendorProfile}
                   emptyState={
-                    !hasStoredDiscoveryCoords() ? (
-                      <DiscoveryLocationRequired
-                        title="Detect location for boarding"
-                        description="Set your location to see boarding facilities near you."
-                        onLocationReady={() => void marketplaceDiscovery.loadVendors()}
-                      />
-                    ) : (
                     <Card className="p-8 text-center">
                       <div className="text-4xl mb-3">🏠</div>
                       <p className="text-gray-600 mb-2">No boarding facilities available yet</p>
                       <p className="text-gray-500 text-sm">Check back soon for boarding options!</p>
                     </Card>
-                    )
                   }
                 />
               </div>

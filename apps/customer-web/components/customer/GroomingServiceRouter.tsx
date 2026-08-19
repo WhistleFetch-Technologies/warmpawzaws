@@ -38,7 +38,7 @@ import {
   type BoardingListVendor,
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
-import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { mergeWapptServiceTypes } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
@@ -51,8 +51,6 @@ import {
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
-import { DiscoveryLocationRequired } from './shared/DiscoveryLocationRequired';
-import { hasStoredDiscoveryCoords } from '@/lib/customer-discovery-coords';
 
 const GROOMING_STYLE_LAUNCH_MAP: Record<string, string> = {
   grooming_center: 'at_center',
@@ -396,7 +394,9 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         if (launchStatus && isServiceStyleHidden(launchStatus)) {
           return false;
         }
-        // Keep Center / At Home browse tiles visible under Warmpawz Pay (WAPPT handles booking).
+        if (shouldHideMarketplaceStyleTiles()) {
+          return false;
+        }
         return true;
       });
     },
@@ -675,19 +675,11 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 onPayOpenProfile={handleWarmpawzBookAppointment}
                 onMarketplaceOpenProfile={openVendorDetails}
                 emptyState={
-                  !hasStoredDiscoveryCoords() ? (
-                    <DiscoveryLocationRequired
-                      title="Detect location for groomers"
-                      description="Set your location to see groomers near you."
-                      onLocationReady={() => void marketplaceDiscovery.loadVendors()}
-                    />
-                  ) : (
                   <Card className="p-8 text-center">
                     <div className="text-4xl mb-3">✂️</div>
                     <p className="text-gray-600 mb-2">No groomers available in your area yet</p>
                     <p className="text-gray-500 text-sm">Check back soon for grooming options!</p>
                   </Card>
-                  )
                 }
               />
             </div>

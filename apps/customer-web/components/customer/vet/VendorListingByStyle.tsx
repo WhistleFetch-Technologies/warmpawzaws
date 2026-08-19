@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { resolveCustomerDiscoveryCoords, LOCATION_UPDATED_EVENT } from '@/lib/customer-discovery-coords';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { ArrowLeft, Star, MapPin, Video, Home, Building2, ChevronRight, Search, Loader2, Shield, SlidersHorizontal, X, TrendingUp, IndianRupee } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -18,7 +18,6 @@ import { formatDistanceDisplay, pickProviderDistanceKm } from '@/lib/distance-di
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
-import { DiscoveryLocationRequired } from '../shared/DiscoveryLocationRequired';
 import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
@@ -85,13 +84,6 @@ export function VendorListingByStyle({
   const [styleLaunchReady, setStyleLaunchReady] = useState(false);
   const [styleLaunchBlocked, setStyleLaunchBlocked] = useState(false);
   const [styleLaunchBlockMessage, setStyleLaunchBlockMessage] = useState('');
-  const [locationEpoch, setLocationEpoch] = useState(0);
-
-  useEffect(() => {
-    const onLoc = () => setLocationEpoch((n) => n + 1);
-    window.addEventListener(LOCATION_UPDATED_EVENT, onLoc);
-    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLoc);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +120,7 @@ export function VendorListingByStyle({
     return () => {
       cancelled = true;
     };
-  }, [phone, locationEpoch]);
+  }, [phone]);
 
   const loadVendors = useCallback(
     async (searchFilter?: string, append = false) => {
@@ -610,16 +602,6 @@ export function VendorListingByStyle({
             </Button>
           </Card>
         ) : sortedVendors.length === 0 ? (
-          !customerLocation && !searchQuery && activeFiltersCount === 0 ? (
-            <DiscoveryLocationRequired
-              title="Detect location to find doctors"
-              description="We need your location to show nearby clinics, home-visit vets, and tele options."
-              onLocationReady={() => {
-                setLocationEpoch((n) => n + 1);
-                void loadVendors();
-              }}
-            />
-          ) : (
           <Card className="p-8 text-center bg-white border border-gray-100">
             <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-4">
               {getStyleIcon()}
@@ -645,7 +627,6 @@ export function VendorListingByStyle({
               </Button>
             )}
           </Card>
-          )
         ) : (
           <div className="space-y-3">
             {sortedVendors.map((vendor) => (

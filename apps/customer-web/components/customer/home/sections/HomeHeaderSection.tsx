@@ -1,12 +1,10 @@
 'use client';
 
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Bell, Loader2, MapPin, MessageSquare } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { memo, useEffect, useMemo, useState } from 'react';
+import { Bell, MapPin, MessageSquare } from 'lucide-react';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { resolveCustomerLocation } from '@/lib/customer-location';
 import { useLocationContextOptional } from '@/context/LocationContext';
-import { ManualLocationSheet } from '@/components/customer/ManualLocationSheet';
 import { IconBadgeButton } from '../shared/IconBadgeButton';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -16,8 +14,6 @@ export interface HomeHeaderSectionProps {
   phone: string;
   isGuest?: boolean;
   onProfileClick?: () => void;
-  /** Optional override; default opens detect/manual location. */
-  onLocationClick?: () => void;
   onNavigate: HomeNavigateFn;
   onOpenNotifications: () => void;
   notificationUnreadCount: number;
@@ -27,18 +23,14 @@ export interface HomeHeaderSectionProps {
 function formatLocationLabel(parts: {
   locality?: string;
   city?: string;
-  pincode?: string;
   state?: string;
 }): string {
   const locality = (parts.locality || '').trim();
   const city = (parts.city || '').trim();
-  const pincode = (parts.pincode || '').trim();
   const state = (parts.state || '').trim();
-  if (city && pincode) return `${city} ${pincode}`;
   if (locality && city) return `${locality}, ${city}`;
   if (city && state) return `${city}, ${state}`;
   if (city) return city;
-  if (pincode) return pincode;
   if (locality) return locality;
   if (state) return state;
   return '';
@@ -50,7 +42,6 @@ function HomeHeaderSectionComponent({
   phone,
   isGuest = false,
   onProfileClick,
-  onLocationClick,
   onNavigate,
   onOpenNotifications,
   notificationUnreadCount,
@@ -60,25 +51,18 @@ function HomeHeaderSectionComponent({
   const initial = (greetingName || 'G').charAt(0).toUpperCase();
   const locationCtx = useLocationContextOptional();
   const [accountLocationLabel, setAccountLocationLabel] = useState('');
-  const [manualOpen, setManualOpen] = useState(false);
-  const [detecting, setDetecting] = useState(false);
 
   const contextLocationLabel = useMemo(() => {
     if (!locationCtx) return '';
     return formatLocationLabel({
       locality: locationCtx.locality,
       city: locationCtx.city,
-      pincode: locationCtx.pincode,
       state: locationCtx.state,
     });
-  }, [
-    locationCtx?.locality,
-    locationCtx?.city,
-    locationCtx?.pincode,
-    locationCtx?.state,
-  ]);
+  }, [locationCtx?.locality, locationCtx?.city, locationCtx?.state]);
 
   useEffect(() => {
+    // Prefer LocationContext for everyone; fall back to customer addresses when authed and context empty.
     if (isGuest || contextLocationLabel) {
       setAccountLocationLabel('');
       return;
@@ -97,40 +81,8 @@ function HomeHeaderSectionComponent({
     };
   }, [phone, isGuest, contextLocationLabel]);
 
-  const hasCoords =
-    locationCtx?.latitude != null && locationCtx?.longitude != null;
   const locationLabel =
-    contextLocationLabel ||
-    accountLocationLabel ||
-    (locationCtx
-      ? detecting
-        ? 'Detecting…'
-        : hasCoords
-          ? 'Current location'
-          : 'Set location'
-      : '');
-
-  const handleLocationPress = useCallback(async () => {
-    if (onLocationClick) {
-      onLocationClick();
-      return;
-    }
-    if (!locationCtx) {
-      if (!isGuest) onProfileClick?.();
-      return;
-    }
-    setDetecting(true);
-    try {
-      const ok = await locationCtx.requestForegroundLocation({ force: true });
-      if (ok) {
-        toast.success('Location updated');
-        return;
-      }
-      setManualOpen(true);
-    } finally {
-      setDetecting(false);
-    }
-  }, [onLocationClick, locationCtx, isGuest, onProfileClick]);
+    contextLocationLabel || accountLocationLabel || (locationCtx ? 'Set location' : '');
 
   return (
     <div>
@@ -169,16 +121,11 @@ function HomeHeaderSectionComponent({
             {locationLabel ? (
               <button
                 type="button"
-                onClick={() => void handleLocationPress()}
-                disabled={detecting}
-                className="mt-0.5 flex min-w-0 max-w-full items-center gap-1 text-left active:opacity-80 disabled:opacity-70"
-                aria-label={`Location: ${locationLabel}. Tap to detect or set location.`}
+                onClick={() => onProfileClick?.()}
+                className="mt-0.5 flex min-w-0 max-w-full items-center gap-1 text-left active:opacity-80"
+                aria-label={`Location: ${locationLabel}. Open profile to update.`}
               >
-                {detecting ? (
-                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-white/75" aria-hidden />
-                ) : (
-                  <MapPin className="h-3 w-3 shrink-0 text-white/75" aria-hidden />
-                )}
+                <MapPin className="h-3 w-3 shrink-0 text-white/75" aria-hidden />
                 <span className="truncate text-[11px] font-medium text-white/80">{locationLabel}</span>
               </button>
             ) : null}
@@ -203,7 +150,6 @@ function HomeHeaderSectionComponent({
           ) : null}
         </div>
       </div>
-      <ManualLocationSheet open={manualOpen} onClose={() => setManualOpen(false)} />
     </div>
   );
 }

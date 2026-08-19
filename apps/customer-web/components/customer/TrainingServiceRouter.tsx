@@ -44,13 +44,11 @@ import {
   type BoardingListVendor,
 } from '@/lib/boarding-vendor-discovery-map';
 import { resolveBoardingListVendorProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
-import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
-import { DiscoveryLocationRequired } from './shared/DiscoveryLocationRequired';
-import { hasStoredDiscoveryCoords } from '@/lib/customer-discovery-coords';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -254,7 +252,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         ? { ...card, badge: trainingCenterBadgeText.toUpperCase() }
         : { ...card, badge: card.badge ?? 'PERSONALIZED' },
     );
-    // Keep Home / Center / Specialization browse tiles under Pay; booking uses WAPPT when enabled.
+    if (shouldHideMarketplaceStyleTiles()) return [];
     return base;
   }, [trainingCenterBadgeText]);
 
@@ -575,19 +573,11 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 onPayOpenProfile={handleWarmpawzBookAppointment}
                 onMarketplaceOpenProfile={openTrainerDetails}
                 emptyState={
-                  !hasStoredDiscoveryCoords() ? (
-                    <DiscoveryLocationRequired
-                      title="Detect location for trainers"
-                      description="Set your location to see trainers near you."
-                      onLocationReady={() => void marketplaceDiscovery.loadVendors()}
-                    />
-                  ) : (
                   <Card className="p-8 text-center">
                     <div className="text-4xl mb-3">🎓</div>
                     <p className="text-gray-600 mb-2">No trainers available in your area yet</p>
                     <p className="text-gray-500 text-sm">Check back soon for training options!</p>
                   </Card>
-                  )
                 }
               />
             </div>

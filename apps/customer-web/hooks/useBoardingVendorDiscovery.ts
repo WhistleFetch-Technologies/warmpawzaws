@@ -2,10 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
-import {
-  resolveCustomerDiscoveryCoords,
-  LOCATION_UPDATED_EVENT,
-} from '@/lib/customer-discovery-coords';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { filterHubDiscoveryRowsByRadius } from '@/lib/hub-discovery-radius-filter';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import {
@@ -87,14 +84,6 @@ export function useBoardingVendorDiscovery(
 
   useEffect(() => {
     void loadVendors();
-  }, [loadVendors]);
-
-  useEffect(() => {
-    const onLoc = () => {
-      void loadVendors();
-    };
-    window.addEventListener(LOCATION_UPDATED_EVENT, onLoc);
-    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLoc);
   }, [loadVendors]);
 
   const fetchVendorPlans = useCallback(async (vendorId: string) => {

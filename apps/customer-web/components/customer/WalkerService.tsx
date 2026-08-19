@@ -56,12 +56,7 @@ import {
 } from '@/lib/vendor-package-purchase-nav';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { useDiscoveryVendorFeed } from '@/hooks/useDiscoveryVendorFeed';
-import {
-  resolveCustomerDiscoveryCoords,
-  hasStoredDiscoveryCoords,
-  LOCATION_UPDATED_EVENT,
-} from '@/lib/customer-discovery-coords';
-import { DiscoveryLocationRequired } from './shared/DiscoveryLocationRequired';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
@@ -499,21 +494,6 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return () => {
       cancelled = true;
     };
-  }, [phone, feedReload]);
-
-  useEffect(() => {
-    const onLoc = () => {
-      void (async () => {
-        const coords = await resolveCustomerDiscoveryCoords(phone);
-        coordsRef.current = coords;
-        fallbackAttemptedRef.current = false;
-        setSearchFallbackList(null);
-        setSearchSupplement([]);
-        await feedReload();
-      })();
-    };
-    window.addEventListener(LOCATION_UPDATED_EVENT, onLoc);
-    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLoc);
   }, [phone, feedReload]);
 
   useEffect(() => {
@@ -1147,28 +1127,11 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
             </div>
           ) : displayedWalkers.length === 0 ? (
-            !hasStoredDiscoveryCoords() && !searchQuery.trim() ? (
-              <DiscoveryLocationRequired
-                title="Detect location for walkers"
-                description="Set your location to find dog walkers near you."
-                onLocationReady={() => {
-                  void (async () => {
-                    const coords = await resolveCustomerDiscoveryCoords(phone);
-                    coordsRef.current = coords;
-                    fallbackAttemptedRef.current = false;
-                    setSearchFallbackList(null);
-                    setSearchSupplement([]);
-                    await feedReload();
-                  })();
-                }}
-              />
-            ) : (
             <Card className="p-8 text-center">
               <Dog className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="font-semibold text-gray-900 mb-2">No Walkers Found</h3>
               <p className="text-sm text-gray-500">Try adjusting your search or check back later</p>
             </Card>
-            )
           ) : (
             <div className="space-y-4">
               {displayedWalkers.map((walker, index) => {
