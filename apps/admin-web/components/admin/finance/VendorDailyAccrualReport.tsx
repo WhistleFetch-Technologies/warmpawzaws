@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { Fragment, useCallback, useState } from 'react';
 import { apiClient, getApiBaseUrl, isUatMode } from '@/lib/api-client';
 import { Button } from '@warmpawz/ui';
-import { Download, ExternalLink, Loader2, Play, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, ExternalLink, Loader2, Play, RefreshCw } from 'lucide-react';
 import { buildBookingEarningsFinanceUrl } from '@/lib/finance/settlementAuditExport';
+import { VendorPeriodBookingsPanel } from './VendorPeriodBookingsPanel';
 
 function yesterdayYmd(): string {
   const d = new Date();
@@ -95,6 +96,7 @@ export function VendorDailyAccrualReport() {
     vendorFundedDiscount?: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -220,6 +222,7 @@ export function VendorDailyAccrualReport() {
           <code className="rounded bg-blue-100 px-1">delivery_settlements</code> row. CSV export also
           includes customer checkout <strong>platform fee</strong>, <strong>convenience fee</strong>,{' '}
           <strong>delivery fee</strong>, and <strong>GST (CGST / SGST / IGST)</strong> for investor reporting.
+          Expand a vendor row to download the same tax invoice the customer receives for each booking.
         </p>
       </div>
 
@@ -315,6 +318,7 @@ export function VendorDailyAccrualReport() {
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
+              <th className="w-8 px-2 py-2" />
               <th className="px-3 py-2 text-left font-medium text-gray-700">Business</th>
               <th className="px-3 py-2 text-left font-medium text-gray-700">Owner</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Gross</th>
@@ -337,54 +341,78 @@ export function VendorDailyAccrualReport() {
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={17} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={18} className="px-3 py-8 text-center text-gray-500">
                   No rows. Pick a date, run <strong>Compute</strong> (requires migration 732 + 753), then <strong>Load</strong>.
                 </td>
               </tr>
             )}
-            {rows.map((r) => (
-              <tr key={r.vendor_id} className="hover:bg-gray-50">
-                <td className="px-3 py-2">{r.business_name || '—'}</td>
-                <td className="px-3 py-2">{r.owner_name || '—'}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  ₹{Number(r.gross_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  ₹{Number(r.commission_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.net_amount)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.platform_fee)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.convenience_fee)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.delivery_fee)}</td>
-                <td className="px-3 py-2">
-                  {gstBreakdownCell(r.gst_total, r.cgst_amount, r.sgst_amount, r.igst_amount)}
-                </td>
-                <td className="px-3 py-2 text-center">{r.earnings_line_count}</td>
-                <td className="px-3 py-2 text-center">{r.delivery_settlement_line_count ?? 0}</td>
-                <td className="px-3 py-2 text-center">{r.missing_earnings_booking_count}</td>
-                <td className="px-3 py-2 text-center">{r.missing_delivery_settlement_count ?? 0}</td>
-                <td className="px-3 py-2 max-w-[140px] truncate" title={r.bankName || ''}>
-                  {r.bankName || '—'}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs">{r.ifscCode || '—'}</td>
-                <td className="px-3 py-2 text-center">
-                  {r.hasBankOnFile ? (r.bankVerified ? 'Yes' : 'No') : '—'}
-                </td>
-                <td className="px-3 py-2 text-center">
-                  <a
-                    href={buildBookingEarningsFinanceUrl({
-                      periodType: 'day',
-                      reportDate,
-                      vendorId: r.vendor_id,
-                    })}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700"
+            {rows.map((r) => {
+              const open = expandedVendorId === r.vendor_id;
+              return (
+                <Fragment key={r.vendor_id}>
+                  <tr
+                    className={`cursor-pointer hover:bg-orange-50/60 ${open ? 'bg-orange-50' : ''}`}
+                    onClick={() => setExpandedVendorId(open ? null : r.vendor_id)}
                   >
-                    View bookings
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </td>
-              </tr>
-            ))}
+                    <td className="px-2 py-2 text-gray-400">
+                      {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </td>
+                    <td className="px-3 py-2">{r.business_name || '—'}</td>
+                    <td className="px-3 py-2">{r.owner_name || '—'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      ₹{Number(r.gross_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      ₹{Number(r.commission_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.net_amount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.platform_fee)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.convenience_fee)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.delivery_fee)}</td>
+                    <td className="px-3 py-2">
+                      {gstBreakdownCell(r.gst_total, r.cgst_amount, r.sgst_amount, r.igst_amount)}
+                    </td>
+                    <td className="px-3 py-2 text-center">{r.earnings_line_count}</td>
+                    <td className="px-3 py-2 text-center">{r.delivery_settlement_line_count ?? 0}</td>
+                    <td className="px-3 py-2 text-center">{r.missing_earnings_booking_count}</td>
+                    <td className="px-3 py-2 text-center">{r.missing_delivery_settlement_count ?? 0}</td>
+                    <td className="px-3 py-2 max-w-[140px] truncate" title={r.bankName || ''}>
+                      {r.bankName || '—'}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">{r.ifscCode || '—'}</td>
+                    <td className="px-3 py-2 text-center">
+                      {r.hasBankOnFile ? (r.bankVerified ? 'Yes' : 'No') : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <a
+                        href={buildBookingEarningsFinanceUrl({
+                          periodType: 'day',
+                          reportDate,
+                          vendorId: r.vendor_id,
+                        })}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        View bookings
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr className="bg-orange-50/40">
+                      <td colSpan={18} className="px-3 py-3">
+                        <VendorPeriodBookingsPanel
+                          periodType="day"
+                          reportDate={reportDate}
+                          vendorId={r.vendor_id}
+                          businessName={r.business_name}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

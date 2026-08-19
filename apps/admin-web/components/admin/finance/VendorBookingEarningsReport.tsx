@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { apiClient, getApiBaseUrl, isUatMode } from '@/lib/api-client';
 import { Button } from '@warmpawz/ui';
 import { ChevronDown, ChevronRight, Download, Eye, Loader2, RefreshCw } from 'lucide-react';
+import { BookingInvoiceDownloadButton } from './BookingInvoiceDownloadButton';
 import {
   type BookingEarningsLine,
   normalizeBookingLine,
@@ -394,7 +395,8 @@ export function VendorBookingEarningsReport() {
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
         Financial audit report — per-booking customer-paid waterfall, vendor ledger, and settlement breakdown
-        (IST {periodWord}). Use <strong>View Settlement</strong> on a booking for funding and commission audit detail.
+        (IST {periodWord}). Use <strong>Download Invoice</strong> for the same tax invoice the customer receives, or{' '}
+        <strong>View Settlement</strong> for funding and commission audit detail.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -598,13 +600,14 @@ export function VendorBookingEarningsReport() {
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Gross</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Commission</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Net</th>
+                                  <th className="px-3 py-2 text-center font-medium text-gray-700">Invoice</th>
                                   <th className="px-3 py-2 text-center font-medium text-gray-700">Settlement</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-100">
                                 {bookings.length === 0 && !loadingBookings && (
                                   <tr>
-                                    <td colSpan={15} className="px-3 py-6 text-center text-gray-500">
+                                    <td colSpan={16} className="px-3 py-6 text-center text-gray-500">
                                       No bookings for this vendor in the selected {periodWord}.
                                     </td>
                                   </tr>
@@ -671,6 +674,9 @@ export function VendorBookingEarningsReport() {
                                           {moneyCell(b.vendorNet)}
                                         </td>
                                         <td className="px-3 py-2 text-center">
+                                          <BookingInvoiceDownloadButton bookingId={b.bookingId} />
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
                                           <Button
                                             type="button"
                                             variant="outline"
@@ -688,7 +694,7 @@ export function VendorBookingEarningsReport() {
                                       </tr>
                                       {expanded && (
                                         <tr className="bg-gray-50/80">
-                                          <td colSpan={15} className="px-6 py-3">
+                                          <td colSpan={16} className="px-6 py-3">
                                             <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
                                               <div>
                                                 <span className="text-gray-500">Customer paid</span>
@@ -748,7 +754,8 @@ export function VendorBookingEarningsReport() {
                                                   {b.feeSource.replace(/_/g, ' ')}
                                                 </div>
                                               </div>
-                                              <div className="sm:col-span-2 lg:col-span-4">
+                                              <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-4">
+                                                <BookingInvoiceDownloadButton bookingId={b.bookingId} />
                                                 <Button
                                                   type="button"
                                                   variant="outline"

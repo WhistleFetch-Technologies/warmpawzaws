@@ -6,6 +6,7 @@ import type { BookingEarningsLine } from '@/lib/finance/settlement-audit-types';
 import { dataSourceLabel, formatInr } from '@/lib/finance/settlement-audit-types';
 import { winningOfferLabel } from '@/lib/finance/settlementExplanation';
 import { SettlementExplanation } from './SettlementExplanation';
+import { BookingInvoiceDownloadButton } from '../BookingInvoiceDownloadButton';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -67,9 +68,12 @@ export function SettlementBreakdownDrawer({
               {line.serviceName || 'Service'} · {line.customerName || 'Customer'}
             </p>
           </div>
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close">
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <BookingInvoiceDownloadButton bookingId={line.bookingId} />
+            <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close">
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
