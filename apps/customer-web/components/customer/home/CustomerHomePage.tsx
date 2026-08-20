@@ -36,6 +36,10 @@ import type { HomeCarouselBanner, QuickServiceTile } from './types';
 import type { Pet } from '../homepage/constants/interface';
 import type { WhatsNewAnnouncement } from '@/lib/whats-new-announcements';
 import { resolveShopCategoryParam } from '@/lib/shop-category-display';
+import {
+  shouldEnableCustomerHomeTrustSupport,
+  shouldRenderCustomerHomeNeedHelp,
+} from '@/lib/customer-home-guest-support';
 
 const ShopProductsSection = dynamic(
   () => import('./sections/ShopProductsSection').then((mod) => ({ default: mod.ShopProductsSection })),
@@ -103,6 +107,7 @@ export interface CustomerHomePageContentProps {
   onPetCareArticlesSeeAll?: () => void;
   /** App Store review demo account — hides under-build sections entirely. */
   reviewDemoAccount?: boolean;
+  isGuest?: boolean;
 }
 
 function CustomerHomePageHeaderComponent({
@@ -172,6 +177,7 @@ function CustomerHomePageContentComponent({
   onPetCareArticleClick,
   onPetCareArticlesSeeAll,
   reviewDemoAccount = false,
+  isGuest = false,
 }: CustomerHomePageContentProps) {
   const lowerHomeBanners = featuredLowerBanners.slice(1);
   const petFoodCategoryId = useMemo(
@@ -201,7 +207,9 @@ function CustomerHomePageContentComponent({
         reviewDemoAccount={reviewDemoAccount}
       />
       <HeroBannerSection banners={homeCarouselBanners} onNavigate={onNavigate} />
-      <TrustFeatureBar onNavigate={onNavigate} />
+      <TrustFeatureBar
+        onNavigate={shouldEnableCustomerHomeTrustSupport(isGuest) ? onNavigate : undefined}
+      />
       <ActiveBookingsSection activeBookings={activeBookings} onViewBooking={onViewBooking} />
       {!reviewDemoAccount ? (
         <ShopProductsSection
@@ -262,9 +270,11 @@ function CustomerHomePageContentComponent({
           <HomeLowerBannersSection lowerBanners={lowerHomeBanners} onNavigate={onNavigate} />
         </ViewportSection>
       ) : null}
-      <ViewportSection placeholderMinHeight={200}>
-        <NeedHelpSection onNavigate={onNavigate} />
-      </ViewportSection>
+      {shouldRenderCustomerHomeNeedHelp(isGuest) ? (
+        <ViewportSection placeholderMinHeight={200}>
+          <NeedHelpSection onNavigate={onNavigate} />
+        </ViewportSection>
+      ) : null}
     </>
   );
 }

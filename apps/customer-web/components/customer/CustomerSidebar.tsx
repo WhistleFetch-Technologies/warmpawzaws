@@ -326,7 +326,11 @@ export function CustomerSidebar({
                 <ChevronRight className="w-5 h-5 text-gray-400" />
               </button>
 
-              <button className="w-full flex items-center justify-between p-4 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all">
+              <button
+                type="button"
+                onClick={() => onNavigate?.('logout')}
+                className="w-full flex items-center justify-between p-4 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center">
                     <LogOut className="w-5 h-5 text-red-600" />

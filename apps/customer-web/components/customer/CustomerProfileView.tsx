@@ -22,7 +22,7 @@ import {
   photoValueFromUploadResult,
 } from '@/lib/customer-profile-photo';
 import { toast } from 'sonner';
-import { signOutCustomer } from '@/lib/session-utils';
+import { getPostLogoutHref, signOutCustomer } from '@/lib/session-utils';
 import { validateEmail } from '@/lib/validation';
 import { inferCityStateFromCommaAddress, mergeStreetAddressLineOnly } from '@/lib/profile-address-format';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
@@ -406,7 +406,9 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
 
   const handleLogout = async () => {
     await signOutCustomer();
-    router.replace('/auth');
+    if (typeof window !== 'undefined') {
+      window.location.href = getPostLogoutHref();
+    }
   };
 
   const displayName = profile

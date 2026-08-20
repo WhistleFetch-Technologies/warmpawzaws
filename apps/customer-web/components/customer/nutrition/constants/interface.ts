@@ -58,6 +58,7 @@ export interface Vendor {
 
 export interface DietConsultationVendorsProps {
     phone: string;
+    isGuest?: boolean;
     onBack: () => void;
     onNavigate?: (screen: string, data?: any) => void;
 }

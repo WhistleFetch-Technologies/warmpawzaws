@@ -369,7 +369,7 @@ export class ApiClient {
     return this.getBaseUrl();
   }
 
-  private getAuthToken(): string | null {
+  getAuthToken(): string | null {
     if (typeof window !== 'undefined') {
       // Try Cognito token first (preferred for AWS Serverless).
       // getCognitoIdToken() reads the stored bundle synchronously; if the access token is
@@ -676,11 +676,9 @@ export class ApiClient {
           treat401AsFullSignOut &&
           !suppressForcedLogout401
         ) {
-          const { clearCognitoTokens } = await import('./cognito-auth');
-          clearCognitoTokens();
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('customerPhone');
-          window.location.href = '/auth';
+          const { clearCustomerSession, getPostLogoutHref } = await import('./session-utils');
+          clearCustomerSession();
+          window.location.href = getPostLogoutHref();
         }
         
         // Create ApiError with full error data preserved
@@ -883,12 +881,11 @@ export class ApiClient {
     }
   }
 
-  // Clear auth token
+  /** Prefer signOutCustomer() from UI logout. This stays a thin alias. */
   clearAuth(): void {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('customerPhone');
-    }
+    if (typeof window === 'undefined') return;
+    const { clearCustomerSession } = require('./session-utils');
+    clearCustomerSession();
   }
 }
 

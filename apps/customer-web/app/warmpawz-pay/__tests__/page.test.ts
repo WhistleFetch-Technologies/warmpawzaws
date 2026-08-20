@@ -10,15 +10,10 @@ jest.mock('@/hooks/useWpayVendorFeed', () => ({
 }));
 
 const mockPush = jest.fn();
-const mockRequestGuestAuthForWpayVendor = jest.fn();
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
   useSearchParams: () => new URLSearchParams(),
-}));
-
-jest.mock('@/lib/guest-auth-gate', () => ({
-  requestGuestAuthForWpayVendor: (...args: unknown[]) => mockRequestGuestAuthForWpayVendor(...args),
 }));
 
 const mockUseWpayVendorFeed = useWpayVendorFeed as jest.MockedFunction<typeof useWpayVendorFeed>;
@@ -26,8 +21,6 @@ const mockUseWpayVendorFeed = useWpayVendorFeed as jest.MockedFunction<typeof us
 describe('WarmpawzPayPage loading UX', () => {
   beforeEach(() => {
     mockPush.mockReset();
-    mockRequestGuestAuthForWpayVendor.mockReset();
-    mockRequestGuestAuthForWpayVendor.mockReturnValue(false);
     mockUseWpayVendorFeed.mockReturnValue({
       vendors: [
         {
@@ -82,8 +75,7 @@ describe('WarmpawzPayPage loading UX', () => {
     expect(screen.getByRole('button', { name: 'View Happy Tails' })).toBeTruthy();
   });
 
-  it('opens login instead of navigating when a guest taps a vendor', () => {
-    mockRequestGuestAuthForWpayVendor.mockReturnValue(true);
+  it('opens Pay Bill for a guest without requiring login first', () => {
     mockUseWpayVendorFeed.mockReturnValue({
       vendors: [
         {
@@ -107,8 +99,7 @@ describe('WarmpawzPayPage loading UX', () => {
     render(createElement(WarmpawzPayPage));
     fireEvent.click(screen.getByRole('button', { name: 'View Happy Tails' }));
 
-    expect(mockRequestGuestAuthForWpayVendor).toHaveBeenCalledWith('vendor-1');
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith('/warmpawz-pay/vendors/vendor-1');
   });
 
   it('renders Pet Sitting and Nutrition category filters', () => {

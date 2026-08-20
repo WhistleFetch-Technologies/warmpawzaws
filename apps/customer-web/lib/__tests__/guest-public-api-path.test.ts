@@ -77,6 +77,7 @@ describe('resolveGuestPublicApiPath', () => {
 
   it('does not rewrite customer-owned write paths', () => {
     expect(resolveGuestPublicApiPath('/customer/pets')).toBe('/customer/pets');
+    expect(resolveGuestPublicApiPath('/customer/pets/9876543210')).toBe('/customer/pets/9876543210');
     expect(resolveGuestPublicApiPath('/ecommerce/orders')).toBe('/ecommerce/orders');
   });
 

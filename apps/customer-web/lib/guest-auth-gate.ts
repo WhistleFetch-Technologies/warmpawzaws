@@ -212,17 +212,38 @@ export function requestGuestAuthForWapptBook(opts: {
   });
 }
 
-/** Warmpawz Pay vendor card — list browse is guest-ok; opening a vendor requires login. */
-export function requestGuestAuthForWpayVendor(vendorId: string): boolean {
-  const id = String(vendorId || '').trim();
+/**
+ * Warmpawz Pay — authenticate only at the customer-owned Pay / Continue action.
+ * Opening Pay Bill, entering an amount, and previewing the public discount are guest-ok.
+ */
+export function requestGuestAuthForWpayPay(opts: {
+  vendorId: string;
+  amount?: number;
+}): boolean {
+  const id = String(opts.vendorId || '').trim();
   const returnPath = id
     ? `/warmpawz-pay/vendors/${encodeURIComponent(id)}`
     : '/warmpawz-pay';
+  const amount = Number(opts.amount);
   return requestGuestAuthIfNeeded({
     mode: 'signup',
     returnPath,
     resumeScreen: 'warmpawz-pay-vendor',
+    guestBookingIntent: {
+      kind: 'pay_bill',
+      vendorId: id || undefined,
+      price: Number.isFinite(amount) && amount > 0 ? amount : undefined,
+      requiresPet: false,
+      funnelStarted: 'checkout',
+      resumeScreen: 'warmpawz-pay-vendor',
+      returnPath,
+    },
   });
+}
+
+/** Alias for the Pay Bill payment-action boundary. */
+export function requestGuestAuthForWpayVendor(vendorId: string, amount?: number): boolean {
+  return requestGuestAuthForWpayPay({ vendorId, amount });
 }
 
 /** Ecommerce add-to-cart / Pay card click. */

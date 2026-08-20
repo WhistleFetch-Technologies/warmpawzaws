@@ -6,6 +6,8 @@
 import { ensureCustomerIdStorageReconciledOnce } from './customer-id-storage';
 import { getCognitoTokens, clearCognitoTokens } from './cognito-auth';
 import { clearCachedPetsForPhone } from './customer-pets-cache';
+import { clearCheckoutAddressId } from './ecommerce/checkout-address-storage';
+import { isGuestBrowsingEnabled } from './guest-browsing-flag';
 
 /** After OTP, customer must set password before treating login as complete (first-time / legacy OTP-only). */
 export const SESSION_KEY_NEEDS_PASSWORD_SETUP = 'warmpawz_needs_password_setup';
@@ -70,18 +72,68 @@ export function isHardRefresh(): boolean {
   return false;
 }
 
+const PAYMENT_METHODS_LS_PREFIX = 'warmpawz_payments_v2_';
+const LAST_PET_SESSION_PREFIX = 'warmpawz_last_pet_';
+const HOME_SESSION_PREFIX = 'warmpawz_home_';
+const HOME_GUEST_PREFIX = 'warmpawz_home_guest_';
+const HOME_GLOBAL_TRENDING_KEY = 'warmpawz_home_global_trending';
+
+let customerQueryClientReset: (() => void) | null = null;
+
+/** Smallest existing cache hook — Providers registers QueryClient.clear(). */
+export function registerCustomerQueryClientReset(reset: (() => void) | null): void {
+  customerQueryClientReset = reset;
+}
+
+function removeStorageKeysByPrefix(
+  storage: Storage,
+  prefix: string,
+  keep?: (key: string) => boolean
+): void {
+  const toRemove: string[] = [];
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i);
+    if (key && key.startsWith(prefix) && (!keep || !keep(key))) {
+      toRemove.push(key);
+    }
+  }
+  for (const key of toRemove) {
+    storage.removeItem(key);
+  }
+}
+
+function departingCustomerPhone(): string {
+  return (
+    localStorage.getItem('customerPhone') ||
+    localStorage.getItem('customer_phone') ||
+    localStorage.getItem('phone') ||
+    ''
+  );
+}
+
 /**
- * Clear all customer session data
+ * After JWT teardown, send the user to guest Marketplace when browsing is on.
+ * Auth-required mode keeps the existing /auth destination.
+ */
+export function getPostLogoutHref(): string {
+  return isGuestBrowsingEnabled() ? '/' : '/auth';
+}
+
+/**
+ * Clear customer authentication and customer-scoped runtime state.
+ * Targeted key removal only — guest cart, location, and anonymous_id stay.
  */
 export function clearCustomerSession(): void {
   if (typeof window === 'undefined') return;
+
+  const phone = departingCustomerPhone();
 
   try {
     clearCognitoTokens();
   } catch {
     /* ignore */
   }
-  
+
   localStorage.removeItem('customerPhone');
   localStorage.removeItem('customerId');
   localStorage.removeItem('customer_id');
@@ -96,24 +148,72 @@ export function clearCustomerSession(): void {
   localStorage.removeItem('onboarding_completed');
   localStorage.removeItem('profile_completed');
   localStorage.removeItem('customerJourneyStage');
-  
-  // Clear Cognito tokens
+
   localStorage.removeItem('cognitoAccessToken');
   localStorage.removeItem('cognitoIdToken');
   localStorage.removeItem('cognitoRefreshToken');
   localStorage.removeItem('cognitoTokenExpiry');
   localStorage.removeItem('cognitoUserInfo');
   localStorage.removeItem('customerRefreshTokenExpiry');
+  localStorage.removeItem('customerTokenExpiry');
+  localStorage.removeItem('customerCognitoTokens');
+  localStorage.removeItem('customerUser');
 
-  // Aliases used by auth / legacy flows
   localStorage.removeItem('customer_phone');
   localStorage.removeItem('phone');
   localStorage.removeItem('refreshToken');
 
-  // Tab session flags (avoid stale “logged in” after explicit sign-out)
+  localStorage.removeItem('warmpawz_review_submitted_booking_ids');
+  localStorage.removeItem('warmpawz_review_skipped_booking_ids');
+  localStorage.removeItem('warmpawz_cust_push_registered_at');
+  localStorage.removeItem('warmpawz_cust_push_registered_user_id');
+
+  try {
+    removeStorageKeysByPrefix(localStorage, PAYMENT_METHODS_LS_PREFIX);
+    if (phone) {
+      const digits = phone.replace(/\D/g, '');
+      const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
+      if (last10) localStorage.removeItem(PAYMENT_METHODS_LS_PREFIX + last10);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    clearCheckoutAddressId();
+    removeStorageKeysByPrefix(sessionStorage, LAST_PET_SESSION_PREFIX);
+    removeStorageKeysByPrefix(
+      sessionStorage,
+      HOME_SESSION_PREFIX,
+      (key) => key.startsWith(HOME_GUEST_PREFIX) || key === HOME_GLOBAL_TRENDING_KEY
+    );
+  } catch {
+    /* ignore */
+  }
+
   sessionStorage.removeItem('_warmpawz_has_session');
   sessionStorage.removeItem('_warmpawz_just_logged_in');
   sessionStorage.removeItem(SESSION_KEY_NEEDS_PASSWORD_SETUP);
+
+  try {
+    const { stripAuthFromGuestJourneySnapshots } = require('./guest-booking-intent');
+    stripAuthFromGuestJourneySnapshots();
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const { resetHomeBootstrapForPhone } = require('./customer-home-bootstrap');
+    resetHomeBootstrapForPhone(null);
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    customerQueryClientReset?.();
+  } catch {
+    /* ignore */
+  }
 }
 
 /**

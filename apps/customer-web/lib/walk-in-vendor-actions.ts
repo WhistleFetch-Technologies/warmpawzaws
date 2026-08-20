@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import { shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
-import { requestGuestAuthIfNeeded } from '@/lib/guest-auth-gate';
 import {
   buildWarmpawzAppointmentsProfileNav,
   WAPPT_VENDOR_PROFILE_SCREEN,
@@ -60,15 +59,6 @@ export function payWalkInBill(provider: WalkInProvider, router: AppRouterInstanc
   }
   const vendorId = String(provider.id ?? '').trim();
   if (!vendorId) return;
-  if (
-    requestGuestAuthIfNeeded({
-      mode: 'signup',
-      returnPath: `/warmpawz-pay/vendors/${vendorId}`,
-      resumeScreen: 'warmpawz-pay-vendor',
-    })
-  ) {
-    return;
-  }
   launchWarmpawzPayServiceBooking({
     router,
     serviceKey: provider.category,

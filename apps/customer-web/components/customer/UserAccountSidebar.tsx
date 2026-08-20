@@ -37,6 +37,7 @@ import {
 } from '@/lib/go-back-or-replace';
 import { formatIstInstantDisplay } from '@/lib/ist-display-format';
 import { invalidateCustomerLocationCache } from '@/lib/customer-location';
+import { getPostLogoutHref, signOutCustomer } from '@/lib/session-utils';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
@@ -801,20 +802,10 @@ export function UserAccountSidebar({
     }
   };
 
-  const handleLogout = () => {
-    // Clear all localStorage items
-    localStorage.removeItem('customerPhone');
-    localStorage.removeItem('customerId');
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('customerData');
-    localStorage.removeItem('customerOnboardingComplete');
-    localStorage.removeItem('onboarding_completed');
-    localStorage.removeItem('profile_completed');
-    localStorage.removeItem('customerJourneyStage');
-    
-    // Redirect to auth page
+  const handleLogout = async () => {
+    await signOutCustomer();
     if (typeof window !== 'undefined') {
-      window.location.href = '/auth';
+      window.location.href = getPostLogoutHref();
     }
   };
 

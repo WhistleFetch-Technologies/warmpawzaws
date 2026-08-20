@@ -7,7 +7,7 @@ import { useWpayVendorFeed } from '@/hooks/useWpayVendorFeed';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { mapWpayVendorCardToProps } from '@/lib/warmpawz-pay/map-wpay-vendor-card-to-props';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
-import { requestGuestAuthForWpayVendor } from '@/lib/guest-auth-gate';
+import { buildWpayVendorPayPath } from '@/lib/warmpawz-pay/wpay-guest-journey';
 
 const CATEGORIES = [
   { id: 'all', label: 'All' },
@@ -130,8 +130,7 @@ function WarmpawzPayPageContent() {
                 className="block w-full text-left"
                 aria-label={`View ${v.name}`}
                 onClick={() => {
-                  if (requestGuestAuthForWpayVendor(v.vendorId)) return;
-                  router.push(`/warmpawz-pay/vendors/${encodeURIComponent(v.vendorId)}`);
+                  router.push(buildWpayVendorPayPath(v.vendorId));
                 }}
               >
                 <WarmpawzPayVendorCard {...mapWpayVendorCardToProps(v)} />

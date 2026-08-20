@@ -13,7 +13,13 @@ import {
 } from '@/lib/warmpawz-pay/wpay-api';
 import { previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
-import { requestGuestAuthForWpayVendor } from '@/lib/guest-auth-gate';
+import { consumeRestoredWpayPayBillAmount } from '@/lib/warmpawz-pay/wpay-guest-journey';
+import {
+  emitGuestAuthAnalytics,
+  isGuestApplicationState,
+  requestGuestAuthForWpayPay,
+} from '@/lib/guest-auth-gate';
+import { CUSTOMER_AUTH_COMPLETED_EVENT } from '@/lib/customer-auth-session-event';
 import { VendorProfileDashboardHeader } from '@/components/customer/shared/VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from '@/components/customer/shared/VendorHeroPhotoCarousel';
 import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
@@ -70,6 +76,31 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     void refreshAppointmentContext();
   }, [refreshAppointmentContext]);
 
+  useEffect(() => {
+    if (!resolvedVendorId) return;
+    const restored = consumeRestoredWpayPayBillAmount(resolvedVendorId);
+    if (restored == null) return;
+    setAmountInput(String(restored));
+    setQuoteReady(true);
+    emitGuestAuthAnalytics('booking_resumed', { kind: 'pay_bill' });
+    void refreshAppointmentContext();
+  }, [resolvedVendorId, refreshAppointmentContext]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onAuth = () => {
+      void refreshAppointmentContext();
+    };
+    window.addEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuth);
+    return () => window.removeEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuth);
+  }, [refreshAppointmentContext]);
+
+  useEffect(() => {
+    if (isGuestApplicationState()) {
+      emitGuestAuthAnalytics('vendor_viewed', { source: 'pay_bill' });
+    }
+  }, [resolvedVendorId]);
+
   const creditEligibleBooking = appointmentContext?.creditEligibleBooking ?? null;
 
   const billAmount = useMemo(() => {
@@ -98,7 +129,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
   const onProceedToPay = useCallback(async () => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
-    if (requestGuestAuthForWpayVendor(resolvedVendorId)) return;
+    if (requestGuestAuthForWpayPay({ vendorId: resolvedVendorId, amount: billAmount })) return;
     const phone = readCustomerPhoneFromStorage();
     if (!phone) {
       setPayError('Please log in to continue');
@@ -107,6 +138,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
     setPaying(true);
     setPayError(null);
+    emitGuestAuthAnalytics('payment_started', { source: 'pay_bill' });
     try {
       const result = await runWpayRazorpayCheckout({
         vendorId: resolvedVendorId,
@@ -124,6 +156,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Payment failed';
       if (msg !== 'Payment cancelled') {
+        emitGuestAuthAnalytics('payment_failed', { source: 'pay_bill' });
         setPayError(msg);
       }
     } finally {

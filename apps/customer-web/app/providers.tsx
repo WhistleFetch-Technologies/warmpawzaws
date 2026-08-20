@@ -2,7 +2,8 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
-import { useState, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { registerCustomerQueryClientReset } from '@/lib/session-utils';
 import { SearchContextProvider } from '@/context/SearchContext';
 import { CartProvider } from '@/context/CartContext';
 import { ScrollToTop } from '@/components/ScrollToTop';
@@ -42,6 +43,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       })
   );
+
+  useEffect(() => {
+    registerCustomerQueryClientReset(() => queryClient.clear());
+    return () => registerCustomerQueryClientReset(null);
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>
