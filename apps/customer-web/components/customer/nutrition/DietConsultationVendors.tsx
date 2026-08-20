@@ -10,14 +10,10 @@ import { NutritionistBookingRouter } from './NutritionistBookingRouter';
 import { DietConsultationVendorsProps, Vendor } from './constants/interface';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { discoveryVendorList } from '@/lib/discovery-list';
-import {
-  shouldBlockNutritionDiscoveryForMissingPets,
-  shouldFetchNutritionCustomerPets,
-} from '@/lib/nutrition-guest-discovery';
 
 
 
-export function DietConsultationVendors({ phone, isGuest = false, onBack, onNavigate }: DietConsultationVendorsProps) {
+export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsultationVendorsProps) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [pets, setPets] = useState<any[]>([]);
@@ -29,14 +25,9 @@ export function DietConsultationVendors({ phone, isGuest = false, onBack, onNavi
   useEffect(() => {
     fetchPets();
     loadVendors();
-  }, [phone, isGuest]);
+  }, [phone]);
 
   const fetchPets = async () => {
-    if (!shouldFetchNutritionCustomerPets({ isGuest, phone })) {
-      setPets([]);
-      setHasPets(false);
-      return;
-    }
     try {
       const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
       const petsList = petsData?.pets || [];
@@ -136,13 +127,8 @@ export function DietConsultationVendors({ phone, isGuest = false, onBack, onNavi
   };
 
   const handleVendorClick = async (vendor: Vendor) => {
-    if (
-      shouldBlockNutritionDiscoveryForMissingPets({
-        isGuest,
-        phone,
-        hasPets: Boolean(hasPets && pets.length > 0),
-      })
-    ) {
+    // Validate pet context before proceeding
+    if (!hasPets || pets.length === 0) {
       toast.error('Please add a pet first before booking nutrition services');
       onNavigate?.('pets', { action: 'add' });
       return;

@@ -44,7 +44,7 @@ import {
   type BoardingListVendor,
 } from '@/lib/boarding-vendor-discovery-map';
 import { resolveBoardingListVendorProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
-import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, filterMarketplaceHubTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
@@ -258,8 +258,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         ? { ...card, badge: trainingCenterBadgeText.toUpperCase() }
         : { ...card, badge: card.badge ?? 'PERSONALIZED' },
     );
-    if (shouldHideMarketplaceStyleTiles()) return [];
-    return base;
+    return filterMarketplaceHubTiles(base);
   }, [trainingCenterBadgeText]);
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
@@ -467,13 +466,13 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 onClick={() => onNavigate?.('wappt-discovery', { category: 'training' })}
                 className="group relative w-full overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
               >
-                <div className="relative h-28 w-full sm:h-32">
+                <div className="relative h-36 w-full sm:h-40">
                   {wapptTile.image ? (
                     <CachedImage
                       src={wapptTile.image}
                       alt={wapptTile.name}
                       fill
-                      className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+                      className="object-cover object-top origin-top transition-transform duration-300 ease-in-out group-hover:scale-105"
                       sizes="(max-width: 640px) 90vw, 400px"
                     />
                   ) : null}

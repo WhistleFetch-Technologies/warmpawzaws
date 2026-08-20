@@ -936,17 +936,6 @@ export function CustomerHomeWrapper({
       router.replace(intent.returnPath || '/checkout');
       return;
     }
-    if (intent?.kind === 'pay_bill' || intent?.resumeScreen === 'warmpawz-pay-vendor') {
-      emitGuestAuthAnalytics('booking_resumed', { kind: 'pay_bill' });
-      const payPath =
-        intent.returnPath && intent.returnPath.startsWith('/warmpawz-pay')
-          ? intent.returnPath
-          : intent.vendorId
-            ? `/warmpawz-pay/vendors/${encodeURIComponent(intent.vendorId)}`
-            : '/warmpawz-pay';
-      router.replace(payPath);
-      return;
-    }
     if (intent) {
       emitGuestAuthAnalytics('booking_resumed', { kind: intent.kind || 'booking' });
       if (intent.vendorId || intent.date || intent.time || intent.serviceId) {
@@ -2433,8 +2422,6 @@ export function CustomerHomeWrapper({
         return;
       }
       openAccountHubFromMenu('order_history');
-    } else if (path === 'logout') {
-      onNavigate('logout');
     }
   };
 
@@ -4911,7 +4898,6 @@ export function CustomerHomeWrapper({
       >
         <ExpertNutritionistsList
           phone={phone}
-          isGuest={isGuest}
           onBack={handleBack}
           onNavigate={(screen, data) => {
             if (screen === 'nutrition-meal-plans') {
@@ -4966,8 +4952,7 @@ export function CustomerHomeWrapper({
         accountSidebar={accountSidebarOverlay}
       >
         <DietConsultationVendors 
-          phone={phone}
-          isGuest={isGuest}
+          phone={phone} 
           onBack={handleBack} 
           onNavigate={(screen, data) => {
             if (screen === 'nutritionist-booking') {

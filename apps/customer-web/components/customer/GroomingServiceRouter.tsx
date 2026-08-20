@@ -38,8 +38,8 @@ import {
   type BoardingListVendor,
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
-import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
-import { mergeWapptServiceTypes } from '@/lib/wappt-hub-registry';
+import { isWarmpawzAppointmentsHubEnabled, filterMarketplaceHubTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
@@ -49,7 +49,6 @@ import {
   loadCustomerServiceLaunchCatalog,
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
-import { hasAuthenticatedCustomerSession } from '@/lib/guest-auth-gate';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 
 const GROOMING_STYLE_LAUNCH_MAP: Record<string, string> = {
@@ -156,6 +155,7 @@ function resolveGroomingNeedCardVisual(specId: string, index: number) {
 
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('grooming');
+  const wapptTile = buildWapptHubTile('grooming');
   /** Featured/Top list + profile: WAPPT when Commerce Switch routes to Pay. */
   const { problems: bootstrapProblems } = useCategoryBootstrap({
     category: 'grooming',
@@ -396,28 +396,20 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         arrowClass: 'bg-green-500 hover:bg-green-600',
       },
     ];
-      return cards.filter((service) => {
+      const launchVisible = cards.filter((service) => {
         const launchStatus = styleLaunchByCard[service.id];
         if (launchStatus && isServiceStyleHiddenForBrowse(launchStatus)) {
           return false;
         }
-        // Guests always see marketplace centre/home for browse. Authenticated + WAPPT hub replaces these tiles.
-        if (
-          hasAuthenticatedCustomerSession() &&
-          shouldHideMarketplaceStyleTiles() &&
-          isWarmpawzAppointmentsHubEnabled('grooming')
-        ) {
-          return false;
-        }
         return true;
       });
+      if (!isWarmpawzAppointmentsHubEnabled('grooming')) {
+        return launchVisible;
+      }
+      return filterMarketplaceHubTiles(launchVisible);
     },
     [groomingCenterBadgeText, styleLaunchByCard]
   );
-
-  const serviceTypesWithWappt = useMemo(() => {
-    return mergeWapptServiceTypes(serviceTypes, 'grooming');
-  }, [serviceTypes]);
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
@@ -571,10 +563,45 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           </div>
 
           {/* Choose Service Type */}
+          {(wapptHubEnabled && wapptTile) || serviceTypes.length > 0 ? (
           <div>
             <h2 className="mb-3 text-lg font-bold text-slate-900">Choose Service Type</h2>
-            <div className="grid grid-cols-2 gap-3">
-              {serviceTypesWithWappt.map((service) => (
+            {wapptHubEnabled && wapptTile ? (
+              <button
+                type="button"
+                onClick={() => onNavigate?.('wappt-discovery', { category: 'grooming' })}
+                className="group relative w-full overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
+              >
+                <div className="relative h-28 w-full sm:h-32">
+                  {wapptTile.image ? (
+                    <CachedImage
+                      src={wapptTile.image}
+                      alt={wapptTile.name}
+                      fill
+                      className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+                      sizes="(max-width: 640px) 90vw, 400px"
+                    />
+                  ) : null}
+                  <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${wapptTile.badgeClass}`}>
+                    {wapptTile.badge}
+                  </span>
+                </div>
+                <div className="relative p-3 pb-10">
+                  <h3 className="text-sm font-bold text-slate-900">{wapptTile.name}</h3>
+                  <p className="mt-0.5 text-[11px] text-slate-500">{wapptTile.description}</p>
+                  <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-500">
+                    <Users className="h-3 w-3 text-orange-400" />
+                    <span>{wapptTile.trustedBy}</span>
+                  </div>
+                  <div className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-transform group-hover:scale-110 ${wapptTile.arrowClass}`}>
+                    <ArrowRight className="h-4 w-4" />
+                  </div>
+                </div>
+              </button>
+            ) : null}
+            {serviceTypes.length > 0 ? (
+            <div className={`grid grid-cols-2 gap-3 ${wapptHubEnabled && wapptTile ? 'mt-3' : ''}`}>
+              {serviceTypes.map((service) => (
                 <button
                   key={service.id}
                   type="button"
@@ -607,7 +634,9 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 </button>
               ))}
             </div>
+            ) : null}
           </div>
+          ) : null}
 
           {/* YOUR GROOMER — kept below hub sections */}
           {previousGroomer && (
