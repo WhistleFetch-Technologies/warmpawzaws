@@ -1,15 +1,22 @@
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import {
   bookWalkInAppointment,
+  payWalkInBill,
   persistWalkInShellNav,
   WALK_IN_PENDING_SHELL_NAV_KEY,
 } from '@/lib/walk-in-vendor-actions';
+import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import { WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { WALK_IN_VENDORS_PATH } from '@/lib/walk-in-constants';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
 
 jest.mock('@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking', () => ({
   launchWarmpawzPayServiceBooking: jest.fn(),
+}));
+
+jest.mock('@/lib/commerce-switch-routing/should-use-wappt-vendor-card-ui', () => ({
+  shouldUseWapptPayVendorCardUi: jest.fn(() => true),
+  shouldUseWapptDiscoveryFeed: jest.fn(() => true),
 }));
 
 jest.mock('@/lib/search-booking-launch', () => ({
@@ -185,6 +192,17 @@ describe('bookWalkInAppointment', () => {
     expect(onNavigate).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(WALK_IN_PENDING_SHELL_NAV_KEY)).toBeNull();
+  });
+
+  it('Pay Bill opens the shared vendor Pay Bill screen without immediate login', () => {
+    const router = makeRouter();
+    payWalkInBill(makeProvider(), router);
+    expect(launchWarmpawzPayServiceBooking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vendorId: 'vendor-bindu-groom',
+        category: 'grooming',
+      })
+    );
   });
 
   it('persistWalkInShellNav stores screen for home handoff', () => {

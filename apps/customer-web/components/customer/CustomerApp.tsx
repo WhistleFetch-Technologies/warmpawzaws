@@ -5,7 +5,7 @@ import {
   bootstrapPushNotifications,
   ensureCapacitorPushRegistrationPipeline,
 } from '@/lib/push-bootstrap';
-import { signOutCustomer } from '@/lib/session-utils';
+import { getPostLogoutHref, signOutCustomer } from '@/lib/session-utils';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
@@ -103,8 +103,7 @@ export function CustomerApp({
     if (screen === 'logout') {
       if (typeof window !== 'undefined') {
         await signOutCustomer();
-        resetHomeBootstrapForPhone(null);
-        window.location.href = '/auth';
+        window.location.href = getPostLogoutHref();
       }
     }
   };

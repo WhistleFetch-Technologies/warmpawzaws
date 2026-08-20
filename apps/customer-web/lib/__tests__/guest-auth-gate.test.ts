@@ -10,6 +10,7 @@ import { isGuestBrowsingEnabled } from '../guest-browsing-flag';
 import {
   registerGuestAuthModalOpener,
   requestGuestAuth,
+  requestGuestAuthForWpayPay,
   requestGuestAuthForWpayVendor,
 } from '../guest-auth-gate';
 import {
@@ -79,5 +80,21 @@ describe('requestGuestAuth', () => {
         resumeScreen: 'warmpawz-pay-vendor',
       }),
     );
+  });
+
+  it('requestGuestAuthForWpayPay stores entered amount and does not require a pet', () => {
+    const opener = jest.fn();
+    registerGuestAuthModalOpener(opener);
+    localStorage.clear();
+
+    const blocked = requestGuestAuthForWpayPay({ vendorId: 'vendor-1', amount: 1000 });
+
+    expect(blocked).toBe(true);
+    const intent = readGuestBookingIntent();
+    expect(intent?.kind).toBe('pay_bill');
+    expect(intent?.price).toBe(1000);
+    expect(intent?.vendorId).toBe('vendor-1');
+    expect(intent?.requiresPet).toBe(false);
+    expect(intent?.returnPath).toBe('/warmpawz-pay/vendors/vendor-1');
   });
 });

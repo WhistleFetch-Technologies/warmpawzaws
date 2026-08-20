@@ -13,14 +13,19 @@ import { toast } from 'sonner';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import {
+  shouldBlockNutritionDiscoveryForMissingPets,
+  shouldFetchNutritionCustomerPets,
+} from '@/lib/nutrition-guest-discovery';
 
 interface ExpertNutritionistsListProps {
   phone: string;
+  isGuest?: boolean;
   onBack: () => void;
   onNavigate?: (screen: string, data?: any) => void;
 }
 
-export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNutritionistsListProps) {
+export function ExpertNutritionistsList({ phone, isGuest = false, onBack, onNavigate }: ExpertNutritionistsListProps) {
   const [loading, setLoading] = useState(true);
   const [nutritionists, setNutritionists] = useState<any[]>([]);
   const [pets, setPets] = useState<any[]>([]);
@@ -29,9 +34,14 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
   useEffect(() => {
     fetchPets();
     fetchNutritionists();
-  }, [phone]);
+  }, [phone, isGuest]);
 
   const fetchPets = async () => {
+    if (!shouldFetchNutritionCustomerPets({ isGuest, phone })) {
+      setPets([]);
+      setHasPets(false);
+      return;
+    }
     try {
       const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
       const petsList = petsData?.pets || [];
@@ -59,8 +69,13 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
   };
 
   const handleNutritionistClick = (nutritionist: any) => {
-    // ✅ FIX: Validate pet context before navigation (fallback)
-    if (!hasPets || pets.length === 0) {
+    if (
+      shouldBlockNutritionDiscoveryForMissingPets({
+        isGuest,
+        phone,
+        hasPets: Boolean(hasPets && pets.length > 0),
+      })
+    ) {
       toast.error('Please add a pet first before booking nutrition services');
       onNavigate?.('pets', { action: 'add' });
       return;

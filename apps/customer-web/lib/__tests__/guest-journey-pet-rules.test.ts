@@ -22,6 +22,18 @@ describe('transaction-specific pet rules', () => {
     clearGuestBookingIntent();
   });
 
+  it('does not require pet for Pay Bill', () => {
+    expect(
+      transactionRequiresPet({
+        v: 1,
+        savedAt: Date.now(),
+        kind: 'pay_bill',
+        returnPath: '/warmpawz-pay/vendors/v1',
+        price: 1000,
+      })
+    ).toBe(false);
+  });
+
   it('does not require pet for ecommerce cart', () => {
     expect(
       transactionRequiresPet({
@@ -45,6 +57,20 @@ describe('transaction-specific pet rules', () => {
         returnPath: '/',
       })
     ).toBe(false);
+  });
+
+  it('still requires pet for Nutritionist booking transactions', () => {
+    expect(
+      transactionRequiresPet({
+        v: 1,
+        savedAt: Date.now(),
+        kind: 'booking',
+        persona: 'nutrition',
+        category: 'nutrition',
+        returnPath: '/',
+        resumeScreen: 'nutritionist-booking',
+      })
+    ).toBe(true);
   });
 
   it('requires pet for marketplace grooming booking', () => {

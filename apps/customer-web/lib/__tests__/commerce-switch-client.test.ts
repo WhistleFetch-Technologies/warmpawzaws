@@ -8,6 +8,7 @@ import {
   getActiveCommerceModel,
   getAvailableModels,
   getCommerceSwitchConfiguration,
+  getCommerceSwitchConfigurationVersion,
   hasCommerceSwitchConfiguration,
   isCommerceSwitchDegraded,
   isMarketplace,
@@ -15,7 +16,10 @@ import {
   prefetchCommerceSwitchConfiguration,
   prefetchCommerceSwitchConfigurationOnStartup,
   refreshCommerceSwitchConfiguration,
+  shouldAcceptCommerceConfig,
   subscribeCommerceSwitchConfiguration,
+  applyCommerceSwitchOptimisticHint,
+  getHydratedCommerceConfiguration,
 } from '../commerce-switch-client';
 
 const mockedGet = apiClient.get as jest.Mock;
@@ -143,5 +147,143 @@ describe('commerce-switch-client (read-only)', () => {
 
     expect(mockedGet).toHaveBeenCalledTimes(2);
     expect(getActiveCommerceModel()).toBe('warmpawz_pay');
+  });
+
+  it('shouldAcceptCommerceConfig rejects older version', () => {
+    const current = {
+      activeModelId: 'warmpawz_pay' as const,
+      version: 4,
+      schemaVersion: '1.0',
+      availableModels: ['marketplace', 'warmpawz_pay'] as const,
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    };
+    const stale = { ...current, activeModelId: 'marketplace' as const, version: 3 };
+
+    expect(shouldAcceptCommerceConfig(stale, current)).toBe(false);
+    expect(shouldAcceptCommerceConfig({ ...current, version: 5 }, current)).toBe(true);
+  });
+
+  it('ignores stale in-flight response after force refresh', async () => {
+    type ResolveFn = (value: unknown) => void;
+    let resolveSlow: ResolveFn | undefined;
+    const slowPromise = new Promise((resolve) => {
+      resolveSlow = resolve;
+    });
+
+    mockedGet
+      .mockReturnValueOnce(slowPromise)
+      .mockResolvedValueOnce({
+        activeModelId: 'warmpawz_pay',
+        version: 4,
+        schemaVersion: '1.0',
+        availableModels: ['marketplace', 'warmpawz_pay'],
+        updatedAt: '2026-01-03T00:00:00.000Z',
+      });
+
+    const slowFetch = prefetchCommerceSwitchConfiguration();
+    await refreshCommerceSwitchConfiguration({ force: true });
+
+    expect(isWarmpawzPay()).toBe(true);
+    expect(getCommerceSwitchConfigurationVersion()).toBe(4);
+
+    resolveSlow!({
+      activeModelId: 'marketplace',
+      version: 3,
+      schemaVersion: '1.0',
+      availableModels: ['marketplace'],
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await slowFetch;
+
+    expect(isWarmpawzPay()).toBe(true);
+    expect(getCommerceSwitchConfigurationVersion()).toBe(4);
+  });
+
+  it('preserves warm cache when force refresh fails', async () => {
+    mockedGet.mockResolvedValueOnce({
+      activeModelId: 'warmpawz_pay',
+      version: 4,
+      schemaVersion: '1.0',
+      availableModels: ['marketplace', 'warmpawz_pay'],
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    });
+
+    await prefetchCommerceSwitchConfiguration();
+    mockedGet.mockRejectedValueOnce(new Error('network error'));
+
+    const result = await refreshCommerceSwitchConfiguration({ force: true });
+
+    expect(result.activeModelId).toBe('warmpawz_pay');
+    expect(result.version).toBe(4);
+    expect(isWarmpawzPay()).toBe(true);
+  });
+
+  it('latest force refresh wins when two overlap', async () => {
+    type ResolveFn = (value: unknown) => void;
+    let resolveFirst: ResolveFn | undefined;
+    const firstPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    mockedGet
+      .mockReturnValueOnce(firstPromise)
+      .mockResolvedValueOnce({
+        activeModelId: 'warmpawz_pay',
+        version: 5,
+        schemaVersion: '1.0',
+        availableModels: ['marketplace', 'warmpawz_pay'],
+        updatedAt: '2026-01-04T00:00:00.000Z',
+      });
+
+    const firstRefresh = refreshCommerceSwitchConfiguration({ force: true });
+    const secondRefresh = refreshCommerceSwitchConfiguration({ force: true });
+    await secondRefresh;
+
+    expect(getCommerceSwitchConfigurationVersion()).toBe(5);
+
+    resolveFirst!({
+      activeModelId: 'marketplace',
+      version: 3,
+      schemaVersion: '1.0',
+      availableModels: ['marketplace'],
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await firstRefresh;
+
+    expect(isWarmpawzPay()).toBe(true);
+    expect(getCommerceSwitchConfigurationVersion()).toBe(5);
+  });
+
+  it('restores config from sessionStorage on hydrate', () => {
+    clearCommerceSwitchCache();
+    sessionStorage.setItem(
+      'warmpawz_commerce_switch_v1',
+      JSON.stringify({
+        config: {
+          activeModelId: 'warmpawz_pay',
+          version: 9,
+          schemaVersion: '1.0',
+          availableModels: ['marketplace', 'warmpawz_pay'],
+          updatedAt: '2026-01-03T00:00:00.000Z',
+        },
+        fetchedAt: Date.now(),
+      })
+    );
+
+    const hydrated = getHydratedCommerceConfiguration();
+
+    expect(hydrated?.activeModelId).toBe('warmpawz_pay');
+    expect(hydrated?.version).toBe(9);
+  });
+
+  it('applyCommerceSwitchOptimisticHint updates cache before fetch', () => {
+    applyCommerceSwitchOptimisticHint({
+      configurationVersion: 10,
+      activeModelId: 'warmpawz_pay',
+      updatedAt: '2026-01-04T00:00:00.000Z',
+    });
+
+    expect(isWarmpawzPay()).toBe(true);
+    expect(getCommerceSwitchConfigurationVersion()).toBe(10);
   });
 });

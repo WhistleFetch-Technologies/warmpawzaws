@@ -5,7 +5,8 @@ import { Home, ShoppingBag, Calendar, User } from 'lucide-react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { isAppReviewDemoAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
 import { useProfileMenuOpen } from '@/lib/profile-menu-open-context';
-import { isWarmpawzPayEnabled } from '@/lib/warmpawz-pay/wpay-feature-flag';
+import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
+import { isWpayUiEnabled } from '@/lib/warmpawz-pay/wpay-feature-flag';
 import { ScanToPayPawButton } from './ScanToPayPawButton';
 
 interface BottomNavigationProps {
@@ -84,12 +85,13 @@ export function BottomNavigation({
   };
 
   const profileActive = isActive('profile');
-  const wpayEnabled = isWarmpawzPayEnabled();
+  const commerce = useCommerceConfigOptional();
+  const wpayEnabled = isWpayUiEnabled(commerce);
 
   return (
     <div className="cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-customer overflow-visible border-t border-gray-200 bg-white">
       <div
-        className={`grid items-end overflow-visible px-1 pb-2 pt-2 sm:px-2 ${wpayEnabled ? 'grid-cols-5' : 'grid-cols-4'}`}
+        className="grid grid-cols-5 items-end overflow-visible px-1 pb-2 pt-2 sm:px-2"
       >
         <TabIconButton label="Home" active={isActive('home')} onClick={() => handleNavClick('home')}>
           <Home className={`h-6 w-6 ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
@@ -110,7 +112,9 @@ export function BottomNavigation({
             active={isActive('warmpawz-pay')}
             onClick={() => handleNavClick('warmpawz-pay')}
           />
-        ) : null}
+        ) : (
+          <div className="relative h-0 w-full" aria-hidden />
+        )}
 
         <TabIconButton
           label="Bookings"

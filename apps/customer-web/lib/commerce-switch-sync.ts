@@ -16,6 +16,7 @@ import {
   type CommerceSwitchSyncPayload,
 } from '@warmpawz/commerce-switch-contracts';
 import {
+  applyCommerceSwitchOptimisticHint,
   getCommerceSwitchConfigurationVersion,
   syncCommerceSwitchConfiguration,
 } from '@/lib/commerce-switch-client';
@@ -116,6 +117,14 @@ export function requestCommerceSwitchSync(
   lastTriggerAt = now;
   if (hintVersion > lastHintVersion) {
     lastHintVersion = hintVersion;
+  }
+
+  if (hint?.activeModelId && hintVersion > 0) {
+    applyCommerceSwitchOptimisticHint({
+      configurationVersion: hintVersion,
+      activeModelId: hint.activeModelId,
+      updatedAt: hint.updatedAt,
+    });
   }
 
   if (debounceTimer) clearTimeout(debounceTimer);
