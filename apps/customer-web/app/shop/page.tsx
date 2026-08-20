@@ -37,12 +37,13 @@ import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { handleShopPageBack } from '@/lib/go-back-or-replace';
 import { emitWarmpawzCartUpdated, CART_UPDATED_EVENT, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
 import { cartLineKey } from '@/lib/product-sku-client';
-import { requestGuestAuthForCart } from '@/lib/guest-auth-gate';
+import { requestGuestAuthForCart, isGuestApplicationState } from '@/lib/guest-auth-gate';
 import {
-  loadCustomerDeliveryAddresses,
+  loadDeliveryAddressesForCheckout,
   pickDefaultDeliveryAddress,
   type DeliveryAddress,
 } from '@/lib/ecommerce/load-customer-addresses';
+import { LOCATION_UPDATED_EVENT } from '@/lib/customer-discovery-coords';
 import { formatDeliveryAddressLine } from '@/lib/ecommerce/delivery-address-display';
 import {
   readCheckoutAddressId,
@@ -170,8 +171,8 @@ function ShopPageContent() {
   );
 
   const refreshDeliveryAddresses = useCallback(
-    async (phone: string, opts?: { preserveSelection?: boolean }) => {
-      const list = await loadCustomerDeliveryAddresses(phone);
+    async (phone?: string, opts?: { preserveSelection?: boolean }) => {
+      const list = await loadDeliveryAddressesForCheckout(phone);
       setSavedAddresses(list);
 
       if (opts?.preserveSelection && selectedDeliveryAddressRef.current?.id) {
@@ -418,13 +419,18 @@ function ShopPageContent() {
   }, [loadFeaturedDeals]);
 
   useEffect(() => {
-    if (!customerPhone) {
-      setDeliveryLabel('Deliver to: Add delivery address');
-      return;
-    }
-    refreshDeliveryAddresses(customerPhone).catch(() => {
+    refreshDeliveryAddresses(customerPhone || undefined).catch(() => {
       setDeliveryLabel('Deliver to: Add delivery address');
     });
+  }, [customerPhone, refreshDeliveryAddresses]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onLocationUpdated = () => {
+      void refreshDeliveryAddresses(customerPhone || undefined);
+    };
+    window.addEventListener(LOCATION_UPDATED_EVENT, onLocationUpdated);
+    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLocationUpdated);
   }, [customerPhone, refreshDeliveryAddresses]);
 
   const openAddressPicker = async () => {
@@ -646,7 +652,9 @@ function ShopPageContent() {
         <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pb-[var(--customer-tabbed-nav-offset)] [-webkit-overflow-scrolling:touch]">
           <ShopDeliveryBar
             deliveryLabel={deliveryLabel}
-            onAddressClick={openAddressPicker}
+            onAddressClick={
+              isGuestApplicationState() ? undefined : openAddressPicker
+            }
           />
           <CustomerPlacementBanners
             placement="shop"

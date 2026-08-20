@@ -25,7 +25,7 @@ import {
   type DeliverySpeed,
 } from '@/lib/ecommerce/cart-pricing';
 import {
-  loadCustomerDeliveryAddresses,
+  loadDeliveryAddressesForCheckout,
   pickDefaultDeliveryAddress,
   type DeliveryAddress,
 } from '@/lib/ecommerce/load-customer-addresses';
@@ -219,14 +219,9 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   );
 
   const refreshAddresses = useCallback(async () => {
-    if (!phone) {
-      setAddresses([]);
-      setAddressesLoading(false);
-      return;
-    }
     setAddressesLoading(true);
     try {
-      const list = await loadCustomerDeliveryAddresses(phone);
+      const list = await loadDeliveryAddressesForCheckout(phone || undefined);
       setAddresses(list);
       hydrateAddressFromList(list, readCheckoutAddressId());
     } catch (err) {

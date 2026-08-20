@@ -54,7 +54,7 @@ import {
   meaningfulSpecEntries,
 } from '@/lib/ecommerce/product-spec-display';
 import {
-  loadCustomerDeliveryAddresses,
+  loadDeliveryAddressesForCheckout,
   pickDefaultDeliveryAddress,
 } from '@/lib/ecommerce/load-customer-addresses';
 import {
@@ -230,20 +230,19 @@ export default function ProductDetailClient() {
         localStorage.getItem('customerPhone') ||
         localStorage.getItem('customer_phone') ||
         '';
-      if (!phone) return;
       try {
-        const list = await loadCustomerDeliveryAddresses(phone);
+        const list = await loadDeliveryAddressesForCheckout(phone || undefined);
         const storedId = readCheckoutAddressId();
         let picked = storedId ? list.find((a) => a.id === storedId) : null;
         if (!picked) picked = pickDefaultDeliveryAddress(list);
-        if (!cancelled) {
-          if (picked?.city) {
+        if (!cancelled && picked) {
+          if (picked.city) {
             setCustomerCity(String(picked.city).trim());
           }
-          if (picked?.pincode) {
+          if (picked.pincode) {
             setCustomerPincode(String(picked.pincode).trim());
           }
-          if (picked?.state) {
+          if (picked.state) {
             setCustomerState(String(picked.state).trim());
           }
         }

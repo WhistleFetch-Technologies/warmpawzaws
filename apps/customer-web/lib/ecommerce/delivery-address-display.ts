@@ -12,6 +12,7 @@ export function formatDeliveryAddressLine(addr: DeliveryAddress): string {
 }
 
 export function deliveryAddressTitle(addr: DeliveryAddress): string {
+  if (addr.id === 'guest-location') return 'Current location';
   const label = (addr as DeliveryAddress & { label?: string }).label;
   if (label) return label;
   return addr.fullName || addr.name || (addr.id === 'profile' ? 'Profile address' : 'Address');

@@ -24,10 +24,16 @@ import { CartLineQuantityStepper } from '@/components/ecommerce/shared/CartLineQ
 import { DeliveryAddressPickerSheet } from '@/components/customer/ecommerce/DeliveryAddressPickerSheet';
 import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
 import {
-  loadCustomerDeliveryAddresses,
+  loadDeliveryAddressesForCheckout,
   pickDefaultDeliveryAddress,
   type DeliveryAddress,
 } from '@/lib/ecommerce/load-customer-addresses';
+import { deliveryAddressTitle } from '@/lib/ecommerce/delivery-address-display';
+import {
+  isGuestApplicationState,
+  requestGuestAuth,
+} from '@/lib/guest-auth-gate';
+import { LOCATION_UPDATED_EVENT } from '@/lib/customer-discovery-coords';
 import {
   readCheckoutAddressId,
   writeCheckoutAddressId,
@@ -70,6 +76,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   const nav = useCustomerNavigation();
   const { cart, itemCount, updateQuantity, removeFromCart, addToCart } = useCart();
   const phone = phoneProp || resolveCustomerPhone();
+  const isGuest = isGuestApplicationState();
 
   const [selectedPromo, setSelectedPromo] = useState<SelectedCartPromotion | null>(null);
   const [autoPromo, setAutoPromo] = useState<{
@@ -205,14 +212,9 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   }, [primaryVendorId, cart.length, cartPromoItems, selectedPromo]);
 
   const refreshAddresses = useCallback(async () => {
-    if (!phone) {
-      setAddresses([]);
-      setAddressesLoading(false);
-      return;
-    }
     setAddressesLoading(true);
     try {
-      const list = await loadCustomerDeliveryAddresses(phone);
+      const list = await loadDeliveryAddressesForCheckout(phone || undefined);
       setAddresses(list);
       const storedId = readCheckoutAddressId();
       let picked = storedId ? list.find((a) => a.id === storedId) : null;
@@ -220,9 +222,12 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       if (picked?.id) {
         writeCheckoutAddressId(picked.id);
         setSelectedAddress(picked);
+      } else {
+        setSelectedAddress(null);
       }
     } catch {
       setAddresses([]);
+      setSelectedAddress(null);
     } finally {
       setAddressesLoading(false);
     }
@@ -230,6 +235,15 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
 
   useEffect(() => {
     void refreshAddresses();
+  }, [refreshAddresses]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onLocationUpdated = () => {
+      void refreshAddresses();
+    };
+    window.addEventListener(LOCATION_UPDATED_EVENT, onLocationUpdated);
+    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLocationUpdated);
   }, [refreshAddresses]);
 
   useEffect(() => {
@@ -386,7 +400,11 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   const handleProceedCheckout = () => {
     if (!selectedAddress?.id) {
       toast.error('Please add a delivery address before checkout');
-      setShowAddressPicker(true);
+      if (!isGuest) setShowAddressPicker(true);
+      return;
+    }
+    if (isGuest) {
+      requestGuestAuth({ mode: 'signup', returnPath: '/checkout' });
       return;
     }
     if (hasUndeliverable) {
@@ -490,10 +508,12 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                     ) : selectedAddress ? (
                       <>
                         <p className="font-semibold text-slate-900 truncate">
-                          {selectedAddress.fullName || selectedAddress.name || 'Home'}
+                          {deliveryAddressTitle(selectedAddress)}
                         </p>
                         <p className="text-sm text-slate-600 truncate">
-                          {selectedAddress.city}, {selectedAddress.pincode}
+                          {selectedAddress.city}
+                          {selectedAddress.city && selectedAddress.pincode ? ', ' : ''}
+                          {selectedAddress.pincode}
                         </p>
                       </>
                     ) : (
@@ -503,13 +523,15 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                     )}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAddressPicker(true)}
-                  className="text-sm font-semibold text-[#FF8C42] shrink-0"
-                >
-                  Change
-                </button>
+                {!isGuest && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddressPicker(true)}
+                    className="text-sm font-semibold text-[#FF8C42] shrink-0"
+                  >
+                    Change
+                  </button>
+                )}
               </div>
             </section>
 
@@ -691,28 +713,32 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
         </Button>
       </div>
 
-      <DeliveryAddressPickerSheet
-        open={showAddressPicker}
-        onClose={() => setShowAddressPicker(false)}
-        addresses={addresses}
-        selectedAddress={selectedAddress}
-        onSelect={handleAddressSelect}
-        onAddNew={() => {
-          setShowAddressPicker(false);
-          setShowAddAddressModal(true);
-        }}
-        onManageAddresses={() => setShowAddressPicker(false)}
-        loading={addressesLoading}
-        phone={phone}
-      />
+      {!isGuest && (
+        <>
+          <DeliveryAddressPickerSheet
+            open={showAddressPicker}
+            onClose={() => setShowAddressPicker(false)}
+            addresses={addresses}
+            selectedAddress={selectedAddress}
+            onSelect={handleAddressSelect}
+            onAddNew={() => {
+              setShowAddressPicker(false);
+              setShowAddAddressModal(true);
+            }}
+            onManageAddresses={() => setShowAddressPicker(false)}
+            loading={addressesLoading}
+            phone={phone}
+          />
 
-      <AddAddressModal
-        phone={phone}
-        isOpen={showAddAddressModal}
-        onClose={() => setShowAddAddressModal(false)}
-        onSuccess={handleAddAddressSuccess}
-        customerName={selectedAddress?.fullName || selectedAddress?.name || ''}
-      />
+          <AddAddressModal
+            phone={phone}
+            isOpen={showAddAddressModal}
+            onClose={() => setShowAddAddressModal(false)}
+            onSuccess={handleAddAddressSuccess}
+            customerName={selectedAddress?.fullName || selectedAddress?.name || ''}
+          />
+        </>
+      )}
     </div>
   );
 }

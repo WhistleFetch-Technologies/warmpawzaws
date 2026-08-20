@@ -12,6 +12,8 @@ export type PersistedLocationV1 = {
   latitude: number | null;
   longitude: number | null;
   locality?: string;
+  /** Reverse-geocoded street line when GPS is used. */
+  addressLine1?: string;
   city?: string;
   pincode?: string;
   state?: string;

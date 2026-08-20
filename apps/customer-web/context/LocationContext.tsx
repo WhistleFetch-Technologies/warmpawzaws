@@ -47,6 +47,8 @@ export type LocationState = {
   longitude: number | null;
   /** Neighbourhood / sublocality when reverse-geocoded */
   locality?: string;
+  /** Reverse-geocoded street line when GPS is used. */
+  addressLine1?: string;
   city?: string;
   pincode?: string;
   state?: string;
@@ -108,6 +110,7 @@ function fromPersisted(p: PersistedLocationV1 | null): LocationState {
     latitude,
     longitude,
     locality: p.locality,
+    addressLine1: p.addressLine1,
     city: p.city,
     pincode: p.pincode,
     state: p.state,
@@ -140,6 +143,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       latitude: next.latitude,
       longitude: next.longitude,
       locality: next.locality,
+      addressLine1: next.addressLine1,
       city: next.city,
       pincode: next.pincode,
       state: next.state,
@@ -157,6 +161,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       accuracyM?: number | null;
       source: LocationSource;
       locality?: string;
+      addressLine1?: string;
       city?: string;
       pincode?: string;
       state?: string;
@@ -180,6 +185,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             isStale: false,
             permissionStatus: coords.permissionStatus || s.permissionStatus,
             locality: coords.locality || s.locality,
+            addressLine1: coords.addressLine1 || s.addressLine1,
             city: coords.city || s.city,
             pincode: coords.pincode || s.pincode,
             state: coords.state || s.state,
@@ -198,6 +204,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         latitude: coords.latitude,
         longitude: coords.longitude,
         locality: coords.locality,
+        addressLine1: coords.addressLine1,
         city: coords.city,
         pincode: coords.pincode,
         state: coords.state,
@@ -245,6 +252,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           source: 'gps',
           permissionStatus: 'granted',
           locality: result.addressLine2,
+          addressLine1: result.addressLine1,
           city: result.city,
           pincode: result.pincode,
           state: result.state,

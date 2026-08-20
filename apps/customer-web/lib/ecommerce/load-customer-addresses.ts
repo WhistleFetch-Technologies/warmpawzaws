@@ -4,6 +4,7 @@
  */
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { readGuestDeliveryAddressFromLocation } from '@/lib/ecommerce/guest-delivery-address';
 
 export type DeliveryAddress = {
   id?: string;
@@ -152,4 +153,21 @@ export async function loadCustomerDeliveryAddresses(
   if (local) return [local];
 
   return [];
+}
+
+/**
+ * Loads delivery addresses for cart/shop/checkout.
+ * Saved customer addresses take priority; falls back to startup guest location when none exist.
+ */
+export async function loadDeliveryAddressesForCheckout(
+  phoneInput?: string
+): Promise<DeliveryAddress[]> {
+  const phones = resolvePhoneCandidates(phoneInput);
+  if (phones.length > 0) {
+    const saved = await loadCustomerDeliveryAddresses(phoneInput);
+    if (saved.length > 0) return saved;
+  }
+
+  const guest = readGuestDeliveryAddressFromLocation();
+  return guest ? [guest] : [];
 }
