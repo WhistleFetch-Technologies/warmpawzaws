@@ -41,10 +41,11 @@ import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, 
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
-import {
-  shouldBlockNutritionDiscoveryForMissingPets,
-  shouldFetchNutritionCustomerPets,
-} from '@/lib/nutrition-guest-discovery';
+import { requestGuestAuth } from '@/lib/guest-auth-gate';
+
+function hasCustomerPhone(phone: string): boolean {
+  return (phone?.replace(/\D/g, '') ?? '').length >= 10;
+}
 
 const NUTRITION_HEADER_ICON =
   'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
@@ -69,8 +70,8 @@ function NutritionHeaderBackground() {
 
 
 /**
- * Nutrition discovery is public. Authenticated customers without pets are
- * prompted at vendor select. Guests may browse; pet is a later booking step.
+ * ✅ FIX: Added pet context validation to prevent crashes (NUT-CUST-001)
+ * Nutrition services require a pet to be selected before booking
  */
 export function NutritionistServicesLanding({ phone, isGuest = false, onBack, onNavigate }: NutritionistServicesLandingProps) {
   const mealPlansLive = isCustomerMealPlansEnabled();
@@ -89,11 +90,11 @@ export function NutritionistServicesLanding({ phone, isGuest = false, onBack, on
   useEffect(() => {
     loadPets();
     loadNutritionists();
-  }, [phone, isGuest]);
+  }, [phone]);
 
   //---------------------------fucntions----------------------------------//
   const loadPets = async () => {
-    if (!shouldFetchNutritionCustomerPets({ isGuest, phone })) {
+    if (!hasCustomerPhone(phone)) {
       setPets([]);
       setHasPets(false);
       return;
@@ -193,13 +194,21 @@ export function NutritionistServicesLanding({ phone, isGuest = false, onBack, on
   };
 
   const handleNutritionistSelect = (nutritionist: any) => {
-    if (
-      shouldBlockNutritionDiscoveryForMissingPets({
-        isGuest,
-        phone,
-        hasPets: Boolean(hasPets && pets.length > 0),
-      })
-    ) {
+    if (!hasPets || pets.length === 0) {
+      if (isGuest || !hasCustomerPhone(phone)) {
+        requestGuestAuth({
+          mode: 'signup',
+          returnPath: '/',
+          resumeScreen: 'nutritionist-booking',
+          guestBookingIntent: {
+            kind: 'booking',
+            persona: 'nutrition',
+            category: 'nutrition',
+            requiresPet: true,
+          },
+        });
+        return;
+      }
       toast.error('Please add a pet first before booking nutrition services');
       onNavigate?.('pets', { action: 'add' });
       return;

@@ -9,10 +9,9 @@ import { CustomerProfileView } from '@/components/customer/CustomerProfileView';
 import { readProfileCompleted } from '@/lib/customer-flow-guards';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import {
-  getPostLogoutHref,
+  clearCustomerSession,
   getStoredCustomerJwtForSession,
   needsPasswordSetupAfterOtp,
-  signOutCustomer,
 } from '@/lib/session-utils';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
@@ -86,12 +85,9 @@ export default function ProfilePage() {
 
   const handleCreateProfileBack = useCallback(() => {
     if (typeof window === 'undefined') return;
-    void signOutCustomer().then(() => {
-      if (typeof window !== 'undefined') {
-        window.location.href = getPostLogoutHref();
-      }
-    });
-  }, []);
+    clearCustomerSession();
+    router.replace('/auth');
+  }, [router]);
 
   if (!flowReady) {
     return (

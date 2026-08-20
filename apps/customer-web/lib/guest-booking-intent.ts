@@ -16,7 +16,7 @@ export const GUEST_JOURNEY_PROGRESS_BACKUP_KEY = 'warmpawz_guest_booking_progres
 
 export const GUEST_JOURNEY_TTL_MS = 2 * 60 * 60 * 1000;
 
-export type GuestJourneyKind = 'booking' | 'search' | 'vendor' | 'cart' | 'add_pet' | 'pay_bill';
+export type GuestJourneyKind = 'booking' | 'search' | 'vendor' | 'cart' | 'add_pet';
 
 export type GuestSearchSnapshot = {
   q?: string;
@@ -176,9 +176,7 @@ export function shouldDeferHomeOnboarding(): boolean {
 /** Pet is required only for explicit Add Pet or marketplace bookings that need a pet. */
 export function transactionRequiresPet(intent: GuestBookingIntentV1 | null | undefined): boolean {
   if (!intent) return false;
-  if (intent.kind === 'cart' || intent.kind === 'search' || intent.kind === 'vendor' || intent.kind === 'pay_bill') {
-    return false;
-  }
+  if (intent.kind === 'cart' || intent.kind === 'search' || intent.kind === 'vendor') return false;
   if (intent.kind === 'add_pet' || intent.openAddPet === true) return true;
   if (intent.requiresPet === false) return false;
   if (intent.requiresPet === true) return true;
@@ -199,55 +197,6 @@ export function resolveResumeScreen(intent: GuestBookingIntentV1): string | unde
 export function clearGuestBookingIntent(): void {
   removePair(GUEST_BOOKING_INTENT_KEY, GUEST_JOURNEY_BACKUP_KEY);
   removePair(GUEST_BOOKING_PROGRESS_KEY, GUEST_JOURNEY_PROGRESS_BACKUP_KEY);
-}
-
-const GUEST_JOURNEY_AUTH_LEAK_KEYS = [
-  'idToken',
-  'accessToken',
-  'refreshToken',
-  'authToken',
-  'jwt',
-  'customerCognitoTokens',
-  'customerUser',
-  'customerPhone',
-  'customer_phone',
-  'customerId',
-  'customer_id',
-  'warmpawz_customer_id',
-  'customerData',
-  'customerProfile',
-] as const;
-
-function stripAuthLeakFields(value: unknown): { next: unknown; dirty: boolean } {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { next: value, dirty: false };
-  }
-  const record = { ...(value as Record<string, unknown>) };
-  let dirty = false;
-  for (const key of GUEST_JOURNEY_AUTH_LEAK_KEYS) {
-    if (key in record) {
-      delete record[key];
-      dirty = true;
-    }
-  }
-  return { next: record, dirty };
-}
-
-/**
- * Keep guest booking intent after logout, but never let a snapshot restore JWT / customer identity.
- */
-export function stripAuthFromGuestJourneySnapshots(): void {
-  if (!canUseStorage()) return;
-  const pairs: Array<[string, string]> = [
-    [GUEST_BOOKING_INTENT_KEY, GUEST_JOURNEY_BACKUP_KEY],
-    [GUEST_BOOKING_PROGRESS_KEY, GUEST_JOURNEY_PROGRESS_BACKUP_KEY],
-  ];
-  for (const [sessionKey, backupKey] of pairs) {
-    const parsed = readPair<Record<string, unknown>>(sessionKey, backupKey);
-    if (!parsed) continue;
-    const { next, dirty } = stripAuthLeakFields(parsed);
-    if (dirty) persistPair(sessionKey, backupKey, next);
-  }
 }
 
 /**
