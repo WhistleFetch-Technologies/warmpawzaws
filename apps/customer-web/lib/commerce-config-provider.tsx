@@ -19,7 +19,9 @@ import {
 import { apiClient } from '@/lib/api-client';
 import {
   getCommerceSwitchConfiguration,
+  getHydratedCommerceConfiguration,
   prefetchCommerceSwitchConfigurationOnStartup,
+  shouldAcceptCommerceConfig,
   subscribeCommerceSwitchConfiguration,
   syncCommerceSwitchConfiguration,
 } from '@/lib/commerce-switch-client';
@@ -28,7 +30,7 @@ import {
   requestCommerceSwitchSync,
 } from '@/lib/commerce-switch-sync';
 
-type CommerceConfigContextValue = {
+export type CommerceConfigContextValue = {
   config: PublicCommerceConfiguration;
   activeModelId: CommerceModelId;
   isMarketplace: boolean;
@@ -68,12 +70,15 @@ function configsEqual(
 }
 
 export function CommerceConfigProvider({ children }: { children: ReactNode }) {
-  const [config, setConfig] = useState<PublicCommerceConfiguration>(defaultConfig);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [config, setConfig] = useState<PublicCommerceConfiguration>(() => {
+    return getHydratedCommerceConfiguration() ?? defaultConfig;
+  });
+  const [isLoaded, setIsLoaded] = useState(() => getHydratedCommerceConfiguration() != null);
 
   const applyConfigIfChanged = useCallback((next: PublicCommerceConfiguration) => {
     setConfig((prev) => {
       if (configsEqual(prev, next)) return prev;
+      if (prev.version > 0 && !shouldAcceptCommerceConfig(next, prev)) return prev;
       return next;
     });
     setIsLoaded(true);
@@ -87,11 +92,8 @@ export function CommerceConfigProvider({ children }: { children: ReactNode }) {
   const runFallbackVersionCheck = useCallback(async () => {
     const remoteVersion = await fetchRemoteConfigurationVersion();
     if (remoteVersion == null) return;
-    if (!isLoaded || remoteVersion !== config.version) {
-      requestCommerceSwitchSync(
-        remoteVersion > config.version ? { configurationVersion: remoteVersion } : null,
-        'fallback'
-      );
+    if (!isLoaded || remoteVersion > config.version) {
+      requestCommerceSwitchSync({ configurationVersion: remoteVersion }, 'fallback');
     }
   }, [config.version, isLoaded]);
 

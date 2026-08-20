@@ -18,12 +18,14 @@ type CacheState = {
 };
 
 const CACHE_TTL_MS = 300_000;
+const SESSION_STORAGE_KEY = 'warmpawz_commerce_switch_v1';
 
 let cache: CacheState | null = null;
 let inflight: Promise<PublicCommerceConfiguration> | null = null;
 let syncInflight: Promise<PublicCommerceConfiguration> | null = null;
 let startupPrefetchStarted = false;
 let syncGeneration = 0;
+let fetchGeneration = 0;
 let pendingMinVersion = 0;
 
 type CommerceConfigListener = (config: PublicCommerceConfiguration) => void;
@@ -63,6 +65,67 @@ function readCachedConfig(): PublicCommerceConfiguration {
   return marketplaceFallback(false);
 }
 
+function restoreCacheFromSession(): void {
+  if (typeof window === 'undefined' || cache) return;
+  try {
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as CacheState;
+    if (parsed?.config && Date.now() - parsed.fetchedAt < CACHE_TTL_MS) {
+      cache = parsed;
+    }
+  } catch {
+    // ignore corrupt session snapshot
+  }
+}
+
+function persistCacheToSession(): void {
+  if (typeof window === 'undefined' || !cache) return;
+  try {
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(cache));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+/** Restore session snapshot and return cached config when fresh (survives HMR remounts). */
+export function getHydratedCommerceConfiguration(): PublicCommerceConfiguration | null {
+  restoreCacheFromSession();
+  if (isFresh(cache)) return cache.config;
+  return null;
+}
+
+/** Apply FCM/broadcast hint immediately so Pay UI updates before GET completes. */
+export function applyCommerceSwitchOptimisticHint(hint: {
+  configurationVersion?: number;
+  activeModelId?: CommerceModelId;
+  updatedAt?: string;
+}): boolean {
+  const version = hint.configurationVersion ?? 0;
+  const activeModelId = hint.activeModelId;
+  if (version < 1 || !activeModelId) return false;
+  if (activeModelId !== 'marketplace' && activeModelId !== 'warmpawz_pay') return false;
+
+  restoreCacheFromSession();
+  const current = isFresh(cache) ? cache.config : null;
+  if (current && !shouldAcceptCommerceConfig({ ...current, version, activeModelId }, current)) {
+    return false;
+  }
+
+  storeConfig({
+    activeModelId,
+    version,
+    schemaVersion: current?.schemaVersion ?? '1.0',
+    availableModels: current?.availableModels ?? ['marketplace', 'warmpawz_pay'],
+    updatedAt: hint.updatedAt ?? new Date().toISOString(),
+  });
+  return true;
+}
+
+if (typeof window !== 'undefined') {
+  restoreCacheFromSession();
+}
+
 function notifyListeners(config: PublicCommerceConfiguration): void {
   for (const listener of listeners) {
     try {
@@ -73,8 +136,26 @@ function notifyListeners(config: PublicCommerceConfiguration): void {
   }
 }
 
+/** True when incoming config should replace current (monotonic version guard). */
+export function shouldAcceptCommerceConfig(
+  incoming: PublicCommerceConfiguration,
+  current: PublicCommerceConfiguration | null | undefined
+): boolean {
+  if (!current) return true;
+  if (incoming.version > current.version) return true;
+  if (incoming.version === current.version && incoming.activeModelId !== current.activeModelId) {
+    return true;
+  }
+  return false;
+}
+
 function storeConfig(config: PublicCommerceConfiguration): PublicCommerceConfiguration {
+  const current = isFresh(cache) ? cache.config : null;
+  if (current && !shouldAcceptCommerceConfig(config, current)) {
+    return current;
+  }
   cache = { config, fetchedAt: Date.now() };
+  persistCacheToSession();
   notifyListeners(config);
   return config;
 }
@@ -95,7 +176,15 @@ export function clearCommerceSwitchCache(): void {
   syncInflight = null;
   startupPrefetchStarted = false;
   syncGeneration = 0;
+  fetchGeneration = 0;
   pendingMinVersion = 0;
+  if (typeof window !== 'undefined') {
+    try {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export function hasCommerceSwitchConfiguration(): boolean {
@@ -106,7 +195,16 @@ export function getCommerceSwitchConfigurationVersion(): number {
   return readCachedConfig().version;
 }
 
-async function fetchCommerceSwitchConfigurationOnce(): Promise<PublicCommerceConfiguration> {
+async function fetchCommerceSwitchConfigurationOnce(
+  requestGeneration: number
+): Promise<PublicCommerceConfiguration> {
+  const resolveAfterFetch = (config: PublicCommerceConfiguration): PublicCommerceConfiguration => {
+    if (requestGeneration !== fetchGeneration) {
+      return isFresh(cache) ? cache.config : config;
+    }
+    return storeConfig(config);
+  };
+
   try {
     const res = await apiClient.get<PublicCommerceConfiguration & { success?: boolean }>(
       COMMERCE_SWITCH_ENDPOINTS.CONFIG
@@ -115,9 +213,15 @@ async function fetchCommerceSwitchConfigurationOnce(): Promise<PublicCommerceCon
     if (process.env.NODE_ENV === 'development') {
       console.log('[CommerceSwitch] loaded', config.activeModelId, 'v', config.version);
     }
-    return storeConfig(config);
+    return resolveAfterFetch(config);
   } catch (err) {
-    console.warn('[CommerceSwitch] config fetch failed, using marketplace default', err);
+    console.warn('[CommerceSwitch] config fetch failed', err);
+    if (requestGeneration !== fetchGeneration) {
+      return readCachedConfig();
+    }
+    if (isFresh(cache)) {
+      return cache.config;
+    }
     const fallback = marketplaceFallback(true);
     return storeConfig(fallback);
   }
@@ -131,8 +235,14 @@ export async function prefetchCommerceSwitchConfiguration(
 ): Promise<PublicCommerceConfiguration> {
   if (!force && isFresh(cache)) return cache.config;
 
+  if (force) {
+    fetchGeneration += 1;
+    inflight = null;
+  }
+
   if (!inflight) {
-    inflight = fetchCommerceSwitchConfigurationOnce().finally(() => {
+    const requestGeneration = fetchGeneration;
+    inflight = fetchCommerceSwitchConfigurationOnce(requestGeneration).finally(() => {
       inflight = null;
     });
   }
@@ -143,10 +253,6 @@ export async function prefetchCommerceSwitchConfiguration(
 export async function refreshCommerceSwitchConfiguration(options?: {
   force?: boolean;
 }): Promise<PublicCommerceConfiguration> {
-  if (options?.force) {
-    cache = null;
-    inflight = null;
-  }
   return prefetchCommerceSwitchConfiguration(Boolean(options?.force));
 }
 
@@ -181,7 +287,7 @@ export async function syncCommerceSwitchConfiguration(options?: {
   syncInflight = refreshCommerceSwitchConfiguration({ force: true })
     .then((config) => {
       if (generation < syncGeneration && config.version < pendingMinVersion) {
-        return config;
+        return isFresh(cache) ? cache!.config : config;
       }
       if (config.version >= pendingMinVersion) {
         pendingMinVersion = config.version;
