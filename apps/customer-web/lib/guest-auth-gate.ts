@@ -94,7 +94,7 @@ export function requestGuestAuth(options: GuestAuthRequestOptions = {}): void {
   const mode = options.mode || 'signup';
   const merged = persistGuestBookingIntentForAuth({
     ...(options.guestBookingIntent || {}),
-    returnPath: options.returnPath || options.guestBookingIntent?.returnPath || '/',
+    returnPath: options.returnPath || '/',
     resumeScreen: options.resumeScreen || options.guestBookingIntent?.resumeScreen,
     openAddPet: options.openAddPet,
   });

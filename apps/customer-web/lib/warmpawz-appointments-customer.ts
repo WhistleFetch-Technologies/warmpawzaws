@@ -15,6 +15,16 @@ export function shouldHideMarketplaceStyleTiles(): boolean {
   return isWarmpawzPayCommerceActive();
 }
 
+/** Pay-mode hub tiles: hide marketplace style cards for every visitor, including guests. */
+export function filterMarketplaceHubTiles<T extends { id: string }>(
+  tiles: T[],
+  options?: { keepIds?: string[] },
+): T[] {
+  if (!shouldHideMarketplaceStyleTiles()) return tiles;
+  const keep = new Set(options?.keepIds ?? []);
+  return tiles.filter((tile) => keep.has(tile.id));
+}
+
 export function isWarmpawzAppointmentsHubEnabled(category: string): boolean {
   const route = resolveServiceBookingCommerceRouteForNavigation({
     serviceKey: category,
