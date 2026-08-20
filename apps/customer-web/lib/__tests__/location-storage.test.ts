@@ -1,5 +1,6 @@
 import {
   haversineMeters,
+  hasValidGuestHomeLocation,
   migrateLegacyLocationCache,
   readPersistedLocation,
   writePersistedLocation,
@@ -42,5 +43,23 @@ describe('location-storage', () => {
 
   it('exposes LOCATION_STALE_MS as positive config', () => {
     expect(LOCATION_STALE_MS).toBeGreaterThan(60_000);
+  });
+
+  it('treats finite lat/lng as a valid guest home location', () => {
+    expect(hasValidGuestHomeLocation({ latitude: 12.97, longitude: 77.59 })).toBe(true);
+  });
+
+  it('rejects empty, incomplete, NaN, Infinity, and city-only locations', () => {
+    expect(hasValidGuestHomeLocation(null)).toBe(false);
+    expect(hasValidGuestHomeLocation({ latitude: null, longitude: null })).toBe(false);
+    expect(hasValidGuestHomeLocation({ latitude: 12.97, longitude: null })).toBe(false);
+    expect(hasValidGuestHomeLocation({ latitude: Number.NaN, longitude: 77.59 })).toBe(false);
+    expect(hasValidGuestHomeLocation({ latitude: 12.97, longitude: Number.POSITIVE_INFINITY })).toBe(false);
+    expect(hasValidGuestHomeLocation({ latitude: Number.NEGATIVE_INFINITY, longitude: 77.59 })).toBe(false);
+    expect(hasValidGuestHomeLocation({ city: 'Bangalore', latitude: null, longitude: null })).toBe(false);
+    expect(hasValidGuestHomeLocation({ latitude: '', longitude: '' })).toBe(false);
+    expect(hasValidGuestHomeLocation({ latitude: '  ', longitude: '77.59' })).toBe(false);
+    expect(hasValidGuestHomeLocation({ latitude: null, longitude: 77.59 })).toBe(false);
+    expect(hasValidGuestHomeLocation({ latitude: 'abc', longitude: '77.59' })).toBe(false);
   });
 });

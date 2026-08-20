@@ -9,6 +9,7 @@ import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
 import dynamic from 'next/dynamic';
 import { NotAvailable } from '../NotAvailable';
 import { CustomerScreenWrapper } from '../CustomerScreenWrapper';
+import { GuestHomeLocationGateHost } from '../GuestLocationPrompt';
 import { SERVICE_CONFIGS } from '@/lib/home/service-configs';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import {
@@ -2956,6 +2957,7 @@ export function CustomerHomeWrapper({
         onProfileClick={handleProfileClick}
         accountSidebar={accountSidebarOverlay}
       >
+        <GuestHomeLocationGateHost isGuest={isGuest}>
         <CustomerHome 
           phone={phone}
           isGuest={isGuest}
@@ -3086,6 +3088,7 @@ export function CustomerHomeWrapper({
           onAddPet={handleAddPet}
           onViewBooking={handleViewBooking}
         />
+        </GuestHomeLocationGateHost>
       </CustomerScreenWrapper>
     );
   }

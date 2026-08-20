@@ -26,6 +26,37 @@ function isFiniteCoord(n: unknown): n is number {
   return typeof n === 'number' && Number.isFinite(n);
 }
 
+/**
+ * Guest Home coordinate contract: Number.isFinite(Number(value)).
+ * null/undefined/"" must be rejected first — Number(null) and Number("") are 0.
+ */
+export function isFiniteGuestHomeCoordinate(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === 'boolean') return false;
+  if (typeof value === 'string' && !value.trim()) return false;
+  return Number.isFinite(Number(value));
+}
+
+/** Parse a coordinate; empty strings, NaN, and Infinity are not valid. */
+export function parseGuestHomeCoordinate(value: unknown): number | null {
+  if (!isFiniteGuestHomeCoordinate(value)) return null;
+  return Number(value);
+}
+
+/**
+ * Guest Home unlock contract: finite latitude AND finite longitude.
+ * City/pincode text without coordinates does not count.
+ */
+export function hasValidGuestHomeLocation(
+  location: { latitude?: unknown; longitude?: unknown } | null | undefined
+): boolean {
+  if (!location) return false;
+  return (
+    isFiniteGuestHomeCoordinate(location.latitude) &&
+    isFiniteGuestHomeCoordinate(location.longitude)
+  );
+}
+
 /** Migrate legacy customer_latitude / customer_longitude into v1 shape. */
 export function migrateLegacyLocationCache(): PersistedLocationV1 | null {
   if (typeof window === 'undefined') return null;

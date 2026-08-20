@@ -26,6 +26,7 @@ import {
 } from '@/lib/location-constants';
 import {
   haversineMeters,
+  parseGuestHomeCoordinate,
   readPersistedLocation,
   writePersistedLocation,
   type PersistedLocationV1,
@@ -70,6 +71,7 @@ type ManualLocationInput = {
 };
 
 type LocationContextValue = LocationState & {
+  hydrated: boolean;
   requestForegroundLocation: (opts?: { force?: boolean }) => Promise<boolean>;
   setManualLocation: (input: ManualLocationInput) => void;
   clearLocationError: () => void;
@@ -98,11 +100,13 @@ function freshnessFor(timestamp: number | null, hasCoords: boolean): LocationFre
 
 function fromPersisted(p: PersistedLocationV1 | null): LocationState {
   if (!p) return EMPTY;
-  const hasCoords = p.latitude != null && p.longitude != null;
+  const latitude = parseGuestHomeCoordinate(p.latitude);
+  const longitude = parseGuestHomeCoordinate(p.longitude);
+  const hasCoords = latitude != null && longitude != null;
   const locationStatus = freshnessFor(p.timestamp, hasCoords);
   return {
-    latitude: p.latitude,
-    longitude: p.longitude,
+    latitude,
+    longitude,
     locality: p.locality,
     city: p.city,
     pincode: p.pincode,
@@ -120,12 +124,14 @@ function fromPersisted(p: PersistedLocationV1 | null): LocationState {
 
 export function LocationProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<LocationState>(EMPTY);
+  const [hydrated, setHydrated] = useState(false);
   const lastSampleRef = useRef<{ lat: number; lng: number; at: number } | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestingRef = useRef(false);
 
   useEffect(() => {
     setState(fromPersisted(readPersistedLocation()));
+    setHydrated(true);
   }, []);
 
   const persist = useCallback((next: LocationState) => {
@@ -259,8 +265,17 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           permissionStatus: denied ? 'denied' : s.permissionStatus === 'granted' ? 'granted' : 'unavailable',
           error: msg,
           // Do not invent Mumbai / silent defaults when guest location is on
-          locationStatus: freshnessFor(s.updatedAt, s.latitude != null && s.longitude != null),
-          isStale: freshnessFor(s.updatedAt, s.latitude != null && s.longitude != null) !== 'fresh',
+          locationStatus: freshnessFor(
+            s.updatedAt,
+            parseGuestHomeCoordinate(s.latitude) != null &&
+              parseGuestHomeCoordinate(s.longitude) != null
+          ),
+          isStale:
+            freshnessFor(
+              s.updatedAt,
+              parseGuestHomeCoordinate(s.latitude) != null &&
+                parseGuestHomeCoordinate(s.longitude) != null
+            ) !== 'fresh',
         }));
         if (denied) {
           try {
@@ -280,8 +295,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const setManualLocation = useCallback(
     (input: ManualLocationInput) => {
       const source = input.source || (input.pincode ? 'manual_pincode' : 'manual_city');
-      const lat = input.latitude ?? null;
-      const lng = input.longitude ?? null;
+      const lat = parseGuestHomeCoordinate(input.latitude);
+      const lng = parseGuestHomeCoordinate(input.longitude);
       const now = Date.now();
       const next: LocationState = {
         latitude: lat,
@@ -349,12 +364,13 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const value = useMemo<LocationContextValue>(
     () => ({
       ...state,
+      hydrated,
       requestForegroundLocation,
       setManualLocation,
       clearLocationError,
       refreshIfStaleOnResume,
     }),
-    [state, requestForegroundLocation, setManualLocation, clearLocationError, refreshIfStaleOnResume]
+    [state, hydrated, requestForegroundLocation, setManualLocation, clearLocationError, refreshIfStaleOnResume]
   );
 
   return <LocationContext.Provider value={value}>{children}</LocationContext.Provider>;

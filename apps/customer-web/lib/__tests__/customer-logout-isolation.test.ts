@@ -29,6 +29,11 @@ import { getCognitoIdToken, refreshCognitoTokensIfNeeded } from '../cognito-auth
 import { apiClient, getCustomerAuthHeadersForUpload } from '../api-client';
 import { hasAuthenticatedCustomerSession, isGuestApplicationState } from '../guest-auth-gate';
 import { resolveGuestPublicApiPath } from '../guest-public-api-path';
+import { hasValidGuestHomeLocation } from '../location-storage';
+import {
+  shouldMountGuestHomeContent,
+  shouldShowGuestHomeLocationGate,
+} from '../guest-home-location-gate';
 
 const CUSTOMER_WEB_ROOT = path.resolve(__dirname, '../..');
 
@@ -184,6 +189,50 @@ describe('customer logout isolation', () => {
     expect(localStorage.getItem('warmpawz_location_v1')).toContain('Bengaluru');
     expect(localStorage.getItem(getAnonymousIdStorageKey())).toBe('anon-keep-me');
     expect(sessionStorage.getItem('warmpawz_home_guest_critical')).toContain('guest');
+  });
+
+  it('keeps valid Guest-safe coordinates after logout without customer identity', async () => {
+    seedCustomerA();
+    localStorage.setItem(
+      'warmpawz_location_v1',
+      JSON.stringify({
+        v: 1,
+        latitude: 12.97,
+        longitude: 77.59,
+        timestamp: Date.now(),
+        source: 'gps',
+        city: 'Bengaluru',
+      })
+    );
+    await signOutCustomer();
+    const persisted = JSON.parse(String(localStorage.getItem('warmpawz_location_v1')));
+    expect(hasValidGuestHomeLocation(persisted)).toBe(true);
+    expect(hasAuthenticatedCustomerSession()).toBe(false);
+    expect(
+      shouldMountGuestHomeContent({
+        isGuest: true,
+        isAuthenticated: false,
+        locationHydrated: true,
+        latitude: persisted.latitude,
+        longitude: persisted.longitude,
+      })
+    ).toBe(true);
+  });
+
+  it('gates Guest Home after logout when retained location has no coordinates', async () => {
+    seedCustomerA();
+    await signOutCustomer();
+    const persisted = JSON.parse(String(localStorage.getItem('warmpawz_location_v1')));
+    expect(hasValidGuestHomeLocation(persisted)).toBe(false);
+    expect(
+      shouldShowGuestHomeLocationGate({
+        isGuest: true,
+        isAuthenticated: false,
+        locationHydrated: true,
+        latitude: persisted.latitude ?? null,
+        longitude: persisted.longitude ?? null,
+      })
+    ).toBe(true);
   });
 
   it('Customer B cannot inherit Customer A authenticated state after logout', async () => {

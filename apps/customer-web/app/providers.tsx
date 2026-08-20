@@ -17,7 +17,6 @@ import { NavigationBackBridge } from '@/components/navigation/NavigationBackBrid
 import { StaticImagePrewarm } from '@/components/StaticImagePrewarm';
 import { CommerceConfigProvider } from '@/lib/commerce-config-provider';
 import { LocationProvider } from '@/context/LocationContext';
-import { GuestLocationPrompt } from '@/components/customer/GuestLocationPrompt';
 import { GuestSessionAnalyticsBootstrap } from '@/components/customer/GuestSessionAnalyticsBootstrap';
 import { GuestAuthModalProvider } from '@/components/customer/auth/GuestAuthModalProvider';
 
@@ -69,7 +68,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
                     <AnalyticsRouteTracker />
                   </Suspense>
                   {children}
-                  <GuestLocationPrompt />
                   <Toaster position="top-right" />
                   {/* Only load DevTools in development mode - prevents bundle bloat in production */}
                   {process.env.NODE_ENV === 'development' && (
