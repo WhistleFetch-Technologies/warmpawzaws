@@ -330,6 +330,27 @@ describe('historical invoice GST lineage vs Admin reports', () => {
     expect(invoice.reconciliationNote).toBeTruthy();
   });
 
+  test('historical booking without gstLines is not rewritten by current Admin rates', () => {
+    const invoice = resolveBookingInvoiceAmounts({
+      basePrice: 2000,
+      bookingTaxAmount: 360,
+      bookingTotalAmount: 2360,
+      isInterState: false,
+      catalogGstRate: 0,
+      payment: {
+        gstAmount: 360,
+        cgstAmount: 180,
+        sgstAmount: 180,
+        igstAmount: 0,
+        totalAmount: 2360,
+      },
+      financialMeta: { taxableAmount: 2000, totalTax: 360, cgst: 180, sgst: 180, igst: 0 },
+    });
+    expect(invoice.taxAmount).toBe(360);
+    expect(invoice.taxableValue).toBe(2000);
+    expect(invoice.gstRate).toBe(18);
+  });
+
   test('stored platform fee plus GST reconciles to captured payment', () => {
     const invoice = resolveBookingInvoiceAmounts({
       basePrice: 1000,

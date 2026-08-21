@@ -36,6 +36,8 @@ import {
   resolveBookingInvoiceAmounts,
   resolveStoredInvoiceInterstate,
 } from '../utils/booking-invoice-amounts';
+import { parseJsonMetaFromNotes } from '../utils/booking-notes-meta';
+import { invoiceItemsFromGstLines, parseGstLines } from '../utils/gst-tax-lines';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 const INVOICE_BUCKET = process.env.S3_INVOICES_BUCKET || process.env.S3_UPLOADS_BUCKET || 'warmpawz-invoices';
@@ -1141,8 +1143,19 @@ async function buildBookingInvoiceData(params: {
   const isInterState = storedIsInterState === true;
 
   const selectedServices = parseSelectedServices(booking.selected_services);
+  const storedGstLines = parseGstLines(
+    parseJsonMetaFromNotes(booking.notes, 'wp_financial_meta')?.gstLines,
+  );
+  const lineItems = invoiceItemsFromGstLines({
+    gstLines: storedGstLines,
+    selectedServices,
+    fallbackName: serviceMeta.serviceName || booking.service_name || 'Service',
+    fallbackHsn: serviceMeta.hsnCode,
+  });
   const items =
-    selectedServices.length > 0
+    lineItems && lineItems.length > 0
+      ? lineItems
+      : selectedServices.length > 0
       ? selectedServices.map((s: any) => {
           const qty = s.quantity ?? 1;
           const unitPrice = parseFloat(s.price) || 0;

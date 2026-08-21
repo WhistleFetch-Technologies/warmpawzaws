@@ -1,5 +1,14 @@
 import type { PriceBreakdownLine } from './types';
 
+export type CheckoutTaxItemLine = {
+  label: string;
+  gstRate: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  gstAmount: number;
+};
+
 export type CheckoutTaxBreakdown = {
   subtotal: number;
   cgst: number;
@@ -8,6 +17,7 @@ export type CheckoutTaxBreakdown = {
   totalTax: number;
   taxRate: number;
   isInterState: boolean;
+  taxItemLines?: CheckoutTaxItemLine[];
 };
 
 export type CheckoutPlatformFees = {
@@ -123,34 +133,76 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
   }
 
   // Component-only GST lines. GST total is the sum of CGST+SGST+IGST — never a sibling charge.
-  const showIgst =
-    taxBreakdown.isInterState ||
-    (taxBreakdown.igst > 0.009 && taxBreakdown.cgst + taxBreakdown.sgst <= 0.009);
-  if (showIgst) {
-    if (taxBreakdown.igst > 0.009) {
+  const taxItemLines = taxBreakdown.taxItemLines || [];
+  const useLineGst = taxItemLines.length > 1;
+  if (useLineGst) {
+    for (const item of taxItemLines) {
+      const name = item.label || 'Service';
+      if (item.igst > 0.009) {
+        lines.push({
+          kind: 'tax',
+          label: `IGST · ${name} (${item.gstRate}%)`,
+          amount: item.igst,
+          emphasis: 'muted',
+        });
+        continue;
+      }
+      if (item.cgst > 0.009 || item.sgst > 0.009) {
+        if (item.cgst > 0.009) {
+          lines.push({
+            kind: 'tax',
+            label: `CGST · ${name} (${item.gstRate / 2}%)`,
+            amount: item.cgst,
+            emphasis: 'muted',
+          });
+        }
+        if (item.sgst > 0.009) {
+          lines.push({
+            kind: 'tax',
+            label: `SGST · ${name} (${item.gstRate / 2}%)`,
+            amount: item.sgst,
+            emphasis: 'muted',
+          });
+        }
+        continue;
+      }
       lines.push({
         kind: 'tax',
-        label: `IGST (${taxBreakdown.taxRate}%)`,
-        amount: taxBreakdown.igst,
+        label: `GST · ${name} (${item.gstRate}%)`,
+        amount: item.gstAmount,
         emphasis: 'muted',
       });
     }
   } else {
-    if (taxBreakdown.cgst > 0.009) {
-      lines.push({
-        kind: 'tax',
-        label: `CGST (${taxBreakdown.taxRate / 2}%)`,
-        amount: taxBreakdown.cgst,
-        emphasis: 'muted',
-      });
-    }
-    if (taxBreakdown.sgst > 0.009) {
-      lines.push({
-        kind: 'tax',
-        label: `SGST (${taxBreakdown.taxRate / 2}%)`,
-        amount: taxBreakdown.sgst,
-        emphasis: 'muted',
-      });
+    const showIgst =
+      taxBreakdown.isInterState ||
+      (taxBreakdown.igst > 0.009 && taxBreakdown.cgst + taxBreakdown.sgst <= 0.009);
+    if (showIgst) {
+      if (taxBreakdown.igst > 0.009) {
+        lines.push({
+          kind: 'tax',
+          label: `IGST (${taxBreakdown.taxRate}%)`,
+          amount: taxBreakdown.igst,
+          emphasis: 'muted',
+        });
+      }
+    } else {
+      if (taxBreakdown.cgst > 0.009) {
+        lines.push({
+          kind: 'tax',
+          label: `CGST (${taxBreakdown.taxRate / 2}%)`,
+          amount: taxBreakdown.cgst,
+          emphasis: 'muted',
+        });
+      }
+      if (taxBreakdown.sgst > 0.009) {
+        lines.push({
+          kind: 'tax',
+          label: `SGST (${taxBreakdown.taxRate / 2}%)`,
+          amount: taxBreakdown.sgst,
+          emphasis: 'muted',
+        });
+      }
     }
   }
   const hasComponentTax = lines.some((l) => l.kind === 'tax');

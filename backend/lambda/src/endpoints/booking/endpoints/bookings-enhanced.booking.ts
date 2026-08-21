@@ -76,7 +76,8 @@ import {
 import { reversePendingPackageSessionEarnings } from '../../../utils/package-session-earnings-reverse';
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
-import { calculateAuthoritativeServiceGst } from '../../../utils/calculate-authoritative-service-gst';
+import { calculateAuthoritativeMultiServiceGst } from '../../../utils/calculate-authoritative-service-gst';
+import { selectedServiceLineAmount } from '../../../utils/gst-tax-lines';
 import { snapshotToFinancialMeta } from '../../../utils/canonical-gst-snapshot';
 import {
   computeWalletBookingSplit,
@@ -1702,18 +1703,37 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             0,
             Math.round((servicePriceForMeta - vendorDisc - platformDisc - couponDisc) * 100) / 100
           );
-          let authoritativeGst: Awaited<ReturnType<typeof calculateAuthoritativeServiceGst>> | null = null;
+          let authoritativeGst: Awaited<ReturnType<typeof calculateAuthoritativeMultiServiceGst>> | null = null;
           try {
-            authoritativeGst = await calculateAuthoritativeServiceGst({
-              taxableAmount: derivedSubtotalAfterDiscounts,
+            const selectedGstLines =
+              Array.isArray(selectedServices) && selectedServices.length > 0
+                ? selectedServices.map((service: Record<string, unknown>) => ({
+                    serviceId: String(service.serviceId || service.service_id || service.id || ''),
+                    vendorServiceId: String(service.id || service.serviceId || service.service_id || ''),
+                    listAmount: selectedServiceLineAmount(service),
+                    category:
+                      (service.category as string | undefined) ||
+                      String(body.serviceCategory ?? body.category ?? '') ||
+                      undefined,
+                    serviceStyle: String(bookingData.service_type ?? body.serviceType ?? ''),
+                  }))
+                : [
+                    {
+                      serviceId: String(bookingData.service_id ?? body.serviceId ?? ''),
+                      vendorServiceId: String(bookingData.service_id ?? body.serviceId ?? ''),
+                      listAmount: derivedSubtotalAfterDiscounts,
+                      category: String(body.serviceCategory ?? body.category ?? '') || undefined,
+                      serviceStyle: String(bookingData.service_type ?? body.serviceType ?? ''),
+                    },
+                  ];
+            authoritativeGst = await calculateAuthoritativeMultiServiceGst({
+              lines: selectedGstLines,
+              postDiscountTaxable: derivedSubtotalAfterDiscounts,
               vendorId: settlementVendorId || String(bookingData.vendor_id ?? body.vendorId ?? ''),
-              serviceId: String(bookingData.service_id ?? body.serviceId ?? ''),
               customerId: String(bookingData.customer_id ?? customerId ?? ''),
               addressId: addressIdToStore,
               customerState: body.state || body.customerState || undefined,
               customerCity: body.city || body.customerCity || undefined,
-              serviceStyle: String(bookingData.service_type ?? body.serviceType ?? ''),
-              category: String(body.serviceCategory ?? body.category ?? ''),
             });
           } catch (gstErr) {
             console.error('[BOOKING] Authoritative GST calculation failed:', gstErr);
@@ -1791,6 +1811,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               taxableAmount: gstMeta.taxableAmount,
               gstRate: gstMeta.gstRate,
               gstAuthority: 'backend',
+              gstLines: authoritativeGst.gstLines,
               platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
               convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
               deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
@@ -1810,6 +1831,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             (enrichedMeta as Record<string, unknown>).taxableAmount = gstMeta.taxableAmount;
             (enrichedMeta as Record<string, unknown>).gstRate = gstMeta.gstRate;
             (enrichedMeta as Record<string, unknown>).gstAuthority = 'backend';
+            (enrichedMeta as Record<string, unknown>).gstLines = authoritativeGst.gstLines;
             enrichedMeta.platformFee = parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0;
             enrichedMeta.convenienceFee =
               parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0;

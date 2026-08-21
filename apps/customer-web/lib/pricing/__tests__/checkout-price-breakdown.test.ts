@@ -119,6 +119,35 @@ describe('checkout GST display', () => {
     expect(lines.some((l) => l.label.startsWith('GST'))).toBe(false);
   });
 
+  test('mixed-service lines show per-service GST from backend items, not one combined rate', () => {
+    const lines = buildCheckoutPriceLines({
+      subtotalLabel: 'Service price',
+      subtotal: 2000,
+      taxBreakdown: {
+        subtotal: 2000,
+        cgst: 90,
+        sgst: 90,
+        igst: 0,
+        totalTax: 180,
+        taxRate: 9,
+        isInterState: false,
+        taxItemLines: [
+          { label: 'Veterinary', gstRate: 0, cgst: 0, sgst: 0, igst: 0, gstAmount: 0 },
+          { label: 'Diagnostic', gstRate: 18, cgst: 90, sgst: 90, igst: 0, gstAmount: 180 },
+        ],
+      },
+      platformFees: fees,
+      finalAmount: 2180,
+    });
+    expect(taxLines(lines)).toEqual([
+      { label: 'GST · Veterinary (0%)', amount: 0 },
+      { label: 'CGST · Diagnostic (9%)', amount: 90 },
+      { label: 'SGST · Diagnostic (9%)', amount: 90 },
+    ]);
+    expect(lines.some((l) => l.label === 'CGST (4.5%)' || l.label === 'GST (9%)')).toBe(false);
+    expect(lines.find((l) => l.kind === 'final')?.amount).toBe(2180);
+  });
+
   test('display lines do not change the authoritative finalAmount', () => {
     const finalAmount = 1100 + 198 - 470;
     const lines = buildCheckoutPriceLines({

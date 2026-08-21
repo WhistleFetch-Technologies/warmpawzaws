@@ -31,6 +31,7 @@ import {
   buildCheckoutPriceLines,
   checkoutTotalSavings,
 } from '@/lib/pricing/checkout-price-breakdown';
+import { buildBookingTaxCalculateItems } from '@/lib/pricing/build-booking-tax-items';
 import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCouponPanel';
 import {
   validateCouponCode,
@@ -297,6 +298,14 @@ interface TaxBreakdown {
     rate: number;
     amount: number;
   }[];
+  taxItemLines?: {
+    label: string;
+    gstRate: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
+    gstAmount: number;
+  }[];
 }
 
 interface PlatformFees {
@@ -352,6 +361,29 @@ function taxCalculateResponseHasPayload(res: any): boolean {
   if (typeof err === 'string' && err.trim()) return false;
   if (err != null && typeof err === 'object') return false;
   return Array.isArray(res.items) && res.items.length > 0;
+}
+
+function taxItemLinesFromTaxResponse(
+  taxRes: any,
+  selectedServices?: Array<{ name?: string; serviceName?: string }> | null,
+): TaxBreakdown['taxItemLines'] {
+  if (!Array.isArray(taxRes?.items) || taxRes.items.length === 0) return undefined;
+  return taxRes.items.map((item: any, index: number) => {
+    const cgst = Number(item.cgst || 0) || 0;
+    const sgst = Number(item.sgst || 0) || 0;
+    const igst = Number(item.igst || 0) || 0;
+    return {
+      label:
+        selectedServices?.[index]?.name ||
+        selectedServices?.[index]?.serviceName ||
+        String(item.id || `Service ${index + 1}`),
+      gstRate: Number(item.taxRate ?? item.gstRate ?? 0) || 0,
+      cgst,
+      sgst,
+      igst,
+      gstAmount: Math.round((cgst + sgst + igst) * 100) / 100,
+    };
+  });
 }
 
 /**
@@ -549,6 +581,7 @@ export function UniversalPaymentPage({
     sgst: number;
     igst: number;
     totalTax: number;
+    taxItemLines?: TaxBreakdown['taxItemLines'];
   } | null>(null);
 
   const [platformFees, setPlatformFees] = useState<PlatformFees>(() => {
@@ -809,21 +842,30 @@ export function UniversalPaymentPage({
       : undefined;
 
     try {
+      const bookingTaxItems =
+        type === 'booking'
+          ? buildBookingTaxCalculateItems({
+              selectedServices,
+              fallbackServiceId: taxServiceId,
+              fallbackBookingId: bookingId,
+              fallbackAmount: baseAmount,
+              category,
+              serviceStyle,
+              amountTaxInclusive: priceIncludesTax,
+            })
+          : [
+              {
+                id: taxServiceId || productId || bookingId || 'item',
+                type: 'product',
+                productId,
+                amount: baseAmount,
+                quantity,
+                category: category || undefined,
+                amountTaxInclusive: priceIncludesTax,
+              },
+            ];
       const taxRes = await apiClient.post<any>('/tax/calculate', {
-        items: [
-          {
-            id: taxServiceId || productId || bookingId || 'item',
-            type: type === 'booking' ? 'service' : 'product',
-            serviceId: type === 'booking' ? taxServiceId : undefined,
-            bookingId: type === 'booking' ? bookingId : undefined,
-            productId: type === 'order' ? productId : undefined,
-            amount: baseAmount,
-            quantity,
-            category: category || undefined,
-            serviceStyle,
-            amountTaxInclusive: priceIncludesTax,
-          },
-        ],
+        items: bookingTaxItems,
         vendorId,
         customerId,
         customerPhone,
@@ -838,8 +880,11 @@ export function UniversalPaymentPage({
         const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
         const exclusiveSub = Number(taxRes.totalAmount);
         const taxableForLabel = Number.isFinite(exclusiveSub) ? exclusiveSub : baseAmount;
-        const rawRate = Number(taxRes.items?.[0]?.taxRate);
-        const declaredRate = Number.isFinite(rawRate) ? rawRate : 0;
+        const itemRates = (Array.isArray(taxRes.items) ? taxRes.items : [])
+          .map((item: { taxRate?: number }) => Number(item.taxRate))
+          .filter((rate: number) => Number.isFinite(rate));
+        const uniqueRates = [...new Set(itemRates)];
+        const declaredRate = uniqueRates.length === 1 ? uniqueRates[0] : 0;
         const taxRate = resolveGstDisplayRatePercent(
           taxableForLabel,
           totalTax,
@@ -850,6 +895,7 @@ export function UniversalPaymentPage({
           typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0;
         const grand = Number(taxRes.grandTotal);
         const totalPay = Number.isFinite(grand) ? grand : taxableForLabel + totalTax;
+        const taxItemLines = taxItemLinesFromTaxResponse(taxRes, selectedServices);
 
         setTaxCalculationFailed(false);
         setTaxBreakdown({
@@ -862,6 +908,7 @@ export function UniversalPaymentPage({
           taxRate,
           isInterState: interState,
           taxDetails: taxRes.breakdown || [],
+          taxItemLines,
         });
         return;
       }
@@ -1757,19 +1804,15 @@ export function UniversalPaymentPage({
     (async () => {
       try {
         const taxRes = await apiClient.post<any>('/tax/calculate', {
-          items: [
-            {
-              id: taxServiceId || bookingId || 'item',
-              type: 'service',
-              serviceId: taxServiceId,
-              bookingId,
-              amount: afterDisc,
-              quantity: 1,
-              category: category || undefined,
-              serviceStyle,
-              amountTaxInclusive: false,
-            },
-          ],
+          items: buildBookingTaxCalculateItems({
+            selectedServices,
+            fallbackServiceId: taxServiceId,
+            fallbackBookingId: bookingId,
+            fallbackAmount: afterDisc,
+            category,
+            serviceStyle,
+            amountTaxInclusive: false,
+          }),
           vendorId,
           customerId,
           customerPhone,
@@ -1787,6 +1830,7 @@ export function UniversalPaymentPage({
             sgst: Math.round(sgst * 100) / 100,
             igst: Math.round(igst * 100) / 100,
             totalTax: Math.round(totalTax * 100) / 100,
+            taxItemLines: taxItemLinesFromTaxResponse(taxRes, selectedServices),
           });
           return;
         }
@@ -1955,6 +1999,7 @@ export function UniversalPaymentPage({
           sgst: finalSgst,
           igst: finalIgst,
           totalTax: finalTax,
+          taxItemLines: payableGst?.taxItemLines ?? taxBreakdown.taxItemLines,
         },
         platformFees,
         collapseAutoPromotions: type === 'booking',
@@ -2673,7 +2718,9 @@ export function UniversalPaymentPage({
               id: s.id || s.serviceId,
               serviceId: s.service_id || s.serviceId || s.id,
               name: s.name || s.serviceName,
+              category: s.category,
               price: Number(s.price) || Number(s.custom_price) || 0,
+              originalPrice: Number(s.originalPrice || s.original_price || s.price || s.custom_price) || 0,
               duration: Number(s.duration) || Number(s.duration_minutes) || 30,
               quantity: Number(s.quantity) || 1,
             }))

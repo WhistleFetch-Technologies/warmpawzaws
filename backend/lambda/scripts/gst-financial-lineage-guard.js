@@ -56,6 +56,7 @@ const REQUIRED_TEST_FILES = [
   'backend/lambda/src/utils/__tests__/invoice-row-gst.test.ts',
   'backend/lambda/src/endpoints/__tests__/invoice-gst-rate.test.ts',
   'backend/lambda/src/utils/__tests__/vendor-earnings-settlement-snapshot.test.ts',
+  'backend/lambda/src/utils/__tests__/gst-tax-lines.test.ts',
 ];
 
 const REQUIRED_SUITE_TOKENS = [
@@ -79,6 +80,7 @@ const REQUIRED_SUITE_TOKENS = [
   'booking-financial-gross',
   'vendor-earnings-settlement-snapshot',
   'tax-category-display-rate',
+  'gst-tax-lines',
 ];
 
 const DECLARATION_RE = /GST-PROTECTED-CHANGE:\s+\S/;
