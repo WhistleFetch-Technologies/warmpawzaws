@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { CheckoutProvider } from '@/context/CheckoutProvider';
 import { CheckoutFlow } from '@/components/ecommerce/checkout/CheckoutFlow';
@@ -8,11 +9,14 @@ import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { hasAuthenticatedCustomerSession } from '@/lib/guest-auth-gate';
+import { readProfileCompleted, resolvePostAuthRedirectPath } from '@/lib/customer-flow-guards';
 
 function CheckoutPageContent() {
   const nav = useCustomerNavigation();
+  const router = useRouter();
   const commerceEnabled = isCustomerEcommerceEnabled();
   const [phone, setPhone] = useState('');
+  const [profileGateChecked, setProfileGateChecked] = useState(false);
 
   useEffect(() => {
     let resolved =
@@ -29,7 +33,14 @@ function CheckoutPageContent() {
       }
     }
     setPhone(resolved);
-  }, []);
+    const hasSession = hasAuthenticatedCustomerSession();
+    const profileDone = readProfileCompleted();
+    if (resolved && hasSession && !profileDone) {
+      router.replace(resolvePostAuthRedirectPath('/checkout'));
+      return;
+    }
+    setProfileGateChecked(true);
+  }, [router]);
 
   if (!commerceEnabled) {
     return (
@@ -47,6 +58,14 @@ function CheckoutPageContent() {
           <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
           <p className="text-gray-500">Checkout will be available when the marketplace launches.</p>
         </div>
+      </div>
+    );
+  }
+
+  if (!profileGateChecked) {
+    return (
+      <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-[#F2F4F7]">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500" />
       </div>
     );
   }

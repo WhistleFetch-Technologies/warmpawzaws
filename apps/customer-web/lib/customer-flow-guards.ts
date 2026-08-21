@@ -88,3 +88,21 @@ export function readOnboardingCompleted(): boolean {
   }
   return false;
 }
+
+/**
+ * After OTP/login: send new customers to profile creation before resuming checkout/booking.
+ * Existing users with a completed profile pass through to `intendedPath`.
+ */
+export function resolvePostAuthRedirectPath(intendedPath: string | null | undefined): string {
+  const fallback = '/';
+  const safe =
+    intendedPath && intendedPath.startsWith('/') ? intendedPath : fallback;
+
+  if (typeof window === 'undefined') return safe;
+  if (readProfileCompleted()) return safe;
+
+  if (safe === '/profile' || safe.startsWith('/profile?')) return safe;
+  if (safe === '/' || safe.startsWith('/?')) return '/profile';
+
+  return `/profile?next=${encodeURIComponent(safe)}`;
+}

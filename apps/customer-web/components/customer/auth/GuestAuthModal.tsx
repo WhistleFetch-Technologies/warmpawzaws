@@ -50,6 +50,8 @@ export function GuestAuthModal({ open, options, onOpenChange }: GuestAuthModalPr
     const isHomeReturn = !returnPath || returnPath === '/' || returnPath.startsWith('/?');
     if (!isHomeReturn && returnPath.startsWith('/')) {
       router.push(returnPath);
+    } else if (returnPath === '/profile' || returnPath.startsWith('/profile?')) {
+      router.push(returnPath);
     }
   };
 

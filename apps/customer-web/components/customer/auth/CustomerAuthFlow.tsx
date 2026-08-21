@@ -27,6 +27,7 @@ import { LOGIN_OTP_RETRY_CONFIG } from '@/lib/forgot-password-cooldown';
 import { resolveAuthModeFromParams, resolveSafeAuthReturnPath } from '@/lib/auth-redirect';
 import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
 import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
+import { resolvePostAuthRedirectPath } from '@/lib/customer-flow-guards';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 
 const AIChatbotWidget = dynamic(
@@ -137,11 +138,12 @@ export function CustomerAuthFlow({
   const [authUiReady, setAuthUiReady] = useState(isModal);
 
   const finishAuthenticated = (redirectPath: string) => {
+    const resolved = resolvePostAuthRedirectPath(redirectPath);
     if (isModal) {
-      onComplete({ redirectPath, needsPasswordSetup: false });
+      onComplete({ redirectPath: resolved, needsPasswordSetup: false });
       return;
     }
-    router.push(redirectPath);
+    router.push(resolved);
   };
 
   useEffect(() => {
