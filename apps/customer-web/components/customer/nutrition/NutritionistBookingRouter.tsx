@@ -42,7 +42,8 @@ import {
 } from '@/lib/nutrition-vendor-price';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
-import { requestGuestAuthForBooking } from '@/lib/guest-auth-gate';
+import { isGuestApplicationState, requestGuestAuthForBooking } from '@/lib/guest-auth-gate';
+import { shouldFetchNutritionCustomerPets } from '@/lib/nutrition-guest-discovery';
 import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
 
@@ -415,6 +416,11 @@ export function NutritionistBookingRouter({
   };
 
   const loadCustomerData = async () => {
+    if (!shouldFetchNutritionCustomerPets({ isGuest: isGuestApplicationState(), phone })) {
+      setPets([]);
+      setAddresses([]);
+      return;
+    }
     try {
       // Load pets from API
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;

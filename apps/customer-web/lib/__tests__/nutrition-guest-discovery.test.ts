@@ -2,12 +2,16 @@
  * @jest-environment jsdom
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { transactionRequiresPet } from '../guest-booking-intent';
 import {
   hasNutritionCustomerPhone,
   shouldBlockNutritionDiscoveryForMissingPets,
   shouldFetchNutritionCustomerPets,
 } from '../nutrition-guest-discovery';
+
+const CUSTOMER_WEB_ROOT = path.resolve(__dirname, '../..');
 
 describe('Fix 5 — Nutritionist guest discovery', () => {
   it('treats empty / short phone as no customer phone', () => {
@@ -80,5 +84,44 @@ describe('Fix 5 — Nutritionist guest discovery', () => {
         resumeScreen: 'nutritionist-booking',
       })
     ).toBe(true);
+  });
+
+  it('DietConsultationVendors uses the guest discovery gates (Tele → Diet path)', () => {
+    const src = fs.readFileSync(
+      path.join(CUSTOMER_WEB_ROOT, 'components/customer/nutrition/DietConsultationVendors.tsx'),
+      'utf8'
+    );
+    expect(src).toMatch(/shouldFetchNutritionCustomerPets\(\{ isGuest, phone \}\)/);
+    expect(src).toMatch(/shouldBlockNutritionDiscoveryForMissingPets\(/);
+    expect(src).not.toMatch(/if \(!hasPets \|\| pets\.length === 0\) \{/);
+  });
+
+  it('wrapper passes isGuest into Diet Consultation and Expert Nutritionist lists', () => {
+    const wrapper = fs.readFileSync(
+      path.join(CUSTOMER_WEB_ROOT, 'components/customer/wrappers/CustomerHomeWrapper.tsx'),
+      'utf8'
+    );
+    expect(wrapper).toMatch(/<DietConsultationVendors[\s\S]*isGuest=\{isGuest\}/);
+    expect(wrapper).toMatch(/<ExpertNutritionistsList[\s\S]*isGuest=\{isGuest\}/);
+    expect(wrapper).toMatch(/<NutritionistServicesLanding[\s\S]*isGuest=\{isGuest\}/);
+  });
+
+  it('NutritionistBookingRouter does not load customer pets before authentication', () => {
+    const src = fs.readFileSync(
+      path.join(CUSTOMER_WEB_ROOT, 'components/customer/nutrition/NutritionistBookingRouter.tsx'),
+      'utf8'
+    );
+    expect(src).toMatch(/shouldFetchNutritionCustomerPets\(\{\s*isGuest: isGuestApplicationState\(\),\s*phone\s*\}\)/);
+    expect(src).toMatch(/requestGuestAuthForBooking\(/);
+  });
+
+  it('Nutritionist hub select no longer forces guest auth or My Pets before browse', () => {
+    const src = fs.readFileSync(
+      path.join(CUSTOMER_WEB_ROOT, 'components/customer/nutrition/NutritionistServicesLanding.tsx'),
+      'utf8'
+    );
+    expect(src).toMatch(/shouldFetchNutritionCustomerPets\(\{ isGuest, phone \}\)/);
+    expect(src).toMatch(/shouldBlockNutritionDiscoveryForMissingPets\(/);
+    expect(src).not.toMatch(/requestGuestAuth\(/);
   });
 });

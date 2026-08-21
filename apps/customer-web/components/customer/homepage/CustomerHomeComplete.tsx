@@ -84,6 +84,7 @@ import {
   isShopUiVisibleForAccount,
 } from '@/lib/app-review-demo-account';
 import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
+import { shouldRenderCustomerHomeNeedHelp } from '@/lib/customer-home-guest-support';
 import { CustomerHomePageContent, CustomerHomePageHeader } from '../home/CustomerHomePage';
 import { MoreServicesSection } from '../home/sections/MoreServicesSection';
 import {
@@ -2615,6 +2616,7 @@ export function CustomerHomeComplete({
                 });
               }
             }}
+            isGuest={isGuest}
           />
         ) : (
         <>
@@ -3603,8 +3605,8 @@ export function CustomerHomeComplete({
         </ViewportSection>
         ) : null}
 
-        {/* Bottom CTA — legacy layout only */}
-        {!newHomeUi ? (
+        {/* Bottom CTA — legacy layout only; guests do not see Home Support */}
+        {!newHomeUi && shouldRenderCustomerHomeNeedHelp(isGuest) ? (
         <ViewportSection placeholderMinHeight={190}>
         <div className="px-6">
           <div className="bg-gradient-to-r from-orange-100 to-pink-100 rounded-3xl p-6 border-2 border-[#FF8C42] text-center">

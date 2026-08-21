@@ -4901,6 +4901,7 @@ export function CustomerHomeWrapper({
       >
         <ExpertNutritionistsList
           phone={phone}
+          isGuest={isGuest}
           onBack={handleBack}
           onNavigate={(screen, data) => {
             if (screen === 'nutrition-meal-plans') {
@@ -4955,7 +4956,8 @@ export function CustomerHomeWrapper({
         accountSidebar={accountSidebarOverlay}
       >
         <DietConsultationVendors 
-          phone={phone} 
+          phone={phone}
+          isGuest={isGuest}
           onBack={handleBack} 
           onNavigate={(screen, data) => {
             if (screen === 'nutritionist-booking') {
