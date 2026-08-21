@@ -7,13 +7,13 @@
  *
  * Orchestrates the complete flow from Problem Grid selection to booking
  * - User selects a problem/need from grid
- * - Shows available service styles (Home, Center, Tele)
- * - Routes to appropriate service discovery with pre-applied filters
- * - Maintains context through the entire booking flow
+ * - Specialization educational detail (informational only)
+ * - Continue / service style → existing vendor discovery
+ * - Existing vendor cards remain the Book Appointment / Pay Bill surface
  *
  * Discovery delegates to the same Services hub components and GET /customer/services/by-style
- * (ClinicListView, VetServicesByStyle, GroomingServicesByStyle, UniversalServicesByStyle) with
- * specialization + customer coordinates aligned to localStorage.
+ * (ClinicListView, VetServicesByStyle, GroomingServicesByStyle, UniversalServicesByStyle,
+ * WarmpawzAppointmentsVendorList) with specialization + customer coordinates aligned to localStorage.
  *
  * Date: 2026-05-13
  * ============================================================================
@@ -31,8 +31,13 @@ import { toast } from 'sonner';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
-import { getWapptAllowedDiscoveryStyles, getWapptDefaultDiscoveryStyle } from '@/lib/wappt-hub-registry';
+import { getWapptAllowedDiscoveryStyles } from '@/lib/wappt-hub-registry';
 import { resolveProblemGridWapptCategory } from '@/lib/problem-grid-wappt-navigation';
+import {
+  initialProblemGridFlowStep,
+  problemGridDiscoveryBackStep,
+  shouldUseExistingWapptVendorDiscovery,
+} from '@/lib/problem-grid-flow-steps';
 import { problemGridAliasesForApi } from '@/lib/problem-grid-role-aliases';
 import { WarmpawzAppointmentsVendorList } from '@/components/customer/warmpawz-appointments/WarmpawzAppointmentsVendorList';
 import { ClinicListView } from './vet/ClinicListView';
@@ -179,25 +184,6 @@ function pickProblemDiscoveryKind(
   return 'trainer';
 }
 
-function resolveWapptCategoryForProblem(problem: ProblemGridItem | null): string | null {
-  if (!problem) return null;
-  const kind = pickProblemDiscoveryKind(problem, 'at_home');
-  if (!kind) return null;
-  return resolveProblemGridWapptCategory(kind);
-}
-
-/** WAPPT vendor list already exposes at_home / at_center toggles â€” skip the extra style step. */
-function shouldSkipServiceStyleStepForWappt(problem: ProblemGridItem | null): boolean {
-  const category = resolveWapptCategoryForProblem(problem);
-  return Boolean(category && isWarmpawzAppointmentsHubEnabled(category));
-}
-
-function defaultWapptServiceStyleForProblem(problem: ProblemGridItem | null): ServiceStyle | null {
-  const category = resolveWapptCategoryForProblem(problem);
-  if (!category || !isWarmpawzAppointmentsHubEnabled(category)) return null;
-  return getWapptDefaultDiscoveryStyle(category) as ServiceStyle;
-}
-
 export type VendorProfileFromProblemContext = {
   vendorId: string;
   vendorName: string;
@@ -231,15 +217,9 @@ export function ProblemGridFlowRouter({
   onClose,
   onDiscoveryNavigate,
 }: ProblemGridFlowRouterProps) {
-  const skipServiceStyleStep = shouldSkipServiceStyleStepForWappt(initialProblem || null);
-  const initialWapptStyle = defaultWapptServiceStyleForProblem(initialProblem || null);
-  const [currentStep, setCurrentStep] = useState<FlowStep>(() =>
-    skipServiceStyleStep && initialWapptStyle ? 'discovery' : 'service-style',
-  );
+  const [currentStep, setCurrentStep] = useState<FlowStep>(() => initialProblemGridFlowStep());
   const [selectedProblem, setSelectedProblem] = useState<ProblemGridItem | null>(initialProblem || null);
-  const [selectedServiceStyle, setSelectedServiceStyle] = useState<ServiceStyle | null>(() =>
-    skipServiceStyleStep ? initialWapptStyle : null,
-  );
+  const [selectedServiceStyle, setSelectedServiceStyle] = useState<ServiceStyle | null>(null);
   const [loadingProblemDetails, setLoadingProblemDetails] = useState(false);
   const [discoveryListKey, setDiscoveryListKey] = useState(0);
 
@@ -295,15 +275,6 @@ export function ProblemGridFlowRouter({
     return style === 'tele';
   });
   const hasTeleOption = availableStyles.includes('tele');
-  const wapptSkipStyleStep = shouldSkipServiceStyleStepForWappt(selectedProblem);
-
-  useEffect(() => {
-    if (!selectedProblem || !wapptSkipStyleStep) return;
-    const style = defaultWapptServiceStyleForProblem(selectedProblem);
-    if (!style) return;
-    setSelectedServiceStyle(style);
-    setCurrentStep('discovery');
-  }, [selectedProblem?.id, wapptSkipStyleStep]);
 
   useEffect(() => {
     if (selectedProblem?.id) {
@@ -437,11 +408,7 @@ export function ProblemGridFlowRouter({
   };
 
   const goBackFromDiscovery = () => {
-    if (wapptSkipStyleStep) {
-      onClose?.();
-      return;
-    }
-    setCurrentStep('service-style');
+    setCurrentStep(problemGridDiscoveryBackStep());
     setSelectedServiceStyle(null);
   };
 
@@ -477,7 +444,12 @@ export function ProblemGridFlowRouter({
     const phone = customerId || '';
 
     const wapptCategory = resolveProblemGridWapptCategory(kind);
-    if (wapptCategory && isWarmpawzAppointmentsHubEnabled(wapptCategory)) {
+    if (
+      shouldUseExistingWapptVendorDiscovery({
+        wapptCategory,
+        wapptHubEnabled: isWarmpawzAppointmentsHubEnabled(wapptCategory),
+      })
+    ) {
       return (
         <div key={key} className="mx-auto w-full max-w-customer">
           <WarmpawzAppointmentsVendorList
