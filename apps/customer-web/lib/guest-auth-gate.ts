@@ -139,22 +139,17 @@ export function requestGuestAuthForBooking(
     wapptMode?: boolean;
   }
 ): boolean {
+  const { returnPath, resumeScreen, openAddPet, ...rest } = intent;
   return requestGuestAuthIfNeeded({
     mode: 'signup',
-    returnPath: intent.returnPath || '/',
-    resumeScreen: intent.resumeScreen,
+    returnPath: returnPath || '/',
+    resumeScreen,
+    openAddPet,
     guestBookingIntent: {
-      kind: intent.kind || 'booking',
-      persona: intent.persona,
-      category: intent.category,
-      vendorId: intent.vendorId || intent.vendorId,
-      serviceId: intent.serviceId || intent.serviceId,
-      serviceStyle: intent.serviceStyle || intent.serviceStyle,
-      date: intent.date,
-      time: intent.time,
-      wapptMode: intent.wapptMode ?? intent.wapptMode,
-      requiresPet: intent.requiresPet,
-      resumeScreen: intent.resumeScreen,
+      ...rest,
+      kind: rest.kind || 'booking',
+      resumeScreen,
+      openAddPet,
     },
   });
 }

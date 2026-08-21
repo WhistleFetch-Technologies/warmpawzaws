@@ -16,7 +16,17 @@ export const GUEST_JOURNEY_PROGRESS_BACKUP_KEY = 'warmpawz_guest_booking_progres
 
 export const GUEST_JOURNEY_TTL_MS = 2 * 60 * 60 * 1000;
 
-export type GuestJourneyKind = 'booking' | 'search' | 'vendor' | 'cart' | 'add_pet';
+export type GuestJourneyKind = 'booking' | 'search' | 'vendor' | 'cart' | 'add_pet' | 'pay_bill';
+
+export const GUEST_APPOINTMENT_RESUME_SCREENS = new Set([
+  'grooming-booking',
+  'vet-booking',
+  'training-booking',
+  'boarding-booking',
+  'walker-booking',
+  'pet-sitter-booking',
+  'nutritionist-booking',
+]);
 
 export type GuestSearchSnapshot = {
   q?: string;
@@ -194,6 +204,19 @@ export function resolveResumeScreen(intent: GuestBookingIntentV1): string | unde
   return raw;
 }
 
+/** Appointment/slot booking only — never WPay, cart, search, or add-pet. */
+export function isGuestAppointmentJourney(intent: GuestBookingIntentV1 | null | undefined): boolean {
+  if (!intent) return false;
+  if (intent.kind === 'cart' || intent.kind === 'search' || intent.kind === 'vendor' || intent.kind === 'pay_bill') {
+    return false;
+  }
+  if (intent.kind === 'add_pet') return false;
+  const resume = resolveResumeScreen(intent);
+  if (resume === 'warmpawz-pay-vendor' || resume?.startsWith('warmpawz-pay')) return false;
+  if (String(intent.returnPath || '').startsWith('/warmpawz-pay')) return false;
+  return !!resume && GUEST_APPOINTMENT_RESUME_SCREENS.has(resume);
+}
+
 export function clearGuestBookingIntent(): void {
   removePair(GUEST_BOOKING_INTENT_KEY, GUEST_JOURNEY_BACKUP_KEY);
   removePair(GUEST_BOOKING_PROGRESS_KEY, GUEST_JOURNEY_PROGRESS_BACKUP_KEY);
@@ -256,4 +279,42 @@ export function consumeGuestBookingIntentForRestore(): GuestBookingIntentV1 | nu
     }
   }
   return intent;
+}
+
+const GUEST_JOURNEY_AUTH_LEAK_KEYS = [
+  'jwt',
+  'idToken',
+  'accessToken',
+  'refreshToken',
+  'access_token',
+  'refresh_token',
+  'id_token',
+  'authToken',
+  'token',
+  'password',
+  'otp',
+  'customerPhone',
+  'customerId',
+  'phone',
+] as const;
+
+function stripAuthFieldsFromRecord(value: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...value };
+  for (const key of GUEST_JOURNEY_AUTH_LEAK_KEYS) {
+    delete next[key];
+  }
+  return next;
+}
+
+/** Logout isolation: drop leaked credentials, keep guest-safe journey fields. */
+export function stripAuthFromGuestJourneySnapshots(): void {
+  if (!canUseStorage()) return;
+  for (const [sessionKey, backupKey] of [
+    [GUEST_BOOKING_INTENT_KEY, GUEST_JOURNEY_BACKUP_KEY],
+    [GUEST_BOOKING_PROGRESS_KEY, GUEST_JOURNEY_PROGRESS_BACKUP_KEY],
+  ] as const) {
+    const parsed = readPair<Record<string, unknown>>(sessionKey, backupKey);
+    if (!parsed || typeof parsed !== 'object') continue;
+    persistPair(sessionKey, backupKey, stripAuthFieldsFromRecord(parsed));
+  }
 }

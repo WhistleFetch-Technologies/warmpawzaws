@@ -6,8 +6,10 @@ import {
   buildGuestAuthUrlForBooking,
   clearGuestBookingIntent,
   GUEST_BOOKING_INTENT_KEY,
+  isGuestAppointmentJourney,
   readGuestBookingIntent,
   saveGuestBookingIntent,
+  stripAuthFromGuestJourneySnapshots,
   updateGuestBookingProgress,
 } from '../guest-booking-intent';
 
@@ -51,5 +53,71 @@ describe('guest-booking-intent', () => {
       returnPath: 'https://evil.example',
     });
     expect(url).toBe('/auth?signup=1&redirect=%2F');
+  });
+
+  it('stores appointment context without JWT or secrets', () => {
+    saveGuestBookingIntent({
+      kind: 'booking',
+      persona: 'vet',
+      category: 'vet',
+      vendorId: 'vendor-1',
+      serviceId: 'svc-1',
+      serviceStyle: 'at_center',
+      date: '2026-08-21',
+      time: '17:00',
+      slotId: 'slot-17',
+      resumeScreen: 'vet-booking',
+      returnPath: '/',
+      requiresPet: false,
+      wapptMode: true,
+    });
+    const intent = readGuestBookingIntent();
+    expect(intent).toMatchObject({
+      vendorId: 'vendor-1',
+      serviceId: 'svc-1',
+      date: '2026-08-21',
+      time: '17:00',
+      slotId: 'slot-17',
+      resumeScreen: 'vet-booking',
+      requiresPet: false,
+      wapptMode: true,
+    });
+    const raw = JSON.stringify(intent);
+    expect(raw).not.toMatch(/jwt|access_token|refresh_token|password|otp/i);
+    expect(isGuestAppointmentJourney(intent)).toBe(true);
+  });
+
+  it('strips leaked auth fields without deleting the journey', () => {
+    saveGuestBookingIntent({
+      returnPath: '/',
+      vendorId: 'vendor-1',
+      date: '2026-08-21',
+      time: '17:00',
+      resumeScreen: 'vet-booking',
+    });
+    const raw = sessionStorage.getItem(GUEST_BOOKING_INTENT_KEY);
+    sessionStorage.setItem(
+      GUEST_BOOKING_INTENT_KEY,
+      JSON.stringify({ ...JSON.parse(String(raw)), idToken: 'leaked', customerPhone: '999' })
+    );
+    stripAuthFromGuestJourneySnapshots();
+    const intent = readGuestBookingIntent();
+    expect(intent?.vendorId).toBe('vendor-1');
+    expect(intent?.time).toBe('17:00');
+    expect((intent as Record<string, unknown> | null)?.idToken).toBeUndefined();
+    expect((intent as Record<string, unknown> | null)?.customerPhone).toBeUndefined();
+  });
+
+  it('does not treat WPay as an appointment journey', () => {
+    expect(
+      isGuestAppointmentJourney({
+        v: 1,
+        savedAt: Date.now(),
+        kind: 'pay_bill',
+        vendorId: 'v1',
+        returnPath: '/warmpawz-pay/vendors/v1',
+        resumeScreen: 'warmpawz-pay-vendor',
+      })
+    ).toBe(false);
   });
 });

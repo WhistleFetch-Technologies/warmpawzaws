@@ -785,32 +785,6 @@ export function CustomerAuthFlow({
             </p>
             )}
 
-            {/* Guest browsing is home `/`, not `/auth` — offer escape when flag is on */}
-            {guestBrowseEnabled && (
-              <div className={isModal ? modalForm?.guestBrowseWrap : 'mb-6 text-center'}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isModal) {
-                      onDismiss?.();
-                      return;
-                    }
-                    router.replace('/');
-                  }}
-                  className={
-                    isModal
-                      ? modalForm?.guestBrowseButton
-                      : 'w-full rounded-xl border-2 border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-700 hover:bg-orange-100'
-                  }
-                >
-                  Continue browsing without login
-                </button>
-                <p className={isModal ? modalForm?.guestBrowseHint : 'mt-2 text-xs text-gray-500'}>
-                  Guest mode opens the home screen. Login is only needed for bookings and account.
-                </p>
-              </div>
-            )}
-
             {/* UAT Mode Message */}
             {UAT_MODE && !isModal && (
               <div className="mb-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-400 rounded-xl text-center">

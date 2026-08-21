@@ -4,6 +4,12 @@
  * Includes legacy localStorage heuristics so existing users are not forced through /profile again.
  */
 
+import {
+  readGuestBookingIntent,
+  transactionRequiresPet,
+  type GuestBookingIntentV1,
+} from './guest-booking-intent';
+
 function setCustomerOnboardingCompleteFromProfile(value: 'true' | 'false'): void {
   if (typeof window === 'undefined') return;
   if (value === 'false' && localStorage.getItem('onboarding_completed') === 'true') return;
@@ -105,4 +111,31 @@ export function resolvePostAuthRedirectPath(intendedPath: string | null | undefi
   if (safe === '/' || safe.startsWith('/?')) return '/profile';
 
   return `/profile?next=${encodeURIComponent(safe)}`;
+}
+
+/**
+ * Home restore must wait until profile creation finishes.
+ * Consuming the snapshot while still on `/` (isGuest flip) then navigating
+ * to /profile leaves new customers on Home with no journey left.
+ */
+export function shouldRestoreGuestJourneyOnHome(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (!readGuestBookingIntent()) return false;
+  return readProfileCompleted();
+}
+
+/** After profile creation: pending journey / next= beats generic Home. */
+export function resolvePostProfileRedirectPath(
+  nextParam?: string | null,
+  intent?: GuestBookingIntentV1 | null
+): string {
+  if (nextParam && nextParam.startsWith('/')) return nextParam;
+  const pending = intent ?? (typeof window !== 'undefined' ? readGuestBookingIntent() : null);
+  if (pending && transactionRequiresPet(pending) && pending.kind === 'add_pet') {
+    return '/?open=add-pet';
+  }
+  if (pending?.returnPath && pending.returnPath.startsWith('/')) {
+    return pending.returnPath;
+  }
+  return '/';
 }

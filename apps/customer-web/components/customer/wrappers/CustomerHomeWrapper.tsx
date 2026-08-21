@@ -39,10 +39,12 @@ import {
 } from '@/lib/meal-shell-track-bridge';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
-import { readProfileCompleted } from '@/lib/customer-flow-guards';
+import { readProfileCompleted, shouldRestoreGuestJourneyOnHome } from '@/lib/customer-flow-guards';
 import {
   clearGuestBookingIntent,
   consumeGuestBookingIntentForRestore,
+  isGuestAppointmentJourney,
+  readGuestBookingIntent,
   resolveResumeScreen,
   transactionRequiresPet,
 } from '@/lib/guest-booking-intent';
@@ -915,6 +917,8 @@ export function CustomerHomeWrapper({
   useEffect(() => {
     if (pathname !== '/' || typeof window === 'undefined' || isGuest) return;
     const openAddPetQuery = new URLSearchParams(window.location.search).get('open') === 'add-pet';
+    // New customers still need /profile. Consuming here races profile redirect and dumps Home.
+    if (readGuestBookingIntent() && !shouldRestoreGuestJourneyOnHome()) return;
     const intent = consumeGuestBookingIntentForRestore();
     if (!intent && !openAddPetQuery) return;
     if (intent?.kind === 'search' && intent.search) {
@@ -935,7 +939,7 @@ export function CustomerHomeWrapper({
     }
     if (intent) {
       emitGuestAuthAnalytics('booking_resumed', { kind: intent.kind || 'booking' });
-      if (intent.vendorId || intent.date || intent.time || intent.serviceId) {
+      if (isGuestAppointmentJourney(intent) && (intent.vendorId || intent.date || intent.time || intent.serviceId)) {
         setVetServiceData((prev: any) => ({
           ...(prev && typeof prev === 'object' ? prev : {}),
           vendorId: intent.vendorId || prev?.vendorId,
@@ -944,6 +948,8 @@ export function CustomerHomeWrapper({
           serviceType: intent.persona || intent.category || prev?.serviceType,
           bookingDate: intent.date || prev?.bookingDate,
           bookingTime: intent.time || prev?.bookingTime,
+          slotId: intent.slotId || prev?.slotId,
+          appointmentType: intent.appointmentType || prev?.appointmentType,
           appointmentsMode:
             intent.wapptMode === true || prev?.appointmentsMode === true,
           price: intent.price ?? prev?.price,
@@ -994,6 +1000,13 @@ export function CustomerHomeWrapper({
         /* ignore */
       }
       shellNav.navigateToScreen(resume as ScreenType);
+    } else if (
+      intent &&
+      !isGuestAppointmentJourney(intent) &&
+      intent.kind !== 'add_pet'
+    ) {
+      // WPay / other non-appointment snapshots are consumed by their own restore owners.
+      return;
     }
     clearGuestBookingIntent();
   }, [pathname, isGuest, shellNav, router]);

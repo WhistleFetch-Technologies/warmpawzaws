@@ -20,6 +20,7 @@ import { isGuestBrowsingEnabled } from '../guest-browsing-flag';
 import {
   registerGuestAuthModalOpener,
   requestGuestAuth,
+  requestGuestAuthForBooking,
   requestGuestAuthForEcommerceAdd,
   requestGuestAuthForWpayVendor,
 } from '../guest-auth-gate';
@@ -75,6 +76,42 @@ describe('requestGuestAuth', () => {
 
     expect(opener).not.toHaveBeenCalled();
     expect(window.location.href).toBe('/auth?signup=1&redirect=%2Fadd-pet');
+  });
+
+  it('requestGuestAuthForBooking persists appointment slot context', () => {
+    const opener = jest.fn();
+    registerGuestAuthModalOpener(opener);
+
+    const blocked = requestGuestAuthForBooking({
+      kind: 'booking',
+      persona: 'vet',
+      category: 'vet',
+      vendorId: 'vendor-1',
+      serviceId: 'svc-1',
+      serviceStyle: 'at_center',
+      date: '2026-08-21',
+      time: '17:00',
+      slotId: 'slot-17',
+      wapptMode: true,
+      requiresPet: false,
+      returnPath: '/',
+      resumeScreen: 'vet-booking',
+    });
+
+    expect(blocked).toBe(true);
+    expect(opener).toHaveBeenCalled();
+    const intent = readGuestBookingIntent();
+    expect(intent).toMatchObject({
+      vendorId: 'vendor-1',
+      serviceId: 'svc-1',
+      date: '2026-08-21',
+      time: '17:00',
+      slotId: 'slot-17',
+      resumeScreen: 'vet-booking',
+      requiresPet: false,
+      wapptMode: true,
+    });
+    expect(JSON.stringify(intent)).not.toMatch(/jwt|access_token|refreshToken|password/i);
   });
 
   it('requestGuestAuthForWpayVendor opens the modal with the vendor return path', () => {
