@@ -2,15 +2,25 @@
  * @jest-environment jsdom
  */
 
+const getJwt = jest.fn(() => null as string | null);
+
+jest.mock('../session-utils', () => ({
+  getStoredCustomerJwtForSession: () => getJwt(),
+}));
+
 jest.mock('../guest-browsing-flag', () => ({
   isGuestBrowsingEnabled: jest.fn(() => true),
+}));
+
+jest.mock('../allyticas-ingest', () => ({
+  enqueueAllyticasEvent: jest.fn(),
 }));
 
 import { isGuestBrowsingEnabled } from '../guest-browsing-flag';
 import {
   registerGuestAuthModalOpener,
   requestGuestAuth,
-  requestGuestAuthForWpayPay,
+  requestGuestAuthForEcommerceAdd,
   requestGuestAuthForWpayVendor,
 } from '../guest-auth-gate';
 import {
@@ -21,6 +31,8 @@ import {
 describe('requestGuestAuth', () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
+    getJwt.mockReturnValue(null);
     registerGuestAuthModalOpener(null);
     (isGuestBrowsingEnabled as jest.Mock).mockReturnValue(true);
     delete (window as { location?: Location }).location;
@@ -81,20 +93,57 @@ describe('requestGuestAuth', () => {
       }),
     );
   });
+});
 
-  it('requestGuestAuthForWpayPay stores entered amount and does not require a pet', () => {
+describe('requestGuestAuthForEcommerceAdd', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    getJwt.mockReturnValue(null);
+    registerGuestAuthModalOpener(null);
+    (isGuestBrowsingEnabled as jest.Mock).mockReturnValue(true);
+    delete (window as { location?: Location }).location;
+    window.location = { href: '' } as Location;
+  });
+
+  it('allows guest add when guest browsing is enabled', () => {
     const opener = jest.fn();
     registerGuestAuthModalOpener(opener);
-    localStorage.clear();
 
-    const blocked = requestGuestAuthForWpayPay({ vendorId: 'vendor-1', amount: 1000 });
+    const blocked = requestGuestAuthForEcommerceAdd('/shop');
+
+    expect(blocked).toBe(false);
+    expect(opener).not.toHaveBeenCalled();
+  });
+
+  it('allows pharmacy guest add when guest browsing is enabled', () => {
+    const opener = jest.fn();
+    registerGuestAuthModalOpener(opener);
+
+    const blocked = requestGuestAuthForEcommerceAdd('/pharmacy');
+
+    expect(blocked).toBe(false);
+    expect(opener).not.toHaveBeenCalled();
+  });
+
+  it('prompts login before add when guest browsing is disabled', () => {
+    (isGuestBrowsingEnabled as jest.Mock).mockReturnValue(false);
+
+    const blocked = requestGuestAuthForEcommerceAdd('/shop');
 
     expect(blocked).toBe(true);
-    const intent = readGuestBookingIntent();
-    expect(intent?.kind).toBe('pay_bill');
-    expect(intent?.price).toBe(1000);
-    expect(intent?.vendorId).toBe('vendor-1');
-    expect(intent?.requiresPet).toBe(false);
-    expect(intent?.returnPath).toBe('/warmpawz-pay/vendors/vendor-1');
+    expect(window.location.href).toBe('/auth?signup=1&redirect=%2Fshop');
+  });
+
+  it('allows add when customer session is authenticated', () => {
+    localStorage.setItem('customerPhone', '9999999999');
+    getJwt.mockReturnValue('jwt');
+    const opener = jest.fn();
+    registerGuestAuthModalOpener(opener);
+
+    const blocked = requestGuestAuthForEcommerceAdd('/shop');
+
+    expect(blocked).toBe(false);
+    expect(opener).not.toHaveBeenCalled();
   });
 });

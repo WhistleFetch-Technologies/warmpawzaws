@@ -37,7 +37,7 @@ import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { handleShopPageBack } from '@/lib/go-back-or-replace';
 import { emitWarmpawzCartUpdated, CART_UPDATED_EVENT, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
 import { cartLineKey } from '@/lib/product-sku-client';
-import { requestGuestAuthForCart, isGuestApplicationState } from '@/lib/guest-auth-gate';
+import { requestGuestAuthForEcommerceAdd, isGuestApplicationState } from '@/lib/guest-auth-gate';
 import {
   loadDeliveryAddressesForCheckout,
   pickDefaultDeliveryAddress,
@@ -524,7 +524,7 @@ function ShopPageContent() {
   };
 
   const addToCart = (product: ShopProduct) => {
-    if (requestGuestAuthForCart('/shop')) return;
+    if (requestGuestAuthForEcommerceAdd('/shop')) return;
     // Variant products need a SKU. Prefer the API listing SKU (lowest in-stock price);
     // only open PDP when we cannot resolve one.
     if (product.has_variants && !product.listing_sku_id) {

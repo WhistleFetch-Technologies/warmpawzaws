@@ -225,16 +225,43 @@ export function requestGuestAuthForWpayVendor(vendorId: string): boolean {
   });
 }
 
-/** Ecommerce add-to-cart / Pay card click. */
-export function requestGuestAuthForCart(returnPath?: string): boolean {
-  const path =
+function resolveEcommerceReturnPath(returnPath?: string): string {
+  return (
     returnPath ||
     (typeof window !== 'undefined'
       ? `${window.location.pathname}${window.location.search || ''}` || '/shop'
-      : '/shop');
+      : '/shop')
+  );
+}
+
+/**
+ * @returns true if caller should abort add-to-cart (auth prompt shown).
+ * Guest browsing ON → allow local cart (return false).
+ * Guest browsing OFF → legacy: prompt login before add (return true for guests).
+ */
+export function requestGuestAuthForEcommerceAdd(returnPath?: string): boolean {
+  if (hasAuthenticatedCustomerSession()) return false;
+  if (isGuestBrowsingEnabled()) return false;
   return requestGuestAuthIfNeeded({
     mode: 'signup',
-    returnPath: path,
+    returnPath: resolveEcommerceReturnPath(returnPath),
     resumeScreen: 'shop',
   });
+}
+
+/** Checkout / payment boundary — not add-to-cart. */
+export function requestGuestAuthForCheckout(returnPath?: string): boolean {
+  return requestGuestAuthIfNeeded({
+    mode: 'signup',
+    returnPath: resolveEcommerceReturnPath(returnPath),
+    resumeScreen: 'shop',
+  });
+}
+
+/**
+ * @deprecated Use requestGuestAuthForEcommerceAdd for add-to-cart;
+ * requestGuestAuth or requestGuestAuthForCheckout for checkout.
+ */
+export function requestGuestAuthForCart(returnPath?: string): boolean {
+  return requestGuestAuthForCheckout(returnPath);
 }

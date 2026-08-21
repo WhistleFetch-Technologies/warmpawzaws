@@ -16,7 +16,7 @@ import {
   type WarmpawzCartLine,
   type WarmpawzCartProductSnapshot,
 } from "@/lib/warmpawz-cart-storage";
-import { requestGuestAuthForCart } from "@/lib/guest-auth-gate";
+import { requestGuestAuthForEcommerceAdd } from "@/lib/guest-auth-gate";
 
 export interface CartItem {
   id: string;
@@ -159,7 +159,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cart]);
 
   const addToCart = useCallback((item: CartItem) => {
-    if (requestGuestAuthForCart()) return;
+    if (requestGuestAuthForEcommerceAdd()) return;
     setCart((prev) => {
       const existing = prev.find((i) => i.id === item.id);
       if (existing) {
