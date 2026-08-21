@@ -3,6 +3,10 @@ import {
   pickVetPractitionerProfileEntityId,
   pickWalkerVendorId,
 } from '@warmpawz/shared-types';
+import {
+  WAPPT_VENDOR_PROFILE_SCREEN,
+  buildWarmpawzAppointmentsProfileNav,
+} from '@/lib/warmpawz-appointments-customer';
 
 export type WebCustomerVendorStyleListingVertical = 'vet' | 'grooming';
 
@@ -182,6 +186,31 @@ export function getWebWalkerDiscoveryChevronNavTarget(input: {
     specialization: input.specialization,
     walkerSeed: row,
   });
+}
+
+/** Available Walkers hub (WAPPT) → {@link WarmpawzAppointmentsVendorProfile}. */
+export function buildWalkerWapptProfileNavFromRow(input: {
+  walker: Record<string, unknown>;
+  profileBackScreen?: string;
+  serviceStyle?: string;
+}): { screen: string; data: Record<string, unknown> } | null {
+  const row = input.walker;
+  const vendorId = pickWalkerVendorId(row) || pickCustomerVendorAccountId(row) || '';
+  if (!String(vendorId).trim()) {
+    return null;
+  }
+  const vendorName =
+    String(row.name || row.businessName || row.business_name || '').trim() || undefined;
+  return {
+    screen: WAPPT_VENDOR_PROFILE_SCREEN,
+    data: buildWarmpawzAppointmentsProfileNav({
+      vendorId: String(vendorId).trim(),
+      vendorName,
+      category: 'walker',
+      serviceStyle: String(input.serviceStyle ?? 'at_home'),
+      profileBackScreen: input.profileBackScreen ?? 'walker',
+    }),
+  };
 }
 
 /** UniversalServicesByStyle vendorId embed must redirect to HomeServiceProviderProfile, not vet-style profile UI. */

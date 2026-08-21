@@ -62,6 +62,10 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
+import {
+  buildWalkerProviderProfileNavPayload,
+  buildWalkerWapptProfileNavFromRow,
+} from '@/lib/customer-vendor-profile-navigation';
 
 const WALKING_IMG = '/images/home/Walking';
 
@@ -618,17 +622,32 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
 
   const handleOpenWalkerProfile = (walker: any, e?: MouseEvent) => {
     e?.stopPropagation();
+    const row = walker as Record<string, unknown>;
+    if (wapptWalkerUi) {
+      const target = buildWalkerWapptProfileNavFromRow({
+        walker: row,
+        profileBackScreen: 'walker',
+        serviceStyle: 'at_home',
+      });
+      if (!target) {
+        toast.error('Profile unavailable for this walker.');
+        return;
+      }
+      onNavigate?.(target.screen, target.data);
+      return;
+    }
     const vid = resolveWalkerVendorId(walker);
     if (!vid) {
       toast.error('Profile unavailable for this walker.');
       return;
     }
-    onNavigate?.('walker-provider-profile', {
+    const payload = buildWalkerProviderProfileNavPayload({
       vendorId: vid,
-      walker: buildWalkerPayload(walker),
-      serviceType: 'walking',
+      displayName: String(walker.name || walker.businessName || 'Walker').trim(),
       serviceStyle: 'at_home',
+      walkerSeed: row,
     });
+    onNavigate?.(payload.screen, payload.data);
   };
 
   const handleViewWalkerPackages = async (walker: any, e: MouseEvent) => {

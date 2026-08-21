@@ -9,6 +9,8 @@ import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-fl
 import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
+import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
+import { isGuestApplicationState } from '@/lib/guest-auth-gate';
 
 interface CustomerSession {
   phone: string;
@@ -19,7 +21,17 @@ interface CustomerSession {
   isNewUser?: boolean;
   hasCompletedOnboarding?: boolean;
   hasPets?: boolean;
+  /** Unauthenticated browse session (GUEST_BROWSING_ENABLED). */
+  isGuest?: boolean;
 }
+
+const GUEST_SESSION: CustomerSession = {
+  phone: '',
+  verified: false,
+  isGuest: true,
+  hasCompletedOnboarding: true,
+  hasPets: false,
+};
 
 /**
  * Deep link: full catalog ("Find All Services"). Own URL so refresh keeps this screen.
@@ -103,18 +115,30 @@ export default function AllServicesCatalogPage() {
       return;
     }
 
+    if (isGuestApplicationState() || isGuestBrowsingEnabled()) {
+      setSession(GUEST_SESSION);
+      setGateReady(true);
+    }
     setIsLoading(false);
   }, []);
 
   useEffect(() => {
-    if (!isLoading && !session && !hasRedirected.current) {
-      hasRedirected.current = true;
-      redirectWithHardFallback(router, '/auth');
+    if (isLoading || session || hasRedirected.current) return;
+    if (isGuestApplicationState() || isGuestBrowsingEnabled()) {
+      setSession(GUEST_SESSION);
+      setGateReady(true);
+      return;
     }
+    hasRedirected.current = true;
+    redirectWithHardFallback(router, '/auth');
   }, [isLoading, session, router]);
 
   useEffect(() => {
     if (isLoading || !session) return;
+    if (session.isGuest) {
+      setGateReady(true);
+      return;
+    }
     if (!readProfileCompleted()) {
       router.replace('/profile');
       return;
