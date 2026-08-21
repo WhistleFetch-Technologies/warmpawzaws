@@ -22,6 +22,7 @@ import {
   requestGuestAuth,
   requestGuestAuthForBooking,
   requestGuestAuthForEcommerceAdd,
+  requestGuestAuthForProfileContinue,
   requestGuestAuthForWpayVendor,
 } from '../guest-auth-gate';
 import {
@@ -112,6 +113,29 @@ describe('requestGuestAuth', () => {
       wapptMode: true,
     });
     expect(JSON.stringify(intent)).not.toMatch(/jwt|access_token|refreshToken|password/i);
+  });
+
+  it('requestGuestAuthForProfileContinue stores service context without secrets', () => {
+    const opener = jest.fn();
+    registerGuestAuthModalOpener(opener);
+    const blocked = requestGuestAuthForProfileContinue({
+      persona: 'vet',
+      category: 'vet',
+      vendorId: 'vendor-1',
+      serviceId: 'svc-tele',
+      serviceStyle: 'tele',
+      resumeScreen: 'vet-tele-consultation',
+      wapptMode: false,
+    });
+    expect(blocked).toBe(true);
+    const intent = readGuestBookingIntent();
+    expect(intent).toMatchObject({
+      vendorId: 'vendor-1',
+      serviceId: 'svc-tele',
+      serviceStyle: 'tele',
+      resumeScreen: 'vet-tele-consultation',
+    });
+    expect(JSON.stringify(intent)).not.toMatch(/jwt|access_token|password|otp/i);
   });
 
   it('requestGuestAuthForWpayVendor opens the modal with the vendor return path', () => {

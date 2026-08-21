@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
+import { hasAuthenticatedCustomerSession, requestGuestAuthIfNeeded } from '@/lib/guest-auth-gate';
 
 type DirectPayContext = {
   vendorId: string;
@@ -210,6 +211,14 @@ function TeleConsultationContent() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!hasAuthenticatedCustomerSession()) {
+      const returnPath = `${window.location.pathname}${window.location.search || ''}` || '/?service=tele';
+      requestGuestAuthIfNeeded({
+        mode: 'signup',
+        returnPath,
+      });
+      return;
+    }
     const phone = localStorage.getItem('customerPhone') || '';
     if (phone) setCustomerPhone(phone);
 

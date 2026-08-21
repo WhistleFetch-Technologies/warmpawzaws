@@ -43,7 +43,7 @@ import { VendorProfileDashboardHeader } from './VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from './VendorHeroPhotoCarousel';
 import { ServicePricingDisplay } from '@/components/customer/ServicePricingDisplay';
 import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
-import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
+import { hasAuthenticatedCustomerSession, requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 
 // ============================================================================
 // TYPES
@@ -492,6 +492,7 @@ export function UniversalProviderProfile({
   };
 
   const loadCustomerData = async () => {
+    if (!hasAuthenticatedCustomerSession() || !phone) return;
     try {
       // Load pets
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
@@ -718,7 +719,12 @@ export function UniversalProviderProfile({
         persona: category,
         category,
         vendorId: String(provider.vendorId || provider.providerId || ''),
-        resumeScreen: 'universal-provider-booking',
+        serviceId: selectedServicesList[0]
+          ? String(selectedServicesList[0].serviceId || selectedServicesList[0].id || '')
+          : undefined,
+        serviceStyle,
+        resumeScreen:
+          serviceStyle === 'tele' ? 'vet-tele-consultation' : 'universal-provider-booking',
         wapptMode: false,
       })
     ) {

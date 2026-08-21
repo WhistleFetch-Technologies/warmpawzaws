@@ -29,6 +29,7 @@ import {
 } from '@/lib/navigation/wizard-session-state';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
+import { hasAuthenticatedCustomerSession, requestGuestAuthIfNeeded } from '@/lib/guest-auth-gate';
 
 // ============================================================================
 // TYPES
@@ -855,8 +856,9 @@ export function TeleConsultationRouter({
   const [loadingPets, setLoadingPets] = useState(false);
   const launchGate = useServiceStyleLaunchGate(phone, 'vet', 'tele');
 
-  // Load customer ID on mount
+  // Load customer ID / pets only after authentication.
   useEffect(() => {
+    if (!hasAuthenticatedCustomerSession() || !phone) return;
     loadCustomerId();
     loadPets();
   }, [phone]);
@@ -869,6 +871,7 @@ export function TeleConsultationRouter({
   }, []);
 
   const loadCustomerId = async () => {
+    if (!hasAuthenticatedCustomerSession() || !phone) return;
     try {
       const response = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
       if (response?.profile?.id || response?.id) {
@@ -880,6 +883,7 @@ export function TeleConsultationRouter({
   };
 
   const loadPets = async () => {
+    if (!hasAuthenticatedCustomerSession() || !phone) return;
     try {
       setLoadingPets(true);
       const response = await apiClient.get(`/customer/pets/${phone}`) as any;
@@ -948,6 +952,14 @@ export function TeleConsultationRouter({
   };
 
   const loadInstantVendorsAndGo = useCallback(async (revertToModeOnError: boolean) => {
+    if (
+      requestGuestAuthIfNeeded({
+        mode: 'signup',
+        returnPath: '/?service=tele',
+      })
+    ) {
+      return;
+    }
     setLoadingAvailableNow(true);
     setAvailableNowVendors([]);
     setSelectedInstantVendor(null);

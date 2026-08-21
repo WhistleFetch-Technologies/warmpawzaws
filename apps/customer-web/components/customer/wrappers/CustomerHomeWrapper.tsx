@@ -41,8 +41,9 @@ import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-al
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { readProfileCompleted, shouldRestoreGuestJourneyOnHome } from '@/lib/customer-flow-guards';
 import {
-  clearGuestBookingIntent,
-  consumeGuestBookingIntentForRestore,
+  abortGuestJourneyRestore,
+  beginGuestJourneyRestore,
+  finishGuestJourneyRestore,
   isGuestAppointmentJourney,
   readGuestBookingIntent,
   resolveResumeScreen,
@@ -919,20 +920,20 @@ export function CustomerHomeWrapper({
     const openAddPetQuery = new URLSearchParams(window.location.search).get('open') === 'add-pet';
     // New customers still need /profile. Consuming here races profile redirect and dumps Home.
     if (readGuestBookingIntent() && !shouldRestoreGuestJourneyOnHome()) return;
-    const intent = consumeGuestBookingIntentForRestore();
+    const intent = beginGuestJourneyRestore();
     if (!intent && !openAddPetQuery) return;
     if (intent?.kind === 'search' && intent.search) {
       const q = new URLSearchParams();
       if (intent.search.q) q.set('q', intent.search.q);
       if (intent.search.category) q.set('category', intent.search.category);
       if (intent.vendorId) q.set('vendorId', intent.vendorId);
-      clearGuestBookingIntent();
+      finishGuestJourneyRestore();
       emitGuestAuthAnalytics('booking_resumed', { kind: 'search' });
       router.replace(q.toString() ? `/search?${q.toString()}` : '/search');
       return;
     }
     if (intent?.kind === 'cart') {
-      clearGuestBookingIntent();
+      finishGuestJourneyRestore();
       emitGuestAuthAnalytics('booking_resumed', { kind: 'cart' });
       router.replace(intent.returnPath || '/checkout');
       return;
@@ -984,6 +985,7 @@ export function CustomerHomeWrapper({
       'walker-booking',
       'pet-sitter-booking',
       'nutritionist-booking',
+      'vet-tele-consultation',
       'add-pet',
     ]);
     if (resume === 'add-pet' || (openAddPetQuery && (!intent || intent.kind === 'add_pet'))) {
@@ -993,6 +995,27 @@ export function CustomerHomeWrapper({
         /* ignore */
       }
       shellNav.navigateToScreen('add-pet' as ScreenType);
+    } else if (resume === 'vet-tele-consultation') {
+      try {
+        sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+      } catch {
+        /* ignore */
+      }
+      setTeleSkipToScheduled(true);
+      setTeleWizardRestore({
+        step: 'provider-profile',
+        selectedProvider: intent?.vendorId
+          ? {
+              providerId: intent.vendorId,
+              vendorId: intent.vendorId,
+              providerType: 'vendor',
+              name: '',
+            }
+          : null,
+        showBookingForm: true,
+        selectedServiceIds: intent?.serviceId ? [intent.serviceId] : [],
+      });
+      shellNav.navigateToScreen('vet-tele-consultation');
     } else if (resume && resumeScreens.has(resume)) {
       try {
         sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
@@ -1006,9 +1029,10 @@ export function CustomerHomeWrapper({
       intent.kind !== 'add_pet'
     ) {
       // WPay / other non-appointment snapshots are consumed by their own restore owners.
+      abortGuestJourneyRestore();
       return;
     }
-    clearGuestBookingIntent();
+    finishGuestJourneyRestore();
   }, [pathname, isGuest, shellNav, router]);
 
   /** Guest landed on add-pet shell screen — prompt auth modal and return to home. */

@@ -6,8 +6,10 @@ import {
   buildGuestAuthUrlForBooking,
   clearGuestBookingIntent,
   GUEST_BOOKING_INTENT_KEY,
+  beginGuestJourneyRestore,
   isGuestAppointmentJourney,
   readGuestBookingIntent,
+  resolveResumeScreen,
   saveGuestBookingIntent,
   stripAuthFromGuestJourneySnapshots,
   updateGuestBookingProgress,
@@ -106,6 +108,56 @@ describe('guest-booking-intent', () => {
     expect(intent?.time).toBe('17:00');
     expect((intent as Record<string, unknown> | null)?.idToken).toBeUndefined();
     expect((intent as Record<string, unknown> | null)?.customerPhone).toBeUndefined();
+  });
+
+  it('maps scheduled Tele and Home Service resume aliases', () => {
+    expect(
+      resolveResumeScreen({
+        v: 1,
+        savedAt: Date.now(),
+        returnPath: '/',
+        resumeScreen: 'universal-provider-booking',
+        serviceStyle: 'tele',
+        persona: 'vet',
+      })
+    ).toBe('vet-tele-consultation');
+    expect(
+      resolveResumeScreen({
+        v: 1,
+        savedAt: Date.now(),
+        returnPath: '/',
+        resumeScreen: 'home-service-booking',
+        persona: 'walker',
+        category: 'walker',
+      })
+    ).toBe('walker-booking');
+    expect(
+      isGuestAppointmentJourney({
+        v: 1,
+        savedAt: Date.now(),
+        kind: 'booking',
+        returnPath: '/',
+        resumeScreen: 'universal-provider-booking',
+        serviceStyle: 'tele',
+        persona: 'vet',
+      })
+    ).toBe(true);
+  });
+
+  it('consumes appointment restore exactly once', () => {
+    saveGuestBookingIntent({
+      kind: 'booking',
+      returnPath: '/',
+      resumeScreen: 'vet-booking',
+      vendorId: 'v1',
+      date: '2026-08-21',
+      time: '17:00',
+    });
+    const first = beginGuestJourneyRestore();
+    const second = beginGuestJourneyRestore();
+    expect(first?.vendorId).toBe('v1');
+    expect(second).toBeNull();
+    expect(readGuestBookingIntent()?.vendorId).toBe('v1');
   });
 
   it('does not treat WPay as an appointment journey', () => {

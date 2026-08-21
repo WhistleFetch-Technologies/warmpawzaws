@@ -26,7 +26,22 @@ export const GUEST_APPOINTMENT_RESUME_SCREENS = new Set([
   'walker-booking',
   'pet-sitter-booking',
   'nutritionist-booking',
+  'vet-tele-consultation',
 ]);
+
+function mapPersonaBookingScreen(persona: string): string {
+  const p = String(persona || '').toLowerCase();
+  if (p === 'vet' || p === 'veterinary' || p === 'veterinarian') return 'vet-booking';
+  if (p === 'grooming' || p === 'groomer') return 'grooming-booking';
+  if (p === 'training' || p === 'trainer' || p === 'behaviorist' || p === 'behaviourist') {
+    return 'training-booking';
+  }
+  if (p === 'walker' || p === 'walking') return 'walker-booking';
+  if (p === 'boarding') return 'boarding-booking';
+  if (p === 'sitting' || p === 'sitter' || p === 'pet_sitter') return 'pet-sitter-booking';
+  if (p === 'nutrition' || p === 'nutritionist') return 'nutritionist-booking';
+  return 'vet-booking';
+}
 
 export type GuestSearchSnapshot = {
   q?: string;
@@ -201,6 +216,16 @@ export function resolveResumeScreen(intent: GuestBookingIntentV1): string | unde
   const raw = intent.resumeScreen;
   if (raw === 'vet') return 'vet-booking';
   if (raw === 'nutritionist') return 'nutritionist-booking';
+  if (raw === 'universal-provider-booking') {
+    const style = String(intent.serviceStyle || '').toLowerCase();
+    if (style === 'tele' || style === 'online' || style === 'video_consultation') {
+      return 'vet-tele-consultation';
+    }
+    return mapPersonaBookingScreen(String(intent.persona || intent.category || ''));
+  }
+  if (raw === 'home-service-booking') {
+    return mapPersonaBookingScreen(String(intent.persona || intent.category || ''));
+  }
   return raw;
 }
 
@@ -220,6 +245,7 @@ export function isGuestAppointmentJourney(intent: GuestBookingIntentV1 | null | 
 export function clearGuestBookingIntent(): void {
   removePair(GUEST_BOOKING_INTENT_KEY, GUEST_JOURNEY_BACKUP_KEY);
   removePair(GUEST_BOOKING_PROGRESS_KEY, GUEST_JOURNEY_PROGRESS_BACKUP_KEY);
+  restoreInFlightSavedAt = null;
 }
 
 /**
@@ -267,9 +293,9 @@ export function buildGuestAuthUrlForBooking(
 
 export const buildGuestAuthUrlForJourney = buildGuestAuthUrlForBooking;
 
-export function consumeGuestBookingIntentForRestore(): GuestBookingIntentV1 | null {
-  const intent = readGuestBookingIntent();
-  if (!intent) return null;
+let restoreInFlightSavedAt: number | null = null;
+
+function seedResumeScreen(intent: GuestBookingIntentV1): void {
   const resume = resolveResumeScreen(intent);
   if (resume && canUseStorage()) {
     try {
@@ -278,7 +304,29 @@ export function consumeGuestBookingIntentForRestore(): GuestBookingIntentV1 | nu
       /* ignore */
     }
   }
+}
+
+export function consumeGuestBookingIntentForRestore(): GuestBookingIntentV1 | null {
+  return beginGuestJourneyRestore();
+}
+
+/** Peek + lock so React Strict Mode / remount cannot restore twice. */
+export function beginGuestJourneyRestore(): GuestBookingIntentV1 | null {
+  const intent = readGuestBookingIntent();
+  if (!intent) return null;
+  if (restoreInFlightSavedAt === intent.savedAt) return null;
+  restoreInFlightSavedAt = intent.savedAt;
+  seedResumeScreen(intent);
   return intent;
+}
+
+export function abortGuestJourneyRestore(): void {
+  restoreInFlightSavedAt = null;
+}
+
+export function finishGuestJourneyRestore(): void {
+  clearGuestBookingIntent();
+  restoreInFlightSavedAt = null;
 }
 
 const GUEST_JOURNEY_AUTH_LEAK_KEYS = [

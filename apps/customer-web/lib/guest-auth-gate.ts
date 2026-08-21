@@ -172,6 +172,8 @@ export function requestGuestAuthForProfileContinue(opts: {
   persona: string;
   category: string;
   vendorId?: string;
+  serviceId?: string;
+  serviceStyle?: string;
   resumeScreen: string;
   wapptMode?: boolean;
 }): boolean {
@@ -181,6 +183,8 @@ export function requestGuestAuthForProfileContinue(opts: {
     persona: opts.persona,
     category: opts.category,
     vendorId: opts.vendorId,
+    serviceId: opts.serviceId,
+    serviceStyle: opts.serviceStyle,
     requiresPet: !wapptMode,
     wapptMode,
     returnPath: '/',

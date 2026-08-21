@@ -38,6 +38,29 @@ describe('Guest appointment restore contracts', () => {
     expect(wrapper).toMatch(/shouldRestoreGuestJourneyOnHome/);
     expect(wrapper).toMatch(/readGuestBookingIntent\(\) && !shouldRestoreGuestJourneyOnHome\(\)/);
     expect(wrapper).toMatch(/isGuestAppointmentJourney/);
+    expect(wrapper).toMatch(/beginGuestJourneyRestore/);
+    expect(wrapper).toMatch(/vet-tele-consultation/);
+  });
+
+  it('scheduled Tele persist maps to vet-tele-consultation', () => {
+    const profile = readSrc('components/customer/shared/UniversalProviderProfile.tsx');
+    expect(profile).toMatch(/vet-tele-consultation/);
+    expect(profile).toMatch(/hasAuthenticatedCustomerSession\(\)/);
+  });
+
+  it('Home Services Continue uses persona booking restore screens', () => {
+    const home = readSrc('components/customer/home-services/HomeServiceProviderProfile.tsx');
+    expect(home).toMatch(/resolveWarmpawzBookingScreen/);
+    expect(home).not.toMatch(/resumeScreen: 'home-service-booking'/);
+  });
+
+  it('Instant Tele does not load customer APIs before auth', () => {
+    const tele = readSrc('components/customer/vet/TeleConsultationRouter.tsx');
+    expect(tele).toMatch(/hasAuthenticatedCustomerSession\(\)/);
+    expect(tele).toMatch(/requestGuestAuthIfNeeded/);
+    const instant = readSrc('app/booking/tele/page.tsx');
+    expect(instant).toMatch(/hasAuthenticatedCustomerSession\(\)/);
+    expect(instant).toMatch(/requestGuestAuthIfNeeded/);
   });
 
   it('profile creation uses the shared post-profile destination helper', () => {

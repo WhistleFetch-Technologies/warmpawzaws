@@ -60,6 +60,7 @@ import {
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 import { homeServiceTypeToPersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
+import { resolveWarmpawzBookingScreen } from '@/lib/warmpawz-appointments-customer';
 import { mergeProviderAboutFromFacility } from '@/lib/universal-provider-profile-enrichment';
 import { resolveHomeServiceProfileOverviewFields } from '@/lib/home-service-profile-overview';
 import { formatOperatingHours } from '@/lib/format-utils';
@@ -516,7 +517,9 @@ export function HomeServiceProviderProfile({
         persona: homeServiceTypeToPersona(serviceType),
         category: serviceType,
         vendorId: String(provider.vendorId || vendorId || ''),
-        resumeScreen: 'home-service-booking',
+        serviceId: selectedServiceId || undefined,
+        serviceStyle: 'at_home',
+        resumeScreen: resolveWarmpawzBookingScreen(homeServiceTypeToPersona(serviceType)),
         wapptMode: false,
       })
     ) {
@@ -1231,6 +1234,19 @@ export function HomeServiceProviderProfile({
                 if (!selectedServiceId || !provider) return;
                 const service = profileServices.find((s) => s.id === selectedServiceId);
                 if (!service) return;
+                if (
+                  requestGuestAuthForProfileContinue({
+                    persona: homeServiceTypeToPersona(serviceType),
+                    category: serviceType,
+                    vendorId: String(provider.vendorId || vendorId || ''),
+                    serviceId: selectedServiceId,
+                    serviceStyle: 'at_home',
+                    resumeScreen: resolveWarmpawzBookingScreen(homeServiceTypeToPersona(serviceType)),
+                    wapptMode: false,
+                  })
+                ) {
+                  return;
+                }
                 onSelectService(service, rawServiceRowsRef.current.get(service.id));
               }}
               disabled={continueBookingDisabled}
