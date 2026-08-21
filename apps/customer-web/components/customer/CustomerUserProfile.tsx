@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Camera } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { UseCurrentLocationButton } from '@/components/shared/UseCurrentLocationButton';
+import type { AddressFromGeolocationResult } from '@/lib/address-from-geolocation';
 import { COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 import { validateEmail } from '@/lib/validation';
 import { getResolvedCustomerId, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
@@ -163,6 +165,19 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  const handleGeolocationSuccess = useCallback((result: AddressFromGeolocationResult) => {
+    setProfile((prev) => ({
+      ...prev,
+      address: result.addressLine1 ?? prev.address,
+      city: result.city ?? prev.city,
+      state: result.state ?? prev.state,
+      pincode: result.pincode ?? prev.pincode,
+      latitude: result.latitude,
+      longitude: result.longitude,
+      coordinates: result.coordinates,
+    }));
   }, []);
 
   const applyReferralCode = async (customerId: string) => {
@@ -427,6 +442,10 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Address <span className="text-red-500">*</span>
             </label>
+            <UseCurrentLocationButton
+              className="mb-3"
+              onSuccess={handleGeolocationSuccess}
+            />
             <EnhancedAddressAutocomplete
               value={profile.address}
               onChange={(address: string, components?: AddressComponents) => {
@@ -454,7 +473,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               required
             />
             <p className="text-xs text-gray-500 mt-1">
-              Type to search for your address, landmark or area
+              Use current location or type to search for your address, landmark or area
             </p>
           </div>
 
