@@ -1,4 +1,3 @@
-import { needsPasswordSetupAfterOtp } from './session-utils';
 
 type MinimalRouter = { back: () => void; replace: (href: string) => void };
 
@@ -740,9 +739,6 @@ export function navigateToProfileShopOrders(
 /** Resolve back fallback for `/auth/set-password` from `next` / `change` query params. */
 export function getSetPasswordBackFallback(): string {
   if (typeof window === 'undefined') return '/';
-  if (needsPasswordSetupAfterOtp()) {
-    return '/auth?signup=1&fromSetPassword=1';
-  }
   const params = new URLSearchParams(window.location.search);
   const next = params.get('next');
   if (next && next.startsWith('/') && !next.startsWith('//')) return next;
@@ -750,11 +746,7 @@ export function getSetPasswordBackFallback(): string {
   return '/';
 }
 
-/** Set-password header / hardware back — avoid onboarding gates that immediately return here. */
+/** Set-password header / hardware back — go to `next` or home, not a password-setup loop. */
 export function handleSetPasswordPageBack(router: MinimalRouter): void {
-  if (typeof window !== 'undefined' && needsPasswordSetupAfterOtp()) {
-    router.replace('/auth?signup=1&fromSetPassword=1');
-    return;
-  }
   goBackOrReplace(router, getSetPasswordBackFallback());
 }

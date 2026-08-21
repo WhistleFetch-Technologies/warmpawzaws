@@ -1,12 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef, Fragment } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
-import { applyUnifiedProfileToCustomerLocalStorage } from '@/lib/customer-flow-guards';
-import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
+import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import {
   PlatformLegalPolicyDialog,
   type PlatformPolicyType,
@@ -19,24 +18,12 @@ import {
 import { parsePetsFromApiResponse } from '@/components/customer/home/hooks/useHomePageData';
 import {
   getStoredCustomerJwtForSession,
-  setNeedsPasswordSetupAfterOtp,
   clearNeedsPasswordSetup,
-  needsPasswordSetupAfterOtp,
 } from '@/lib/session-utils';
-import { Eye, EyeOff, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import { AUTH_MODAL_FORM, getAuthModalLayoutClasses } from '@/components/customer/auth/auth-modal-ui';
-import {
-  FORGOT_PASSWORD_RETRY_CONFIG,
-  LOGIN_OTP_RETRY_CONFIG,
-  formatForgotCooldownMessage,
-  formatResetRecentlyMessage,
-  forgotCooldownStorageKey,
-  persistForgotCooldown,
-  readForgotCooldownRemaining,
-  readRetryAfterSecondsFromError,
-  readRetryAfterSecondsFromSuccess,
-} from '@/lib/forgot-password-cooldown';
+import { LOGIN_OTP_RETRY_CONFIG } from '@/lib/forgot-password-cooldown';
 import { resolveAuthModeFromParams, resolveSafeAuthReturnPath } from '@/lib/auth-redirect';
 import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
 import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
@@ -79,10 +66,6 @@ const authLogoRingClass =
   'relative z-10 w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl ring-1 ring-white/40 mb-6 p-2';
 const authCardClass =
   'bg-white rounded-t-[2.5rem] min-h-full px-6 pt-10 ring-1 ring-black/5 shadow-[0_-10px_40px_-4px_rgba(0,0,0,0.1),0_8px_32px_rgba(0,0,0,0.06)] pb-[max(1.5rem,env(safe-area-inset-bottom))]';
-const authFieldClass =
-  'w-full py-4 px-4 text-lg border-2 border-gray-200/90 rounded-2xl outline-none bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white';
-const authFieldInGroupClass =
-  'w-full py-4 pl-4 pr-14 text-lg border-2 border-gray-200/90 rounded-2xl outline-none bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white';
 const authInputGroupClass =
   'flex items-stretch border-2 border-gray-200/90 rounded-2xl overflow-hidden transition-all duration-200 focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 bg-[#FFFBF7] focus-within:bg-white';
 const authOtpInnerClass =
@@ -94,9 +77,6 @@ const authPrimaryButtonClass =
 const authTextLinkCoreClass =
   'text-[#FF8C42] no-underline underline-offset-2 decoration-2 transition-colors hover:text-[#E86820] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40 focus-visible:ring-offset-2 focus-visible:text-[#E86820] focus-visible:underline';
 const authTextLinkClass = `${authTextLinkCoreClass} font-medium rounded-sm`;
-/** “New user?” CTA: soft pill behind the same link behavior; Forgot password stays plain text. */
-const authSignupPillLinkClass =
-  `${authTextLinkCoreClass} font-medium inline-flex justify-center rounded-full px-4 py-2 bg-[#FF8C42]/10 hover:bg-[#FF8C42]/15`;
 /** Terms / Privacy inside gray copy: readable, tappable, same focus ring. */
 const authTermsLinkClass =
   `${authTextLinkCoreClass} font-semibold rounded-sm py-0.5`;
@@ -164,11 +144,6 @@ export function CustomerAuthFlow({
     router.push(redirectPath);
   };
 
-  const finishNeedsPassword = (afterPwd: string) => {
-    router.push('/auth/set-password?next=' + encodeURIComponent(afterPwd));
-    onComplete({ redirectPath: afterPwd, needsPasswordSetup: true });
-  };
-
   useEffect(() => {
     if (!isModal) return;
     setGuestBrowseEnabled(isGuestBrowsingEnabled());
@@ -231,34 +206,14 @@ export function CustomerAuthFlow({
   const [legalDialogOpen, setLegalDialogOpen] = useState(false);
   const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
   const [helpChatOpen, setHelpChatOpen] = useState(false);
-  /** URL-driven after mount: signup=1 / redirect / ref → OTP; login=1 → password. */
+  /** URL-driven after mount: login=1 and signup=1 both render OTP. */
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [loginUsername, setLoginUsername] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-
-  /** Forgot password: dedicated server routes (never generic send-otp for reset). */
-  const [forgotOpen, setForgotOpen] = useState(false);
-  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1);
-  const [forgotUsername, setForgotUsername] = useState('');
-  const [forgotOtp, setForgotOtp] = useState('');
-  const [forgotResetToken, setForgotResetToken] = useState('');
-  const [forgotNewPassword, setForgotNewPassword] = useState('');
-  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
-  const [forgotInfo, setForgotInfo] = useState<string | null>(null);
-  const [forgotSuccessBanner, setForgotSuccessBanner] = useState<string | null>(null);
-  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
-  const [forgotResendTimer, setForgotResendTimer] = useState(0);
-  const forgotRequestGen = useRef(0);
   const layout = getAuthLayoutClasses(variant);
   const modalForm = isModal ? AUTH_MODAL_FORM : null;
-  const fieldCls = modalForm?.field ?? authFieldClass;
-  const fieldInGroupCls = modalForm?.fieldInGroup ?? authFieldInGroupClass;
   const inputGroupCls = modalForm?.inputGroup ?? authInputGroupClass;
   const otpInnerCls = modalForm?.otpInner ?? authOtpInnerClass;
   const primaryBtnCls = modalForm?.primaryButton ?? authPrimaryButtonClass;
   const textLinkCls = modalForm?.textLink ?? authTextLinkClass;
-  const signupPillCls = modalForm?.signupPillLink ?? authSignupPillLinkClass;
   const termsLinkCls = modalForm?.termsLink ?? authTermsLinkClass;
   const cardWrapCls = isModal
     ? (layout as ReturnType<typeof getAuthModalLayoutClasses>).cardWrap
@@ -316,12 +271,6 @@ export function CustomerAuthFlow({
       return;
     }
 
-    const authParams =
-      typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    if (authParams?.get('fromSetPassword') === '1' || needsPasswordSetupAfterOtp()) {
-      return;
-    }
-
     const storedJwt = getStoredCustomerJwtForSession();
 
     if (storedJwt && !isTokenExpired(storedJwt)) {
@@ -351,28 +300,11 @@ export function CustomerAuthFlow({
     }
   }, [resendTimer]);
 
-  useEffect(() => {
-    if (forgotResendTimer > 0) {
-      const timer = setTimeout(() => setForgotResendTimer(forgotResendTimer - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [forgotResendTimer]);
-
-  useEffect(() => {
-    if (!forgotOpen) return;
-    const key = forgotCooldownStorageKey(forgotUsername.trim() || loginUsername.trim());
-    setForgotResendTimer(readForgotCooldownRemaining(key));
-  }, [forgotOpen, forgotUsername, loginUsername]);
-
   // Format phone number with spaces (74493 38923)
   const formatPhoneDisplay = (num: string) => {
     if (num.length <= 5) return num;
     return `${num.slice(0, 5)} ${num.slice(5)}`;
   };
-
-  // Get selected country details
-  const selectedCountry = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
-
 
   // Otp sending & UAT mode handling
   const sendOtp = async () => {
@@ -416,309 +348,6 @@ export function CustomerAuthFlow({
       } else {
         setError(err.message || 'Failed to send OTP');
       }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const passwordLogin = async () => {
-    const user = loginUsername.trim();
-    const pass = loginPassword.trim();
-    if (!user || !pass) {
-      setError('Enter phone number and password');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const body = await apiClient.post<any>('/auth/login', {
-        username: user,
-        password: pass,
-        role: 'customer',
-      });
-      const responseData = (body as any).data?.data || (body as any).data || body;
-      const isOk = (body as any).success ?? responseData?.success;
-      const inner = responseData?.data && responseData.data.token ? responseData.data : responseData;
-      if (!isOk || !inner?.token) {
-        setError('Login failed');
-        return;
-      }
-
-      const tokenData = inner.token;
-      const accessToken = tokenData.access_token || tokenData.accessToken;
-      const refreshToken = tokenData.refresh_token || tokenData.refreshToken;
-      const idToken = tokenData.id_token || tokenData.idToken;
-      const expiresIn = tokenData.expires_in || tokenData.expiresIn || 86400;
-      const userData = inner.user;
-      const profile = inner.profile;
-
-      const digits = String(userData?.phone || user)
-        .replace(/\D/g, '')
-        .slice(-10);
-      if (digits.length >= 10) {
-        clearCachedPetsForPhone();
-        localStorage.setItem('customerPhone', digits);
-        localStorage.setItem('customer_phone', digits);
-        localStorage.setItem('phone', digits);
-      }
-
-      if (idToken && accessToken) {
-        const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
-        storeCognitoTokens(
-          {
-          accessToken,
-          idToken,
-          refreshToken: refreshToken || '',
-          expiresIn,
-          },
-          { isNewLogin: true }
-        );
-        localStorage.setItem('authToken', idToken || accessToken);
-        if (userData?.id) {
-          storeUserInfo({
-            userId: userData.id,
-            phone: digits || user,
-            username: profile?.username || user,
-          });
-        }
-      } else if (accessToken) {
-        localStorage.setItem('authToken', accessToken);
-        if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
-      }
-
-      sessionStorage.setItem('_warmpawz_has_session', 'true');
-      sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
-      clearNeedsPasswordSetup();
-
-      try {
-        const phoneKey = localStorage.getItem('customerPhone') || digits;
-        if (phoneKey && phoneKey.length >= 10) {
-          const profileResponse = await apiClient.get<any>(
-            `/customer/profile/unified/${encodeURIComponent(phoneKey)}`
-          );
-          if (profileResponse?.profile) {
-            localStorage.setItem(
-              'customerData',
-              JSON.stringify(stripPetsFromCustomerRecord(profileResponse.profile))
-            );
-            localStorage.setItem(
-              'customerProfile',
-              JSON.stringify(stripPetsFromCustomerRecord(profileResponse.profile))
-            );
-            persistCustomerDatabaseId(profileResponse.profile);
-            const tenDigits = (localStorage.getItem('customerPhone') || digits)
-              .replace(/\D/g, '')
-              .slice(-10);
-            applyUnifiedProfileToCustomerLocalStorage(profileResponse.profile, tenDigits);
-          }
-        }
-      } catch {
-        /* optional */
-      }
-
-      emitGuestAuthAnalytics('login_completed');
-      emitGuestAuthAnalytics('identity_authenticated');
-      const redirectPath =
-        redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
-      finishAuthenticated(redirectPath);
-    } catch (err: any) {
-      const code = err?.responseData?.error?.code || err?.code;
-      if (code === 'PASSWORD_NOT_SET') {
-        setError('Use Sign up with OTP once to verify your phone, then create a password.');
-      } else {
-        setError(err.message || 'Login failed');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  function pickForgotResponseData(res: unknown): Record<string, unknown> | null {
-    const r = res as Record<string, unknown> | null;
-    if (!r || typeof r !== 'object') return null;
-    const outer = r.data as Record<string, unknown> | undefined;
-    if (outer && typeof outer === 'object' && outer.data && typeof outer.data === 'object') {
-      return outer.data as Record<string, unknown>;
-    }
-    return null;
-  }
-
-  function forgotCooldownKey(username?: string) {
-    return forgotCooldownStorageKey((username ?? forgotUsername).trim() || loginUsername.trim());
-  }
-
-  function refreshForgotResendFromStorage() {
-    setForgotResendTimer(readForgotCooldownRemaining(forgotCooldownKey()));
-  }
-
-  function applyForgotCooldown(seconds: number, username?: string) {
-    const key = forgotCooldownKey(username);
-    persistForgotCooldown(key, seconds);
-    setForgotResendTimer(readForgotCooldownRemaining(key));
-  }
-
-  function invalidateForgotInFlightRequest() {
-    forgotRequestGen.current += 1;
-    setLoading(false);
-  }
-
-  const openForgotPassword = () => {
-    setForgotOpen(true);
-    setForgotStep(1);
-    setForgotUsername(loginUsername.trim());
-    setForgotOtp('');
-    setForgotResetToken('');
-    setForgotNewPassword('');
-    setForgotConfirmPassword('');
-    setForgotInfo(null);
-    setError(null);
-    refreshForgotResendFromStorage();
-  };
-
-  const closeForgotPassword = () => {
-    invalidateForgotInFlightRequest();
-    setForgotOpen(false);
-    setForgotStep(1);
-    setForgotOtp('');
-    setForgotResetToken('');
-    setForgotNewPassword('');
-    setForgotConfirmPassword('');
-    setForgotInfo(null);
-    setError(null);
-  };
-
-  const submitForgotPasswordRequest = async () => {
-    const u = forgotUsername.trim();
-    if (!u) {
-      setError('Enter the phone number you use to log in');
-      return;
-    }
-    if (forgotResendTimer > 0) {
-      setError(formatForgotCooldownMessage(forgotResendTimer, 'request'));
-      return;
-    }
-    const gen = ++forgotRequestGen.current;
-    setLoading(true);
-    setError(null);
-    setForgotInfo(null);
-    try {
-      const res = await apiClient.post<unknown>(
-        '/auth/customer/forgot-password/request',
-        { username: u },
-        FORGOT_PASSWORD_RETRY_CONFIG
-      );
-      if (gen !== forgotRequestGen.current) return;
-      const inner = pickForgotResponseData(res);
-      const msg =
-        (typeof inner?.message === 'string' && inner.message) ||
-        'If an account exists, we sent instructions.';
-      const retrySec =
-        typeof inner?.retryAfterSeconds === 'number'
-          ? Math.ceil(inner.retryAfterSeconds)
-          : readRetryAfterSecondsFromSuccess(res);
-      applyForgotCooldown(retrySec, u);
-      setForgotInfo(msg);
-      setForgotStep(2);
-    } catch (err: unknown) {
-      if (gen !== forgotRequestGen.current) return;
-      const e = err as {
-        statusCode?: number;
-        code?: string;
-        message?: string;
-        responseData?: { error?: { code?: string } };
-      };
-      const errCode = e?.code || e?.responseData?.error?.code;
-      if (errCode === 'RESET_RECENTLY') {
-        const retrySec = readRetryAfterSecondsFromError(err);
-        setError(formatResetRecentlyMessage(retrySec));
-      } else if (e?.statusCode === 429 || errCode === 'RATE_LIMITED') {
-        const retrySec = readRetryAfterSecondsFromError(err);
-        applyForgotCooldown(retrySec, u);
-        setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
-      } else if (errCode === 'OTP_DELIVERY_FAILED' || e?.statusCode === 503) {
-        applyForgotCooldown(60, u);
-        setError('Could not send SMS. Try again in a minute.');
-      } else {
-        setError(e?.message || 'Something went wrong. Try again.');
-      }
-    } finally {
-      if (gen === forgotRequestGen.current) setLoading(false);
-    }
-  };
-
-  const submitForgotPasswordVerifyOtp = async () => {
-    const u = forgotUsername.trim();
-    if (!forgotOtp || forgotOtp.length !== 6) {
-      setError('Enter the 6-digit code from SMS');
-      return;
-    }
-    const gen = ++forgotRequestGen.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiClient.post<unknown>(
-        '/auth/customer/forgot-password/verify-otp',
-        {
-          username: u,
-          otp: forgotOtp,
-        },
-        FORGOT_PASSWORD_RETRY_CONFIG
-      );
-      if (gen !== forgotRequestGen.current) return;
-      const inner = pickForgotResponseData(res);
-      const token = typeof inner?.resetToken === 'string' ? inner.resetToken : '';
-      if (!token) {
-        setError('Invalid or expired code');
-        return;
-      }
-      setForgotResetToken(token);
-      setForgotStep(3);
-    } catch (err: unknown) {
-      if (gen !== forgotRequestGen.current) return;
-      const e = err as {
-        statusCode?: number;
-        code?: string;
-        message?: string;
-        responseData?: { error?: { code?: string } };
-      };
-      const errCode = e?.code || e?.responseData?.error?.code;
-      if (errCode === 'RESET_RECENTLY') {
-        const retrySec = readRetryAfterSecondsFromError(err);
-        setError(formatResetRecentlyMessage(retrySec));
-      } else if (e?.statusCode === 429 || errCode === 'RATE_LIMITED') {
-        const retrySec = readRetryAfterSecondsFromError(err);
-        applyForgotCooldown(retrySec, u);
-        setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
-      } else {
-        setError(e?.message || 'Invalid or expired code');
-      }
-    } finally {
-      if (gen === forgotRequestGen.current) setLoading(false);
-    }
-  };
-
-  const submitForgotPasswordReset = async () => {
-    if (forgotNewPassword.length < 8) {
-      setError('Password must be at least 8 characters');
-      return;
-    }
-    if (forgotNewPassword !== forgotConfirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      await apiClient.post<unknown>('/auth/customer/forgot-password/reset', {
-        resetToken: forgotResetToken,
-        newPassword: forgotNewPassword,
-        confirmPassword: forgotConfirmPassword,
-      });
-      setForgotSuccessBanner('Password updated. You can log in with your new password.');
-      closeForgotPassword();
-    } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e?.message || 'Could not reset password. Request a new code.');
     } finally {
       setLoading(false);
     }
@@ -828,7 +457,6 @@ export function CustomerAuthFlow({
         }
 
         // Get customer profile; cache pets for app use without using pet count for routing
-        let unifiedProfileForAuth: Record<string, unknown> | undefined = undefined;
         try {
           const profileResponse = await apiClient.get<any>(
             `/customer/profile/unified/${encodeURIComponent(shortPhone)}`
@@ -837,7 +465,6 @@ export function CustomerAuthFlow({
 
           if (profileResponse?.profile) {
             const profile = profileResponse.profile;
-            unifiedProfileForAuth = profile as Record<string, unknown>;
             const onboardingStatus = profile.onboarding_status || profile.onboardingStatus || 'INIT';
             const profileCompletedFlag = profile.profile_completed || profile.onboardingComplete || false;
             const nameVal = profile.name || profile.full_name || '';
@@ -874,15 +501,11 @@ export function CustomerAuthFlow({
             const hasMeaningfulProfile =
               (hasProfileId && hasName) || (hasProfileId && hasBookings);
 
-            if (backendFullyOnboarded) {
+            if (backendFullyOnboarded || hasMeaningfulProfile) {
               localStorage.setItem('profile_completed', 'true');
               localStorage.setItem('onboarding_completed', 'true');
               setCustomerOnboardingCompleteFromAuth('true');
-              console.log('✅ [Auth] Backend reports full onboarding complete');
-            } else if (hasMeaningfulProfile) {
-              localStorage.setItem('profile_completed', 'true');
-              setCustomerOnboardingCompleteFromAuth('false');
-              console.log('✅ [Auth] Profile saved — show onboarding choice');
+              console.log('✅ [Auth] Profile ready — skip stage selection');
             } else {
               setCustomerOnboardingCompleteFromAuth('false');
               console.log('🆕 [Auth] New customer — start at profile');
@@ -908,38 +531,14 @@ export function CustomerAuthFlow({
           }
         }
 
-        const otpPayloadProfile =
-          (responseData?.profile as { has_password?: boolean } | undefined) ??
-          ((responseData as any)?.data?.profile as { has_password?: boolean } | undefined);
-        const hasPassword = Boolean(
-          (unifiedProfileForAuth as { has_password?: boolean } | undefined)?.has_password ??
-            otpPayloadProfile?.has_password
-        );
         const redirectPath =
           redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
 
         emitGuestAuthAnalytics('login_completed');
         emitGuestAuthAnalytics('identity_authenticated');
-        if (!hasPassword) {
-          setNeedsPasswordSetupAfterOtp();
-          const profileCompleted =
-            localStorage.getItem('profile_completed') === 'true' ||
-            localStorage.getItem('onboarding_completed') === 'true';
-          const onboardingDone =
-            localStorage.getItem('customerOnboardingComplete') === 'true';
-          const afterPwd =
-            !profileCompleted && !onboardingDone
-              ? '/profile'
-              : onboardingDone
-                ? '/'
-                : '/onboarding';
-          console.log('🚀 [Auth] Password required — set-password then', afterPwd);
-          finishNeedsPassword(afterPwd);
-        } else {
-          clearNeedsPasswordSetup();
-          console.log('🚀 [Auth] Navigating to:', redirectPath);
-          finishAuthenticated(redirectPath);
-        }
+        clearNeedsPasswordSetup();
+        console.log('🚀 [Auth] Navigating to:', redirectPath);
+        finishAuthenticated(redirectPath);
       } else {
         console.error('❌ [Auth] OTP verification failed - response:', response);
         setError('Invalid OTP. Please try again.');
@@ -1018,8 +617,7 @@ export function CustomerAuthFlow({
               {uatHint && !isModal && (
                 <div className="mb-6 p-4 bg-gradient-to-r from-[#FF8C42]/10 to-[#FF6B9D]/10 rounded-xl text-center">
                   <p className="text-[#FF8C42] text-sm font-medium">
-                    🧪 UAT Mode: OTP <strong>{UAT_VALID_OTPS.join(' or ')}</strong> · password login:{' '}
-                    <strong>12345678</strong>
+                    🧪 UAT Mode: OTP <strong>{UAT_VALID_OTPS.join(' or ')}</strong>
                   </p>
                 </div>
               )}
@@ -1173,18 +771,10 @@ export function CustomerAuthFlow({
             ) : (
             <p className={isModal ? modalForm?.description : 'text-center text-gray-600 mb-8 text-base leading-relaxed'}>
               {authMode === 'login' ? (
-                forgotOpen ? (
-                  <>
-                    {forgotStep === 3
-                      ? 'Choose a new password for your account.'
-                      : 'Reset your password using a code we send by SMS to your registered mobile number only.'}
-                  </>
-                ) : (
-                  <>
-                    Log in with your phone number (your 10-digit mobile number)<br />
-                    and the password you created after signup.
-                  </>
-                )
+                <>
+                  Log in with your mobile number.<br />
+                  We’ll send a one-time OTP to verify.
+                </>
               ) : (
                 <>
                   Join our community of pet lovers and access<br />the best care for your furry friends
@@ -1194,7 +784,7 @@ export function CustomerAuthFlow({
             )}
 
             {/* Guest browsing is home `/`, not `/auth` — offer escape when flag is on */}
-            {guestBrowseEnabled && authMode === 'login' && !forgotOpen && (
+            {guestBrowseEnabled && (
               <div className={isModal ? modalForm?.guestBrowseWrap : 'mb-6 text-center'}>
                 <button
                   type="button"
@@ -1220,7 +810,7 @@ export function CustomerAuthFlow({
             )}
 
             {/* UAT Mode Message */}
-            {UAT_MODE && authMode === 'signup' && !isModal && (
+            {UAT_MODE && !isModal && (
               <div className="mb-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-400 rounded-xl text-center">
                 <p className="text-yellow-800 text-sm font-semibold mb-1">
                   🧪 UAT MODE ACTIVE
@@ -1240,224 +830,8 @@ export function CustomerAuthFlow({
               </div>
             )}
 
-            {forgotSuccessBanner && authMode === 'login' && !forgotOpen && (
-              <div className={`${isModal ? 'mb-3 p-3 text-xs' : 'mb-6 p-4 text-sm'} bg-green-50 border border-green-200 rounded-xl text-green-800`}>
-                {forgotSuccessBanner}
-              </div>
-            )}
-
-            {/* Login (phone + password) or Sign up (phone OTP) */}
+            {/* Phone + OTP (login and signup) */}
             <div className={isModal ? 'space-y-2' : 'space-y-4'}>
-              {authMode === 'login' ? (
-                forgotOpen ? (
-                  <>
-                    {forgotStep === 1 && (
-                      <>
-                        <label className={isModal ? modalForm?.phoneLabel : 'block text-gray-700 font-medium mb-2'}>Phone Number</label>
-                        <input
-                          type="text"
-                          autoComplete="username"
-                          value={forgotUsername}
-                          onChange={(e) => setForgotUsername(e.target.value)}
-                          placeholder="Same phone number you use to log in"
-                          className={fieldCls}
-                        />
-                        <button
-                          type="button"
-                          onClick={submitForgotPasswordRequest}
-                          disabled={loading || !forgotUsername.trim() || forgotResendTimer > 0}
-                          className={`${primaryBtnCls} mt-2`}
-                        >
-                          {loading ? 'Sending…' : 'Send code'}
-                        </button>
-                        {forgotResendTimer > 0 ? (
-                          <p className="text-center text-sm text-gray-500">
-                            {formatForgotCooldownMessage(forgotResendTimer, 'request')}
-                          </p>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={closeForgotPassword}
-                          className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
-                        >
-                          Back to log in
-                        </button>
-                      </>
-                    )}
-                    {forgotStep === 2 && (
-                      <>
-                        {forgotInfo ? (
-                          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 mb-2">
-                            {forgotInfo}
-                          </div>
-                        ) : null}
-                        <label className="block text-gray-700 font-medium mb-2">6-digit code from SMS</label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          maxLength={6}
-                          value={forgotOtp}
-                          onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                          placeholder="••••••"
-                          className={fieldCls}
-                        />
-                        <button
-                          type="button"
-                          onClick={submitForgotPasswordVerifyOtp}
-                          disabled={loading || forgotOtp.length !== 6}
-                          className={`${primaryBtnCls} mt-2`}
-                        >
-                          {loading ? 'Checking…' : 'Continue'}
-                        </button>
-                        <div className="text-center pt-2">
-                          {forgotResendTimer > 0 ? (
-                            <p className="text-sm text-gray-500">
-                              {formatForgotCooldownMessage(forgotResendTimer, 'resend')}
-                            </p>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={submitForgotPasswordRequest}
-                              disabled={loading}
-                              className={`text-sm disabled:opacity-50 disabled:no-underline ${textLinkCls}`}
-                            >
-                              Resend code
-                            </button>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={closeForgotPassword}
-                          className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
-                        >
-                          Entered wrong number?
-                        </button>
-                      </>
-                    )}
-                    {forgotStep === 3 && (
-                      <>
-                        <label className="block text-gray-700 font-medium mb-2">New password</label>
-                        <div className="relative">
-                          <input
-                            type={showForgotNewPassword ? 'text' : 'password'}
-                            autoComplete="new-password"
-                            value={forgotNewPassword}
-                            onChange={(e) => setForgotNewPassword(e.target.value)}
-                            placeholder="At least 8 characters"
-                            className={fieldInGroupCls}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowForgotNewPassword((v) => !v)}
-                            aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
-                            className="absolute right-1 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100"
-                          >
-                            {showForgotNewPassword ? (
-                              <EyeOff className="h-5 w-5" aria-hidden />
-                            ) : (
-                              <Eye className="h-5 w-5" aria-hidden />
-                            )}
-                          </button>
-                        </div>
-                        <label className="block text-gray-700 font-medium mb-2">Confirm password</label>
-                        <input
-                          type={showForgotNewPassword ? 'text' : 'password'}
-                          autoComplete="new-password"
-                          value={forgotConfirmPassword}
-                          onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                          placeholder="Re-enter password"
-                          className={fieldCls}
-                        />
-                        <button
-                          type="button"
-                          onClick={submitForgotPasswordReset}
-                          disabled={
-                            loading ||
-                            forgotNewPassword.length < 8 ||
-                            forgotNewPassword !== forgotConfirmPassword
-                          }
-                          className={`${primaryBtnCls} mt-2`}
-                        >
-                          {loading ? 'Updating…' : 'Update password'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setForgotStep(2);
-                            setError(null);
-                          }}
-                          className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
-                        >
-                          Back
-                        </button>
-                      </>
-                    )}
-                  </>
-                ) : (
-                <>
-                  <label className={isModal ? modalForm?.phoneLabel : 'block text-gray-700 font-medium mb-2'}>Phone Number</label>
-                  <input
-                    type="text"
-                    autoComplete="username"
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                    placeholder="e.g. 9876543210"
-                    className={fieldCls}
-                  />
-                  <label className={isModal ? modalForm?.phoneLabel : 'block text-gray-700 font-medium mb-2'}>Password</label>
-                  <div className="relative">
-                    <input
-                      type={showLoginPassword ? 'text' : 'password'}
-                      autoComplete="current-password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="Your password"
-                      className={fieldInGroupCls}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowLoginPassword((v) => !v)}
-                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
-                      className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800 active:scale-95 transition-colors ${isModal ? 'h-8 w-8' : 'h-11 w-11'}`}
-                    >
-                      {showLoginPassword ? (
-                        <EyeOff className={`${isModal ? 'h-4 w-4' : 'h-5 w-5'}`} aria-hidden />
-                      ) : (
-                        <Eye className={`${isModal ? 'h-4 w-4' : 'h-5 w-5'}`} aria-hidden />
-                      )}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={openForgotPassword}
-                    className={`w-full text-right ${isModal ? 'text-xs pt-0.5' : 'text-sm pt-1'} ${textLinkCls}`}
-                  >
-                    Forgot password?
-                  </button>
-                  <button
-                    type="button"
-                    onClick={passwordLogin}
-                    disabled={loading || !loginUsername.trim() || !loginPassword.trim()}
-                    className={`${primaryBtnCls} ${isModal ? 'mt-1' : 'mt-2'}`}
-                  >
-                    {loading ? 'Signing in…' : 'Log in'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode('signup');
-                      setShowLoginPassword(false);
-                      setError(null);
-                    }}
-                    className={`w-full text-center ${isModal ? 'text-xs pt-1' : 'text-sm pt-2'} ${signupPillCls}`}
-                  >
-                    New user? Sign up with phone (OTP)
-                  </button>
-                </>
-                )
-              ) : (
-                <>
               <label className={isModal ? modalForm?.phoneLabel : 'block text-gray-700 font-medium mb-2'}>
                 Phone Number
               </label>
@@ -1591,25 +965,6 @@ export function CustomerAuthFlow({
                   'Send Verification Code'
                 )}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('login');
-                  setError(null);
-                }}
-                className={isModal ? modalForm?.loginSwitch : 'w-full text-center text-sm text-gray-600 hover:text-[#FF8C42] pt-2'}
-              >
-                {isModal ? (
-                  <>
-                    Already have an account?{' '}
-                    <span className={modalForm?.loginLink}>Log In</span>
-                  </>
-                ) : (
-                  'Already have a password? Log in'
-                )}
-              </button>
-                </>
-              )}
             </div>
 
             {/* Terms Footer */}

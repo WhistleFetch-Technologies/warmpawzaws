@@ -21,7 +21,8 @@ export function clearNeedsPasswordSetup(): void {
 }
 
 export function needsPasswordSetupAfterOtp(): boolean {
-  return typeof window !== 'undefined' && sessionStorage.getItem(SESSION_KEY_NEEDS_PASSWORD_SETUP) === '1';
+  // OTP-only login: leftover sessionStorage must not trap users on set-password.
+  return false;
 }
 
 /** Prefer Cognito bundle (`customerCognitoTokens`), then legacy `authToken` / `cognitoAccessToken`. */

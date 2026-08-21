@@ -193,23 +193,21 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
     const houseFromSnake = String((profile as UserProfile & { house_no?: string }).house_no ?? '').trim();
     const effectiveHouseNo = houseFromDom || houseFromState || houseFromSnake;
 
-    // Validation
+    // Required: first name, last name, phone (from login), address, city, state, pincode
     if (
-      !profile.firstName ||
-      !profile.lastName ||
-      !profile.email ||
+      !profile.firstName.trim() ||
+      !profile.lastName.trim() ||
       !profile.phone ||
-      !profile.address ||
+      !profile.address.trim() ||
       !profile.pincode ||
-      !profile.city ||
-      !effectiveHouseNo
+      !profile.city.trim() ||
+      !profile.state.trim()
     ) {
-      alert('Please fill in all required fields (including house / flat number)');
+      alert('Please fill in First Name, Last Name, Address, City, State, and Pincode');
       return;
     }
 
-    // Email validation
-    if (!validateEmail(profile.email)) {
+    if (profile.email.trim() && !validateEmail(profile.email)) {
       alert('Please enter a valid email address');
       return;
     }
@@ -391,7 +389,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
           {/* Email */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address <span className="text-red-500">*</span>
+              Email Address
             </label>
             <input
               type="email"
@@ -463,7 +461,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
           {/* House No / Flat No */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              House No / Flat No <span className="text-red-500">*</span>
+              House No / Flat No
             </label>
             <input
               ref={houseNoInputRef}
@@ -508,7 +506,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                State
+                State <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"

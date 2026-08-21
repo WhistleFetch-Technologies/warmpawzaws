@@ -99,6 +99,10 @@ export default function SetPasswordPage() {
       router.replace('/auth');
       return;
     }
+    if (!new URLSearchParams(window.location.search).has('change')) {
+      router.replace(resolveSetPasswordNext());
+      return;
+    }
 
     const phoneFallback = () => {
       const p = localStorage.getItem('customerPhone');

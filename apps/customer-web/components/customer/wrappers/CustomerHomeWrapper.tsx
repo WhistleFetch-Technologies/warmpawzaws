@@ -39,7 +39,7 @@ import {
 } from '@/lib/meal-shell-track-bridge';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
-import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
+import { readProfileCompleted } from '@/lib/customer-flow-guards';
 import {
   clearGuestBookingIntent,
   consumeGuestBookingIntentForRestore,
@@ -517,10 +517,6 @@ export function CustomerHomeWrapper({
     if (!phone) return;
     if (!readProfileCompleted()) {
       router.replace('/profile');
-      return;
-    }
-    if (!readOnboardingCompleted()) {
-      router.replace('/onboarding');
     }
   }, [pathname, searchParams, router, phone]);
 

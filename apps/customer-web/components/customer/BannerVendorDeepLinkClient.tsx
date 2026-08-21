@@ -21,7 +21,7 @@ import {
   readOnboardingCompleted,
   applyUnifiedProfileToCustomerLocalStorage,
 } from '@/lib/customer-flow-guards';
-import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
+import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
 import { customerPathToScreen } from '@/lib/promotion-navigation';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 import { buildAuthUrlWithNext, redirectWithHardFallback } from '@/lib/auth-gate-redirect';
@@ -144,16 +144,8 @@ function BannerVendorDeepLinkInner({ persona, vendorSlug }: BannerVendorDeepLink
 
   useEffect(() => {
     if (isLoading || !session) return;
-    if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
-      router.replace(`/auth/set-password?next=${encodeURIComponent(ctaLink)}`);
-      return;
-    }
     if (!readProfileCompleted()) {
       router.replace(`/profile?next=${encodeURIComponent(ctaLink)}`);
-      return;
-    }
-    if (!readOnboardingCompleted()) {
-      router.replace(`/onboarding?next=${encodeURIComponent(ctaLink)}`);
       return;
     }
     setGateReady(true);

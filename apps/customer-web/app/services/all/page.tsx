@@ -6,7 +6,7 @@ import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
-import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
+import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
 
@@ -115,16 +115,8 @@ export default function AllServicesCatalogPage() {
 
   useEffect(() => {
     if (isLoading || !session) return;
-    if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
-      router.replace('/auth/set-password?next=/services/all');
-      return;
-    }
     if (!readProfileCompleted()) {
       router.replace('/profile');
-      return;
-    }
-    if (!readOnboardingCompleted()) {
-      router.replace('/onboarding');
       return;
     }
     setGateReady(true);

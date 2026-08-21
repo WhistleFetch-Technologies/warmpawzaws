@@ -123,18 +123,7 @@ export async function executecustomerProfilePost(c: Context) {
         }
       }
 
-      const addrPresentPost = !!(profileData.address && String(profileData.address).trim());
       const effectiveHousePost = String(mergedHouseNo ?? profileData.houseNo ?? '').trim();
-      if (addrPresentPost && hasHouseNoField && !effectiveHousePost) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'House / flat number is required',
-            details: { field: 'houseNo', message: 'Please enter your house or flat number' },
-          },
-        }, 400);
-      }
 
       // Get phone from body (required for POST endpoint)
       // Note: phone is not part of the validated schema, it comes from body directly
