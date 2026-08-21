@@ -676,11 +676,9 @@ export class ApiClient {
           treat401AsFullSignOut &&
           !suppressForcedLogout401
         ) {
-          const { clearCognitoTokens } = await import('./cognito-auth');
-          clearCognitoTokens();
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('customerPhone');
-          window.location.href = '/auth';
+          const { signOutCustomer, getPostLogoutHref } = await import('./session-utils');
+          await signOutCustomer();
+          window.location.href = getPostLogoutHref();
         }
         
         // Create ApiError with full error data preserved
@@ -883,12 +881,11 @@ export class ApiClient {
     }
   }
 
-  // Clear auth token
+  /** Canonical forced-logout alias — same teardown as explicit sign-out. */
   clearAuth(): void {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('customerPhone');
-    }
+    if (typeof window === 'undefined') return;
+    const { clearCustomerSession } = require('./session-utils');
+    clearCustomerSession();
   }
 }
 

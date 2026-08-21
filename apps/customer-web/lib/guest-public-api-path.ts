@@ -57,6 +57,11 @@ export function resolveGuestPublicApiPath(path: string): string {
     return `/public/vendor/${vendorSlotsMatch[1]}/available-slots${q}`;
   }
 
+  const vendorProfileMatch = pathname.match(/^\/customer\/vendor\/([^/]+)$/);
+  if (vendorProfileMatch) {
+    return `/public/vendor/${vendorProfileMatch[1]}/profile${q}`;
+  }
+
   if (pathname.startsWith('/customer/warmpawz-pay/vendors')) {
     return `${pathname.replace('/customer/warmpawz-pay/vendors', '/public/warmpawz-pay/vendors')}${q}`;
   }

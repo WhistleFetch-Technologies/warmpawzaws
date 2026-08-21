@@ -183,13 +183,11 @@ function schedulePushRegistrationAfterLogin(customerId: string): void {
  * Resolve customer UUID from storage. Prefers validated UUIDs from `customerData` (unified profile)
  * over raw keys, so a stale non-UUID in `warmpawz_customer_id` cannot win.
  */
-/** True when user is logged in (Cognito, legacy authToken, or phone session). */
+/** True when the user has a real customer auth session — not phone-only. */
 export function hasCustomerAppSession(): boolean {
   if (typeof window === 'undefined') return false;
-  if (localStorage.getItem('authToken')?.trim()) return true;
-  if (localStorage.getItem('customerCognitoTokens')?.trim()) return true;
-  const phone = localStorage.getItem('customerPhone')?.trim();
-  return !!(phone && phone.replace(/\D/g, '').length >= 10);
+  const { hasAuthenticatedCustomerSession } = require('./guest-auth-gate');
+  return hasAuthenticatedCustomerSession();
 }
 
 /**

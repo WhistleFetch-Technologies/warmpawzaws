@@ -109,10 +109,11 @@ else
   CMP_JS="false"
 fi
 
-# Phase 1 guest foundation — enable on DEV by default; keep PROD off unless explicitly enabled.
+# Guest browsing + location are the approved production product settings.
+# GUEST_BOOKING_ENABLED is unused in customer-web (obsolete flag) — do not wire it here.
 if [ "$PROD" = true ]; then
-  GB_RAW="${GUEST_BROWSING_ENABLED:-false}"
-  GL_RAW="${GUEST_LOCATION_ENABLED:-false}"
+  GB_RAW="${GUEST_BROWSING_ENABLED:-true}"
+  GL_RAW="${GUEST_LOCATION_ENABLED:-true}"
   GBOOK_RAW="${GUEST_BOOKING_ENABLED:-false}"
 else
   GB_RAW="${GUEST_BROWSING_ENABLED:-true}"

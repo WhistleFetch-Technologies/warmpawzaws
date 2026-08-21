@@ -49,7 +49,7 @@ export function ManualLocationSheet({ open, onClose, requiredForGuestHome = fals
       state: known?.state,
       latitude: known?.lat ?? null,
       longitude: known?.lng ?? null,
-      source: (/^\d{6}$/.test(pinTrim) ? 'manual_pincode' : 'manual_city') as const,
+      source: /^\d{6}$/.test(pinTrim) ? ('manual_pincode' as const) : ('manual_city' as const),
     };
     if (requiredForGuestHome && !hasValidGuestHomeLocation(next)) {
       setError('Choose a city we can locate, or go back and use current location.');

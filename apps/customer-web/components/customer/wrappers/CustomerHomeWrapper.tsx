@@ -44,6 +44,7 @@ import {
   abortGuestJourneyRestore,
   beginGuestJourneyRestore,
   finishGuestJourneyRestore,
+  GUEST_SERVICE_RESUME_SCREENS,
   isGuestAppointmentJourney,
   readGuestBookingIntent,
   resolveResumeScreen,
@@ -987,6 +988,13 @@ export function CustomerHomeWrapper({
       'nutritionist-booking',
       'vet-tele-consultation',
       'add-pet',
+      'photography',
+      'relocation',
+      'sunset',
+      'holiday',
+      'cafe_reservation',
+      'emergency-booking',
+      'insurance',
     ]);
     if (resume === 'add-pet' || (openAddPetQuery && (!intent || intent.kind === 'add_pet'))) {
       try {
@@ -1023,10 +1031,20 @@ export function CustomerHomeWrapper({
         /* ignore */
       }
       shellNav.navigateToScreen(resume as ScreenType);
+    } else if (intent?.kind === 'instant_tele') {
+      try {
+        sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+      } catch {
+        /* ignore */
+      }
+      shellNav.navigateToScreen('vet-tele-consultation');
+      finishGuestJourneyRestore();
+      return;
     } else if (
       intent &&
       !isGuestAppointmentJourney(intent) &&
-      intent.kind !== 'add_pet'
+      intent.kind !== 'add_pet' &&
+      !GUEST_SERVICE_RESUME_SCREENS.has(String(resume || ''))
     ) {
       // WPay / other non-appointment snapshots are consumed by their own restore owners.
       abortGuestJourneyRestore();

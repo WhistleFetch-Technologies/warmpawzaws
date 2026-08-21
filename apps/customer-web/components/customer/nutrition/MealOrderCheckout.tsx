@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiClient } from '@/lib/api-client';
+import { hasAuthenticatedCustomerSession, requestGuestAuthIfNeeded } from '@/lib/guest-auth-gate';
 import { toast } from 'sonner';
 import {
   formatAllergenLabel,
@@ -204,6 +205,22 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
   const loadData = async () => {
     try {
       setLoading(true);
+      if (!hasAuthenticatedCustomerSession()) {
+        requestGuestAuthIfNeeded({
+          mode: 'signup',
+          returnPath: typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search || ''}` : '/',
+          guestBookingIntent: {
+            kind: 'other',
+            requiresPet: false,
+            resumeScreen: 'nutritionist-booking',
+          },
+        });
+        const planRes = await apiClient.get(`/meal-plans/${mealPlanId}`).catch(() => null);
+        const planData = (planRes as any)?.mealPlan || planRes;
+        if (planData) setMealPlan(planData);
+        setLoading(false);
+        return;
+      }
       const [planRes, profileRes, petsRes, addrRes] = await Promise.all([
         apiClient.get(`/meal-plans/${mealPlanId}`).catch(() => null),
         apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)),

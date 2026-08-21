@@ -124,12 +124,40 @@ describe('customer logout isolation', () => {
 
     const app = fs.readFileSync(path.join(CUSTOMER_WEB_ROOT, 'components/customer/CustomerApp.tsx'), 'utf8');
     expect(app).toMatch(/await signOutCustomer\(\)/);
+    expect(app).toMatch(/getPostLogoutHref\(\)/);
+
+    const apiSrc = fs.readFileSync(path.join(CUSTOMER_WEB_ROOT, 'lib/api-client.ts'), 'utf8');
+    expect(apiSrc).toMatch(/await signOutCustomer\(\)/);
+    expect(apiSrc).toMatch(/getPostLogoutHref\(\)/);
+    expect(apiSrc).not.toMatch(/window\.location\.href = '\/auth'/);
 
     const quick = fs.readFileSync(
       path.join(CUSTOMER_WEB_ROOT, 'components/customer/profile/ProfileQuickActions.tsx'),
       'utf8'
     );
     expect(quick).toMatch(/onLogout/);
+  });
+
+  it('apiClient.clearAuth uses the same canonical teardown as logout', () => {
+    seedCustomerA();
+    localStorage.setItem('warmpawz_wishlist', JSON.stringify(['sku-A']));
+    localStorage.setItem('activeTeleQueueId', 'queue-A');
+    localStorage.setItem('offline_queue', JSON.stringify([{ id: 1 }]));
+    apiClient.clearAuth();
+    expect(localStorage.getItem('customerPhone')).toBeNull();
+    expect(localStorage.getItem('customerId')).toBeNull();
+    expect(localStorage.getItem('customerData')).toBeNull();
+    expect(localStorage.getItem('customerPets')).toBeNull();
+    expect(localStorage.getItem('profile_completed')).toBeNull();
+    expect(localStorage.getItem('authToken')).toBeNull();
+    expect(localStorage.getItem('customerCognitoTokens')).toBeNull();
+    expect(localStorage.getItem('warmpawz_wishlist')).toBeNull();
+    expect(localStorage.getItem('activeTeleQueueId')).toBeNull();
+    expect(localStorage.getItem('offline_queue')).toBeNull();
+    expect(localStorage.getItem(WARMPAWZ_CART_KEY)).toContain('sku-1');
+    expect(localStorage.getItem('warmpawz_location_v1')).toContain('Bengaluru');
+    expect(hasAuthenticatedCustomerSession()).toBe(false);
+    expect(isGuestApplicationState()).toBe(true);
   });
 
   it('canonical logout clears Cognito JWT/refresh and customer identity', async () => {
@@ -157,16 +185,16 @@ describe('customer logout isolation', () => {
 
   it('getAuthToken() is unauthenticated after logout', async () => {
     seedCustomerA();
-    expect(apiClient.getAuthToken()).toBe('id-token-A');
+    expect(getCustomerAuthHeadersForUpload().Authorization).toBe('Bearer id-token-A');
     await signOutCustomer();
-    expect(apiClient.getAuthToken()).toBeNull();
+    expect(getCustomerAuthHeadersForUpload().Authorization).toBeUndefined();
     expect(getCustomerAuthHeadersForUpload().Authorization).toBeUndefined();
   });
 
   it('does not send Customer A JWT on customer bookings/profile/pets paths after logout', async () => {
     seedCustomerA();
     await signOutCustomer();
-    expect(apiClient.getAuthToken()).toBeNull();
+    expect(getCustomerAuthHeadersForUpload().Authorization).toBeUndefined();
     expect(getStoredCustomerJwtForSession()).toBeNull();
     expect(resolveGuestPublicApiPath('/customer/bookings?phone=9999990001')).toBe(
       '/customer/bookings?phone=9999990001'
@@ -256,8 +284,8 @@ describe('customer logout isolation', () => {
     expect(localStorage.getItem('warmpawz_payments_v2_9999990001')).toBeNull();
     expect(sessionStorage.getItem(WARMPAWZ_CHECKOUT_ADDRESS_ID_KEY)).toBeNull();
     expect(getCognitoIdToken()).toBe('id-token-B');
-    expect(apiClient.getAuthToken()).toBe('id-token-B');
-    expect(apiClient.getAuthToken()).not.toBe('id-token-A');
+    expect(getCustomerAuthHeadersForUpload().Authorization).toBe('Bearer id-token-B');
+    expect(getCustomerAuthHeadersForUpload().Authorization).not.toBe('Bearer id-token-A');
   });
 
   it('reload after logout stays guest and cannot silently refresh Customer A', async () => {
@@ -267,7 +295,7 @@ describe('customer logout isolation', () => {
     const refreshed = await refreshCognitoTokensIfNeeded();
     expect(refreshed).toBeNull();
     expect(getCognitoIdToken()).toBeNull();
-    expect(apiClient.getAuthToken()).toBeNull();
+    expect(getCustomerAuthHeadersForUpload().Authorization).toBeUndefined();
     expect(isGuestApplicationState()).toBe(true);
   });
 

@@ -163,6 +163,10 @@ export function clearCustomerSession(): void {
   localStorage.removeItem('customer_phone');
   localStorage.removeItem('phone');
   localStorage.removeItem('refreshToken');
+  localStorage.removeItem('customerCountryCode');
+  localStorage.removeItem('warmpawz_wishlist');
+  localStorage.removeItem('activeTeleQueueId');
+  localStorage.removeItem('offline_queue');
 
   localStorage.removeItem('warmpawz_review_submitted_booking_ids');
   localStorage.removeItem('warmpawz_review_skipped_booking_ids');
@@ -170,6 +174,11 @@ export function clearCustomerSession(): void {
   localStorage.removeItem('warmpawz_cust_push_registered_user_id');
 
   try {
+    if (phone) {
+      const locKey = phone.replace(/\D/g, '') || phone;
+      sessionStorage.removeItem(`warmpawz_customer_location_${locKey}`);
+      localStorage.removeItem(`warmpawz_customer_location_${locKey}`);
+    }
     removeStorageKeysByPrefix(localStorage, PAYMENT_METHODS_LS_PREFIX);
     if (phone) {
       const digits = phone.replace(/\D/g, '');

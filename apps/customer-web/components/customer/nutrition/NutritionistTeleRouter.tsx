@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { hasAuthenticatedCustomerSession } from '@/lib/guest-auth-gate';
 
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
@@ -394,6 +395,7 @@ export function NutritionistTeleRouter({
 
   // Load customer ID on mount
   useEffect(() => {
+    if (!hasAuthenticatedCustomerSession() || !phone) return;
     loadCustomerId();
     loadPets();
   }, [phone]);
@@ -406,6 +408,7 @@ export function NutritionistTeleRouter({
   }, []);
 
   const loadCustomerId = async () => {
+    if (!hasAuthenticatedCustomerSession() || !phone) return;
     try {
       const response = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
       if (response?.profile?.id || response?.id) {
@@ -417,6 +420,10 @@ export function NutritionistTeleRouter({
   };
 
   const loadPets = async () => {
+    if (!hasAuthenticatedCustomerSession() || !phone) {
+      setLoadingPets(false);
+      return;
+    }
     try {
       setLoadingPets(true);
       const response = await apiClient.get(`/customer/pets/${phone}`) as any;

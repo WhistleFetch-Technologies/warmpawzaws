@@ -1,9 +1,9 @@
 /**
- * Guest booking initiation (customer-owned Book / Pay / create).
+ * GUEST_BOOKING_ENABLED is currently unused by customer-web booking CTAs.
+ * Auth is enforced at requestGuestAuth* boundaries instead.
+ * Keep the flag false and do not delete it in this pass — cleanup is separate.
  *
  * Independent of GUEST_BROWSING_ENABLED.
- * Default false — guests may discover/search/view public slots, but
- * booking/purchase writes stay behind authentication.
  */
 
 type RuntimeConfig = {

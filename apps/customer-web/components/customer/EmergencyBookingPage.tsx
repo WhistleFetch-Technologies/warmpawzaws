@@ -8,6 +8,7 @@ import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
+import { requestGuestAuthForServiceResume } from '@/lib/guest-auth-gate';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface EmergencyBookingPageProps {
@@ -64,6 +65,9 @@ export function EmergencyBookingPage(props: EmergencyBookingPageProps) {
   };
 
   const handleBookEmergency = async (vetId: string) => {
+    if (requestGuestAuthForServiceResume({ resumeScreen: 'emergency-booking', persona: 'emergency', vendorId: vetId })) {
+      return;
+    }
     try {
       // Get customer ID
       const customerId = getResolvedCustomerId();

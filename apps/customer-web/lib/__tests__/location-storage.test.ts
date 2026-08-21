@@ -56,7 +56,12 @@ describe('location-storage', () => {
     expect(hasValidGuestHomeLocation({ latitude: Number.NaN, longitude: 77.59 })).toBe(false);
     expect(hasValidGuestHomeLocation({ latitude: 12.97, longitude: Number.POSITIVE_INFINITY })).toBe(false);
     expect(hasValidGuestHomeLocation({ latitude: Number.NEGATIVE_INFINITY, longitude: 77.59 })).toBe(false);
-    expect(hasValidGuestHomeLocation({ city: 'Bangalore', latitude: null, longitude: null })).toBe(false);
+    expect(
+      hasValidGuestHomeLocation({
+        latitude: null,
+        longitude: null,
+      } as { latitude?: unknown; longitude?: unknown })
+    ).toBe(false);
     expect(hasValidGuestHomeLocation({ latitude: '', longitude: '' })).toBe(false);
     expect(hasValidGuestHomeLocation({ latitude: '  ', longitude: '77.59' })).toBe(false);
     expect(hasValidGuestHomeLocation({ latitude: null, longitude: 77.59 })).toBe(false);

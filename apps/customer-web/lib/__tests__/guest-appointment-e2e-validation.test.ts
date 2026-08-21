@@ -180,10 +180,10 @@ describe('Guest appointment E2E — numbered product flows', () => {
     const tele = readSrc('components/customer/vet/TeleConsultationRouter.tsx');
     expect(tele).toMatch(/if \(!hasAuthenticatedCustomerSession\(\) \|\| !phone\) return;/);
     expect(tele).toMatch(/\/customer\/tele\/available-now/);
-    expect(tele).toMatch(/requestGuestAuthIfNeeded/);
+    expect(tele).toMatch(/requestGuestAuthForInstantTele/);
     const instantPage = readSrc('app/booking/tele/page.tsx');
     expect(instantPage).toMatch(/if \(!hasAuthenticatedCustomerSession\(\)\)/);
-    expect(instantPage).toMatch(/requestGuestAuthIfNeeded/);
+    expect(instantPage).toMatch(/requestGuestAuthForInstantTele/);
   });
 
   it('13. WPay Pay Bill is not classified as appointment restore', () => {

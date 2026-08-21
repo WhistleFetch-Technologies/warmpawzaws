@@ -31,7 +31,7 @@ import {
 import { deliveryAddressTitle } from '@/lib/ecommerce/delivery-address-display';
 import {
   isGuestApplicationState,
-  requestGuestAuth,
+  requestGuestAuthForCheckout,
 } from '@/lib/guest-auth-gate';
 import { LOCATION_UPDATED_EVENT } from '@/lib/customer-discovery-coords';
 import {
@@ -404,7 +404,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       return;
     }
     if (isGuest) {
-      requestGuestAuth({ mode: 'signup', returnPath: '/checkout' });
+      requestGuestAuthForCheckout('/checkout');
       return;
     }
     if (hasUndeliverable) {

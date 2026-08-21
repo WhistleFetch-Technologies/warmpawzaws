@@ -12,6 +12,7 @@ import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { downloadBlob, getDownloadMessage } from '@/lib/download-file';
+import { hasAuthenticatedCustomerSession, requestGuestAuthForServiceResume } from '@/lib/guest-auth-gate';
 
 interface InsuranceProviderProps {
   phone?: string;
@@ -45,11 +46,14 @@ export function InsuranceProvider(props: InsuranceProviderProps) {
 
   useEffect(() => {
     loadProviderData();
-    loadPets();
-    loadCustomerId();
+    if (hasAuthenticatedCustomerSession() && phone) {
+      loadPets();
+      loadCustomerId();
+    }
   }, [props.vendorId, phone]);
 
   const loadCustomerId = async () => {
+    if (!hasAuthenticatedCustomerSession() || !phone) return;
     try {
       const profileResponse = await apiClient.get<any>(`/customer/profile?phone=${encodeURIComponent(phone)}`);
       if (profileResponse?.profile?.id || profileResponse?.id) {
@@ -61,6 +65,7 @@ export function InsuranceProvider(props: InsuranceProviderProps) {
   };
 
   const loadPets = async () => {
+    if (!hasAuthenticatedCustomerSession() || !phone) return;
     try {
       const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
       if (petsResponse.pets && petsResponse.pets.length > 0) {
@@ -159,6 +164,15 @@ export function InsuranceProvider(props: InsuranceProviderProps) {
   };
 
   const handlePlanSelect = (plan: any) => {
+    if (
+      requestGuestAuthForServiceResume({
+        resumeScreen: 'insurance',
+        persona: 'insurance',
+        vendorId: props.vendorId,
+      })
+    ) {
+      return;
+    }
     setSelectedPlan(plan);
     setStep('details');
   };

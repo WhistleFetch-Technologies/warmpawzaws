@@ -50,6 +50,18 @@ describe('resolveGuestPublicApiPath', () => {
     );
   });
 
+  it('rewrites guest vendor profile to the public profile contract', () => {
+    expect(resolveGuestPublicApiPath('/customer/vendor/abc')).toBe('/public/vendor/abc/profile');
+    expect(resolveGuestPublicApiPath('/customer/vendor/abc?include=hours')).toBe(
+      '/public/vendor/abc/profile?include=hours'
+    );
+  });
+
+  it('does not rewrite authenticated vendor profile when JWT is present', () => {
+    getJwt.mockReturnValue('jwt');
+    expect(resolveGuestPublicApiPath('/customer/vendor/abc')).toBe('/customer/vendor/abc');
+  });
+
   it('rewrites warmpawz-pay vendor paths for guests', () => {
     expect(resolveGuestPublicApiPath('/customer/warmpawz-pay/vendors/nearby?lat=1&lng=2')).toBe(
       '/public/warmpawz-pay/vendors/nearby?lat=1&lng=2'

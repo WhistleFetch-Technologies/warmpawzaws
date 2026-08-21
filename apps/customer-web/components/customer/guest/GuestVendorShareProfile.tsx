@@ -116,7 +116,7 @@ export function GuestVendorShareProfile({ vendorId, shareParams }: GuestVendorSh
         category: shareParams.persona || 'vet',
         vendorId,
         serviceId,
-        serviceStyle: shareParams.serviceStyle,
+        serviceStyle: shareParams.serviceStyle ?? undefined,
         requiresPet: false,
       },
     });

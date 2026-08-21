@@ -29,7 +29,7 @@ import {
 } from '@/lib/navigation/wizard-session-state';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
-import { hasAuthenticatedCustomerSession, requestGuestAuthIfNeeded } from '@/lib/guest-auth-gate';
+import { hasAuthenticatedCustomerSession, requestGuestAuthForInstantTele } from '@/lib/guest-auth-gate';
 
 // ============================================================================
 // TYPES
@@ -952,12 +952,7 @@ export function TeleConsultationRouter({
   };
 
   const loadInstantVendorsAndGo = useCallback(async (revertToModeOnError: boolean) => {
-    if (
-      requestGuestAuthIfNeeded({
-        mode: 'signup',
-        returnPath: '/?service=tele',
-      })
-    ) {
+    if (requestGuestAuthForInstantTele('/?service=tele')) {
       return;
     }
     setLoadingAvailableNow(true);

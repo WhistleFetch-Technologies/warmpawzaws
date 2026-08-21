@@ -16,6 +16,7 @@ import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
+import { requestGuestAuthForServiceResume } from '@/lib/guest-auth-gate';
 
 interface PhotographyBookingRouterProps {
   phone: string;
@@ -351,6 +352,9 @@ export function PhotographyBookingRouter({
   };
 
   const handleNext = () => {
+    if (requestGuestAuthForServiceResume({ resumeScreen: 'photography', persona: 'photography', vendorId })) {
+      return;
+    }
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     

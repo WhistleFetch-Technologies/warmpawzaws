@@ -6,6 +6,7 @@ const getJwt = jest.fn(() => null as string | null);
 
 jest.mock('../session-utils', () => ({
   getStoredCustomerJwtForSession: () => getJwt(),
+  isTokenExpired: (token: string | null) => !token,
 }));
 
 jest.mock('../guest-browsing-flag', () => ({
@@ -23,10 +24,14 @@ import {
   requestGuestAuthForBooking,
   requestGuestAuthForEcommerceAdd,
   requestGuestAuthForProfileContinue,
+  requestGuestAuthForCheckout,
+  requestGuestAuthForInstantTele,
+  requestGuestAuthForWpayPay,
   requestGuestAuthForWpayVendor,
 } from '../guest-auth-gate';
 import {
   GUEST_BOOKING_INTENT_KEY,
+  isGuestAppointmentJourney,
   readGuestBookingIntent,
 } from '../guest-booking-intent';
 
@@ -37,8 +42,10 @@ describe('requestGuestAuth', () => {
     getJwt.mockReturnValue(null);
     registerGuestAuthModalOpener(null);
     (isGuestBrowsingEnabled as jest.Mock).mockReturnValue(true);
-    delete (window as { location?: Location }).location;
-    window.location = { href: '' } as Location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { href: '' },
+    });
   });
 
   it('opens modal when guest browsing is enabled and opener is registered', () => {
@@ -154,6 +161,41 @@ describe('requestGuestAuth', () => {
       }),
     );
   });
+
+  it('requestGuestAuthForWpayPay persists pay_bill amount without secrets', () => {
+    const opener = jest.fn();
+    registerGuestAuthModalOpener(opener);
+    const blocked = requestGuestAuthForWpayPay({ vendorId: 'vendor-1', amount: 1250 });
+    expect(blocked).toBe(true);
+    expect(opener).toHaveBeenCalled();
+    const intent = readGuestBookingIntent();
+    expect(intent).toMatchObject({
+      kind: 'pay_bill',
+      vendorId: 'vendor-1',
+      price: 1250,
+      returnPath: '/warmpawz-pay/vendors/vendor-1',
+      requiresPet: false,
+    });
+    expect(JSON.stringify(intent)).not.toMatch(/jwt|refreshToken|otp|password|customerPhone/i);
+  });
+
+  it('requestGuestAuthForCheckout persists kind cart', () => {
+    const opener = jest.fn();
+    registerGuestAuthModalOpener(opener);
+    expect(requestGuestAuthForCheckout('/checkout')).toBe(true);
+    expect(readGuestBookingIntent()?.kind).toBe('cart');
+    expect(readGuestBookingIntent()?.requiresPet).toBe(false);
+  });
+
+  it('requestGuestAuthForInstantTele does not classify as appointment', () => {
+    const opener = jest.fn();
+    registerGuestAuthModalOpener(opener);
+    expect(requestGuestAuthForInstantTele('/?service=tele')).toBe(true);
+    const intent = readGuestBookingIntent();
+    expect(intent?.kind).toBe('instant_tele');
+    expect(intent?.returnPath).toBe('/?service=tele');
+    expect(isGuestAppointmentJourney(intent)).toBe(false);
+  });
 });
 
 describe('requestGuestAuthForEcommerceAdd', () => {
@@ -163,8 +205,10 @@ describe('requestGuestAuthForEcommerceAdd', () => {
     getJwt.mockReturnValue(null);
     registerGuestAuthModalOpener(null);
     (isGuestBrowsingEnabled as jest.Mock).mockReturnValue(true);
-    delete (window as { location?: Location }).location;
-    window.location = { href: '' } as Location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { href: '' },
+    });
   });
 
   it('allows guest add when guest browsing is enabled', () => {

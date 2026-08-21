@@ -16,7 +16,50 @@ export const GUEST_JOURNEY_PROGRESS_BACKUP_KEY = 'warmpawz_guest_booking_progres
 
 export const GUEST_JOURNEY_TTL_MS = 2 * 60 * 60 * 1000;
 
-export type GuestJourneyKind = 'booking' | 'search' | 'vendor' | 'cart' | 'add_pet' | 'pay_bill';
+export type GuestJourneyKind =
+  | 'booking'
+  | 'search'
+  | 'vendor'
+  | 'cart'
+  | 'add_pet'
+  | 'pay_bill'
+  | 'instant_tele'
+  | 'profile_continue'
+  | 'other';
+
+/**
+ * Explicit collision ranks. Incoming replaces existing only when rank >= existing.
+ * Appointment > Pay Bill > cart > Instant Tele > generic booking > add_pet > search.
+ */
+export function guestJourneyPriority(
+  intent: Partial<Pick<GuestBookingIntentV1, 'kind' | 'resumeScreen' | 'persona' | 'category' | 'returnPath'>> | null | undefined
+): number {
+  if (!intent) return 0;
+  const kind = intent.kind;
+  if (kind === 'search') return 10;
+  if (kind === 'add_pet') return 20;
+  if (kind === 'instant_tele') return 25;
+  if (kind === 'other' || kind === 'vendor') return 15;
+  if (kind === 'cart') return 30;
+  if (kind === 'pay_bill') return 40;
+  if (kind === 'profile_continue') return 45;
+  if (kind === 'booking') {
+    const resume = String(intent.resumeScreen || '');
+    if (GUEST_APPOINTMENT_RESUME_SCREENS.has(resume) || GUEST_SERVICE_RESUME_SCREENS.has(resume)) {
+      return 50;
+    }
+    return 35;
+  }
+  return 5;
+}
+
+export function shouldReplaceGuestJourney(
+  existing: GuestBookingIntentV1 | null,
+  incoming: Partial<GuestBookingIntentV1> | null | undefined
+): boolean {
+  if (!existing) return true;
+  return guestJourneyPriority(incoming) >= guestJourneyPriority(existing);
+}
 
 export const GUEST_APPOINTMENT_RESUME_SCREENS = new Set([
   'grooming-booking',
@@ -27,6 +70,17 @@ export const GUEST_APPOINTMENT_RESUME_SCREENS = new Set([
   'pet-sitter-booking',
   'nutritionist-booking',
   'vet-tele-consultation',
+]);
+
+/** Live services that restore to an existing shell screen — not fabricated slots. */
+export const GUEST_SERVICE_RESUME_SCREENS = new Set([
+  'photography',
+  'relocation',
+  'sunset',
+  'holiday',
+  'cafe_reservation',
+  'emergency-booking',
+  'insurance',
 ]);
 
 function mapPersonaBookingScreen(persona: string): string {
@@ -153,6 +207,16 @@ export function saveGuestBookingIntent(
   persistPair(GUEST_BOOKING_INTENT_KEY, GUEST_JOURNEY_BACKUP_KEY, payload);
 }
 
+/** Search/browse snapshots must not clobber appointment, WPay, or cart. */
+export function saveGuestBookingIntentUnlessLowerPriority(
+  intent: Omit<GuestBookingIntentV1, 'v' | 'savedAt'>
+): boolean {
+  const existing = readGuestBookingIntent();
+  if (!shouldReplaceGuestJourney(existing, intent)) return false;
+  saveGuestBookingIntent(intent);
+  return true;
+}
+
 export function updateGuestBookingProgress(
   partial: Partial<Omit<GuestBookingIntentV1, 'v' | 'savedAt'>>
 ): void {
@@ -201,7 +265,9 @@ export function shouldDeferHomeOnboarding(): boolean {
 /** Pet is required only for explicit Add Pet or marketplace bookings that need a pet. */
 export function transactionRequiresPet(intent: GuestBookingIntentV1 | null | undefined): boolean {
   if (!intent) return false;
-  if (intent.kind === 'cart' || intent.kind === 'search' || intent.kind === 'vendor') return false;
+  if (intent.kind === 'cart' || intent.kind === 'search' || intent.kind === 'vendor' || intent.kind === 'instant_tele') {
+    return false;
+  }
   if (intent.kind === 'add_pet' || intent.openAddPet === true) return true;
   if (intent.requiresPet === false) return false;
   if (intent.requiresPet === true) return true;
@@ -232,7 +298,14 @@ export function resolveResumeScreen(intent: GuestBookingIntentV1): string | unde
 /** Appointment/slot booking only — never WPay, cart, search, or add-pet. */
 export function isGuestAppointmentJourney(intent: GuestBookingIntentV1 | null | undefined): boolean {
   if (!intent) return false;
-  if (intent.kind === 'cart' || intent.kind === 'search' || intent.kind === 'vendor' || intent.kind === 'pay_bill') {
+  if (
+    intent.kind === 'cart' ||
+    intent.kind === 'search' ||
+    intent.kind === 'vendor' ||
+    intent.kind === 'pay_bill' ||
+    intent.kind === 'instant_tele' ||
+    intent.kind === 'other'
+  ) {
     return false;
   }
   if (intent.kind === 'add_pet') return false;
@@ -255,11 +328,27 @@ export function clearGuestBookingIntent(): void {
 export function persistGuestBookingIntentForAuth(
   intent: Omit<GuestBookingIntentV1, 'v' | 'savedAt'>
 ): Omit<GuestBookingIntentV1, 'v' | 'savedAt'> {
+  const existing = readGuestBookingIntent();
+  const incomingKind =
+    intent.kind || (intent.resumeScreen === 'add-pet' ? 'add_pet' : existing?.kind || 'booking');
+  if (existing && !shouldReplaceGuestJourney(existing, { ...intent, kind: incomingKind })) {
+    if (canUseStorage() && existing.resumeScreen) {
+      try {
+        sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, existing.resumeScreen);
+      } catch {
+        /* ignore */
+      }
+    }
+    return {
+      ...existing,
+      returnPath: existing.returnPath,
+    };
+  }
   const progress = readGuestBookingProgress() || {};
   const merged: Omit<GuestBookingIntentV1, 'v' | 'savedAt'> = {
     ...progress,
     ...intent,
-    kind: intent.kind || progress.kind || (intent.resumeScreen === 'add-pet' ? 'add_pet' : 'booking'),
+    kind: incomingKind || progress.kind || (intent.resumeScreen === 'add-pet' ? 'add_pet' : 'booking'),
     search: intent.search || progress.search,
     returnPath: intent.returnPath || progress.returnPath || '/',
     funnelStarted:

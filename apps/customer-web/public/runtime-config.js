@@ -72,14 +72,15 @@
       guestBookingEnabled: mapped.guestBookingEnabled === true
     });
   } else {
-    // Production customer web — guest browsing off until explicitly enabled at deploy
+    // Production customer web — Guest browse + location gate (Capacitor loads this file).
+    // guestBookingEnabled remains unused/obsolete and must stay false.
     mergeRuntimeConfig({
       apiBaseUrl: normalizeLegacyDevApiUrl('https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'),
       uatMode: false,
       environment: 'production',
       customerEcommerceEnabled: true,
-      guestBrowsingEnabled: false,
-      guestLocationEnabled: false,
+      guestBrowsingEnabled: true,
+      guestLocationEnabled: true,
       guestBookingEnabled: false
     });
   }

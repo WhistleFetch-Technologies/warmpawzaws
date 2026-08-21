@@ -1566,16 +1566,40 @@ export function CustomerHomeComplete({
   };
 
   useEffect(() => {
-    if (isGuest || !phone) {
+    if (!isGuest && !phone) {
       setPetsLoading(false);
-      setUserData((prev) =>
-        isGuest
-          ? { ...prev, name: 'there', phone: '', pets: [] }
-          : { ...prev, pets: [] }
-      );
+      setUserData((prev) => ({ ...prev, pets: [] }));
       setFilteredQuickServices(sourceQuickServices);
       setServiceLaunchTilesResolved(true);
       return;
+    }
+
+    if (isGuest) {
+      setPetsLoading(false);
+      setUserData((prev) => ({ ...prev, name: 'there', phone: '', pets: [] }));
+      let cancelled = false;
+      const bootstrapGuestHome = async () => {
+        await Promise.allSettled([
+          loadServicesFromAPI(),
+          (async () => {
+            const location = await resolveCustomerLocation('');
+            if (cancelled) return;
+            const dynamic = await refreshHomeDynamicContent('', location);
+            if (cancelled) return;
+            if (dynamic.dynamicBanners?.length) setDynamicBanners(dynamic.dynamicBanners);
+            if (dynamic.dynamicMiddleBanners?.length) setDynamicMiddleBanners(dynamic.dynamicMiddleBanners);
+            if (dynamic.dynamicLowerBanners?.length) setDynamicLowerBanners(dynamic.dynamicLowerBanners);
+            if (dynamic.dynamicArticles?.length) setDynamicArticles(dynamic.dynamicArticles);
+            if (dynamic.dynamicAnnouncements?.length) setDynamicAnnouncements(dynamic.dynamicAnnouncements);
+            if (dynamic.adoptionStats) setAdoptionStats(dynamic.adoptionStats);
+            await runServiceLaunchConfig(location, refreshKey > 0);
+          })(),
+        ]);
+      };
+      void bootstrapGuestHome();
+      return () => {
+        cancelled = true;
+      };
     }
 
     let cancelled = false;
@@ -3638,8 +3662,8 @@ export function CustomerHomeComplete({
         ) : null}
       </div>
 
-      {/* AI Assistant Floating Action Button (draggable; tap opens chat) */}
-      {!hideHeaderFooter && (
+      {/* AI Assistant Floating Action Button — customer support context only */}
+      {!hideHeaderFooter && !isGuest && (
         <div
           className="fixed right-6 z-40 pointer-events-none bottom-[var(--customer-floater-bottom)]"
           style={{ transform: `translate(${aiFabDragOffset.x}px, ${aiFabDragOffset.y}px)` }}
@@ -3682,9 +3706,9 @@ export function CustomerHomeComplete({
       {/* AI Assistant Chat Modal */}
       {showAIChat && (
         <AIChatbotWidget
-          customerId={customerId || undefined}
-          customerPhone={phone}
-          petId={selectedPet?.id}
+          customerId={isGuest ? undefined : customerId || undefined}
+          customerPhone={isGuest ? undefined : phone}
+          petId={isGuest ? undefined : selectedPet?.id}
           onClose={() => setShowAIChat(false)}
           onNavigate={handleNavigation}
         />

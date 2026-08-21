@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
+import { requestGuestAuthForServiceResume } from '@/lib/guest-auth-gate';
 
 interface CafeReservationFlowProps {
   phone?: string;
@@ -63,6 +64,15 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
   };
 
   const handleSubmit = async () => {
+    if (
+      requestGuestAuthForServiceResume({
+        resumeScreen: 'cafe_reservation',
+        persona: 'cafe',
+        vendorId: props.cafeId || props.vendorId,
+      })
+    ) {
+      return;
+    }
     if (!formData.date || !formData.time) {
       toast.error('Please select date and time');
       return;

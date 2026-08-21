@@ -6,6 +6,7 @@ const getJwt = jest.fn(() => null as string | null);
 
 jest.mock('../session-utils', () => ({
   getStoredCustomerJwtForSession: () => getJwt(),
+  isTokenExpired: (token: string | null) => !token,
 }));
 
 jest.mock('../allyticas-ingest', () => ({

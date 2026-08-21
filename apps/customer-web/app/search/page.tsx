@@ -14,7 +14,7 @@ import { filterSearchRowsByLaunch } from '@/lib/search-filter-by-launch';
 import { resolveCustomerDiscoveryPhone } from '@/lib/customer-discovery-coords';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import { saveSearchContext } from '@/lib/search-context';
-import { saveGuestBookingIntent } from '@/lib/guest-booking-intent';
+import { saveGuestBookingIntentUnlessLowerPriority } from '@/lib/guest-booking-intent';
 import { emitGuestAuthAnalytics, isGuestApplicationState } from '@/lib/guest-auth-gate';
 import type { SearchVendorCardData } from '@/lib/search-vendor-card-data';
 import {
@@ -668,7 +668,7 @@ function SearchContent() {
           count: mapped.length,
         });
         if (isGuestApplicationState()) {
-          saveGuestBookingIntent({
+          saveGuestBookingIntentUnlessLowerPriority({
             kind: 'search',
             requiresPet: false,
             returnPath: `/search?${params.toString()}`,

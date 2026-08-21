@@ -57,10 +57,10 @@ describe('Guest appointment restore contracts', () => {
   it('Instant Tele does not load customer APIs before auth', () => {
     const tele = readSrc('components/customer/vet/TeleConsultationRouter.tsx');
     expect(tele).toMatch(/hasAuthenticatedCustomerSession\(\)/);
-    expect(tele).toMatch(/requestGuestAuthIfNeeded/);
+    expect(tele).toMatch(/requestGuestAuthForInstantTele/);
     const instant = readSrc('app/booking/tele/page.tsx');
     expect(instant).toMatch(/hasAuthenticatedCustomerSession\(\)/);
-    expect(instant).toMatch(/requestGuestAuthIfNeeded/);
+    expect(instant).toMatch(/requestGuestAuthForInstantTele/);
   });
 
   it('profile creation uses the shared post-profile destination helper', () => {

@@ -28,11 +28,10 @@ function renderGate(isGuest: boolean) {
     createElement(
       LocationProvider,
       null,
-      createElement(
-        GuestHomeLocationGateHost,
-        { isGuest },
-        createElement('div', { 'data-testid': 'home-content' }, 'HOME')
-      )
+      createElement(GuestHomeLocationGateHost, {
+        isGuest,
+        children: createElement('div', { 'data-testid': 'home-content' }, 'HOME'),
+      })
     )
   );
 }

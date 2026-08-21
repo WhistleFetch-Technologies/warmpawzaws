@@ -13,6 +13,7 @@ import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { mapBookingPetFromApi } from '@/lib/pet-display-photo';
+import { requestGuestAuthForServiceResume } from '@/lib/guest-auth-gate';
 
 interface HolidayBookingRouterProps {
   phone: string;
@@ -194,6 +195,9 @@ export function HolidayBookingRouter({
   const [dates] = useState(generateDates());
 
   const handleNext = () => {
+    if (requestGuestAuthForServiceResume({ resumeScreen: 'holiday', persona: 'holiday', vendorId })) {
+      return;
+    }
     const steps: BookingStep[] = ['package', 'dates', 'pet', 'guests', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     if (currentIdx < steps.length - 1) {

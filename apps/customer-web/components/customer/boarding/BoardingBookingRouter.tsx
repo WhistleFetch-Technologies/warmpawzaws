@@ -61,7 +61,8 @@ import {
 } from '@/lib/boarding-service-types';
 import { BookingPetSelection } from '../shared/BookingPetSelection';
 import { updateGuestBookingProgress } from '@/lib/guest-booking-intent';
-import { requestGuestAuthForBooking } from '@/lib/guest-auth-gate';
+import { hasAuthenticatedCustomerSession, requestGuestAuthForBooking } from '@/lib/guest-auth-gate';
+import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 import { mapBookingPetFromApi, resolvePetDisplayPhotoUrl } from '@/lib/pet-display-photo';
 
 interface BoardingBookingRouterProps {
@@ -875,11 +876,21 @@ export function BoardingBookingRouter({
     wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0;
 
   useEffect(() => {
-    loadCustomerData();
+    if (hasAuthenticatedCustomerSession() && phone) {
+      loadCustomerData();
+    }
     if (vendorId && !appointmentsMode) {
       loadVendorServices();
     }
   }, [phone, vendorId, apiCategory, appointmentsMode]);
+
+  useEffect(() => {
+    if (!checkInTime || !appointmentsMode || wapptSlots.timeSlots.length === 0) return;
+    if (!isSelectedSlotStillAvailable(checkInTime, wapptSlots.timeSlots)) {
+      setCheckInTime('');
+      toast.error('That time is no longer available. Please choose another slot.');
+    }
+  }, [appointmentsMode, wapptSlots.timeSlots, checkInTime]);
 
   useEffect(() => {
     if (!vendorId && !checkInDate) return;
@@ -1043,6 +1054,7 @@ export function BoardingBookingRouter({
   };
 
   const loadCustomerData = async () => {
+    if (!hasAuthenticatedCustomerSession() || !phone) return;
     try {
       const petsResponse = (await apiClient.get(`/customer/pets/${phone}`)) as {
         pets?: Record<string, unknown>[];
@@ -1359,6 +1371,24 @@ export function BoardingBookingRouter({
   };
 
   const handleNext = () => {
+    if (
+      !appointmentsMode &&
+      requestGuestAuthForBooking({
+        kind: 'booking',
+        persona: isPetSitting ? 'sitting' : 'boarding',
+        category: isPetSitting ? 'sitting' : 'boarding',
+        vendorId,
+        serviceId,
+        date: checkInDate,
+        time: checkInTime,
+        wapptMode: false,
+        returnPath: '/',
+        resumeScreen: isPetSitting ? 'pet-sitter-booking' : 'boarding-booking',
+        requiresPet: true,
+      })
+    ) {
+      return;
+    }
     const steps = getBookingSteps(skipBoardingIntake);
     const currentIdx = steps.indexOf(step);
 

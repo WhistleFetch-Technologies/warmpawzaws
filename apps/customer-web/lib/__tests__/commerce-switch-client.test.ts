@@ -154,7 +154,7 @@ describe('commerce-switch-client (read-only)', () => {
       activeModelId: 'warmpawz_pay' as const,
       version: 4,
       schemaVersion: '1.0',
-      availableModels: ['marketplace', 'warmpawz_pay'] as const,
+      availableModels: ['marketplace', 'warmpawz_pay'] as import('@warmpawz/commerce-switch-contracts').CommerceModelId[],
       updatedAt: '2026-01-03T00:00:00.000Z',
     };
     const stale = { ...current, activeModelId: 'marketplace' as const, version: 3 };

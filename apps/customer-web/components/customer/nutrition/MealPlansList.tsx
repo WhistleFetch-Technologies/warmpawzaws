@@ -18,6 +18,7 @@ import {
   MealKitchenStatusBanner,
 } from '@/components/customer/nutrition/MealKitchenStatusBanner';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { hasAuthenticatedCustomerSession } from '@/lib/guest-auth-gate';
 import { MealPlansComingSoon } from './MealPlansComingSoon';
 
 const MAX_RADIUS_KM = 10;
@@ -88,6 +89,11 @@ function MealPlansListLive({
   }, [phone, selectedPurpose, selectedMealType, focusVendorId]);
 
   const fetchPets = async () => {
+    if (!hasAuthenticatedCustomerSession() || !phone) {
+      setHasPets(false);
+      setPets([]);
+      return;
+    }
     try {
       const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
       const petsList = petsData?.pets || [];

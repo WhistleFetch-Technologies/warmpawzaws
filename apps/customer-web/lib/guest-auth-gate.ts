@@ -9,14 +9,22 @@ import {
   persistGuestBookingIntentForAuth,
   type GuestBookingIntentV1,
 } from './guest-booking-intent';
-import { getStoredCustomerJwtForSession } from './session-utils';
+import { getStoredCustomerJwtForSession, isTokenExpired } from './session-utils';
 import { enqueueAllyticasEvent } from './allyticas-ingest';
 
+/**
+ * Canonical customer auth: phone + (unexpired JWT or Cognito refresh window).
+ * Phone-only or expired JWT without refresh is Guest.
+ */
 export function hasAuthenticatedCustomerSession(): boolean {
   if (typeof window === 'undefined') return false;
-  const phone = localStorage.getItem('customerPhone');
+  const phone = (localStorage.getItem('customerPhone') || '').replace(/\D/g, '');
+  if (phone.length < 10) return false;
   const token = getStoredCustomerJwtForSession();
-  return !!(phone && token);
+  if (token && !isTokenExpired(token)) return true;
+  const refreshExpiry = localStorage.getItem('customerRefreshTokenExpiry');
+  const hasBundle = !!localStorage.getItem('customerCognitoTokens');
+  return hasBundle && !!refreshExpiry && Date.now() < parseInt(refreshExpiry, 10);
 }
 
 /** Explicit application guest state — not `!phone` alone. */
@@ -130,6 +138,38 @@ export function requestGuestAuthIfNeeded(options: GuestAuthRequestOptions = {}):
   return true;
 }
 
+/** Live service Book/Continue — restore to an existing shell screen, not a fabricated slot. */
+export function requestGuestAuthForServiceResume(opts: {
+  resumeScreen: string;
+  persona?: string;
+  category?: string;
+  vendorId?: string;
+}): boolean {
+  return requestGuestAuthForBooking({
+    kind: 'booking',
+    persona: opts.persona,
+    category: opts.category || opts.persona,
+    vendorId: opts.vendorId,
+    requiresPet: false,
+    returnPath: '/',
+    resumeScreen: opts.resumeScreen,
+  });
+}
+
+/** Instant Tele — not a slot appointment; must not overwrite higher-priority journeys. */
+export function requestGuestAuthForInstantTele(returnPath?: string): boolean {
+  return requestGuestAuthIfNeeded({
+    mode: 'signup',
+    returnPath: returnPath || '/?service=tele',
+    resumeScreen: undefined,
+    guestBookingIntent: {
+      kind: 'instant_tele',
+      appointmentType: 'instant_tele',
+      requiresPet: false,
+    },
+  });
+}
+
 /** Booking continue / Book appointment — modal, not full-page /auth. */
 export function requestGuestAuthForBooking(
   intent: Partial<Omit<GuestBookingIntentV1, 'v' | 'savedAt'>> & {
@@ -211,7 +251,7 @@ export function requestGuestAuthForWapptBook(opts: {
   });
 }
 
-/** Warmpawz Pay vendor card — list browse is guest-ok; opening a vendor requires login. */
+/** Warmpawz Pay vendor card — list browse is guest-ok. Prefer requestGuestAuthForWpayPay at Proceed. */
 export function requestGuestAuthForWpayVendor(vendorId: string): boolean {
   const id = String(vendorId || '').trim();
   const returnPath = id
@@ -221,6 +261,33 @@ export function requestGuestAuthForWpayVendor(vendorId: string): boolean {
     mode: 'signup',
     returnPath,
     resumeScreen: 'warmpawz-pay-vendor',
+    guestBookingIntent: {
+      kind: 'pay_bill',
+      vendorId: id || undefined,
+      requiresPet: false,
+      resumeScreen: 'warmpawz-pay-vendor',
+    },
+  });
+}
+
+/** Pay Bill Proceed to Pay — persist amount; auth only at this boundary. */
+export function requestGuestAuthForWpayPay(opts: { vendorId: string; amount: number }): boolean {
+  const id = String(opts.vendorId || '').trim();
+  const amount = Number(opts.amount);
+  const returnPath = id
+    ? `/warmpawz-pay/vendors/${encodeURIComponent(id)}`
+    : '/warmpawz-pay';
+  return requestGuestAuthIfNeeded({
+    mode: 'signup',
+    returnPath,
+    resumeScreen: 'warmpawz-pay-vendor',
+    guestBookingIntent: {
+      kind: 'pay_bill',
+      vendorId: id || undefined,
+      price: Number.isFinite(amount) && amount > 0 ? amount : undefined,
+      requiresPet: false,
+      resumeScreen: 'warmpawz-pay-vendor',
+    },
   });
 }
 
@@ -250,10 +317,16 @@ export function requestGuestAuthForEcommerceAdd(returnPath?: string): boolean {
 
 /** Checkout / payment boundary — not add-to-cart. */
 export function requestGuestAuthForCheckout(returnPath?: string): boolean {
+  const next = resolveEcommerceReturnPath(returnPath) || '/checkout';
   return requestGuestAuthIfNeeded({
     mode: 'signup',
-    returnPath: resolveEcommerceReturnPath(returnPath),
+    returnPath: next,
     resumeScreen: 'shop',
+    guestBookingIntent: {
+      kind: 'cart',
+      requiresPet: false,
+      funnelStarted: 'checkout',
+    },
   });
 }
 
