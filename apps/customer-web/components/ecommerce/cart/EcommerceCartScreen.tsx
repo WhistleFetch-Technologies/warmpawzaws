@@ -446,7 +446,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               variant="ghost"
               size="icon"
               className="rounded-full"
-              onClick={() => nav.goToShop({ replace: true })}
+              onClick={() => nav.backOr('/shop')}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -480,7 +480,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             variant="ghost"
             size="icon"
             className="rounded-full shrink-0"
-            onClick={() => nav.goToShop({ replace: true })}
+            onClick={() => nav.backOr('/shop')}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>

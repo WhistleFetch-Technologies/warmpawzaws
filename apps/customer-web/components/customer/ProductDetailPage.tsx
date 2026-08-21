@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, 
   Star, 
@@ -41,6 +41,11 @@ import { RecommendationProductScroller } from '@/components/ecommerce/shared/Rec
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
+import {
+  ShopFloatingCartBar,
+  STANDALONE_FLOATING_CART_BOTTOM,
+} from '@/components/shop/ShopFloatingCartBar';
 import { ProductImageGallery } from '@/components/ecommerce/ProductImageGallery';
 import {
   displayProductSpecValue,
@@ -75,8 +80,20 @@ export function ProductDetailPage({
   const [relatedProducts, setRelatedProducts] = useState<ShopProduct[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const { addToCart, cart, updateQuantity } = useCart();
+  const { addToCart, cart, itemCount: cartItemCount, updateQuantity } = useCart();
+  const nav = useCustomerNavigation();
   const router = useRouter();
+
+  const floatingCartPreview = useMemo(() => {
+    const first = cart[0];
+    if (!first) return {};
+    const img = first.image;
+    if (img && (img.startsWith('http') || img.startsWith('/'))) {
+      return { previewImage: img };
+    }
+    if (img) return { previewEmoji: img };
+    return {};
+  }, [cart]);
 
   const loadProductDetails = async () => {
     try {
@@ -251,7 +268,7 @@ export function ProductDetailPage({
     }
 
     addToCart(cartItem);
-    router.push('/cart?buynow=1');
+    nav.goToCart({ buynow: true });
   };
 
   const incrementQuantity = () => {
@@ -332,7 +349,13 @@ export function ProductDetailPage({
   return (
     <div>
       {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      <div className="pb-24 overflow-x-hidden">
+      <div
+        className={`overflow-x-hidden${
+          cartItemCount > 0
+            ? ' pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]'
+            : ' pb-24'
+        }`}
+      >
         <div className="max-w-md mx-auto bg-white min-w-0">
 
         {/* Image Gallery */}
@@ -630,6 +653,12 @@ export function ProductDetailPage({
         </div>
         </div>
       </div>
+
+      <ShopFloatingCartBar
+        itemCount={cartItemCount}
+        bottomClassName={STANDALONE_FLOATING_CART_BOTTOM}
+        {...floatingCartPreview}
+      />
     </div>
   );
 }

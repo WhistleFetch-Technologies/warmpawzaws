@@ -1,28 +1,46 @@
 'use client';
 
 import { ChevronRight } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
+import { SHOP_FLOATING_CART_BOTTOM } from '@/lib/ecommerce/ecommerce-page-shell';
 import type { ShopCartItem } from './shop-types';
 
+/** Product detail and other full-screen routes without a tab bar. */
+export const STANDALONE_FLOATING_CART_BOTTOM =
+  'bottom-[calc(env(safe-area-inset-bottom,0px)+1rem)]';
+
 type ShopFloatingCartBarProps = {
-  cart: ShopCartItem[];
   itemCount: number;
+  /** Shop listing cart lines (optional when `previewImage` / `previewEmoji` supplied). */
+  cart?: ShopCartItem[];
+  previewImage?: string;
+  previewEmoji?: string;
+  bottomClassName?: string;
 };
 
-export function ShopFloatingCartBar({ cart, itemCount }: ShopFloatingCartBarProps) {
-  const router = useRouter();
+export function ShopFloatingCartBar({
+  cart,
+  itemCount,
+  previewImage,
+  previewEmoji,
+  bottomClassName = SHOP_FLOATING_CART_BOTTOM,
+}: ShopFloatingCartBarProps) {
+  const nav = useCustomerNavigation();
 
   if (itemCount <= 0) return null;
 
-  const first = cart[0];
-  const thumb = first?.product?.images?.[0];
+  const first = cart?.[0];
+  const thumb = previewImage ?? first?.product?.images?.[0];
+  const emoji = previewEmoji ?? first?.product?.emoji;
   const label = itemCount === 1 ? '1 item' : `${itemCount} items`;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[var(--customer-floater-bottom)] z-[45] flex justify-center px-4">
+    <div
+      className={`pointer-events-none fixed inset-x-0 z-[45] flex justify-center px-4 ${bottomClassName}`}
+    >
       <button
         type="button"
-        onClick={() => router.push('/cart')}
+        onClick={() => nav.goToCart()}
         className="pointer-events-auto flex w-full max-w-sm items-center gap-3 rounded-2xl bg-emerald-600 px-4 py-3 text-white shadow-lg shadow-emerald-600/25 transition-all duration-300"
         aria-label="View cart"
       >
@@ -31,7 +49,7 @@ export function ShopFloatingCartBar({ cart, itemCount }: ShopFloatingCartBarProp
             // eslint-disable-next-line @next/next/no-img-element
             <img src={thumb} alt="" className="h-full w-full object-cover" />
           ) : (
-            <span className="text-lg">{first?.product?.emoji || '🐾'}</span>
+            <span className="text-lg">{emoji || '🐾'}</span>
           )}
         </div>
         <div className="min-w-0 flex-1 text-left">

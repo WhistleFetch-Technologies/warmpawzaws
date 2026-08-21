@@ -72,6 +72,10 @@ import { RecommendationProductScroller } from '@/components/ecommerce/shared/Rec
 import { ProductImageGallery } from '@/components/ecommerce/ProductImageGallery';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
+import {
+  ShopFloatingCartBar,
+  STANDALONE_FLOATING_CART_BOTTOM,
+} from '@/components/shop/ShopFloatingCartBar';
 import { useCart } from '@/context/CartContext';
 import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
@@ -181,7 +185,12 @@ const DESCRIPTION_TOGGLE_MIN_LEN = 120;
 export default function ProductDetailClient() {
   const nav = useCustomerNavigation();
   useDeepLinkBackStack();
-  const { cart, addToCart: addRecommendationToCart, updateQuantity } = useCart();
+  const {
+    cart,
+    itemCount: cartItemCount,
+    addToCart: addRecommendationToCart,
+    updateQuantity,
+  } = useCart();
   const productId = useShopProductId();
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -217,6 +226,17 @@ export default function ProductDetailClient() {
   }, [product, productId]);
 
   const wishlistCount = useWishlistCount();
+
+  const floatingCartPreview = useMemo(() => {
+    const first = cart[0];
+    if (!first) return {};
+    const img = first.image;
+    if (img && (img.startsWith('http') || img.startsWith('/'))) {
+      return { previewImage: img };
+    }
+    if (img) return { previewEmoji: img };
+    return {};
+  }, [cart]);
 
   const handleBack = () => {
     nav.backOr(CUSTOMER_ROUTES.shop.path);
@@ -890,18 +910,16 @@ export default function ProductDetailClient() {
                 />
                 <WishlistCountBadge count={wishlistCount} size="md" className="-top-1 -right-1" />
               </div>
-              <button
-                onClick={() => nav.goToShop()}
-                className="relative p-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl"
-              >
-                <ShoppingCart className="w-5 h-5" />
-              </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 min-w-0">
+      <main
+        className={`max-w-7xl mx-auto px-4 py-6 min-w-0${
+          cartItemCount > 0 ? ' pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]' : ''
+        }`}
+      >
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-slate-500 mb-6">
           <button onClick={() => nav.goToShop()} className="hover:text-orange-600">Shop</button>
@@ -1405,6 +1423,12 @@ export default function ProductDetailClient() {
           }}
         />
       </main>
+
+      <ShopFloatingCartBar
+        itemCount={cartItemCount}
+        bottomClassName={STANDALONE_FLOATING_CART_BOTTOM}
+        {...floatingCartPreview}
+      />
     </div>
   );
 }
