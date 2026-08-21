@@ -7,7 +7,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { readCachedPetsForPhone, stripPetsFromCustomerRecord } from '@/lib/customer-pets-cache';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
-import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
+import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
 import {
   ensureCustomerProfileAndPets,
   resetHomeBootstrapForPhone,
@@ -83,7 +83,7 @@ export default function HomePage() {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get('service')) {
         setHomeGateReady(true);
-      } else if (readProfileCompleted() && readOnboardingCompleted()) {
+      } else if (readProfileCompleted()) {
         setHomeGateReady(true);
       }
 
@@ -138,17 +138,6 @@ export default function HomePage() {
       setHomeGateReady(true);
       return;
     }
-    if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
-      const pending = readGuestBookingIntent();
-      const pwdNext =
-        pending?.returnPath && String(pending.returnPath).startsWith('/')
-          ? pending.returnPath
-          : readProfileCompleted()
-            ? '/'
-            : '/profile';
-      router.replace('/auth/set-password?next=' + encodeURIComponent(pwdNext));
-      return;
-    }
     const sp = new URLSearchParams(window.location.search);
     // Preserve service deep links (e.g. tele) — do not strip query via profile/onboarding redirects
     if (sp.get('service')) {
@@ -163,10 +152,6 @@ export default function HomePage() {
     }
     if (!readProfileCompleted()) {
       router.replace('/profile');
-      return;
-    }
-    if (!readOnboardingCompleted()) {
-      router.replace('/onboarding');
       return;
     }
     setHomeGateReady(true);

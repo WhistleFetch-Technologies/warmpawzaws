@@ -12,7 +12,7 @@ import {
   readOnboardingCompleted,
   applyUnifiedProfileToCustomerLocalStorage,
 } from '@/lib/customer-flow-guards';
-import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
+import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
 import {
   vendorShareParamsToInitialNavigation,
   readVendorIdFromShareLocation,
@@ -147,16 +147,8 @@ function VendorShareDeepLinkInner({ vendorId }: { vendorId: string }) {
 
   useEffect(() => {
     if (isLoading || !session) return;
-    if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
-      router.replace(`/auth/set-password?next=${encodeURIComponent(nextPath)}`);
-      return;
-    }
     if (!readProfileCompleted()) {
       router.replace(`/profile?next=${encodeURIComponent(nextPath)}`);
-      return;
-    }
-    if (!readOnboardingCompleted()) {
-      router.replace(`/onboarding?next=${encodeURIComponent(nextPath)}`);
       return;
     }
     setGateReady(true);

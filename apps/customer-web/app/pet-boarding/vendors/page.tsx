@@ -118,10 +118,6 @@ function PetBoardingVendorsInner() {
       router.replace('/profile');
       return;
     }
-    if (!readOnboardingCompleted()) {
-      router.replace('/onboarding');
-      return;
-    }
     setGateReady(true);
   }, [isLoading, session, router]);
 

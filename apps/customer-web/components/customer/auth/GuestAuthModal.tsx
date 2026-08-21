@@ -43,10 +43,6 @@ export function GuestAuthModal({ open, options, onOpenChange }: GuestAuthModalPr
   }, [open, onOpenChange]);
 
   const handleComplete = (result: CustomerAuthCompleteResult) => {
-    if (result.needsPasswordSetup) {
-      onOpenChange(false);
-      return;
-    }
     persistCustomerAuthSessionSideEffects();
     emitCustomerAuthCompleted();
     onOpenChange(false);
