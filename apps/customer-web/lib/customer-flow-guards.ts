@@ -1,5 +1,6 @@
 /**
- * Home-route gates: profile creation → onboarding choice → home.
+ * Home-route gates: profile creation → home.
+ * Stage selection (have-pet / no-pet) is retired; pets can be added later from the app.
  * Includes legacy localStorage heuristics so existing users are not forced through /profile again.
  */
 
@@ -35,16 +36,19 @@ export function applyUnifiedProfileToCustomerLocalStorage(
     onboardingStatus === 'COMPLETED' || profileCompletedFlag === true;
   const hasMeaningfulProfile = (hasProfileId && hasName) || (hasProfileId && hasBookings);
 
-  if (backendFullyOnboarded) {
-    localStorage.setItem('profile_completed', 'true');
-    localStorage.setItem('onboarding_completed', 'true');
-    setCustomerOnboardingCompleteFromProfile('true');
-  } else if (hasMeaningfulProfile) {
-    localStorage.setItem('profile_completed', 'true');
-    setCustomerOnboardingCompleteFromProfile('false');
+  if (backendFullyOnboarded || hasMeaningfulProfile) {
+    markOnboardingCompleteAfterProfile();
   } else {
     setCustomerOnboardingCompleteFromProfile('false');
   }
+}
+
+/** Profile is the last required signup step; mark stage-selection complete too. */
+export function markOnboardingCompleteAfterProfile(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('profile_completed', 'true');
+  localStorage.setItem('onboarding_completed', 'true');
+  setCustomerOnboardingCompleteFromProfile('true');
 }
 
 export function readProfileCompleted(): boolean {
@@ -68,6 +72,8 @@ export function readOnboardingCompleted(): boolean {
   if (typeof window === 'undefined') return false;
   if (localStorage.getItem('onboarding_completed') === 'true') return true;
   if (localStorage.getItem('customerOnboardingComplete') === 'true') return true;
+  // Profile creation is enough; do not send users through stage selection.
+  if (readProfileCompleted()) return true;
   // Cached unified profile (e.g. right after password login before async home refresh)
   try {
     const raw = localStorage.getItem('customerData');

@@ -147,10 +147,6 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
       router.replace(`/profile?next=${encodeURIComponent(nextPath)}`);
       return;
     }
-    if (!readOnboardingCompleted()) {
-      router.replace(`/onboarding?next=${encodeURIComponent(nextPath)}`);
-      return;
-    }
     setGateReady(true);
   }, [isLoading, session, router, nextPath]);
 

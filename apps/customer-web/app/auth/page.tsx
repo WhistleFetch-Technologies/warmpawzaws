@@ -9,10 +9,8 @@ export default function AuthPage() {
   return (
     <CustomerAuthFlow
       variant="page"
-      onComplete={({ redirectPath, needsPasswordSetup }) => {
-        if (!needsPasswordSetup) {
-          router.push(redirectPath);
-        }
+      onComplete={({ redirectPath }) => {
+        router.push(redirectPath);
       }}
     />
   );

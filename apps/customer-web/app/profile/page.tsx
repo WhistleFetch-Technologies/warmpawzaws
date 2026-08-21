@@ -6,12 +6,11 @@ import { apiClient } from '@/lib/api-client';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { CustomerUserProfile } from '@/components/customer/CustomerUserProfile';
 import { CustomerProfileView } from '@/components/customer/CustomerProfileView';
-import { readProfileCompleted } from '@/lib/customer-flow-guards';
+import { markOnboardingCompleteAfterProfile, readProfileCompleted } from '@/lib/customer-flow-guards';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import {
   clearCustomerSession,
   getStoredCustomerJwtForSession,
-  needsPasswordSetupAfterOtp,
 } from '@/lib/session-utils';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 import { redirectWithHardFallback } from '@/lib/auth-gate-redirect';
@@ -38,7 +37,7 @@ export default function ProfilePage() {
 
   const handleCreateProfileComplete = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    localStorage.setItem('profile_completed', 'true');
+    markOnboardingCompleteAfterProfile();
     try {
       const storedPhone = localStorage.getItem('customerPhone');
       if (storedPhone) {
@@ -57,12 +56,6 @@ export default function ProfilePage() {
     const intent = readGuestBookingIntent();
     const journeyPath =
       intent?.returnPath && intent.returnPath.startsWith('/') ? intent.returnPath : null;
-    if (needsPasswordSetupAfterOtp()) {
-      router.replace(
-        '/auth/set-password?next=' + encodeURIComponent(journeyPath || '/onboarding')
-      );
-      return;
-    }
     const next =
       typeof window !== 'undefined'
         ? new URLSearchParams(window.location.search).get('next')
@@ -80,7 +73,7 @@ export default function ProfilePage() {
       router.replace(journeyPath);
       return;
     }
-    router.replace('/onboarding');
+    router.replace('/');
   }, [router]);
 
   const handleCreateProfileBack = useCallback(() => {

@@ -688,9 +688,6 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
             <div className="mt-3 space-y-5 pb-4 sm:mt-4">
               <ProfileQuickActions
                 onEditProfile={() => enterEditMode()}
-                onChangePassword={() =>
-                  router.push('/auth/set-password?next=/profile&change=1')
-                }
                 onManageAddress={() => enterEditMode(true)}
                 onFavouritePets={() => router.push('/wishlist')}
                 onLogout={handleLogout}
