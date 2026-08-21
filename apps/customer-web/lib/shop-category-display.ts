@@ -51,6 +51,32 @@ export function resolveShopCategoryParam(
   return '';
 }
 
+/**
+ * Category id for /shop catalog fetch and chip highlight.
+ * When ?category= is present, resolve against loaded categories once ready.
+ */
+export function resolveShopCatalogCategory(args: {
+  categoryFromUrl: string;
+  selectedCategory: string;
+  categories: ShopCategory[];
+  categoriesReady: boolean;
+}): string {
+  const { categoryFromUrl, selectedCategory, categories, categoriesReady } = args;
+
+  if (!categoryFromUrl) {
+    return selectedCategory;
+  }
+
+  if (!categoriesReady) {
+    return selectedCategory;
+  }
+
+  const resolved = resolveShopCategoryParam(categoryFromUrl, categories);
+  if (resolved) return resolved;
+
+  return categoryFromUrl;
+}
+
 export function normalizeShopCategoryRow(row: Record<string, unknown>): ShopCategory {
   const name = String(row.name ?? '').trim();
   const slug = row.slug != null ? String(row.slug).trim() : '';
