@@ -8,6 +8,7 @@ import { HomeVisitTimeline } from './HomeVisitTimeline';
 import { HomeVisitTrustSection } from './HomeVisitTrustSection';
 import { HomeVisitPopularServices } from './HomeVisitPopularServices';
 import { HomeVisitBottomCTA } from './HomeVisitBottomCTA';
+import { hasAuthenticatedCustomerSession } from '@/lib/guest-auth-gate';
 import type { HomeVisitNavigateFn } from './constants/home-visit-service-catalog';
 
 export interface HomeVisitLandingPageProps {
@@ -27,6 +28,8 @@ export interface HomeVisitLandingPageProps {
 }
 
 function HomeVisitLandingPageComponent({ onBack, onNavigate }: HomeVisitLandingPageProps) {
+  const showPetExpertChat = hasAuthenticatedCustomerSession();
+
   const navigate = useCallback<HomeVisitNavigateFn>(
     (screen, data) => {
       onNavigate?.(screen, { ...(data ?? {}), fromHomeVisitLanding: true });
@@ -38,13 +41,15 @@ function HomeVisitLandingPageComponent({ onBack, onNavigate }: HomeVisitLandingP
     <div className="relative mx-auto min-h-[100dvh] w-full max-w-customer bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)]">
       <HomeVisitHero onBack={onBack} />
       <HomeVisitQuickStats />
-      <main className="-mt-3 rounded-t-[1.75rem] bg-white px-4 pt-5 pb-44">
+      <main
+        className={`-mt-3 rounded-t-[1.75rem] bg-white px-4 pt-5 ${showPetExpertChat ? 'pb-44' : 'pb-8'}`}
+      >
         <HomeVisitServiceGrid onNavigate={navigate} />
         <HomeVisitTimeline />
         <HomeVisitTrustSection />
         <HomeVisitPopularServices onNavigate={navigate} />
       </main>
-      <HomeVisitBottomCTA onNavigate={navigate} />
+      {showPetExpertChat ? <HomeVisitBottomCTA onNavigate={navigate} /> : null}
       <style jsx global>{`
         @keyframes home-visit-fade-in {
           from {

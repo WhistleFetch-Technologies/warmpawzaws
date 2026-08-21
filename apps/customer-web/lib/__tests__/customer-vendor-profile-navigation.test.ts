@@ -1,7 +1,9 @@
 import {
   getWebWalkerDiscoveryChevronNavTarget,
   buildWalkerProviderProfileNavPayload,
+  buildWalkerWapptProfileNavFromRow,
 } from '@/lib/customer-vendor-profile-navigation';
+import { WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 
 describe('getWebWalkerDiscoveryChevronNavTarget', () => {
   it('returns walker-provider-profile with vendorId from vendorId field', () => {
@@ -46,6 +48,33 @@ describe('getWebWalkerDiscoveryChevronNavTarget', () => {
         serviceStyle: 'at_home',
       })
     ).toBeNull();
+  });
+});
+
+describe('buildWalkerWapptProfileNavFromRow', () => {
+  it('opens wappt-vendor-profile for Available Walkers hub rows', () => {
+    const target = buildWalkerWapptProfileNavFromRow({
+      walker: {
+        vendorId: 'w-avail-1',
+        name: 'private walker',
+      },
+      profileBackScreen: 'walker',
+      serviceStyle: 'at_home',
+    });
+
+    expect(target).not.toBeNull();
+    expect(target!.screen).toBe(WAPPT_VENDOR_PROFILE_SCREEN);
+    expect(target!.data).toMatchObject({
+      vendorId: 'w-avail-1',
+      vendorName: 'private walker',
+      category: 'walker',
+      serviceStyle: 'at_home',
+      profileBackScreen: 'walker',
+    });
+  });
+
+  it('returns null when no vendor id can be resolved', () => {
+    expect(buildWalkerWapptProfileNavFromRow({ walker: {} })).toBeNull();
   });
 });
 
