@@ -125,6 +125,7 @@ if [ "$PROD" = true ]; then
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: false,
     environment: "production",
+    warmpawzAppointmentsAdminEnabled: true,
     // Discount Engine V2 — prod cutover (authoritative modes live on Lambda env)
     discountEngineV2Enabled: true,
     discountEngineV2AnalyticsMode: "AUTHORITATIVE"

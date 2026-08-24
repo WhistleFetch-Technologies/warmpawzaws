@@ -66,15 +66,28 @@ class PropagateChangesHandler extends BaseHandler {
           return this.error(`Unknown propagation type: ${type}`, 400);
       }
 
-      // Log propagation event
-      await insert('admin_audit_log', {
-        action: 'propagate',
-        resource_type: type,
-        resource_id: data.id || data.vendor_id || data.role_id,
-        details: JSON.stringify(data),
-        performed_by: (context.event.requestContext as any)?.authorizer?.claims?.sub || (context.event.requestContext as any)?.identity?.user || 'system',
-        performed_at: new Date(),
-      });
+      try {
+        const resourceCandidate = data.id || data.vendor_id || data.role_id;
+        const resourceId =
+          typeof resourceCandidate === 'string' && isValidUUID(resourceCandidate)
+            ? resourceCandidate
+            : null;
+        await query(
+          `INSERT INTO admin_audit_log (action, resource_type, resource_id, details, performed_by, performed_at)
+           VALUES ($1, $2, $3, $4::jsonb, $5, NOW())`,
+          [
+            'propagate',
+            type,
+            resourceId,
+            JSON.stringify(data ?? {}),
+            (context.event.requestContext as any)?.authorizer?.claims?.sub ||
+              (context.event.requestContext as any)?.identity?.user ||
+              'system',
+          ],
+        );
+      } catch (auditError: any) {
+        console.warn('[Governance] admin_audit_log insert skipped:', auditError.message);
+      }
 
       return this.success({
         message: 'Changes propagated successfully',
