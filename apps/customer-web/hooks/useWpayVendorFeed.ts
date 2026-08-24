@@ -5,22 +5,28 @@ import { apiClient } from '@/lib/api-client';
 import {
   buildWpayVendorsUrl,
   wpayNextCursor,
+  wpayResolvedCategory,
   wpayVendorsFromResponse,
   type WpayVendorCard,
 } from '@/lib/warmpawz-pay/wpay-api';
+import { mapServiceKeyToWpayCategory } from '@/lib/commerce-switch-routing/map-service-to-wpay-category';
 
 export function useWpayVendorFeed(opts: {
   category?: string;
+  q?: string;
   enabled?: boolean;
   pageSize?: number;
+  onResolvedCategory?: (categoryId: string | null) => void;
 }) {
-  const { category, enabled = true, pageSize = 5 } = opts;
+  const { category, q, enabled = true, pageSize = 5, onResolvedCategory } = opts;
   const [vendors, setVendors] = useState<WpayVendorCard[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const cursorRef = useRef<string | null>(null);
+  const onResolvedCategoryRef = useRef(onResolvedCategory);
+  onResolvedCategoryRef.current = onResolvedCategory;
 
   const loadPage = useCallback(
     async (append: boolean) => {
@@ -33,6 +39,7 @@ export function useWpayVendorFeed(opts: {
           limit: pageSize,
           cursor: append ? cursorRef.current ?? undefined : undefined,
           category,
+          q,
         });
         const data = await apiClient.get(url);
         const batch = wpayVendorsFromResponse(data);
@@ -41,6 +48,12 @@ export function useWpayVendorFeed(opts: {
         setHasMore(!!nc);
         setVendors((prev) => (append ? [...prev, ...batch] : batch));
         setError(null);
+
+        if (!append && q?.trim()) {
+          const resolved = wpayResolvedCategory(data);
+          const chipId = resolved ? mapServiceKeyToWpayCategory(resolved) : null;
+          onResolvedCategoryRef.current?.(chipId === 'all' ? null : chipId);
+        }
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Failed to load vendors';
         setError(msg);
@@ -51,14 +64,14 @@ export function useWpayVendorFeed(opts: {
         setLoadingMore(false);
       }
     },
-    [category, enabled, pageSize]
+    [category, enabled, pageSize, q]
   );
 
   useEffect(() => {
     cursorRef.current = null;
     setHasMore(false);
     void loadPage(false);
-  }, [loadPage, category]);
+  }, [loadPage, category, q]);
 
   const loadMore = useCallback(() => {
     if (!cursorRef.current || loadingMore) return;

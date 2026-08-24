@@ -44,6 +44,8 @@ export async function dbWpayVendorsListPage(opts: {
   limit: number;
   cursor?: string | null;
   category?: string | null;
+  /** Residual tokens from search taxonomy — AND ILIKE on business_name. */
+  nameTokens?: string[];
 }): Promise<DbWpayVendorListPage> {
   const conditions: string[] = ['(v.is_deleted IS NOT TRUE)', wpayCatalogueCustomerVisibleSql('c')];
   const params: unknown[] = [];
@@ -54,6 +56,13 @@ export async function dbWpayVendorsListPage(opts: {
       params.push(tokens);
       conditions.push(merchantServiceCategoryFilterSql(`$${params.length}`));
     }
+  }
+
+  for (const token of opts.nameTokens ?? []) {
+    const t = String(token || '').trim();
+    if (!t) continue;
+    params.push(`%${t}%`);
+    conditions.push(`v.business_name ILIKE $${params.length}`);
   }
 
   if (opts.cursor) {

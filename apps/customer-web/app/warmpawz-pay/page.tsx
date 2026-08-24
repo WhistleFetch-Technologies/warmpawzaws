@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Clock, Search } from 'lucide-react';
 import { useWpayVendorFeed } from '@/hooks/useWpayVendorFeed';
@@ -8,6 +8,9 @@ import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { mapWpayVendorCardToProps } from '@/lib/warmpawz-pay/map-wpay-vendor-card-to-props';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { buildWpayVendorPayPath } from '@/lib/warmpawz-pay/wpay-guest-journey';
+import { inferHubSlugFromSearchQuery } from '@/lib/search-hub-category-filter';
+import { mapServiceKeyToWpayCategory } from '@/lib/commerce-switch-routing/map-service-to-wpay-category';
+import { buildWapptVendorKeywordTokens } from '@/lib/search-wappt-keyword-filter';
 
 const CATEGORIES = [
   { id: 'all', label: 'All' },
@@ -20,18 +23,16 @@ const CATEGORIES = [
   { id: 'nutrition', label: 'Nutrition' },
 ];
 
-function matchesVendorSearch(name: string, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return name.toLowerCase().includes(q);
-}
+const SEARCH_DEBOUNCE_MS = 300;
 
 function WarmpawzPayPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [category, setCategory] = useState('all');
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const chipSelectedByUserRef = useRef(false);
 
   useEffect(() => {
     const requested = searchParams.get('category');
@@ -41,15 +42,53 @@ function WarmpawzPayPageContent() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const trimmed = searchQuery.trim();
+      setDebouncedQuery(trimmed);
+      if (!chipSelectedByUserRef.current && trimmed) {
+        const hub = inferHubSlugFromSearchQuery(trimmed);
+        if (hub) {
+          const chipId = mapServiceKeyToWpayCategory(hub);
+          if (chipId !== 'all') setCategory(chipId);
+        }
+      }
+      if (!trimmed) chipSelectedByUserRef.current = false;
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handleResolvedCategory = useCallback((resolvedId: string | null) => {
+    if (chipSelectedByUserRef.current || !resolvedId) return;
+    if (CATEGORIES.some((entry) => entry.id === resolvedId)) {
+      setCategory(resolvedId);
+    }
+  }, []);
+
   const { vendors, loading, loadingMore, hasMore, error, loadMore } = useWpayVendorFeed({
     category,
+    q: debouncedQuery || undefined,
     pageSize: 5,
+    onResolvedCategory: handleResolvedCategory,
   });
 
-  const filteredVendors = useMemo(
-    () => vendors.filter((v) => matchesVendorSearch(v.name, searchQuery)),
-    [searchQuery, vendors]
-  );
+  const displayedVendors = useMemo(() => {
+    const q = debouncedQuery.trim();
+    if (!q) return vendors;
+
+    const inferredHub = inferHubSlugFromSearchQuery(q);
+    if (inferredHub) {
+      const tokens = buildWapptVendorKeywordTokens(q, inferredHub);
+      if (tokens.length === 0) return vendors;
+      return vendors.filter((v) => {
+        const hay = v.name.toLowerCase();
+        return tokens.every((token) => hay.includes(token));
+      });
+    }
+
+    const qLower = q.toLowerCase();
+    return vendors.filter((v) => v.name.toLowerCase().includes(qLower));
+  }, [debouncedQuery, vendors]);
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -67,10 +106,13 @@ function WarmpawzPayPageContent() {
   const emptyMessage = useMemo(() => {
     if (loading) return null;
     if (error) return error;
-    if (vendors.length === 0) return 'No published vendors yet. Check back soon!';
-    if (filteredVendors.length === 0) return 'No vendors match your search.';
+    if (displayedVendors.length === 0) {
+      return debouncedQuery
+        ? 'No vendors match your search.'
+        : 'No published vendors yet. Check back soon!';
+    }
     return null;
-  }, [error, filteredVendors.length, loading, vendors.length]);
+  }, [debouncedQuery, displayedVendors.length, error, loading]);
 
   return (
     <div className="mx-auto w-full max-w-customer">
@@ -95,8 +137,9 @@ function WarmpawzPayPageContent() {
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search vendors..."
+            placeholder="Search vets, trainers, grooming…"
             className="flex-1 bg-transparent text-sm outline-none"
+            aria-label="Search Warmpawz Pay vendors"
           />
         </div>
       </header>
@@ -106,7 +149,10 @@ function WarmpawzPayPageContent() {
           <button
             key={c.id}
             type="button"
-            onClick={() => setCategory(c.id)}
+            onClick={() => {
+              chipSelectedByUserRef.current = true;
+              setCategory(c.id);
+            }}
             className={`shrink-0 rounded-full px-4 py-1.5 text-sm ${
               category === c.id ? 'bg-[#FF6B00] text-white' : 'bg-white text-gray-700'
             }`}
@@ -123,7 +169,7 @@ function WarmpawzPayPageContent() {
         ) : null}
 
         {!loading
-          ? filteredVendors.map((v) => (
+          ? displayedVendors.map((v) => (
               <button
                 key={v.vendorId}
                 type="button"

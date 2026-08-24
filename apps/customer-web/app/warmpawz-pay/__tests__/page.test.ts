@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 
 import { createElement } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import WarmpawzPayPage from '../page';
 import { useWpayVendorFeed } from '@/hooks/useWpayVendorFeed';
 
@@ -20,6 +20,7 @@ const mockUseWpayVendorFeed = useWpayVendorFeed as jest.MockedFunction<typeof us
 
 describe('WarmpawzPayPage loading UX', () => {
   beforeEach(() => {
+    jest.useFakeTimers();
     mockPush.mockReset();
     mockUseWpayVendorFeed.mockReturnValue({
       vendors: [
@@ -40,6 +41,10 @@ describe('WarmpawzPayPage loading UX', () => {
       loadMore: jest.fn(),
       reload: jest.fn(),
     });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it('hides vendor rows during a full reload so stale data is not shown', () => {
@@ -118,5 +123,35 @@ describe('WarmpawzPayPage loading UX', () => {
     expect(screen.getByRole('button', { name: 'Pet Sitting' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Nutrition' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Walking' })).toBeTruthy();
+  });
+
+  it('debounces search and passes q to vendor feed', () => {
+    mockUseWpayVendorFeed.mockReturnValue({
+      vendors: [],
+      loading: false,
+      loadingMore: false,
+      hasMore: false,
+      error: null,
+      loadMore: jest.fn(),
+      reload: jest.fn(),
+    });
+
+    render(createElement(WarmpawzPayPage));
+
+    fireEvent.change(screen.getByLabelText('Search Warmpawz Pay vendors'), {
+      target: { value: 'best trainers for my dog' },
+    });
+
+    expect(mockUseWpayVendorFeed).toHaveBeenLastCalledWith(
+      expect.objectContaining({ q: undefined, category: 'all' }),
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+
+    expect(mockUseWpayVendorFeed).toHaveBeenLastCalledWith(
+      expect.objectContaining({ q: 'best trainers for my dog', category: 'all' }),
+    );
   });
 });
