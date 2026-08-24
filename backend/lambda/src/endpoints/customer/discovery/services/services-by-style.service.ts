@@ -1,15 +1,15 @@
 import type { Context } from 'hono';
 import type { ServicesByStyleDiscoveryOptions } from './services-by-style/discovery-options';
 import { executeservicesByStyle as runServicesByStyle } from './services-by-style/run';
-import { resolveWarmpawzCatalogueDiscoveryOptions } from './wappt-catalogue-discovery.service';
+import { resolveMarketplaceDiscoveryOptions } from './wappt-catalogue-discovery.service';
 
 export type { ServicesByStyleDiscoveryOptions } from './services-by-style/discovery-options';
 
-/** GET /customer/services/by-style — catalogue filter + no list prices when WAPPT enabled. */
+/** GET /customer/services/by-style — approved marketplace vendors; no Appointments catalogue gate. */
 export async function executeservicesByStyle(
   c: Context,
   overrideOptions?: ServicesByStyleDiscoveryOptions,
 ) {
-  const discoveryOptions = overrideOptions ?? resolveWarmpawzCatalogueDiscoveryOptions();
+  const discoveryOptions = overrideOptions ?? resolveMarketplaceDiscoveryOptions();
   return runServicesByStyle(c, discoveryOptions);
 }

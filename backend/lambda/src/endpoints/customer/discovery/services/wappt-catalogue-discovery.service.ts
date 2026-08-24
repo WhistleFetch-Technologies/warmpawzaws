@@ -13,6 +13,19 @@ export function isWarmpawzAppointmentsDiscoveryEnabled(): boolean {
   return envFlagEnabled(process.env[WAPPT_APPOINTMENTS_ENV_KEY]);
 }
 
+/** Marketplace discover-services / by-style: never require Appointments catalogue publish. */
+export function resolveMarketplaceDiscoveryOptions(): CatalogueDiscoveryOptions {
+  if (!isWarmpawzAppointmentsDiscoveryEnabled()) {
+    return {};
+  }
+  return {
+    omitPricing: true,
+    appointmentListResponse: false,
+    markWarmpawzAppointments: true,
+  };
+}
+
+/** Appointments-only discovery: published Appointments catalogue rows only. */
 export function resolveWarmpawzCatalogueDiscoveryOptions(): CatalogueDiscoveryOptions {
   if (!isWarmpawzAppointmentsDiscoveryEnabled()) {
     return {};
