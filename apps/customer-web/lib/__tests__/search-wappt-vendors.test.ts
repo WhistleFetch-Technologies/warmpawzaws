@@ -112,6 +112,24 @@ describe('fetchWapptSearchVendorResults', () => {
       city: 'Bengaluru',
     });
   });
+
+  it('returns walker vendors for sentence query without full phrase match', async () => {
+    (apiClient.get as jest.Mock).mockResolvedValue({
+      vendors: [
+        {
+          vendorId: 'w-1',
+          name: 'Vikas Singh Training and Walking Services',
+          city: 'Bengaluru',
+          shortAddress: '1st A Main Road',
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const rows = await fetchWapptSearchVendorResults('walker', { keyword: 'best dog walker' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name).toContain('Walking');
+  });
 });
 
 describe('mergeWapptSearchVendorRows', () => {

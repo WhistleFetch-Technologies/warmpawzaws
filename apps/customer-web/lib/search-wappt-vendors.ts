@@ -13,6 +13,7 @@ import {
 } from '@/lib/wappt-hub-registry';
 import { discoveryNextCursor, discoveryVendorList } from '@/lib/discovery-list';
 import { inferHubSlugFromSearchQuery } from '@/lib/search-hub-category-filter';
+import { wapptVendorMatchesKeyword } from '@/lib/search-wappt-keyword-filter';
 
 /** Hubs where search chip emptiness was reported (vet / groom / train). */
 export const SEARCH_WAPPT_PARITY_HUBS = [
@@ -153,16 +154,16 @@ export async function fetchWapptSearchVendorResults(
   if (!canLoadWapptSearchHub(hubSlug)) return [];
 
   const rows = await fetchWapptDiscoveryRows(hubSlug, opts?.limit ?? 50);
-  const qLower = (opts?.keyword || '').trim().toLowerCase();
+  const keyword = (opts?.keyword || '').trim();
 
   const mapped: SearchWapptVendorRow[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
     const card = mapDiscoveryRowToSearchWapptVendor(row, hubSlug);
     if (!card || seen.has(card.id)) continue;
-    if (qLower) {
-      const hay = `${card.name} ${card.city} ${card.addressDisplay}`.toLowerCase();
-      if (!hay.includes(qLower)) continue;
+    if (keyword) {
+      const hay = `${card.name} ${card.city} ${card.addressDisplay}`;
+      if (!wapptVendorMatchesKeyword(hay, keyword, hubSlug)) continue;
     }
     seen.add(card.id);
     mapped.push(card);

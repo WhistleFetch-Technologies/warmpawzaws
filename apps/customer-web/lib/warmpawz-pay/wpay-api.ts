@@ -57,6 +57,9 @@ type ListEnvelope<T> = {
   vendors?: T[];
   transactions?: T[];
   nextCursor?: string | null;
+  resolvedCategory?: string | null;
+  searchText?: string;
+  taxonomyHub?: string | null;
 };
 
 export function wpayVendorsFromResponse(data: unknown): WpayVendorCard[] {
@@ -77,15 +80,25 @@ export function wpayNextCursor(data: unknown): string | null {
   return c != null && String(c).trim() ? String(c) : null;
 }
 
+export function wpayResolvedCategory(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const raw = (data as { resolvedCategory?: unknown }).resolvedCategory;
+  const s = raw != null ? String(raw).trim() : '';
+  return s || null;
+}
+
 export function buildWpayVendorsUrl(opts: {
   limit: number;
   cursor?: string;
   category?: string;
+  q?: string;
 }): string {
   const params = new URLSearchParams();
   params.set('limit', String(opts.limit));
   if (opts.cursor) params.set('cursor', opts.cursor);
   if (opts.category && opts.category !== 'all') params.set('category', opts.category);
+  const q = opts.q?.trim();
+  if (q) params.set('q', q);
   return `/customer/warmpawz-pay/vendors?${params.toString()}`;
 }
 
