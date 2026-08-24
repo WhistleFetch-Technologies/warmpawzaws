@@ -10,6 +10,10 @@ import dynamic from 'next/dynamic';
 import { NotAvailable } from '../NotAvailable';
 import { CustomerScreenWrapper } from '../CustomerScreenWrapper';
 import { GuestHomeLocationGateHost } from '../GuestLocationPrompt';
+import {
+  ServiceAddPetPromptHost,
+} from '../prompts/ServiceAddPetPromptHost';
+import type { ServiceAddPetPromptBackHandlers } from '@/hooks/useServiceAddPetPrompt';
 import { SERVICE_CONFIGS } from '@/lib/home/service-configs';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import {
@@ -579,6 +583,7 @@ export function CustomerHomeWrapper({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userSidebarOpen, setUserSidebarOpen] = useState(false);
   const [showAddPetModal, setShowAddPetModal] = useState(false);
+  const serviceAddPetPromptBackRef = useRef<ServiceAddPetPromptBackHandlers | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedService, setSelectedService] = useState<string>('');
   const [vetServiceData, setVetServiceData] = useState<any>(null);
@@ -1315,10 +1320,10 @@ export function CustomerHomeWrapper({
 
     const rehydrateFromCache = () => {
       const cachedPets = readCachedCustomerPets();
-      if (cachedPets.length > 0) {
-        setPets(cachedPets);
-        setSelectedPet((prev: typeof cachedPets[0] | null) => prev ?? cachedPets[0]);
-      }
+      setPets(cachedPets);
+      setSelectedPet((prev: typeof cachedPets[0] | null) =>
+        cachedPets.length > 0 ? prev ?? cachedPets[0] : null
+      );
       const profile = readCachedCustomerProfile();
       if (profile) {
         setUserName(
@@ -2721,6 +2726,15 @@ export function CustomerHomeWrapper({
 
   useEffect(() => {
     return registerBackHandler(() => {
+      const addPetPromptBack = serviceAddPetPromptBackRef.current;
+      if (addPetPromptBack?.isAddPetModalOpen()) {
+        addPetPromptBack.closeAddPetModal();
+        return true;
+      }
+      if (addPetPromptBack?.isPromoOpen()) {
+        addPetPromptBack.closePromo();
+        return true;
+      }
       if (showAddPetModal) {
         setShowAddPetModal(false);
         return true;
@@ -2913,6 +2927,24 @@ export function CustomerHomeWrapper({
       />
     ) : null;
 
+  const handleServiceAddPetPromptPetsUpdated = useCallback((nextPets: typeof pets) => {
+    setPets(nextPets);
+    setSelectedPet(nextPets[0] ?? null);
+  }, []);
+
+  const serviceAddPetPromptHost = (
+    <ServiceAddPetPromptHost
+      phone={phone}
+      isGuest={isGuest}
+      currentScreen={currentScreen}
+      petsCount={pets.length}
+      onPetsUpdated={handleServiceAddPetPromptPetsUpdated}
+      onBackHandlersReady={(handlers) => {
+        serviceAddPetPromptBackRef.current = handlers;
+      }}
+    />
+  );
+
   // ✅ FIX: Helper function to render screens with consistent StandardizedHeader layout
   // This ensures all service landing pages have the same header/footer as the home page
   const renderScreenWithLayout = (
@@ -2931,49 +2963,55 @@ export function CustomerHomeWrapper({
   ): ReactNode => {
     if (options.bareContent) {
       return (
-        <CustomerScreenWrapper customerPhone={phone}
-          currentScreen={screen}
-          onNavigate={handleBottomNav}
-          onProfileClick={handleProfileClick}
-          accountSidebar={accountSidebarOverlay}
-        >
-          {component}
-        </CustomerScreenWrapper>
+        <>
+          <CustomerScreenWrapper customerPhone={phone}
+            currentScreen={screen}
+            onNavigate={handleBottomNav}
+            onProfileClick={handleProfileClick}
+            accountSidebar={accountSidebarOverlay}
+          >
+            {component}
+          </CustomerScreenWrapper>
+          {serviceAddPetPromptHost}
+        </>
       );
     }
 
     const contentClass = screen === 'payment' ? 'bg-[#FAF6F0]' : 'bg-gray-50';
     return (
-      <CustomerScreenWrapper customerPhone={phone} 
-        currentScreen={screen}
-        onNavigate={handleBottomNav}
-        onProfileClick={handleProfileClick}
-        accountSidebar={accountSidebarOverlay}
-      >
-        <div className={`min-h-screen min-h-[100dvh] w-full ${contentClass}`}>
-          {!options.skipHeader && (
-            <StandardizedHeader
-              userName={userName}
-              userProfilePhoto={userProfilePhoto}
-              title={options.title}
-              subtitle={options.subtitle}
-              homeGreeting={false}
-              showBackButton={options.showBackButton ?? true}
-              showPets={options.showPets ?? false}
-              pets={pets}
-              selectedPet={selectedPet}
-              onPetSelect={setSelectedPet}
-              onBack={options.onBackOverride || handleBack}
-              onNavigate={(s: string, navData?: unknown) => handleNavigateToService(s, navData)}
-              onProfileClick={handleProfileClick}
-              onPetClick={handlePetClick}
-              onAddPet={handleAddPet}
-              customerPhone={phone}
-            />
-          )}
-          {component}
-        </div>
-      </CustomerScreenWrapper>
+      <>
+        <CustomerScreenWrapper customerPhone={phone} 
+          currentScreen={screen}
+          onNavigate={handleBottomNav}
+          onProfileClick={handleProfileClick}
+          accountSidebar={accountSidebarOverlay}
+        >
+          <div className={`min-h-screen min-h-[100dvh] w-full ${contentClass}`}>
+            {!options.skipHeader && (
+              <StandardizedHeader
+                userName={userName}
+                userProfilePhoto={userProfilePhoto}
+                title={options.title}
+                subtitle={options.subtitle}
+                homeGreeting={false}
+                showBackButton={options.showBackButton ?? true}
+                showPets={options.showPets ?? false}
+                pets={pets}
+                selectedPet={selectedPet}
+                onPetSelect={setSelectedPet}
+                onBack={options.onBackOverride || handleBack}
+                onNavigate={(s: string, navData?: unknown) => handleNavigateToService(s, navData)}
+                onProfileClick={handleProfileClick}
+                onPetClick={handlePetClick}
+                onAddPet={handleAddPet}
+                customerPhone={phone}
+              />
+            )}
+            {component}
+          </div>
+        </CustomerScreenWrapper>
+        {serviceAddPetPromptHost}
+      </>
     );
   };
 
@@ -4867,6 +4905,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'nutritionist') {
     return (
+      <>
       <CustomerScreenWrapper customerPhone={phone} 
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
@@ -4940,6 +4979,8 @@ export function CustomerHomeWrapper({
           }} 
         />
       </CustomerScreenWrapper>
+      {serviceAddPetPromptHost}
+      </>
     );
   }
   if (currentScreen === 'expert-nutritionists') {
