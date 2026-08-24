@@ -25,7 +25,9 @@ describe('wpay guest Pay Bill journey', () => {
   });
 
   it('builds the shared vendor Pay Bill path for every entry point', () => {
-    expect(buildWpayVendorPayPath('vendor-1')).toBe('/warmpawz-pay/vendors/vendor-1');
+    expect(buildWpayVendorPayPath('vendor-1')).toBe(
+      '/warmpawz-pay/vendors/placeholder?vendorId=vendor-1',
+    );
     expect(buildWpayVendorPayPath('')).toBe('/warmpawz-pay');
   });
 

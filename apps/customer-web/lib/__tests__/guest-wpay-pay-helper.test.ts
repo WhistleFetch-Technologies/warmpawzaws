@@ -30,7 +30,7 @@ describe('requestGuestAuthForWpayPay export', () => {
     expect(snap?.vendorId).toBe('vendor-pay');
     expect(snap?.price).toBe(1999);
     expect(snap?.requiresPet).toBe(false);
-    expect(snap?.returnPath).toBe('/warmpawz-pay/vendors/vendor-pay');
+    expect(snap?.returnPath).toBe('/warmpawz-pay/vendors/placeholder?vendorId=vendor-pay');
     expect(JSON.stringify(snap)).not.toMatch(/jwt|refreshToken|otp|password/i);
   });
 

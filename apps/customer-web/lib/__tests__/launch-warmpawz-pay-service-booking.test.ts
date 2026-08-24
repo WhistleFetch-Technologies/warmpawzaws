@@ -42,6 +42,6 @@ describe('launchWarmpawzPayServiceBooking', () => {
       vendorId: 'v-1',
     });
 
-    expect(push).toHaveBeenCalledWith('/warmpawz-pay/vendors/v-1');
+    expect(push).toHaveBeenCalledWith('/warmpawz-pay/vendors/placeholder?vendorId=v-1');
   });
 });

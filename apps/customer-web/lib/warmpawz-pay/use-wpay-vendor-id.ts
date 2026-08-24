@@ -1,28 +1,36 @@
 'use client';
 
-import { useParams } from 'next/navigation';
-import { useMemo } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 
 const PLACEHOLDER_IDS = new Set(['_', 'placeholder']);
 
-function vendorIdFromPathname(): string {
-  if (typeof window === 'undefined') return '';
-  const match = window.location.pathname.match(/\/warmpawz-pay\/vendors\/([^/?#]+)/);
-  const id = match?.[1] ? decodeURIComponent(match[1]).trim() : '';
+function normalizeVendorId(value?: string | null): string {
+  const id = String(value ?? '').trim();
   if (!id || PLACEHOLDER_IDS.has(id)) return '';
   return id;
 }
 
-/** Reactive vendor id for /warmpawz-pay/vendors/[vendorId] on static export. */
+function vendorIdFromPathname(): string {
+  if (typeof window === 'undefined') return '';
+  const match = window.location.pathname.match(/\/warmpawz-pay\/vendors\/([^/?#]+)/);
+  return normalizeVendorId(match?.[1] ? decodeURIComponent(match[1]) : '');
+}
+
+/** Reactive vendor id for /warmpawz-pay/vendors/placeholder?vendorId=… on static export. */
 export function useWpayVendorId(propId?: string): string {
   const params = useParams();
-  return useMemo(() => {
-    const fromProp = String(propId ?? '').trim();
-    if (fromProp && !PLACEHOLDER_IDS.has(fromProp)) return fromProp;
-    const raw = params?.vendorId;
-    const fromParams = (Array.isArray(raw) ? raw[0] : raw) ?? '';
-    const normalized = String(fromParams).trim();
-    if (normalized && !PLACEHOLDER_IDS.has(normalized)) return normalized;
-    return vendorIdFromPathname();
-  }, [params, propId]);
+  const searchParams = useSearchParams();
+  const fromQuery = normalizeVendorId(
+    searchParams.get('vendorId') || searchParams.get('vendor_id'),
+  );
+  if (fromQuery) return fromQuery;
+
+  const fromProp = normalizeVendorId(propId);
+  if (fromProp) return fromProp;
+
+  const raw = params?.vendorId;
+  const fromParams = normalizeVendorId(Array.isArray(raw) ? raw[0] : raw);
+  if (fromParams) return fromParams;
+
+  return vendorIdFromPathname();
 }

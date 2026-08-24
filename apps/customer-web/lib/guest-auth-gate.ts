@@ -11,6 +11,7 @@ import {
 } from './guest-booking-intent';
 import { getStoredCustomerJwtForSession, isTokenExpired } from './session-utils';
 import { enqueueAllyticasEvent } from './allyticas-ingest';
+import { buildWpayVendorPayPath } from './warmpawz-pay/wpay-guest-journey';
 
 /**
  * Canonical customer auth: phone + (unexpired JWT or Cognito refresh window).
@@ -254,9 +255,7 @@ export function requestGuestAuthForWapptBook(opts: {
 /** Warmpawz Pay vendor card — list browse is guest-ok. Prefer requestGuestAuthForWpayPay at Proceed. */
 export function requestGuestAuthForWpayVendor(vendorId: string): boolean {
   const id = String(vendorId || '').trim();
-  const returnPath = id
-    ? `/warmpawz-pay/vendors/${encodeURIComponent(id)}`
-    : '/warmpawz-pay';
+  const returnPath = buildWpayVendorPayPath(id);
   return requestGuestAuthIfNeeded({
     mode: 'signup',
     returnPath,
@@ -274,9 +273,7 @@ export function requestGuestAuthForWpayVendor(vendorId: string): boolean {
 export function requestGuestAuthForWpayPay(opts: { vendorId: string; amount: number }): boolean {
   const id = String(opts.vendorId || '').trim();
   const amount = Number(opts.amount);
-  const returnPath = id
-    ? `/warmpawz-pay/vendors/${encodeURIComponent(id)}`
-    : '/warmpawz-pay';
+  const returnPath = buildWpayVendorPayPath(id);
   return requestGuestAuthIfNeeded({
     mode: 'signup',
     returnPath,

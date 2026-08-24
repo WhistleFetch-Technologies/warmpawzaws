@@ -11,12 +11,11 @@ export const VENDOR_APPROVED_ACTIVE_SQL = `
 
 export const VENDOR_BANK_VERIFIED_SQL = `(v.bank_verified = true)`;
 
-/** Customer Pay Bill list: admin published + approved/active + bank verified. */
+/** Customer Pay Bill list: admin published + approved/active. Bank is a settlement warning, not a hide. */
 export function wpayCatalogueCustomerVisibleSql(catalogueAlias = 'c'): string {
   return `(
     ${catalogueAlias}.publish_status = '${PUBLISHED}'
     AND ${VENDOR_APPROVED_ACTIVE_SQL}
-    AND ${VENDOR_BANK_VERIFIED_SQL}
   )`;
 }
 
@@ -24,6 +23,5 @@ export function wpayCatalogueCustomerVisibleSql(catalogueAlias = 'c'): string {
 export const WPAY_VENDOR_PAY_BILL_READY_SQL = `
   (
     ${VENDOR_APPROVED_ACTIVE_SQL}
-    AND ${VENDOR_BANK_VERIFIED_SQL}
   )
 `;

@@ -1,4 +1,5 @@
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import { buildWpayVendorPayPath } from '@/lib/warmpawz-pay/wpay-guest-journey';
 import { mapServiceKeyToWpayCategory } from './map-service-to-wpay-category';
 import { resolveServiceBookingCommerceRouteForNavigation } from './resolve-service-booking-commerce-route';
 import type { ServiceBookingCommerceRouteResult } from './types';
@@ -28,7 +29,7 @@ export function launchWarmpawzPayServiceBooking(opts: {
 
   const vendorId = String(opts.vendorId ?? '').trim();
   if (vendorId) {
-    opts.router.push(`/warmpawz-pay/vendors/${encodeURIComponent(vendorId)}`);
+    opts.router.push(buildWpayVendorPayPath(vendorId));
     return;
   }
 

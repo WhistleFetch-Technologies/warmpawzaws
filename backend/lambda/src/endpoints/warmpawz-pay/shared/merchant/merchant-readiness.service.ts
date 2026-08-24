@@ -107,7 +107,10 @@ export function buildMerchantReadiness(input: MerchantReadinessInput): MerchantR
       key: 'BANK_VERIFIED',
       label: 'Bank Verified',
       passed: input.bankVerified === true,
-      severity: 'blocker',
+      severity: 'warning',
+      detail: input.bankVerified
+        ? undefined
+        : 'Settlement may fail until the vendor bank account is verified',
     },
     {
       key: 'CATALOGUE_PUBLISHED',

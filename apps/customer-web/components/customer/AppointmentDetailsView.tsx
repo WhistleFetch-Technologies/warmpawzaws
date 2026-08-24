@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { isWarmpawzPayEnabled } from '@/lib/warmpawz-pay/wpay-feature-flag';
+import { buildWpayVendorPayPath } from '@/lib/warmpawz-pay/wpay-guest-journey';
 import {
   getResolvedCustomerId,
   isCustomerDatabaseUuid,
@@ -517,7 +518,7 @@ export function AppointmentDetailsView({
             className="w-full bg-[#FF8C42] hover:bg-[#e67d35] text-white"
             onClick={() => {
               const vendorId = String(appointment.vendorId).trim();
-              router.push(`/warmpawz-pay/vendors/${encodeURIComponent(vendorId)}`);
+              router.push(buildWpayVendorPayPath(vendorId));
             }}
           >
             Pay Bill by Warmpawz

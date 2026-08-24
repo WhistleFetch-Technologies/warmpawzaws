@@ -37,11 +37,7 @@ export class VendorEligibilityService implements IVendorEligibilityService {
       return false;
     }
 
-    return (
-      isVendorPlatformEligible(snapshot) &&
-      snapshot.bankVerified &&
-      !snapshot.isDeleted
-    );
+    return isVendorPlatformEligible(snapshot) && !snapshot.isDeleted;
   }
 
   buildWarnings(snapshot: VendorEligibilitySnapshot): readonly EligibilityWarningCode[] {

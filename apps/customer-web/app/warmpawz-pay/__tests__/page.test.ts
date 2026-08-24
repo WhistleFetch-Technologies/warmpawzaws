@@ -104,7 +104,7 @@ describe('WarmpawzPayPage loading UX', () => {
     render(createElement(WarmpawzPayPage));
     fireEvent.click(screen.getByRole('button', { name: 'View Happy Tails' }));
 
-    expect(mockPush).toHaveBeenCalledWith('/warmpawz-pay/vendors/vendor-1');
+    expect(mockPush).toHaveBeenCalledWith('/warmpawz-pay/vendors/placeholder?vendorId=vendor-1');
   });
 
   it('renders Pet Sitting and Nutrition category filters', () => {
@@ -151,7 +151,7 @@ describe('WarmpawzPayPage loading UX', () => {
     });
 
     expect(mockUseWpayVendorFeed).toHaveBeenLastCalledWith(
-      expect.objectContaining({ q: 'best trainers for my dog', category: 'all' }),
+      expect.objectContaining({ q: 'best trainers for my dog', category: 'training' }),
     );
   });
 });

@@ -123,6 +123,27 @@ describe('merchant domain resolvers', () => {
     expect(evaluation.readiness.readyForPayBill).toBe(true);
   });
 
+  it('does not require bank_verified for customer visibility', () => {
+    const evaluation = evaluateMerchant({
+      publishStatus: PUBLISHED,
+      vendorStatus: 'approved',
+      isActive: true,
+      isOnline: true,
+      bankVerified: false,
+      isDeleted: false,
+      customerService: 'grooming',
+      vendorType: 'solo',
+      pricingConfigured: true,
+    });
+
+    expect(evaluation.customerVisible).toBe(true);
+    expect(evaluation.readiness.readyForPayBill).toBe(true);
+    expect(evaluation.readiness.checks.find((check) => check.key === 'BANK_VERIFIED')).toMatchObject({
+      passed: false,
+      severity: 'warning',
+    });
+  });
+
   it('computes readiness score from blockers only', () => {
     const readiness = buildMerchantReadiness({
       publishStatus: PUBLISHED,
@@ -134,7 +155,7 @@ describe('merchant domain resolvers', () => {
       pricingConfigured: false,
     });
 
-    expect(readiness.blockersTotal).toBe(4);
+    expect(readiness.blockersTotal).toBe(3);
     expect(readiness.blockersPassed).toBe(2);
     expect(readiness.readyForPayBill).toBe(false);
   });

@@ -154,6 +154,12 @@ export default function RootLayout({
                   var path = location.pathname.replace(/\\/+$/, '') || '/';
                   var qs = new URLSearchParams(location.search);
                   if (qs.get('vendorId') || qs.get('vendor_id')) return;
+                  var wpayMatch = path.match(/^\\/warmpawz-pay\\/vendors\\/([^/]+)$/);
+                  if (wpayMatch && wpayMatch[1] !== 'placeholder' && wpayMatch[1] !== '_') {
+                    qs.set('vendorId', decodeURIComponent(wpayMatch[1]));
+                    location.replace('/warmpawz-pay/vendors/placeholder?' + qs.toString());
+                    return;
+                  }
                   var vendorMatch = path.match(/^\\/vendor\\/([^/]+)$/);
                   if (vendorMatch && vendorMatch[1] !== 'placeholder' && vendorMatch[1] !== '_') {
                     qs.set('vendorId', decodeURIComponent(vendorMatch[1]));

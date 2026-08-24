@@ -156,7 +156,7 @@ describe('requestGuestAuth', () => {
     expect(opener).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'signup',
-        returnPath: '/warmpawz-pay/vendors/vendor-1',
+        returnPath: '/warmpawz-pay/vendors/placeholder?vendorId=vendor-1',
         resumeScreen: 'warmpawz-pay-vendor',
       }),
     );
@@ -173,7 +173,7 @@ describe('requestGuestAuth', () => {
       kind: 'pay_bill',
       vendorId: 'vendor-1',
       price: 1250,
-      returnPath: '/warmpawz-pay/vendors/vendor-1',
+      returnPath: '/warmpawz-pay/vendors/placeholder?vendorId=vendor-1',
       requiresPet: false,
     });
     expect(JSON.stringify(intent)).not.toMatch(/jwt|refreshToken|otp|password|customerPhone/i);

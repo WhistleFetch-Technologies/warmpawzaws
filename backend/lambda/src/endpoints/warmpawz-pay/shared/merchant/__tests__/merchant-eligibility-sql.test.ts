@@ -12,8 +12,9 @@ describe('merchant-eligibility-sql', () => {
     expect(VENDOR_APPROVED_ACTIVE_SQL).toContain("'active'");
   });
 
-  it('requires published catalogue for customer visibility', () => {
+  it('requires published catalogue for customer visibility without a bank_verified hide', () => {
     expect(wpayCatalogueCustomerVisibleSql('c')).toContain("publish_status = 'published'");
-    expect(wpayCatalogueCustomerVisibleSql('c')).toContain('bank_verified = true');
+    expect(wpayCatalogueCustomerVisibleSql('c')).not.toContain('bank_verified');
+    expect(WPAY_VENDOR_PAY_BILL_READY_SQL).not.toContain('bank_verified');
   });
 });
