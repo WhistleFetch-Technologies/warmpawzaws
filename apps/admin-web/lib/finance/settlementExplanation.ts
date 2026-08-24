@@ -36,11 +36,11 @@ export function buildSettlementExplanationSteps(line: BookingEarningsLine): Sett
 
   if (b.commissionRate > 0) {
     steps.push({
-      label: `${b.commissionRate}% Commission`,
+      label: `${b.commissionRate}% platform commission`,
       amount: formatInr(b.commissionAmount),
     });
   } else {
-    steps.push({ label: 'Commission', amount: formatInr(b.commissionAmount) });
+    steps.push({ label: 'Platform commission', amount: formatInr(b.commissionAmount) });
   }
 
   steps.push({ label: 'Vendor settlement', amount: formatInr(b.vendorSettlement) });

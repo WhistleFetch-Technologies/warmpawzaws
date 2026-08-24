@@ -1,0 +1,60 @@
+---
+description: GST financial-lineage is protected. Read the guard doc before editing money/GST/invoice/report logic.
+globs:
+  - backend/lambda/src/utils/gst-split.ts
+  - backend/lambda/src/utils/canonical-gst-snapshot.ts
+  - backend/lambda/src/utils/booking-invoice-amounts.ts
+  - backend/lambda/src/utils/vendor-booking-earnings-report.ts
+  - backend/lambda/src/utils/vendor-accrual-fee-breakdown.ts
+  - backend/lambda/src/utils/package-session-earnings-allocation.ts
+  - backend/lambda/src/utils/funding-aware-ledger-correction.ts
+  - backend/lambda/src/utils/resolve-booking-list-price.ts
+  - backend/lambda/src/utils/resolve-service-booking-tax-item.ts
+  - backend/lambda/src/utils/calculate-authoritative-service-gst.ts
+  - backend/lambda/src/utils/invoice-row-gst.ts
+  - backend/lambda/src/utils/tax-category-display-rate.ts
+  - backend/lambda/src/utils/booking-financial-gross.ts
+  - backend/lambda/src/lib/gst-place-of-supply.ts
+  - backend/lambda/src/lib/services/gst-catalog-role-resolution.ts
+  - backend/lambda/src/lib/services/tax-calculation-service.ts
+  - backend/lambda/scripts/gst-financial-lineage-guard.js
+  - docs/GST_FINANCIAL_LINEAGE_GUARD.md
+---
+
+# GST FINANCIAL-LINEAGE CODE IS PROTECTED
+
+Read **`docs/GST_FINANCIAL_LINEAGE_GUARD.md`** before editing any matched file.
+
+This code controls customer money, GST, payment totals, finalPaid, vendor economics, package GST, invoices, and financial reports.
+
+## Required before you change protected code
+
+1. Read `docs/GST_FINANCIAL_LINEAGE_GUARD.md`.
+2. Explain why the change is required.
+3. Name the affected invariants (Customer Paid, GST, finalPaid, package GST, commission, historical lock).
+4. Trace the existing lineage. Do not add a second Customer Paid or GST formula.
+5. Add or update regression tests.
+6. Run `cd backend/lambda && npm run test:gst-financial`.
+7. Report failures. Never weaken or delete GST tests.
+8. Never modify production data or Admin GST configuration.
+9. Never silently change GST rates or category mappings.
+
+PR / commit must include:
+
+`GST-PROTECTED-CHANGE: <reason>`
+
+## Forbidden
+
+- Weakening GST tests or deleting GST regressions
+- Bypassing category-authoritative resolution
+- Adding vendor-role-only GST fallback
+- Calculating GST from vendor net
+- Using commission-adjusted price as customer price (`custom_price ?? price` stays)
+- Reconstructing historical GST from today’s Admin rate
+- Removing 0% GST authority (`gstAmount > 0` is not the authority test)
+- Changing finalPaid lineage without this review
+- Duplicating package GST or session Customer Paid
+- Creating a second Customer Paid calculation
+- Reconstructing Customer Paid as service base + inferred GST + fees when a capture exists
+
+Admin UI GST **configuration** (create card, change rate, map category) is runtime. This rule protects **code**, not Admin GST cards.

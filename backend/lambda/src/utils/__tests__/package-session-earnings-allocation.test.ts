@@ -224,6 +224,7 @@ describe('package-session-earnings-allocation', () => {
     expect(sql).toContain('package_caps');
     expect(sql).toContain('allocated_earnings');
     expect(sql).toContain('ROW_NUMBER()');
+    expect(sql).toContain("metadata->'settlementSnapshot'->>'vendorSettlement'");
     expect(sql).not.toContain('SELECT * FROM vendor_earnings ve WHERE ve.booking_id = $');
   });
 });

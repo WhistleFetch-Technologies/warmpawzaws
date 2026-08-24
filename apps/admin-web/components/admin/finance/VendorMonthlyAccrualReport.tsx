@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { Fragment, useCallback, useState } from 'react';
 import { apiClient, getApiBaseUrl, isUatMode } from '@/lib/api-client';
 import { Button } from '@warmpawz/ui';
-import { Download, Loader2, Play, RefreshCw } from 'lucide-react';
-import { downloadReconciliationPack } from '@/lib/finance/settlementAuditExport';
+import { ChevronDown, ChevronRight, Download, ExternalLink, Loader2, Play, RefreshCw } from 'lucide-react';
+import { buildBookingEarningsFinanceUrl, downloadReconciliationPack } from '@/lib/finance/settlementAuditExport';
+import { VendorPeriodBookingsPanel } from './VendorPeriodBookingsPanel';
 
 function currentYearMonthValue(): string {
   const d = new Date();
@@ -17,28 +18,6 @@ function moneyCell(v: string | number | undefined | null) {
   return `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
-function gstBreakdownCell(
-  gstTotal: string | number | undefined | null,
-  cgst?: string | number | null,
-  sgst?: string | number | null,
-  igst?: string | number | null,
-) {
-  const c = Number(cgst || 0);
-  const s = Number(sgst || 0);
-  const i = Number(igst || 0);
-  return (
-    <div className="text-right">
-      <div className="tabular-nums">{moneyCell(gstTotal)}</div>
-      {i > 0.009 && c + s <= 0.009 ? (
-        <div className="text-xs text-gray-500">IGST {moneyCell(i)}</div>
-      ) : c + s > 0.009 ? (
-        <div className="text-xs text-gray-500">
-          CGST {moneyCell(c)} · SGST {moneyCell(s)}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 function parseYearMonth(value: string): { year: number; month: number } | null {
   const m = /^(\d{4})-(\d{2})$/.exec(value);
@@ -104,6 +83,7 @@ export function VendorMonthlyAccrualReport() {
   } | null>(null);
   const [packDownloading, setPackDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
 
   const parsed = parseYearMonth(yearMonth);
 
@@ -253,9 +233,13 @@ export function VendorMonthlyAccrualReport() {
         </p>
         <p className="mt-2 text-blue-800">
           <strong>Compute</strong> refreshes every daily snapshot in the month, then reloads the aggregated view.{' '}
-          <strong>Load</strong> reads existing daily snapshots only (faster if days were already computed). CSV export
-          adds <strong>platform / convenience / delivery fees</strong> and <strong>GST (CGST, SGST, IGST)</strong> for
-          investor reporting.
+          <strong>Load</strong> reads existing daily snapshots only (faster if days were already computed).{' '}
+          <strong>Platform commission</strong> is what Warmpawz takes from the vendor.{' '}
+          <strong>Checkout fee</strong> is the customer-paid platform fee at checkout.{' '}
+          <strong>CGST / SGST / IGST / Total GST</strong> are stored checkout tax only — run{' '}
+          <strong>Compute</strong> after this change so persisted GST is not the old inferred value. Expand a
+          vendor row for per-booking GST %, tax split, platform commission, and the same tax invoice the
+          customer receives.
         </p>
       </div>
 
@@ -308,17 +292,18 @@ export function VendorMonthlyAccrualReport() {
               <div className="text-xl font-semibold">{moneyCell(totals.gross)}</div>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <div className="text-xs text-gray-500">Commission</div>
+              <div className="text-xs text-gray-500">Platform commission</div>
               <div className="text-xl font-semibold">{moneyCell(totals.commission)}</div>
+              <div className="text-xs text-gray-500">What Warmpawz takes</div>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <div className="text-xs text-gray-500">Net to vendors</div>
               <div className="text-xl font-semibold">{moneyCell(totals.net)}</div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Platform fee</div>
+              <div className="text-xs text-gray-500">Checkout fee</div>
               <div className="text-sm font-semibold">{moneyCell(totals.platformFee)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
@@ -330,15 +315,20 @@ export function VendorMonthlyAccrualReport() {
               <div className="text-sm font-semibold">{moneyCell(totals.deliveryFee)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Customer GST</div>
+              <div className="text-xs text-gray-500">CGST</div>
+              <div className="text-sm font-semibold">{moneyCell(totals.cgstAmount)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">SGST</div>
+              <div className="text-sm font-semibold">{moneyCell(totals.sgstAmount)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">IGST</div>
+              <div className="text-sm font-semibold">{moneyCell(totals.igstAmount)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Total GST</div>
               <div className="text-sm font-semibold">{moneyCell(totals.gstTotal)}</div>
-              {totals.igstAmount > 0.009 && totals.cgstAmount + totals.sgstAmount <= 0.009 ? (
-                <div className="text-xs text-gray-500">IGST {moneyCell(totals.igstAmount)}</div>
-              ) : totals.cgstAmount + totals.sgstAmount > 0.009 ? (
-                <div className="text-xs text-gray-500">
-                  CGST {moneyCell(totals.cgstAmount)} · SGST {moneyCell(totals.sgstAmount)}
-                </div>
-              ) : null}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
@@ -358,15 +348,23 @@ export function VendorMonthlyAccrualReport() {
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
+              <th className="w-8 px-2 py-2" />
               <th className="px-3 py-2 text-left font-medium text-gray-700">Business</th>
               <th className="px-3 py-2 text-left font-medium text-gray-700">Owner</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Gross</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">Commission</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700" title="What Warmpawz takes from the vendor">
+                Platform commission
+              </th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Net</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">Platform</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700" title="Customer-paid checkout platform fee">
+                Checkout fee
+              </th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Convenience</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Delivery</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">GST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">CGST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">SGST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">IGST</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">Total GST</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Lines</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Delivery</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Missing VE</th>
@@ -375,48 +373,91 @@ export function VendorMonthlyAccrualReport() {
               <th className="px-3 py-2 text-left font-medium text-gray-700">Bank</th>
               <th className="px-3 py-2 text-left font-medium text-gray-700">IFSC</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Verified</th>
+              <th className="px-3 py-2 text-center font-medium text-gray-700">Bookings</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={17} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={22} className="px-3 py-8 text-center text-gray-500">
                   No rows. Pick a month, run <strong>Compute</strong> (requires migration 732 + 753), then{' '}
                   <strong>Load</strong>.
                 </td>
               </tr>
             )}
-            {rows.map((r) => (
-              <tr key={r.vendor_id} className="hover:bg-gray-50">
-                <td className="px-3 py-2">{r.business_name || '—'}</td>
-                <td className="px-3 py-2">{r.owner_name || '—'}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  ₹{Number(r.gross_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  ₹{Number(r.commission_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.net_amount)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.platform_fee)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.convenience_fee)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.delivery_fee)}</td>
-                <td className="px-3 py-2">
-                  {gstBreakdownCell(r.gst_total, r.cgst_amount, r.sgst_amount, r.igst_amount)}
-                </td>
-                <td className="px-3 py-2 text-center">{r.earnings_line_count}</td>
-                <td className="px-3 py-2 text-center">{r.delivery_settlement_line_count ?? 0}</td>
-                <td className="px-3 py-2 text-center">{r.missing_earnings_booking_count}</td>
-                <td className="px-3 py-2 text-center">{r.missing_delivery_settlement_count ?? 0}</td>
-                <td className="px-3 py-2 text-center">{r.snapshot_day_count ?? '—'}</td>
-                <td className="px-3 py-2 max-w-[140px] truncate" title={r.bankName || ''}>
-                  {r.bankName || '—'}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs">{r.ifscCode || '—'}</td>
-                <td className="px-3 py-2 text-center">
-                  {r.hasBankOnFile ? (r.bankVerified ? 'Yes' : 'No') : '—'}
-                </td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const open = expandedVendorId === r.vendor_id;
+              return (
+                <Fragment key={r.vendor_id}>
+                  <tr
+                    className={`cursor-pointer hover:bg-orange-50/60 ${open ? 'bg-orange-50' : ''}`}
+                    onClick={() => setExpandedVendorId(open ? null : r.vendor_id)}
+                  >
+                    <td className="px-2 py-2 text-gray-400">
+                      {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </td>
+                    <td className="px-3 py-2">{r.business_name || '—'}</td>
+                    <td className="px-3 py-2">{r.owner_name || '—'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      ₹{Number(r.gross_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      ₹{Number(r.commission_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.net_amount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.platform_fee)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.convenience_fee)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.delivery_fee)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.cgst_amount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.sgst_amount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.igst_amount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.gst_total)}</td>
+                    <td className="px-3 py-2 text-center">{r.earnings_line_count}</td>
+                    <td className="px-3 py-2 text-center">{r.delivery_settlement_line_count ?? 0}</td>
+                    <td className="px-3 py-2 text-center">{r.missing_earnings_booking_count}</td>
+                    <td className="px-3 py-2 text-center">{r.missing_delivery_settlement_count ?? 0}</td>
+                    <td className="px-3 py-2 text-center">{r.snapshot_day_count ?? '—'}</td>
+                    <td className="px-3 py-2 max-w-[140px] truncate" title={r.bankName || ''}>
+                      {r.bankName || '—'}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">{r.ifscCode || '—'}</td>
+                    <td className="px-3 py-2 text-center">
+                      {r.hasBankOnFile ? (r.bankVerified ? 'Yes' : 'No') : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {parsed && (
+                        <a
+                          href={buildBookingEarningsFinanceUrl({
+                            periodType: 'month',
+                            year: parsed.year,
+                            month: parsed.month,
+                            vendorId: r.vendor_id,
+                          })}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          View bookings
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                  {open && parsed && (
+                    <tr className="bg-orange-50/40">
+                      <td colSpan={22} className="px-3 py-3">
+                        <VendorPeriodBookingsPanel
+                          periodType="month"
+                          year={parsed.year}
+                          month={parsed.month}
+                          vendorId={r.vendor_id}
+                          businessName={r.business_name}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -216,9 +216,9 @@ describe('vendor-accrual-fee-breakdown', () => {
     expect(mockedCalculateTax).not.toHaveBeenCalled();
     expect(b.platformFee).toBe(20);
     expect(b.deliveryFee).toBe(30);
-    expect(b.cgstAmount).toBe(90);
-    expect(b.sgstAmount).toBe(90);
-    expect(b.gstTotal).toBe(180);
+    expect(b.cgstAmount).toBe(0);
+    expect(b.sgstAmount).toBe(0);
+    expect(b.gstTotal).toBe(0);
   });
 
   test('recomputeBookingCustomerPaidFeeBreakdown uses wp_financial_meta totalTax before tax service', async () => {
@@ -286,26 +286,7 @@ describe('vendor-accrual-fee-breakdown', () => {
     expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
 
-  test('resolveBookingCustomerPaidFeeBreakdown recomputes when Razorpay payment has no fee columns', async () => {
-    mockedCalculateFinalFees.mockResolvedValue({
-      platformFee: 12,
-      convenienceFee: 0,
-      deliveryFee: 0,
-      packagingFee: 0,
-      total: 12,
-    });
-    mockedCalculateTax.mockResolvedValue({
-      items: [],
-      subtotal: 600,
-      totalTax: 108,
-      totalCGST: 54,
-      totalSGST: 54,
-      totalIGST: 0,
-      grandTotal: 708,
-      isInterstate: false,
-      hsnSummary: [],
-    });
-
+  test('resolveBookingCustomerPaidFeeBreakdown keeps stored zeros when payment has no fee columns', async () => {
     const b = await resolveBookingCustomerPaidFeeBreakdown({
       bookingId: 'bk-5',
       basePrice: 600,
@@ -313,8 +294,9 @@ describe('vendor-accrual-fee-breakdown', () => {
       payment: { amount: 720 },
     });
 
-    expect(b.platformFee).toBe(12);
+    expect(b.platformFee).toBe(0);
     expect(b.gstTotal).toBe(0);
+    expect(mockedCalculateFinalFees).not.toHaveBeenCalled();
     expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
 
@@ -405,18 +387,11 @@ describe('vendor-accrual-fee-breakdown', () => {
   test('parent-aware payment SQL is a single join, not a per-child query', () => {
     expect(SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL).toContain('parent_booking_id');
     expect(SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL).toContain('is_package_session');
+    expect(SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL).toContain('gst_rate');
     expect(SQL_ACCRUAL_PARENT_AWARE_PAYMENT_LATERAL.match(/LEFT JOIN LATERAL/g)?.length).toBe(1);
   });
 
-  test('Sara Pets style booking recovers GST from charged total when tax columns are 0', async () => {
-    mockedCalculateFinalFees.mockResolvedValue({
-      platformFee: 0,
-      convenienceFee: 0,
-      deliveryFee: 0,
-      packagingFee: 0,
-      total: 0,
-    });
-
+  test('Sara Pets style booking keeps stored 0 GST when tax columns are 0', async () => {
     const b = await resolveBookingCustomerPaidFeeBreakdown({
       bookingId: '3cae9785',
       basePrice: 1485,
@@ -427,13 +402,13 @@ describe('vendor-accrual-fee-breakdown', () => {
       payment: { amount: 1752.3, gst_amount: 0, cgst_amount: 0, sgst_amount: 0, igst_amount: 0 },
     });
 
-    expect(b.gstTotal).toBe(267.3);
-    expect(b.cgstAmount).toBe(133.65);
-    expect(b.sgstAmount).toBe(133.65);
+    expect(b.gstTotal).toBe(0);
+    expect(b.cgstAmount).toBe(0);
+    expect(b.sgstAmount).toBe(0);
     expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
 
-  test('payment amount vs booking total recovers 18% GST (Amigo / Healing Tails pattern)', async () => {
+  test('does not invent GST from payment vs booking total when tax columns are 0', async () => {
     const b = await resolveBookingCustomerPaidFeeBreakdown({
       bookingId: '01610957',
       basePrice: 220,
@@ -442,12 +417,12 @@ describe('vendor-accrual-fee-breakdown', () => {
       isInterState: false,
       payment: { amount: 259.6, gst_amount: 0 },
     });
-    expect(b.gstTotal).toBe(39.6);
-    expect(b.cgstAmount).toBe(19.8);
-    expect(b.sgstAmount).toBe(19.8);
+    expect(b.gstTotal).toBe(0);
+    expect(b.cgstAmount).toBe(0);
+    expect(b.sgstAmount).toBe(0);
   });
 
-  test('Pawsome inclusive list extracts GST even when paid has a non-rate delta', async () => {
+  test('Pawsome keeps stored 0 GST when payment tax columns are 0', async () => {
     const b = await resolveBookingCustomerPaidFeeBreakdown({
       bookingId: 'e1652035',
       basePrice: 1593,
@@ -458,13 +433,13 @@ describe('vendor-accrual-fee-breakdown', () => {
       isInterState: false,
       payment: { amount: 1620, gst_amount: 0 },
     });
-    expect(b.gstTotal).toBe(243);
-    expect(b.cgstAmount).toBe(121.5);
-    expect(b.sgstAmount).toBe(121.5);
+    expect(b.gstTotal).toBe(0);
+    expect(b.cgstAmount).toBe(0);
+    expect(b.sgstAmount).toBe(0);
     expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
 
-  test('K9 inclusive boarding list extracts 18% GST when charged equals listed', async () => {
+  test('K9 keeps stored 0 GST when charged equals listed and tax columns are 0', async () => {
     const b = await resolveBookingCustomerPaidFeeBreakdown({
       bookingId: 'k9-july',
       basePrice: 1800,
@@ -474,7 +449,7 @@ describe('vendor-accrual-fee-breakdown', () => {
       categoryName: 'Boarding',
       payment: { amount: 1800, gst_amount: 0 },
     });
-    expect(b.gstTotal).toBe(274.58);
+    expect(b.gstTotal).toBe(0);
     expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
 

@@ -6,6 +6,7 @@ import type { BookingEarningsLine } from '@/lib/finance/settlement-audit-types';
 import { dataSourceLabel, formatInr } from '@/lib/finance/settlement-audit-types';
 import { winningOfferLabel } from '@/lib/finance/settlementExplanation';
 import { SettlementExplanation } from './SettlementExplanation';
+import { BookingInvoiceDownloadButton } from '../BookingInvoiceDownloadButton';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -67,9 +68,12 @@ export function SettlementBreakdownDrawer({
               {line.serviceName || 'Service'} · {line.customerName || 'Customer'}
             </p>
           </div>
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close">
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <BookingInvoiceDownloadButton bookingId={line.bookingId} />
+            <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close">
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
@@ -86,18 +90,22 @@ export function SettlementBreakdownDrawer({
             <Row label="Vendor coupon" value={moneyOrDash(b.vendorCoupon, !legacy)} />
             <Row label="Platform coupon" value={moneyOrDash(b.platformCoupon, !legacy)} />
             <Row label="Winning offer" value={legacy ? '—' : winningOfferLabel(line)} />
-            <Row label="GST" value={formatInr(line.gstTotal)} />
+            <Row label="GST %" value={`${Number(line.gstRate || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}%`} />
+            <Row label="CGST" value={formatInr(line.cgstAmount)} />
+            <Row label="SGST" value={formatInr(line.sgstAmount)} />
+            <Row label="IGST" value={formatInr(line.igstAmount)} />
+            <Row label="Total GST" value={formatInr(line.gstTotal)} />
             <Row label="Customer paid" value={formatInr(line.customerPaidTotal)} />
           </Section>
 
           <Section title="Settlement">
             <Row label="Commission base" value={moneyOrDash(b.commissionBase, !legacy)} />
             <Row
-              label="Commission %"
+              label="Platform commission %"
               value={legacy ? (line.commissionRate != null ? `${line.commissionRate}%` : '—') : `${b.commissionRate}%`}
             />
             <Row
-              label="Commission amount"
+              label="Platform commission"
               value={legacy ? formatInr(line.commissionAmount) : formatInr(b.commissionAmount)}
             />
             <Row

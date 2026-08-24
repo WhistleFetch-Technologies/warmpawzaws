@@ -53,14 +53,28 @@ describe('resolveBookingInvoiceAmounts', () => {
     expect(amounts.total).toBe(1180);
   });
 
-  it('prefers wp_financial_meta over payment when booking tax is missing', () => {
+  it('uses payment GST over financial meta when the payment snapshot has GST', () => {
     const amounts = resolveBookingInvoiceAmounts({
       basePrice: 1699,
       bookingTaxAmount: 0,
       bookingTotalAmount: 1699,
       isInterState: false,
       financialMeta: { cgst: 152.91, sgst: 152.91, totalTax: 305.82, finalPaid: 2004.82 },
-      payment: { gstAmount: 1, totalAmount: 1 },
+      payment: { gstAmount: 305.82, cgstAmount: 152.91, sgstAmount: 152.91, totalAmount: 2004.82 },
+    });
+    expect(amounts.taxAmount).toBe(305.82);
+    expect(amounts.cgst).toBe(152.91);
+    expect(amounts.sgst).toBe(152.91);
+    expect(amounts.total).toBe(2004.82);
+  });
+
+  it('uses wp_financial_meta when payment GST is absent', () => {
+    const amounts = resolveBookingInvoiceAmounts({
+      basePrice: 1699,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1699,
+      isInterState: false,
+      financialMeta: { cgst: 152.91, sgst: 152.91, totalTax: 305.82, finalPaid: 2004.82 },
     });
     expect(amounts.taxAmount).toBe(305.82);
     expect(amounts.cgst).toBe(152.91);
@@ -94,18 +108,70 @@ describe('resolveBookingInvoiceAmounts', () => {
     expect(amounts.igst).toBe(0);
   });
 
-  it('infers 18% GST when charged total is base + GST and tax columns are 0 (Sara Pets)', () => {
+  it('does not infer GST from charged delta or current catalogue rate when stored GST is 0', () => {
     const amounts = resolveBookingInvoiceAmounts({
       basePrice: 1485,
       bookingTaxAmount: 0,
       bookingTotalAmount: 1752.3,
       isInterState: false,
+      catalogGstRate: 18,
       payment: { amount: 1752.3, gstAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0 },
     });
-    expect(amounts.taxAmount).toBe(267.3);
-    expect(amounts.cgst).toBe(133.65);
-    expect(amounts.sgst).toBe(133.65);
+    expect(amounts.taxAmount).toBe(0);
+    expect(amounts.cgst).toBe(0);
+    expect(amounts.sgst).toBe(0);
     expect(amounts.igst).toBe(0);
+    expect(amounts.gstRate).toBe(0);
     expect(amounts.total).toBe(1752.3);
+    expect(amounts.unexplainedVariance).toBe(267.3);
+    expect(amounts.reconciliationNote).toContain('not treated as GST');
+  });
+
+  it('explains a higher captured payment with stored platform fee, not GST', () => {
+    const amounts = resolveBookingInvoiceAmounts({
+      basePrice: 1000,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1000,
+      catalogGstRate: 18,
+      payment: {
+        gstAmount: 0,
+        amount: 1040,
+        totalAmount: 1040,
+        platformFee: 40,
+      },
+    });
+    expect(amounts.taxAmount).toBe(0);
+    expect(amounts.platformFee).toBe(40);
+    expect(amounts.unexplainedVariance).toBe(0);
+    expect(amounts.total).toBe(1040);
+    expect(amounts.reconciliationNote).toBeUndefined();
+  });
+
+  it('keeps stored GST when it explains the captured payment', () => {
+    const amounts = resolveBookingInvoiceAmounts({
+      basePrice: 1000,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1000,
+      isInterState: false,
+      catalogGstRate: 0,
+      payment: { gstAmount: 180, cgstAmount: 90, sgstAmount: 90, totalAmount: 1180 },
+    });
+    expect(amounts.taxAmount).toBe(180);
+    expect(amounts.total).toBe(1180);
+    expect(amounts.unexplainedVariance).toBe(0);
+  });
+
+  it('does not use today\'s GST rate to explain an unexplained payment gap', () => {
+    const amounts = resolveBookingInvoiceAmounts({
+      basePrice: 1000,
+      bookingTaxAmount: 0,
+      bookingTotalAmount: 1000,
+      catalogGstRate: 18,
+      payment: { gstAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, totalAmount: 1180 },
+    });
+    expect(amounts.taxAmount).toBe(0);
+    expect(amounts.gstRate).toBe(0);
+    expect(amounts.total).toBe(1180);
+    expect(amounts.unexplainedVariance).toBe(180);
   });
 });

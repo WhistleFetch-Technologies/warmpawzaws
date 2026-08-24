@@ -214,9 +214,99 @@ export function sqlPackageAllocatedEarningsAgg(): string {
             ve.booking_id,
             ve.realized_at,
             ve.status,
-            ve.total_amount,
-            ve.commission_amount,
-            ve.amount,
+            CASE
+              WHEN COALESCE(
+                     (ve.metadata->'settlementSnapshot'->>'vendorSettlement')::numeric,
+                     (ve.metadata->>'vendorSettlement')::numeric,
+                     0
+                   ) > COALESCE(ve.amount, 0) + 0.01
+               AND ABS(
+                     COALESCE((ve.metadata->'settlementSnapshot'->>'commissionAmount')::numeric, (ve.metadata->>'commissionAmount')::numeric, 0)
+                   + COALESCE((ve.metadata->'settlementSnapshot'->>'vendorSettlement')::numeric, (ve.metadata->>'vendorSettlement')::numeric, 0)
+                   - COALESCE((ve.metadata->'settlementSnapshot'->>'commissionBase')::numeric, (ve.metadata->>'commissionBase')::numeric, 0)
+                   ) <= 0.05
+               AND (
+                     UPPER(COALESCE(
+                       ve.metadata->'settlementSnapshot'->'winningOffer'->>'fundingType',
+                       ve.metadata->'winningOffer'->>'fundingType',
+                       ve.metadata->>'fundingType',
+                       ''
+                     )) = 'PLATFORM'
+                     OR UPPER(COALESCE(
+                       ve.metadata->'settlementSnapshot'->'winningOffer'->>'offerType',
+                       ve.metadata->'winningOffer'->>'offerType',
+                       ''
+                     )) = 'PLATFORM_COUPON'
+                   )
+              THEN COALESCE(
+                     (ve.metadata->'settlementSnapshot'->>'commissionBase')::numeric,
+                     (ve.metadata->>'commissionBase')::numeric,
+                     ve.total_amount
+                   )
+              ELSE ve.total_amount
+            END AS total_amount,
+            CASE
+              WHEN COALESCE(
+                     (ve.metadata->'settlementSnapshot'->>'vendorSettlement')::numeric,
+                     (ve.metadata->>'vendorSettlement')::numeric,
+                     0
+                   ) > COALESCE(ve.amount, 0) + 0.01
+               AND ABS(
+                     COALESCE((ve.metadata->'settlementSnapshot'->>'commissionAmount')::numeric, (ve.metadata->>'commissionAmount')::numeric, 0)
+                   + COALESCE((ve.metadata->'settlementSnapshot'->>'vendorSettlement')::numeric, (ve.metadata->>'vendorSettlement')::numeric, 0)
+                   - COALESCE((ve.metadata->'settlementSnapshot'->>'commissionBase')::numeric, (ve.metadata->>'commissionBase')::numeric, 0)
+                   ) <= 0.05
+               AND (
+                     UPPER(COALESCE(
+                       ve.metadata->'settlementSnapshot'->'winningOffer'->>'fundingType',
+                       ve.metadata->'winningOffer'->>'fundingType',
+                       ve.metadata->>'fundingType',
+                       ''
+                     )) = 'PLATFORM'
+                     OR UPPER(COALESCE(
+                       ve.metadata->'settlementSnapshot'->'winningOffer'->>'offerType',
+                       ve.metadata->'winningOffer'->>'offerType',
+                       ''
+                     )) = 'PLATFORM_COUPON'
+                   )
+              THEN COALESCE(
+                     (ve.metadata->'settlementSnapshot'->>'commissionAmount')::numeric,
+                     (ve.metadata->>'commissionAmount')::numeric,
+                     ve.commission_amount
+                   )
+              ELSE ve.commission_amount
+            END AS commission_amount,
+            CASE
+              WHEN COALESCE(
+                     (ve.metadata->'settlementSnapshot'->>'vendorSettlement')::numeric,
+                     (ve.metadata->>'vendorSettlement')::numeric,
+                     0
+                   ) > COALESCE(ve.amount, 0) + 0.01
+               AND ABS(
+                     COALESCE((ve.metadata->'settlementSnapshot'->>'commissionAmount')::numeric, (ve.metadata->>'commissionAmount')::numeric, 0)
+                   + COALESCE((ve.metadata->'settlementSnapshot'->>'vendorSettlement')::numeric, (ve.metadata->>'vendorSettlement')::numeric, 0)
+                   - COALESCE((ve.metadata->'settlementSnapshot'->>'commissionBase')::numeric, (ve.metadata->>'commissionBase')::numeric, 0)
+                   ) <= 0.05
+               AND (
+                     UPPER(COALESCE(
+                       ve.metadata->'settlementSnapshot'->'winningOffer'->>'fundingType',
+                       ve.metadata->'winningOffer'->>'fundingType',
+                       ve.metadata->>'fundingType',
+                       ''
+                     )) = 'PLATFORM'
+                     OR UPPER(COALESCE(
+                       ve.metadata->'settlementSnapshot'->'winningOffer'->>'offerType',
+                       ve.metadata->'winningOffer'->>'offerType',
+                       ''
+                     )) = 'PLATFORM_COUPON'
+                   )
+              THEN COALESCE(
+                     (ve.metadata->'settlementSnapshot'->>'vendorSettlement')::numeric,
+                     (ve.metadata->>'vendorSettlement')::numeric,
+                     ve.amount
+                   )
+              ELSE ve.amount
+            END AS amount,
             ve.commission_rate,
             COALESCE(b.is_package_session, false) AS is_session,
             COALESCE(pp.unlimited_usage, false) AS unlimited,
