@@ -99,13 +99,11 @@ async function runAllMigrations() {
 
     // Read all migration files
     const migrationsDir = path.join(__dirname, '..', 'db', 'migrations');
-    const files = fs.readdirSync(migrationsDir)
-      .filter(file => file.endsWith('.sql'))
-      .sort((a, b) => {
-        const numA = parseInt(a.split('_')[0]) || 0;
-        const numB = parseInt(b.split('_')[0]) || 0;
-        return numA - numB;
-      });
+    const { sortMigrationFilenames, warnDuplicateMigrationPrefixes } = require('./migration-file-order');
+    const files = sortMigrationFilenames(
+      fs.readdirSync(migrationsDir).filter((file) => file.endsWith('.sql')),
+    );
+    warnDuplicateMigrationPrefixes(files);
 
     console.log(`📁 Found ${files.length} migration files`);
     console.log('');

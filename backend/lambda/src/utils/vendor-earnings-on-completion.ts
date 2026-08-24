@@ -256,12 +256,11 @@ export async function ensureVendorEarningsForCompletedBooking(
 
 ): Promise<boolean> {
 
-  if (isCanonicalPackageParentBooking(booking)) return false;
-  if (isPackageSessionChildBooking(booking)) return false;
-
   if (shouldSkipVendorEarningsForWappt(booking)) {
     return false;
   }
+  if (isCanonicalPackageParentBooking(booking)) return false;
+  if (isPackageSessionChildBooking(booking)) return false;
 
 
 

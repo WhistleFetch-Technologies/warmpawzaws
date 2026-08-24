@@ -12,6 +12,7 @@ jest.mock('../vendor-resolve', () => ({
 
 jest.mock('../vendor-commission-rate', () => ({
   isCanonicalPackageParentBooking: jest.fn(() => false),
+  isPackageSessionChildBooking: jest.fn(() => false),
   getVendorCommissionRate: jest.fn(async () => 20),
 }));
 

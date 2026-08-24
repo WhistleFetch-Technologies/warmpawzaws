@@ -96,6 +96,10 @@ export async function hasBookingSlotOverlap(
   );
 }
 
+/** bookings.cancellation_reason when payment captured but slot was taken at verify.
+ * Support playbook: find bookings with this reason + payment_status=paid;
+ * payments.metadata.refund_required=true and refund_reason=SLOT_CONFLICT_AT_VERIFY.
+ * Refund is manual — do not auto-refund. */
 export const SLOT_TAKEN_AT_VERIFY_REASON = 'slot_taken_at_verify';
 
 export function overlapParamsFromBookingRow(

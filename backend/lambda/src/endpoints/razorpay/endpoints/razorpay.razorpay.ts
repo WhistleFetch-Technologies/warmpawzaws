@@ -1445,8 +1445,28 @@ class VerifyPaymentHandler extends BaseHandler {
               WHERE id = $1`,
               [bookingId, SLOT_TAKEN_AT_VERIFY_REASON]
             );
+            if (payment.id) {
+              await client.query(
+                `UPDATE payments
+                 SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+                 WHERE id = $1`,
+                [
+                  payment.id,
+                  JSON.stringify({
+                    refund_required: true,
+                    refund_reason: 'SLOT_CONFLICT_AT_VERIFY',
+                    refund_booking_id: bookingId,
+                  }),
+                ]
+              ).catch((metaErr: { message?: string }) => {
+                console.warn(
+                  '[PAYMENT-VERIFY] Could not tag payment for slot-conflict refund:',
+                  metaErr?.message
+                );
+              });
+            }
             console.warn(
-              '[PAYMENT-VERIFY] Slot conflict at verify — payment captured, booking not confirmed:',
+              '[PAYMENT-VERIFY] Slot conflict at verify — payment captured, booking not confirmed. Manual refund required:',
               bookingId
             );
             return {

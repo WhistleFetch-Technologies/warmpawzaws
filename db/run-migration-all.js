@@ -314,13 +314,11 @@ async function runAllMigrations() {
   // Read all migration files and sort them
   let files;
   try {
-    files = fs.readdirSync(migrationsDir)
-      .filter(file => file.endsWith('.sql'))
-      .sort((a, b) => {
-        const numA = parseInt(a.split('_')[0]) || 0;
-        const numB = parseInt(b.split('_')[0]) || 0;
-        return numA - numB;
-      });
+    const { sortMigrationFilenames, warnDuplicateMigrationPrefixes } = require('../scripts/migration-file-order');
+    files = sortMigrationFilenames(
+      fs.readdirSync(migrationsDir).filter((file) => file.endsWith('.sql')),
+    );
+    warnDuplicateMigrationPrefixes(files);
   } catch (error) {
     console.error('❌ Failed to read migrations directory: ' + error.message);
     process.exit(1);

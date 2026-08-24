@@ -838,6 +838,8 @@ export function UniversalPaymentPage({
 
   const calculateTax = useCallback(async () => {
     if (isWapptAppointmentPayment) {
+      // WAPPT payable is the catalogue appointment_fee (server preflight). No extra GST is added.
+      // Finance must sign off before changing this to exclusive GST.
       setTaxBreakdown({
         subtotal: baseAmount,
         cgst: 0,
