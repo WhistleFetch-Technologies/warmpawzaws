@@ -10,4 +10,13 @@ describe('isPublicEndpoint', () => {
     expect(isPublicEndpoint('/admin/analytics/product/events')).toBe(false);
     expect(isPublicEndpoint('/admin/analytics/product/screens')).toBe(false);
   });
+
+  it('allows guest GET of the Google Maps browser key', () => {
+    expect(isPublicEndpoint('/config/google-maps-key', 'GET')).toBe(true);
+    expect(isPublicEndpoint('/config/google-maps-key')).toBe(true);
+  });
+
+  it('keeps PUT of the Google Maps key authenticated', () => {
+    expect(isPublicEndpoint('/config/google-maps-key', 'PUT')).toBe(false);
+  });
 });

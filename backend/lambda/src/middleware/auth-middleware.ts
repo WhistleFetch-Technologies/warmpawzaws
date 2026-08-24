@@ -56,7 +56,14 @@ const PUBLIC_PATTERNS = [
 /**
  * Check if an endpoint is public (doesn't require auth)
  */
-export function isPublicEndpoint(path: string): boolean {
+export function isPublicEndpoint(path: string, method?: string): boolean {
+  const verb = (method || 'GET').toUpperCase();
+  // Guest "Use current location" reverse-geocodes with this browser key.
+  // PUT stays authenticated so the key cannot be overwritten anonymously.
+  if (verb === 'GET' && (path === '/config/google-maps-key' || path.endsWith('/config/google-maps-key'))) {
+    return true;
+  }
+
   // Check exact matches
   if (PUBLIC_ENDPOINTS.some(ep => path === ep || path.startsWith(ep + '/'))) {
     return true;
@@ -203,7 +210,7 @@ export function requireAuth() {
     const path = c.req.path;
     
     // Skip auth for public endpoints
-    if (isPublicEndpoint(path)) {
+    if (isPublicEndpoint(path, c.req.method)) {
       return next();
     }
 
@@ -243,7 +250,7 @@ export function requireAdmin() {
     const path = c.req.path;
     
     // Skip auth for public endpoints
-    if (isPublicEndpoint(path)) {
+    if (isPublicEndpoint(path, c.req.method)) {
       return next();
     }
     
