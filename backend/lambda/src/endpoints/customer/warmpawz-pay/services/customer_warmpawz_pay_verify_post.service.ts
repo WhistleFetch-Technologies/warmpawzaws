@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { getRazorpayConfig } from '../../../../utils/payments/razorpay-client';
+import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
 import { verifyWpayRazorpaySignature } from '../../../../utils/wpay-razorpay-order';
 import { dbWpayPaymentByIdForCustomer } from '../repos/wpay-payment.repo';
 import {
@@ -111,10 +111,11 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
       return c.json({ success: false, error: 'Missing Razorpay payment details' }, 400);
     }
 
-    const customerId = await resolveCustomerIdFromPhone(phone);
-    if (!customerId) {
-      return c.json({ success: false, error: 'Customer not found' }, 404);
+    const identity = await resolveWpayAuthenticatedCustomer(c, phone);
+    if (!identity.ok) {
+      return c.json({ success: false, error: identity.error }, identity.status);
     }
+    const customerId = identity.customerId;
 
     const existing = await dbWpayPaymentByIdForCustomer(paymentId, customerId);
     if (!existing) {

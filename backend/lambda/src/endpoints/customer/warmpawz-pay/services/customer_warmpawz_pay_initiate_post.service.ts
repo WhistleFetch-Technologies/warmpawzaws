@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { createWpayRazorpayOrder } from '../../../../utils/wpay-razorpay-order';
+import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
 import { dbWpayVendorById } from '../repos/wpay-vendor-detail.repo';
 import {
   dbIsAppointmentCreditConsumed,
@@ -40,10 +40,11 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       return c.json({ success: false, error: 'Invalid booking id' }, 400);
     }
 
-    const customerId = await resolveCustomerIdFromPhone(phone);
-    if (!customerId) {
-      return c.json({ success: false, error: 'Customer not found' }, 404);
+    const identity = await resolveWpayAuthenticatedCustomer(c, phone);
+    if (!identity.ok) {
+      return c.json({ success: false, error: identity.error }, identity.status);
     }
+    const customerId = identity.customerId;
 
     const vendorRow = await dbWpayVendorById(vendorId);
     if (!vendorRow) {

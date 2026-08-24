@@ -191,12 +191,6 @@ export async function queryAndEnrichDiscoverVendors(
     enrichVendor
   );
 
-  // #region agent log
-  if (discoveryOptions.wapptCatalogueOnly) {
-    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'discover-services/query-enrich.ts',message:'wappt catalogue vendor count',data:{vendorCount:vendorRows.rows?.length??0,category,serviceStyle:serviceStyleNormDiscover,providerCount:providers.length},timestamp:Date.now(),hypothesisId:'H1',runId:'pre-fix'})}).catch(()=>{});
-  }
-  // #endregion
-
   return {
     providers: providers as Record<string, unknown>[],
     vendorRows,

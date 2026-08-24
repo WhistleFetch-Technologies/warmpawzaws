@@ -821,11 +821,6 @@ export function UserAccountSidebar({
       );
       console.log('📚 [CUSTOMER-PROFILE] Loaded bookings:', result);
       const rows = Array.isArray(result.bookings) ? result.bookings : [];
-      // #region agent log
-      if (rows[0]) {
-        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'UserAccountSidebar.tsx:loadBookings',message:'profile bookings loaded',data:{serviceName:rows[0].serviceName??rows[0].service_name,commerce_mode:rows[0].commerce_mode,service_id:rows[0].service_id},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      }
-      // #endregion
       setBookings(rows.map((row) => normalizeCustomerBookingRow(row)));
     } catch (error) {
       console.error('Error loading bookings:', error);

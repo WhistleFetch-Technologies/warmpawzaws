@@ -11,8 +11,5 @@ export async function executediscoverServices(
   overrideOptions?: CatalogueDiscoveryOptions,
 ) {
   const discoveryOptions = overrideOptions ?? resolveWarmpawzCatalogueDiscoveryOptions();
-  // #region agent log
-  fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'discover-services.service.ts',message:'discover-services wappt options',data:{wapptCatalogueOnly:!!discoveryOptions.wapptCatalogueOnly,omitPricing:!!discoveryOptions.omitPricing,category:c.req.query('category'),serviceStyle:c.req.query('serviceStyle')},timestamp:Date.now(),hypothesisId:'H1',runId:'pre-fix'})}).catch(()=>{});
-  // #endregion
   return runDiscoverServices(c, discoveryOptions);
 }

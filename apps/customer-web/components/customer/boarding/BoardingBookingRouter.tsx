@@ -1346,9 +1346,6 @@ export function BoardingBookingRouter({
     if (selectedPet) {
       void prefillBoardingIntake(selectedPet);
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'BoardingBookingRouter.tsx:handleContinueFromWapptBoardingDetails',message:'boarding wappt -> intake',data:{checkInDate,checkOutDate,petId:selectedPet?.id},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-    // #endregion
     setStep('boarding_form');
   };
 
