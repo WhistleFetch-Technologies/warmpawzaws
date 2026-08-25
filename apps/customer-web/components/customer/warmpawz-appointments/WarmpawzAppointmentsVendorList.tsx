@@ -172,7 +172,7 @@ export function WarmpawzAppointmentsVendorList({
         iconColor="text-white"
         stats={EMPTY_SERVICE_HEADER_STATS}
         onBack={onBack}
-        onCloseToHome={onGoHome}
+        backButtonPlacement="topRight"
         showBackButton
         headerColor="bg-[#FF8C42]"
         sheetToneClass="bg-white"
