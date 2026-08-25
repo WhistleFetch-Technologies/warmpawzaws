@@ -1,6 +1,6 @@
 import { apiClient } from '@/lib/api-client';
 import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
-import { openWarmpawzRazorpayCheckout } from '@/lib/razorpay/open-warmpawz-razorpay-checkout';
+import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { razorpaySafeDescription } from '@/lib/razorpay/razorpay-utils';
 
 export type WpayInitiateResponse = {
@@ -71,7 +71,7 @@ export async function runWpayRazorpayCheckout(params: {
   const paymentDescription = razorpaySafeDescription(`Warmpawz Pay - ${vendorName}`);
 
   return new Promise<WpayVerifyResponse>((resolve, reject) => {
-    void openWarmpawzRazorpayCheckout({
+    void openStandardRazorpayCheckout({
       key: initiate.razorpayKeyId!,
       amountPaise,
       currency: initiate.currency || 'INR',
@@ -80,7 +80,6 @@ export async function runWpayRazorpayCheckout(params: {
       order_id: initiate.razorpayOrderId,
       customerPhone,
       customerEmail: checkoutEmail,
-      includeInstrumentBlocks: true,
       handler: async (response: {
         razorpay_order_id: string;
         razorpay_payment_id: string;

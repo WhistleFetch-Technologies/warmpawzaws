@@ -3,7 +3,7 @@
  * Centralized functions for Razorpay payment processing
  */
 
-import { WARMPAWZ_RAZORPAY_CHECKOUT_THEME } from '@/lib/razorpay/build-standard-checkout-options';
+import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
 
 /** Razorpay often hides UPI (especially on mobile / live mode) when `prefill.email` is absent. */
 export const RAZORPAY_PREFILL_EMAIL_FALLBACK = 'test@example.com';
@@ -274,37 +274,26 @@ export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions
     throw new Error('Razorpay key is missing. Please provide keyId or set NEXT_PUBLIC_RAZORPAY_KEY environment variable.');
   }
 
-  const digits =
-    options.customerPhone && String(options.customerPhone).trim()
-      ? String(options.customerPhone).replace(/\D/g, '')
-      : '';
-  const e164 = digitsToRazorpayContactE164(digits);
-  const emailRaw = options.customerEmail?.trim();
-  const email =
-    emailRaw && emailRaw.includes('@') && emailRaw !== 'undefined' && emailRaw !== 'null'
-      ? emailRaw
-      : undefined;
-  const prefill: Record<string, string> = {};
-  if (e164) prefill.contact = e164;
-  if (email) prefill.email = email;
-
-  const razorpayOptions = sanitizeRazorpayInstanceOptions({
+  const razorpayOptions = buildSanitizedStandardRazorpayCheckoutOptions({
     key: razorpayKey,
-    amount: Math.round(options.amount * 100), // Convert to paise
+    amountPaise: Math.max(1, Math.round(Number(options.amount) * 100)),
     currency: options.currency || 'INR',
     name: 'Warmpawz',
     description: options.description?.trim() ? options.description : 'Payment',
     order_id: options.orderId,
     handler: options.onSuccess,
-    config: getWarmpawzRazorpayUpiDisplayConfig(),
-    method: { upi: true as const },
-    ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
-    theme: WARMPAWZ_RAZORPAY_CHECKOUT_THEME,
+    customerPhone: options.customerPhone,
+    customerEmail: options.customerEmail,
     modal: {
       ondismiss: options.onDismiss || (() => { }),
     },
   });
 
   const razorpay = new (window as any).Razorpay(razorpayOptions);
+  if (typeof razorpay.on === 'function' && options.onFailure) {
+    razorpay.on('payment.failed', (resp: { error?: { description?: string; reason?: string } }) => {
+      options.onFailure(new Error(resp?.error?.description || resp?.error?.reason || 'Payment failed'));
+    });
+  }
   razorpay.open();
 };

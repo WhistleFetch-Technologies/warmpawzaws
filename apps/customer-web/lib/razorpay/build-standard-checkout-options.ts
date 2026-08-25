@@ -1,17 +1,17 @@
 /**
- * Shared Razorpay Standard Checkout (`checkout.js`) options.
+ * Canonical Warmpawz Razorpay Standard Checkout options.
  *
- * Razorpay / NPCI are deprecating UPI Collect (manual VPA) on many surfaces; **only**
- * `flows: ['collect']` can yield no eligible instruments on web (Razorpay error:
- * "No appropriate payment method found"). Include **qr** (and **intent** where supported)
- * alongside collect so UPI stays available; VPA / collect remains best-effort per Razorpay.
- * @see https://razorpay.com/docs/announcements/upi-collect-migration/standard-integration/
+ * Matches the Aug 5–Aug 25 Pay Bill minimal checkout:
+ * key, amount, currency, name, description, order_id, handler,
+ * optional prefill, theme, modal.
+ *
+ * Does not add UPI instrument blocks, `method: { upi: true }`,
+ * or a fallback / invented email.
  */
 
 import { apiClient } from '@/lib/api-client';
 import {
   digitsToRazorpayContactE164,
-  RAZORPAY_PREFILL_EMAIL_FALLBACK,
   sanitizeRazorpayInstanceOptions,
 } from '@/lib/razorpay/razorpay-utils';
 
@@ -49,28 +49,26 @@ export interface BuildStandardRazorpayCheckoutOptionsInput {
   name?: string;
   description: string;
   order_id?: string;
-  /** Dashboard Checkout Configuration ID (can re-enable collect / alter UPI vs QR). */
-  checkout_config_id?: string;
   handler: (response: any) => void | Promise<void>;
   /** Raw or digits-only phone; digits are extracted for E.164 prefill. */
   customerPhone?: string | null;
   customerEmail?: string | null;
   prefillName?: string | null;
+  /**
+   * Business-specific extra prefill (e.g. user-entered VPA).
+   * Does not add UPI instrument blocks or invent email.
+   */
+  extraPrefill?: Record<string, string>;
   theme?: { color?: string; backdrop_color?: string; hide_topbar?: boolean };
   modal?: Record<string, unknown>;
   offers?: string[];
   notes?: Record<string, unknown>;
   retry?: { enabled: boolean; max_count: number };
-  /**
-   * When true (default), UPI `display.blocks` (qr / intent / collect) + `method: { upi: true }`.
-   * When false, default Razorpay checkout layout (cards / netbanking / full method list).
-   */
-  includeInstrumentBlocks?: boolean;
 }
 
 /**
- * Builds checkout options and runs {@link sanitizeRazorpayInstanceOptions}.
- * Prefers E.164 `prefill.contact` and optional `prefill.email` when valid.
+ * Builds minimal Standard Checkout options and runs {@link sanitizeRazorpayInstanceOptions}.
+ * Prefills E.164 `contact` and a real `email` only when those values exist.
  */
 export function buildSanitizedStandardRazorpayCheckoutOptions(
   input: BuildStandardRazorpayCheckoutOptionsInput
@@ -86,21 +84,13 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
     customerPhone,
     customerEmail,
     prefillName,
+    extraPrefill,
     theme,
     modal,
     offers,
     notes,
     retry,
-    includeInstrumentBlocks = true,
   } = input;
-
-  const checkoutConfigId =
-    typeof input.checkout_config_id === 'string' && input.checkout_config_id.trim()
-      ? input.checkout_config_id.trim()
-      : typeof process.env.NEXT_PUBLIC_RAZORPAY_CHECKOUT_CONFIG_ID === 'string' &&
-          process.env.NEXT_PUBLIC_RAZORPAY_CHECKOUT_CONFIG_ID.trim()
-        ? process.env.NEXT_PUBLIC_RAZORPAY_CHECKOUT_CONFIG_ID.trim()
-        : undefined;
 
   const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
   const e164 = digitsToRazorpayContactE164(phoneDigits);
@@ -110,32 +100,19 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
   const email =
     emailTrim && emailTrim !== 'undefined' && emailTrim !== 'null' ? emailTrim : undefined;
 
-  const emailForPrefill =
-    includeInstrumentBlocks && e164 && !email ? RAZORPAY_PREFILL_EMAIL_FALLBACK : email;
-
   const prefill: Record<string, string> = {};
   if (e164) prefill.contact = e164;
-  if (emailForPrefill) prefill.email = emailForPrefill;
+  if (email) prefill.email = email;
   const nameTrim =
     typeof prefillName === 'string' && prefillName.trim() ? prefillName.trim() : '';
   if (nameTrim) prefill.name = nameTrim;
-
-  const display: Record<string, unknown> = {
-    preferences: {
-      show_default_blocks: true,
-    },
-  };
-
-  if (includeInstrumentBlocks) {
-    display.blocks = {
-      upi: {
-        name: 'Pay using UPI',
-        instruments: [{ method: 'upi', flows: ['collect', 'intent', 'qr'] }],
-      },
-    };
-    display.sequence = ['block.upi'];
-  } else {
-    display.preferences = { show_default_blocks: true };
+  if (extraPrefill) {
+    for (const [pk, pv] of Object.entries(extraPrefill)) {
+      const value = typeof pv === 'string' ? pv.trim() : '';
+      if (value && value !== 'undefined' && value !== 'null') {
+        prefill[pk] = value;
+      }
+    }
   }
 
   const offerIds =
@@ -146,7 +123,7 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
           .filter((s) => s.length > 0 && s !== 'undefined' && s !== 'null')
       : [];
 
-  const checkoutPayload: Record<string, any> = {
+  const raw: Record<string, any> = {
     key,
     amount: Math.max(1, Math.round(Number(amountPaise))),
     currency,
@@ -154,17 +131,7 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
     description: String(description || 'Payment').trim() || 'Payment',
     handler,
     ...(order_id ? { order_id } : {}),
-    ...(checkoutConfigId ? { checkout_config_id: checkoutConfigId } : {}),
     ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
-    config: { display },
-  };
-
-  if (includeInstrumentBlocks) {
-    checkoutPayload.method = { upi: true };
-  }
-
-  const raw: Record<string, any> = {
-    ...checkoutPayload,
     theme: {
       ...WARMPAWZ_RAZORPAY_CHECKOUT_THEME,
       ...theme,
@@ -176,9 +143,5 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
     ...(retry ? { retry } : {}),
   };
 
-  const sanitized = sanitizeRazorpayInstanceOptions(raw);
-
-  console.log('Razorpay options:', sanitized);
-
-  return sanitized;
+  return sanitizeRazorpayInstanceOptions(raw);
 }

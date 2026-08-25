@@ -2,10 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
+import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
+import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { Coffee, Users, Calendar, Clock, Star } from 'lucide-react';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 
@@ -166,7 +164,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
           }
 
           const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
-          const options = buildSanitizedStandardRazorpayCheckoutOptions({
+          await openStandardRazorpayCheckout({
             key: (orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
             amountPaise: Math.max(1, Math.round(Number(totalAmount) * 100)),
             currency: 'INR',
@@ -175,7 +173,6 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
             order_id: orderRes.order_id,
             customerPhone,
             customerEmail: checkoutEmail,
-            includeInstrumentBlocks: true,
             handler: async (response: any) => {
               try {
                 // Verify payment
@@ -202,10 +199,11 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
                 setProcessing(false);
               },
             },
+            onPaymentFailed: (err) => {
+              setError(err.message);
+              setProcessing(false);
+            },
           });
-
-          const razorpay = new (window as any).Razorpay(options);
-          razorpay.open();
         } catch (paymentErr: any) {
           console.error('Payment error:', paymentErr);
           setError(paymentErr.message || 'Payment failed. Please try again.');

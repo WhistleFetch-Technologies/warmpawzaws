@@ -16,10 +16,8 @@ import {
   formatWalletTopUpError,
   normalizeRazorpayCreateOrderResponse,
 } from '@/lib/wallet-razorpay-helpers';
-import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
+import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
+import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { toast } from 'sonner';
 
 // Razorpay type declaration
@@ -290,7 +288,7 @@ export function EnhancedWalletPage({
       const payAmountPaise = Math.round(order.amount * 100);
       const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
 
-      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+      await openStandardRazorpayCheckout({
         key: order.keyId,
         amountPaise: payAmountPaise,
         currency: order.currency || 'INR',
@@ -299,7 +297,6 @@ export function EnhancedWalletPage({
         order_id: order.orderId,
         customerPhone,
         customerEmail: checkoutEmail,
-        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             const MAX_RETRIES = 3;
@@ -347,10 +344,11 @@ export function EnhancedWalletPage({
         modal: {
           ondismiss: () => setProcessingTopUp(false),
         },
+        onPaymentFailed: (err) => {
+          toast.error(err.message);
+          setProcessingTopUp(false);
+        },
       });
-
-      const razorpay = new window.Razorpay(options);
-      razorpay.open();
     } catch (error) {
       console.error('Error initiating top-up:', error);
       toast.error(formatWalletTopUpError(error));

@@ -55,15 +55,10 @@ import {
   type UnifiedResolverResponse,
 } from '@/lib/pricing/unified-resolver-response';
 import {
-  digitsToRazorpayContactE164,
-  RAZORPAY_PREFILL_EMAIL_FALLBACK,
-  sanitizeRazorpayInstanceOptions,
-  getWarmpawzRazorpayUpiDisplayConfig,
-} from '@/lib/razorpay/razorpay-utils';
-import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   WARMPAWZ_RAZORPAY_CHECKOUT_THEME,
 } from '@/lib/razorpay/build-standard-checkout-options';
+import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
 import { isWarmpawzAppointmentsPaymentRequest, WAPPT_APPOINTMENT_SERVICE_ID } from '@/lib/warmpawz-appointments-customer';
 import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
@@ -2216,8 +2211,10 @@ export function UniversalPaymentPage({
             return;
           }
           const checkoutEmailArg =
-            (customerEmail && customerEmail.trim()) || RAZORPAY_PREFILL_EMAIL_FALLBACK;
-          const options = buildSanitizedStandardRazorpayCheckoutOptions({
+            typeof customerEmail === 'string' && customerEmail.includes('@')
+              ? customerEmail.trim()
+              : undefined;
+          await openStandardRazorpayCheckout({
             key: keyId,
             amountPaise: Math.max(1, Math.round(Number(rz.amount))),
             currency: rz.currency || 'INR',
@@ -2226,7 +2223,6 @@ export function UniversalPaymentPage({
             order_id: rz.razorpayOrderId,
             customerPhone: d.customerPhone || customerPhone,
             customerEmail: checkoutEmailArg,
-            includeInstrumentBlocks: true,
             handler: async (response: any) => {
               try {
                 await apiClient.post(`/meal/orders/${orderId}/confirm-payment`, {
@@ -2246,9 +2242,11 @@ export function UniversalPaymentPage({
             modal: {
               ondismiss: () => setProcessing(false),
             },
+            onPaymentFailed: (err) => {
+              toast.error(err.message);
+              setProcessing(false);
+            },
           });
-          const razorpay = new (window as any).Razorpay(options);
-          razorpay.open();
           return;
         }
 
@@ -2303,8 +2301,10 @@ export function UniversalPaymentPage({
             return;
           }
           const checkoutEmailArg =
-            (customerEmail && customerEmail.trim()) || RAZORPAY_PREFILL_EMAIL_FALLBACK;
-          const options = buildSanitizedStandardRazorpayCheckoutOptions({
+            typeof customerEmail === 'string' && customerEmail.includes('@')
+              ? customerEmail.trim()
+              : undefined;
+          await openStandardRazorpayCheckout({
             key: keyId,
             amountPaise: Math.max(1, Math.round(Number(rz.amount))),
             currency: rz.currency || 'INR',
@@ -2313,7 +2313,6 @@ export function UniversalPaymentPage({
             order_id: rz.razorpayOrderId,
             customerPhone,
             customerEmail: checkoutEmailArg,
-            includeInstrumentBlocks: true,
             handler: async (response: any) => {
               try {
                 await confirmMealSubscriptionPayment(
@@ -2333,9 +2332,11 @@ export function UniversalPaymentPage({
             modal: {
               ondismiss: () => setProcessing(false),
             },
+            onPaymentFailed: (err) => {
+              toast.error(err.message);
+              setProcessing(false);
+            },
           });
-          const razorpay = new (window as any).Razorpay(options);
-          razorpay.open();
           return;
         }
         await confirmMealSubscriptionPayment(mealSubscriptionId, customerId, undefined);
@@ -3452,7 +3453,6 @@ export function UniversalPaymentPage({
       const paymentDescription = titlePart
         ? `${String(titlePart).trim()} â€” ${vendorPart}`
         : `Payment â€” ${vendorPart}`;
-      const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
 
       let resolvedCheckoutEmail: string | undefined =
         typeof customerEmail === 'string' && customerEmail.includes('@') ? customerEmail.trim() : undefined;
@@ -3482,7 +3482,6 @@ export function UniversalPaymentPage({
           : [];
       const amountPaise = Math.max(1, Math.round(Number(amountToCharge) * 100));
 
-      const e164Contact = digitsToRazorpayContactE164(phoneDigits);
       const prefillEmail =
         resolvedCheckoutEmail &&
         resolvedCheckoutEmail.includes('@') &&
@@ -3490,18 +3489,8 @@ export function UniversalPaymentPage({
         resolvedCheckoutEmail !== 'null'
           ? resolvedCheckoutEmail
           : undefined;
-      const razorpayPrefill: Record<string, string> = {};
-      if (e164Contact) razorpayPrefill.contact = e164Contact;
-      if (prefillEmail) razorpayPrefill.email = prefillEmail;
       const upiVpaTrimmed = manualUpiVpa.replace(/\s+/g, '').trim().toLowerCase();
       const validPrefillVpa = upiVpaTrimmed.length > 0 && /^[\w.+-]+@[\w.-]+$/.test(upiVpaTrimmed);
-      if (validPrefillVpa) {
-        razorpayPrefill.vpa = upiVpaTrimmed;
-        razorpayPrefill.method = 'upi';
-      } else if (e164Contact && !razorpayPrefill.email) {
-        // Matches wallet/shop flows: Razorpay often drops UPI on mobile/live without any prefill.email.
-        razorpayPrefill.email = RAZORPAY_PREFILL_EMAIL_FALLBACK;
-      }
 
       const processRazorpaySuccess = async (response: any) => {
         try {
@@ -3727,13 +3716,17 @@ export function UniversalPaymentPage({
         }
       };
 
-      const options: Record<string, unknown> = {
-        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amountPaise,
+      const checkoutInput = {
+        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise,
         currency: 'INR',
         name: 'Warmpawz',
         description: paymentDescription,
         order_id: razorpayOrderId,
+        customerPhone,
+        customerEmail: prefillEmail,
+        extraPrefill: validPrefillVpa ? { vpa: upiVpaTrimmed } : undefined,
+        offers: razorpayOfferIds.length > 0 ? razorpayOfferIds : undefined,
         handler: async (response: any) => {
           razorpayGatewaySuccessHandled = true;
           await processRazorpaySuccess(response);
@@ -3746,21 +3739,6 @@ export function UniversalPaymentPage({
           },
         },
       };
-      // UPI display block (collect/intent/qr) + method.upi=true is what surfaces
-      // GPay/PhonePe/Paytm intents on Capacitor Android WebView. The legacy
-      // `banks` block hid UPI on many Android builds. When the user has
-      // pre-entered a VPA, fall back to default layout + `prefill.vpa` (Razorpay
-      // Payment Linkâ€“style) so collect runs straight through without the picker.
-      if (!validPrefillVpa) {
-        options.config = getWarmpawzRazorpayUpiDisplayConfig();
-        options.method = { upi: true };
-      }
-      if (Object.keys(razorpayPrefill).length > 0) {
-        options.prefill = razorpayPrefill;
-      }
-      if (validPrefillVpa) {
-        options.method = 'upi';
-      }
 
       console.log('ðŸš€ [PAYMENT] Opening Razorpay checkout...', {
         razorpayOrderId,
@@ -3771,23 +3749,8 @@ export function UniversalPaymentPage({
 
       if (isWarmpawzCustomerNativeWebView()) {
         const w = window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } };
-        const nativeOpenPayload: Record<string, unknown> = {
-          description: paymentDescription,
-          currency: 'INR',
-          key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-          amount: amountPaise,
-          name: 'Warmpawz',
-          order_id: razorpayOrderId,
-          ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
-          theme: WARMPAWZ_RAZORPAY_CHECKOUT_THEME,
-          // Keep parity with web `new Razorpay(options)` â€” UPI display block
-          // (collect/intent/qr) + `method: { upi: true }` is what surfaces UPI
-          // on react-native-razorpay too. With a manual VPA, switch to single
-          // `method: 'upi'` + `prefill.vpa` for a straight collect flow.
-          ...(!validPrefillVpa
-            ? { config: getWarmpawzRazorpayUpiDisplayConfig(), method: { upi: true as const } }
-            : { method: 'upi' as const }),
-        };
+        const sanitized = buildSanitizedStandardRazorpayCheckoutOptions(checkoutInput);
+        const { handler: _handler, ...nativeOpenPayload } = sanitized;
         try {
           const resultPromise = waitForWarmpawzNativeRazorpayResult();
           w.ReactNativeWebView!.postMessage(
@@ -3807,30 +3770,15 @@ export function UniversalPaymentPage({
           setProcessing(false);
         }
       } else {
-        // âœ… FIX: Double-check Razorpay is available before opening (browser / PWA)
-        if (!window.Razorpay) {
-          console.error('âŒ [PAYMENT] Razorpay not available after script load');
-          throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
-        }
-
         try {
-          const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
-          // âœ… Listen for payment failures (these don't trigger the handler callback)
-          razorpay.on('payment.failed', (resp: any) => {
-            razorpayPaymentFailed = true;
-            console.error('âŒ [RAZORPAY] Payment failed event:', {
-              code: resp?.error?.code,
-              description: resp?.error?.description,
-              source: resp?.error?.source,
-              step: resp?.error?.step,
-              reason: resp?.error?.reason,
-              orderId: resp?.error?.metadata?.order_id,
-              paymentId: resp?.error?.metadata?.payment_id,
-            });
-            toast.error(`Payment failed: ${resp?.error?.description || 'Unknown error'}. Please try again.`);
-            setProcessing(false);
+          await openStandardRazorpayCheckout({
+            ...checkoutInput,
+            onPaymentFailed: (err) => {
+              razorpayPaymentFailed = true;
+              toast.error(`Payment failed: ${err.message}. Please try again.`);
+              setProcessing(false);
+            },
           });
-          razorpay.open();
           console.log('âœ… [PAYMENT] Razorpay checkout opened successfully');
         } catch (openError: any) {
           console.error('âŒ [PAYMENT] Failed to open Razorpay checkout:', openError);

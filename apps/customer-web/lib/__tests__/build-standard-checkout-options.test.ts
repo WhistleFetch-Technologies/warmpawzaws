@@ -27,21 +27,32 @@ describe('buildSanitizedStandardRazorpayCheckoutOptions', () => {
     });
   });
 
-  test('prioritizes UPI without disabling default Razorpay method blocks', () => {
+  test('builds minimal Standard Checkout without UPI blocks or invented email', () => {
     const options = buildSanitizedStandardRazorpayCheckoutOptions({
       ...minimalInput,
       amountPaise: 2302920,
       customerPhone: '7204349299',
     });
     expect(options.amount).toBe(2302920);
-    expect(options.method).toEqual({ upi: true });
-    expect(options.config.display.blocks.upi.name).toBe('Pay using UPI');
-    expect(options.config.display.blocks.upi.instruments).toEqual([
-      { method: 'upi', flows: ['collect', 'intent', 'qr'] },
-    ]);
-    expect(options.config.display.sequence).toEqual(['block.upi']);
-    expect(options.config.display.preferences.show_default_blocks).toBe(true);
-    expect(options.prefill.contact).toBe('+917204349299');
+    expect(options.method).toBeUndefined();
+    expect(options.config).toBeUndefined();
+    expect(options.prefill).toEqual({ contact: '+917204349299' });
+    expect(options.prefill.email).toBeUndefined();
+  });
+
+  test('prefills a real profile email and does not invent one', () => {
+    const withEmail = buildSanitizedStandardRazorpayCheckoutOptions({
+      ...minimalInput,
+      customerPhone: '7204349299',
+      customerEmail: 'owner@example.com',
+    });
+    expect(withEmail.prefill.email).toBe('owner@example.com');
+
+    const phoneOnly = buildSanitizedStandardRazorpayCheckoutOptions({
+      ...minimalInput,
+      customerPhone: '7204349299',
+    });
+    expect(phoneOnly.prefill.email).toBeUndefined();
   });
 
   test('preserves caller theme overrides while forcing hide_topbar true', () => {

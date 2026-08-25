@@ -5,11 +5,11 @@
  * exactly as the WPay backend returned them.
  */
 
-const openWarmpawzRazorpayCheckout = jest.fn();
+const openStandardRazorpayCheckout = jest.fn();
 const fetchCheckoutEmailForPrefill = jest.fn(async () => 'owner@example.com');
 
-jest.mock('@/lib/razorpay/open-warmpawz-razorpay-checkout', () => ({
-  openWarmpawzRazorpayCheckout: (...args: unknown[]) => openWarmpawzRazorpayCheckout(...args),
+jest.mock('@/lib/razorpay/open-standard-razorpay-checkout', () => ({
+  openStandardRazorpayCheckout: (...args: unknown[]) => openStandardRazorpayCheckout(...args),
 }));
 
 jest.mock('@/lib/razorpay/build-standard-checkout-options', () => ({
@@ -30,11 +30,12 @@ import { runWpayRazorpayCheckout } from '../wpay-razorpay-checkout';
 const post = apiClient.post as jest.Mock;
 
 describe('runWpayRazorpayCheckout', () => {
-  it('keeps WPay initiate/verify and uses the shared Checkout opener only', () => {
+  it('keeps WPay initiate/verify and uses the canonical Standard Checkout opener only', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../wpay-razorpay-checkout.ts'), 'utf8');
     expect(source).toContain("'/customer/warmpawz-pay/initiate'");
     expect(source).toContain("'/customer/warmpawz-pay/verify'");
-    expect(source).toContain('openWarmpawzRazorpayCheckout');
+    expect(source).toContain('openStandardRazorpayCheckout');
+    expect(source).not.toContain('includeInstrumentBlocks');
     expect(source).not.toMatch(/\bgst\b/i);
     expect(source).not.toContain('new window.Razorpay');
     expect(source).not.toContain('new RazorpayCtor');
@@ -42,7 +43,7 @@ describe('runWpayRazorpayCheckout', () => {
 
   beforeEach(() => {
     post.mockReset();
-    openWarmpawzRazorpayCheckout.mockReset();
+    openStandardRazorpayCheckout.mockReset();
     fetchCheckoutEmailForPrefill.mockClear();
   });
 
@@ -77,7 +78,7 @@ describe('runWpayRazorpayCheckout', () => {
       throw new Error(`unexpected ${path}`);
     });
 
-    openWarmpawzRazorpayCheckout.mockImplementation(async (input: { handler: (r: unknown) => Promise<void> }) => {
+    openStandardRazorpayCheckout.mockImplementation(async (input: { handler: (r: unknown) => Promise<void> }) => {
       await input.handler({
         razorpay_order_id: 'order_wpay_1',
         razorpay_payment_id: 'pay_rzp_1',
@@ -100,12 +101,12 @@ describe('runWpayRazorpayCheckout', () => {
       bookingId: 'booking-1',
     });
 
-    expect(openWarmpawzRazorpayCheckout).toHaveBeenCalledTimes(1);
-    const checkoutArg = openWarmpawzRazorpayCheckout.mock.calls[0][0];
+    expect(openStandardRazorpayCheckout).toHaveBeenCalledTimes(1);
+    const checkoutArg = openStandardRazorpayCheckout.mock.calls[0][0];
     expect(checkoutArg.amountPaise).toBe(2072628);
     expect(checkoutArg.order_id).toBe('order_wpay_1');
     expect(checkoutArg.key).toBe('rzp_test_key');
-    expect(checkoutArg.includeInstrumentBlocks).toBe(true);
+    expect(checkoutArg.includeInstrumentBlocks).toBeUndefined();
     expect(checkoutArg.description).toContain("Harley's Corner");
 
     expect(post).toHaveBeenCalledWith('/customer/warmpawz-pay/verify', {
@@ -133,7 +134,7 @@ describe('runWpayRazorpayCheckout', () => {
       amountPaise: 2360,
       currency: 'INR',
     });
-    openWarmpawzRazorpayCheckout.mockImplementation(async (input: typeof opened) => {
+    openStandardRazorpayCheckout.mockImplementation(async (input: typeof opened) => {
       opened = input;
     });
 

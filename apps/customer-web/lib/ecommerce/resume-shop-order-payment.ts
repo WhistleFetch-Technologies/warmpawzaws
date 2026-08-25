@@ -1,6 +1,6 @@
 import { apiClient } from '@/lib/api-client';
 import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
-import { openWarmpawzRazorpayCheckout } from '@/lib/razorpay/open-warmpawz-razorpay-checkout';
+import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { buildRazorpayEcommerceCreateOrderPayload } from '@/lib/ecommerce/ecommerce-razorpay-payload';
 
 export const SHOP_PENDING_ORDER_STORAGE_KEY = 'shop_pending_order_id';
@@ -170,7 +170,7 @@ export async function resumeShopOrderPayment(options: ResumeShopOrderPaymentOpti
   const checkoutEmail = phone ? await fetchCheckoutEmailForPrefill(phone) : undefined;
 
   await new Promise<void>((resolve, reject) => {
-    void openWarmpawzRazorpayCheckout({
+    void openStandardRazorpayCheckout({
       key: razorpayOrder.keyId,
       amountPaise: Math.max(1, Math.round(Number(razorpayOrder.amount) * 100)),
       currency: razorpayOrder.currency || 'INR',
@@ -180,7 +180,6 @@ export async function resumeShopOrderPayment(options: ResumeShopOrderPaymentOpti
       customerPhone: phone,
       customerEmail: checkoutEmail,
       prefillName,
-      includeInstrumentBlocks: true,
       handler: async (response: {
         razorpay_order_id: string;
         razorpay_payment_id: string;

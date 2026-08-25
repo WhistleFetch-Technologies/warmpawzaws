@@ -40,11 +40,9 @@ function extractIdentityFromPayload(payload: Record<string, unknown>): {
  * Handle postMessage from customer-web when it requests native Razorpay.
  * Return true if the message was handled (caller should not process further).
  *
- * Defensive normalization: even if a cached / older customer-web build sends a
- * payload without the UPI display block, we re-apply `applyWarmpawzCustomerToRazorpayOptions`
- * here so `react-native-razorpay` always opens with `flows: ['collect','intent','qr']` +
- * `method: { upi: true }`. Without that, Android's native checkout silently hides UPI even
- * with the `<queries>` manifest block in place.
+ * Defensive normalization: apply the canonical Pay Bill Standard Checkout
+ * (minimal options, real prefill only, no UPI instrument blocks) even if a
+ * cached customer-web build still sends UPI-first `config.display` / `method`.
  */
 export async function handleCustomerWebHybridRazorpayMessage(
   event: WebViewMessageEvent,
