@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, type MouseEvent } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, type MouseEvent } from 'react';
 import {
   ArrowLeft, Search, Filter, Star, MapPin, Clock, ChevronRight,
   Video, Home, Building2, Shield, Award, GraduationCap, X, Sliders,
@@ -139,7 +139,27 @@ interface FilterState {
   experienceMin: number | null;
   maxDistance: number | null;
   specialization: string | null;
-  sortBy: 'rating' | 'distance' | 'price' | 'experience' | 'availability';
+  sortBy: 'relevance' | 'rating' | 'distance' | 'price' | 'experience' | 'availability';
+}
+
+const QUICK_FILTER_CHIPS = ['Top Rated', 'Nearest', 'Available Now'] as const;
+type QuickFilterChip = (typeof QUICK_FILTER_CHIPS)[number];
+
+function quickFilterChipForSort(sortBy: FilterState['sortBy']): QuickFilterChip | null {
+  if (sortBy === 'rating') return 'Top Rated';
+  if (sortBy === 'distance') return 'Nearest';
+  if (sortBy === 'availability') return 'Available Now';
+  return null;
+}
+
+function buildDiscoveryQueryExtras(filters: FilterState): Record<string, string | number> {
+  const extras: Record<string, string | number> = {};
+  if (filters.sortBy === 'rating' || filters.sortBy === 'distance' || filters.sortBy === 'price') {
+    extras.sortBy = filters.sortBy;
+  }
+  if (filters.rating != null) extras.minRating = filters.rating;
+  if (filters.maxDistance != null) extras.maxDistance = filters.maxDistance;
+  return extras;
 }
 
 function FilterModal({ isOpen, onClose, filters, onApply, specializations, compact = false }: FilterModalProps) {
@@ -291,7 +311,7 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations, compa
                 experienceMin: null,
                 maxDistance: null,
                 specialization: null,
-                sortBy: 'rating',
+                sortBy: 'relevance',
               });
             }}
           >
@@ -644,8 +664,10 @@ export function UniversalServiceProviderList({
     experienceMin: null,
     maxDistance: null,
     specialization: specializationFilter || null, // Pre-set specialization filter
-    sortBy: 'rating',
+    sortBy: 'relevance',
   });
+  const discoveryQueryExtras = useMemo(() => buildDiscoveryQueryExtras(filters), [filters]);
+  const activeQuickFilter = quickFilterChipForSort(filters.sortBy);
   const useVetExpandableCards = category === 'vet';
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [fetchingPlansFor, setFetchingPlansFor] = useState<string | null>(null);
@@ -666,6 +688,7 @@ export function UniversalServiceProviderList({
     roleId,
     specialization: specializationFilter,
     problemTitle,
+    queryExtras: discoveryQueryExtras,
   });
 
   const processFeedRows = useCallback(() => {
@@ -804,7 +827,9 @@ export function UniversalServiceProviderList({
     }
   };
 
-  // Filter and sort providers
+  const anyProviderHasNextSlot = providers.some((p) => Boolean(p.nextAvailableSlot));
+
+  // Filter and sort providers (server handles rating/distance/price + minRating/maxDistance; client refines the rest)
   const filteredProviders = providers.filter(p => {
     // Search filter
     if (searchQuery) {
@@ -837,25 +862,44 @@ export function UniversalServiceProviderList({
       return false;
     }
 
+    // Available Now — hide providers without a next slot when at least one provider has availability
+    if (filters.sortBy === 'availability' && anyProviderHasNextSlot && !p.nextAvailableSlot) {
+      return false;
+    }
+
     return true;
   }).sort((a, b) => {
     const aPrice = a.services.length > 0 ? Math.min(...a.services.map(s => s.price)) : (a as any).price ?? (a as any).consultationFee ?? 999999;
     const bPrice = b.services.length > 0 ? Math.min(...b.services.map(s => s.price)) : (b as any).price ?? (b as any).consultationFee ?? 999999;
+    const relevanceScore = (p: Provider) =>
+      (p.rating || 0) * 10 +
+      (p.reviewCount || 0) * 0.5 +
+      (p.distance != null ? Math.max(0, 50 - Number(p.distance)) : 0);
     switch (filters.sortBy) {
       case 'rating':
-        return b.rating - a.rating;
-      case 'distance':
-        return (a.distance || 999) - (b.distance || 999);
+        return b.rating - a.rating || b.reviewCount - a.reviewCount;
+      case 'distance': {
+        const ad = a.distance;
+        const bd = b.distance;
+        if (ad == null && bd == null) return 0;
+        if (ad == null) return 1;
+        if (bd == null) return -1;
+        return ad - bd;
+      }
       case 'price':
         return aPrice - bPrice;
       case 'experience':
         return (b.experienceYears || 0) - (a.experienceYears || 0);
-      case 'availability':
+      case 'availability': {
+        if (a.isOnline && !b.isOnline) return -1;
+        if (!a.isOnline && b.isOnline) return 1;
         if (a.nextAvailableSlot && !b.nextAvailableSlot) return -1;
         if (!a.nextAvailableSlot && b.nextAvailableSlot) return 1;
-        return 0;
+        return b.rating - a.rating;
+      }
+      case 'relevance':
       default:
-        return 0;
+        return relevanceScore(b) - relevanceScore(a);
     }
   });
 
@@ -1000,15 +1044,27 @@ export function UniversalServiceProviderList({
             </Button>
 
             {/* Quick Filter Chips */}
-            {['Top Rated', 'Nearest', 'Available Now'].map((chip) => (
+            {QUICK_FILTER_CHIPS.map((chip) => (
               <button
                 key={chip}
+                type="button"
+                aria-pressed={activeQuickFilter === chip}
                 onClick={() => {
-                  if (chip === 'Top Rated') setFilters(f => ({ ...f, sortBy: 'rating', rating: null }));
-                  if (chip === 'Nearest') setFilters(f => ({ ...f, sortBy: 'distance' }));
-                  if (chip === 'Available Now') setFilters(f => ({ ...f, sortBy: 'availability' }));
+                  if (chip === 'Top Rated') {
+                    setFilters((f) => ({ ...f, sortBy: 'rating', rating: null }));
+                    return;
+                  }
+                  if (chip === 'Nearest') {
+                    setFilters((f) => ({ ...f, sortBy: 'distance' }));
+                    return;
+                  }
+                  setFilters((f) => ({ ...f, sortBy: 'availability' }));
                 }}
-                className="flex-shrink-0 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700 hover:border-orange-300"
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm transition ${
+                  activeQuickFilter === chip
+                    ? 'bg-[#FF8C42] text-white border border-[#FF8C42] shadow-sm'
+                    : 'bg-white border border-gray-200 text-gray-700 hover:border-orange-300'
+                }`}
               >
                 {chip}
               </button>
@@ -1081,7 +1137,7 @@ export function UniversalServiceProviderList({
                       experienceMin: null,
                       maxDistance: null,
                       specialization: null,
-                      sortBy: 'rating',
+                      sortBy: 'relevance',
                     });
                   }}
                 >

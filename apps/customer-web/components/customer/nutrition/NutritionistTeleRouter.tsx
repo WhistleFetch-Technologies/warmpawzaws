@@ -525,7 +525,7 @@ export function NutritionistTeleRouter({
           serviceStyle="tele"
           title="Pet Nutritionists"
           subtitle="Choose a nutritionist for video consultation"
-          showProblemFilter={true}
+          showProblemFilter={false}
           onBack={handleBack}
           onNavigate={onNavigate}
           onSelectProvider={handleSelectProvider}
