@@ -14,12 +14,6 @@ jest.mock('@/lib/commerce-switch-routing/should-use-wappt-vendor-card-ui', () =>
   shouldUseWapptDiscoveryFeed: jest.fn(() => true),
 }));
 
-jest.mock('@/lib/search-booking-launch', () => ({
-  buildSearchVendorDetailsUrl: jest.fn(
-    (vendorId: string) => `/vendor/${vendorId}?intent=profile`
-  ),
-}));
-
 function makeProvider(overrides: Partial<WalkInProvider> = {}): WalkInProvider {
   return {
     id: 'vendor-bindu-groom',

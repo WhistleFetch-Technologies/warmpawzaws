@@ -166,7 +166,6 @@ export interface WalkInProviderCardProps {
   badges?: string[];
   onSelect?: () => void;
   onBook?: () => void;
-  onCardClick?: () => void;
   /** @deprecated Capability flags on the provider are authoritative. */
   showPayActions?: boolean;
   layout?: 'carousel' | 'stack';
@@ -178,7 +177,6 @@ function WalkInProviderCardComponent({
   badges,
   onSelect,
   onBook,
-  onCardClick,
   showPayActions: _showPayActions,
   layout = 'carousel',
   className = '',
@@ -222,21 +220,8 @@ function WalkInProviderCardComponent({
 
   return (
     <article
-      className={`${widthClass} flex ${layoutClass} flex-col overflow-hidden ${CARD_RADIUS} bg-white ${CARD_SHADOW} ${onCardClick ? 'cursor-pointer' : ''} ${className}`}
+      className={`${widthClass} flex ${layoutClass} flex-col overflow-hidden ${CARD_RADIUS} bg-white ${CARD_SHADOW} ${className}`}
       style={{ height: cardHeightPx }}
-      onClick={onCardClick}
-      onKeyDown={
-        onCardClick
-          ? (event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onCardClick();
-              }
-            }
-          : undefined
-      }
-      role={onCardClick ? 'button' : undefined}
-      tabIndex={onCardClick ? 0 : undefined}
     >
       <div
         className="relative w-full shrink-0 overflow-hidden bg-gradient-to-br from-orange-50/80 via-slate-50 to-slate-100"

@@ -63,7 +63,7 @@ export function WalkInVendorsPageClient() {
     limit: WALK_IN_NEARBY_PAGE_SIZE,
     enabled: showWalkIn && discoveryLocation.ready,
   });
-  const { payBill, bookNow, openVendorDetails } = useWalkInVendorActions();
+  const { payBill, bookNow } = useWalkInVendorActions();
 
   const listingProviders = useMemo(
     () => dedupeWalkInProvidersById(providers),
@@ -152,7 +152,6 @@ export function WalkInVendorsPageClient() {
                   key={provider.id}
                   provider={provider}
                   layout="stack"
-                  onCardClick={() => openVendorDetails(provider)}
                   onSelect={() => payBill(provider)}
                   onBook={() => bookNow(provider)}
                 />
