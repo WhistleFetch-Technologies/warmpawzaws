@@ -70,6 +70,18 @@ export function resolveGuestPublicApiPath(path: string): string {
     return `${pathname.replace('/ecommerce/products', '/public/ecommerce/products')}${q}`;
   }
 
+  if (pathname === '/ecommerce/categories') {
+    return `/public/ecommerce/categories${q}`;
+  }
+
+  if (pathname === '/products' || pathname.startsWith('/products/')) {
+    return `${pathname.replace('/products', '/public/ecommerce/products')}${q}`;
+  }
+
+  if (pathname === '/customer/articles' || pathname.startsWith('/customer/articles/')) {
+    return `${pathname.replace('/customer/articles', '/public/articles')}${q}`;
+  }
+
   if (pathname === '/search' || pathname === '/search/autocomplete') {
     return `/public${pathname}${q}`;
   }

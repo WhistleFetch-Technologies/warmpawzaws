@@ -48,11 +48,20 @@ function globalGetInflightKey(endpoint: string): string {
 /** On localhost, use same-origin `/api/customer/articles` so Next can map upstream 502/503 → 200 + empty list. */
 function customerArticlesListFetchPath(endpoint: string): string {
   if (typeof window === 'undefined') return endpoint;
+
+  let path = endpoint;
+  try {
+    const { resolveGuestPublicApiPath } = require('./guest-public-api-path');
+    path = resolveGuestPublicApiPath(path);
+  } catch {
+    /* never block article list if helper fails to load */
+  }
+
   const host = window.location.hostname;
   const isLocal =
     host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost');
-  if (!isLocal || !endpoint.startsWith('/customer/articles')) return endpoint;
-  const q = endpoint.includes('?') ? endpoint.slice(endpoint.indexOf('?')) : '';
+  if (!isLocal || !path.startsWith('/customer/articles')) return path;
+  const q = path.includes('?') ? path.slice(path.indexOf('?')) : '';
   return `/api/customer/articles${q}`;
 }
 

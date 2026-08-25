@@ -35,6 +35,8 @@ const PUBLIC_ENDPOINTS = [
   '/config/roles',
   '/config/commerce-switch',
   '/config/commerce-switch/health',
+  '/ecommerce/categories',
+  '/customer/articles',
   '/regions',
   '/webhooks',
   /** Allyticas product telemetry ingest — POST only; rate-limited in product-analytics/routes.ts */

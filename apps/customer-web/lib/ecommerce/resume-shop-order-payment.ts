@@ -1,33 +1,11 @@
 import { apiClient } from '@/lib/api-client';
-import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
+import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
+import { openWarmpawzRazorpayCheckout } from '@/lib/razorpay/open-warmpawz-razorpay-checkout';
 import { buildRazorpayEcommerceCreateOrderPayload } from '@/lib/ecommerce/ecommerce-razorpay-payload';
 
 export const SHOP_PENDING_ORDER_STORAGE_KEY = 'shop_pending_order_id';
 
 const MAX_VERIFY_RETRIES = 3;
-
-function loadRazorpayScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof document === 'undefined') {
-      reject(new Error('No document'));
-      return;
-    }
-    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
-    if (existing) {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Razorpay'));
-    document.body.appendChild(script);
-  });
-}
 
 async function verifyShopPaymentWithRetries(payload: {
   razorpay_order_id: string;
@@ -189,14 +167,10 @@ export async function resumeShopOrderPayment(options: ResumeShopOrderPaymentOpti
     throw new Error('Failed to create payment order');
   }
 
-  if (!(typeof window !== 'undefined' && (window as unknown as { Razorpay?: unknown }).Razorpay)) {
-    await loadRazorpayScript();
-  }
-
   const checkoutEmail = phone ? await fetchCheckoutEmailForPrefill(phone) : undefined;
 
   await new Promise<void>((resolve, reject) => {
-    const checkoutOptions = buildSanitizedStandardRazorpayCheckoutOptions({
+    void openWarmpawzRazorpayCheckout({
       key: razorpayOrder.keyId,
       amountPaise: Math.max(1, Math.round(Number(razorpayOrder.amount) * 100)),
       currency: razorpayOrder.currency || 'INR',
@@ -232,15 +206,7 @@ export async function resumeShopOrderPayment(options: ResumeShopOrderPaymentOpti
           reject(new Error('Payment cancelled'));
         },
       },
-    });
-
-    const RazorpayCtor = (window as unknown as { Razorpay: new (o: unknown) => { open: () => void } })
-      .Razorpay;
-    if (!RazorpayCtor) {
-      reject(new Error('Razorpay not available'));
-      return;
-    }
-    const razorpay = new RazorpayCtor(checkoutOptions);
-    razorpay.open();
+      onPaymentFailed: reject,
+    }).catch(reject);
   });
 }
