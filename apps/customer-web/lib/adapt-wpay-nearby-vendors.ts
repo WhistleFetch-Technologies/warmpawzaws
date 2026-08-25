@@ -1,6 +1,5 @@
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
 import { resolveWalkInProviderProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
-import { readWalkInDiscoveryRadiusKm } from '@/lib/walk-in-discovery-radius';
 
 /** Mirrors GET /customer/warmpawz-pay/vendors/nearby success payload (frontend-only). */
 export type WpayNearbyVendorDto = {
@@ -15,6 +14,8 @@ export type WpayNearbyVendorDto = {
   distanceText: string | null;
   warmpawzPayEligible: boolean;
   appointmentEligible?: boolean;
+  effectiveRadiusKm?: number | null;
+  radiusSource?: string | null;
   discountPercent: number;
   payViaWarmpawzLabel?: string;
   fromPrice?: number;
@@ -145,9 +146,8 @@ export function buildWpayNearbyVendorsUrl(opts: {
     params.set('longitude', opts.longitude);
   }
 
-  const radiusKm = opts.maxDistanceKm ?? readWalkInDiscoveryRadiusKm();
-  if (radiusKm != null) {
-    params.set('maxDistanceKm', String(radiusKm));
+  if (opts.maxDistanceKm != null && Number.isFinite(opts.maxDistanceKm) && opts.maxDistanceKm > 0) {
+    params.set('maxDistanceKm', String(opts.maxDistanceKm));
   }
 
   if (opts.cursor?.trim()) {

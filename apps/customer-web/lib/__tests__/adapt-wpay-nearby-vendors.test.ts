@@ -1,5 +1,6 @@
 import {
   adaptWpayNearbyVendorToWalkInProvider,
+  buildWpayNearbyVendorsUrl,
   type WpayNearbyVendorDto,
 } from '../adapt-wpay-nearby-vendors';
 
@@ -99,5 +100,18 @@ describe('adaptWpayNearbyVendorToWalkInProvider', () => {
         makeDto({ warmpawzPayEligible: false, appointmentEligible: false }),
       ),
     ).toBeNull();
+  });
+});
+
+describe('buildWpayNearbyVendorsUrl', () => {
+  it('sends coordinates and does not invent a client radius', () => {
+    const url = buildWpayNearbyVendorsUrl({
+      limit: 8,
+      latitude: '12.97',
+      longitude: '77.59',
+    });
+    expect(url).toContain('latitude=12.97');
+    expect(url).toContain('longitude=77.59');
+    expect(url).not.toContain('maxDistanceKm=');
   });
 });

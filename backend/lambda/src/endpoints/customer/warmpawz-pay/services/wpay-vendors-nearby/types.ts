@@ -12,6 +12,8 @@ export type WpayHomeVendorCardDto = {
   distanceText: string | null;
   warmpawzPayEligible: boolean;
   appointmentEligible: boolean;
+  effectiveRadiusKm?: number | null;
+  radiusSource?: 'walk_in_at_center_50km' | 'vendor_service_radius' | 'walk_in_mixed_style_union' | null;
   discountPercent: number;
   payViaWarmpawzLabel?: string;
   fromPrice?: number;
@@ -28,8 +30,8 @@ export type WpayVendorsNearbyGetResponse = {
   total: number;
   nextCursor: string | null;
   appliedFilters: {
-    radiusKm: number | null;
-    radiusSource: 'query' | 'env' | 'unconfigured';
+    atCenterRadiusKm: 50;
+    queryTightenKm: number | null;
     category?: string | null;
     limit: number;
   };

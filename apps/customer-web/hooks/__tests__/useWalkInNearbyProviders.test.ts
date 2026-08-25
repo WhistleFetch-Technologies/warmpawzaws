@@ -1,5 +1,5 @@
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
-import { walkInProvidersEqual } from '@/hooks/useWalkInNearbyProviders';
+import { walkInNearbyKeys, walkInProvidersEqual } from '@/hooks/useWalkInNearbyProviders';
 
 function provider(id: string, distanceKm = 1.2): WalkInProvider {
   return {
@@ -43,5 +43,21 @@ describe('walkInProvidersEqual', () => {
         [{ ...provider('a'), appointmentEligible: false }]
       )
     ).toBe(false);
+  });
+});
+
+describe('walkInNearbyKeys', () => {
+  it('uses different cache identities for different locations', () => {
+    const a = walkInNearbyKeys.list({
+      latitude: '12.9716',
+      longitude: '77.5946',
+      limit: 8,
+    });
+    const b = walkInNearbyKeys.list({
+      latitude: '13.0827',
+      longitude: '80.2707',
+      limit: 8,
+    });
+    expect(a).not.toEqual(b);
   });
 });

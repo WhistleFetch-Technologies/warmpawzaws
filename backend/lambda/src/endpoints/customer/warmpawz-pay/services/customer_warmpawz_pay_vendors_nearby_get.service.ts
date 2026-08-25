@@ -4,7 +4,10 @@ import { decodeDiscoveryCursor, encodeDiscoveryCursor } from '../../../../utils/
 import { dbWpayVendorsNearbyPage } from '../repos/wpay-vendors-nearby.repo';
 import { mapWpayVendorsNearbyRows } from './wpay-vendors-nearby-mapper';
 import type { WpayVendorsNearbyGetResponse } from './wpay-vendors-nearby/types';
-import { resolveWalkInDiscoveryRadiusFromEnvAndQuery } from '../shared/walk-in-discovery-radius';
+import {
+  WALK_IN_AT_CENTER_RADIUS_KM,
+  parseWalkInQueryTightenKm,
+} from '../shared/walk-in-discovery-radius';
 
 const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 20;
@@ -68,7 +71,7 @@ export async function executeCustomerWarmpawzPayVendorsNearbyGet(c: Context) {
 
     const limit = parseLimit(c.req.query('limit'));
     const { s: sqlOffset } = decodeDiscoveryCursor(c.req.query('cursor'));
-    const radius = resolveWalkInDiscoveryRadiusFromEnvAndQuery({
+    const queryTightenKm = parseWalkInQueryTightenKm({
       radiusKm: c.req.query('radiusKm'),
       maxDistance: c.req.query('maxDistance'),
       maxDistanceKm: c.req.query('maxDistanceKm'),
@@ -80,7 +83,7 @@ export async function executeCustomerWarmpawzPayVendorsNearbyGet(c: Context) {
       customerLng: coordsResult.customerLng,
       limit,
       offset: sqlOffset,
-      maxDistanceKm: radius.radiusKm,
+      queryTightenKm,
       category,
     });
 
@@ -95,8 +98,8 @@ export async function executeCustomerWarmpawzPayVendorsNearbyGet(c: Context) {
       total: vendors.length,
       nextCursor,
       appliedFilters: {
-        radiusKm: radius.radiusKm,
-        radiusSource: radius.source,
+        atCenterRadiusKm: WALK_IN_AT_CENTER_RADIUS_KM,
+        queryTightenKm,
         category,
         limit,
       },

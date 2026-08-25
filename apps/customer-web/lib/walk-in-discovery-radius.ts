@@ -1,6 +1,6 @@
 /**
- * Walk-in radius config — independent of Marketplace discovery_radius_km.
- * Unset means no client-sent cap (backend may also be unconfigured).
+ * Optional client tighten only. Backend owns Walk-in 50 km / vendor radius rules.
+ * Do not send Marketplace 10/50 defaults as the discovery radius.
  */
 export const WALK_IN_RADIUS_PUBLIC_ENV_KEY = 'NEXT_PUBLIC_WALK_IN_DISCOVERY_RADIUS_KM';
 

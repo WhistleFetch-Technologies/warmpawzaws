@@ -13,13 +13,13 @@ import {
 import { resolveCustomerDiscoveryPhone } from '@/lib/customer-discovery-coords';
 import { readHomeSessionCache, writeHomeSessionCache } from '@/lib/home-session-cache';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
-import { readWalkInDiscoveryRadiusKm } from '@/lib/walk-in-discovery-radius';
 import {
   sameWalkInCoords,
   walkInLocationCacheToken,
 } from '@/lib/walk-in-discovery-location';
 
-export const WALK_IN_NEARBY_CACHE_SUFFIX = 'walk_in_nearby_v3';
+export const WALK_IN_NEARBY_CACHE_SUFFIX = 'walk_in_nearby_v4';
+const WALK_IN_GEO_CACHE_TOKEN = 'style-v1';
 /** Homepage first page size — not a client-side discovery filter. */
 export const WALK_IN_NEARBY_HOME_LIMIT = 8;
 export const WALK_IN_NEARBY_PAGE_SIZE = 20;
@@ -34,22 +34,17 @@ export interface CachedWalkInNearby {
   providers: WalkInProvider[];
   latitude: string;
   longitude: string;
-  radiusKm: number | null;
+  geoToken: string;
   fetchedAt: number;
 }
 
 export const walkInNearbyKeys = {
   root: ['walk-in-nearby'] as const,
-  list: (opts: {
-    latitude: string;
-    longitude: string;
-    radiusKm: number | null;
-    limit: number;
-  }) =>
+  list: (opts: { latitude: string; longitude: string; limit: number }) =>
     [
       ...walkInNearbyKeys.root,
       walkInLocationCacheToken(Number(opts.latitude), Number(opts.longitude)),
-      opts.radiusKm ?? 'none',
+      WALK_IN_GEO_CACHE_TOKEN,
       opts.limit,
     ] as const,
 };
@@ -74,19 +69,18 @@ export function walkInProvidersEqual(a: WalkInProvider[], b: WalkInProvider[]): 
   return true;
 }
 
-function sessionSuffix(phone: string, latitude: string, longitude: string, radiusKm: number | null) {
-  return `${WALK_IN_NEARBY_CACHE_SUFFIX}_${walkInLocationCacheToken(Number(latitude), Number(longitude))}_${radiusKm ?? 'none'}`;
+function sessionSuffix(phone: string, latitude: string, longitude: string) {
+  return `${WALK_IN_NEARBY_CACHE_SUFFIX}_${walkInLocationCacheToken(Number(latitude), Number(longitude))}_${WALK_IN_GEO_CACHE_TOKEN}`;
 }
 
 function readWalkInSessionCache(
   phone: string,
   latitude: string,
-  longitude: string,
-  radiusKm: number | null
+  longitude: string
 ): CachedWalkInNearby | null {
   const cached = readHomeSessionCache<CachedWalkInNearby>(
     phone,
-    sessionSuffix(phone, latitude, longitude, radiusKm)
+    sessionSuffix(phone, latitude, longitude)
   );
   if (!cached) return null;
   if (
@@ -94,7 +88,7 @@ function readWalkInSessionCache(
       { latitude: Number(cached.latitude), longitude: Number(cached.longitude) },
       { latitude: Number(latitude), longitude: Number(longitude) }
     ) ||
-    cached.radiusKm !== radiusKm
+    cached.geoToken !== WALK_IN_GEO_CACHE_TOKEN
   ) {
     return null;
   }
@@ -108,7 +102,6 @@ export async function fetchWalkInNearbyPage(opts: {
   limit: number;
   cursor?: string;
 }): Promise<{ providers: WalkInProvider[]; nextCursor: string | null }> {
-  const radiusKm = readWalkInDiscoveryRadiusKm();
   const response = await apiClient.get<WpayNearbyVendorsResponse>(
     buildWpayNearbyVendorsUrl({
       limit: opts.limit,
@@ -116,7 +109,6 @@ export async function fetchWalkInNearbyPage(opts: {
       longitude: opts.longitude,
       phone: opts.phone || undefined,
       cursor: opts.cursor,
-      maxDistanceKm: radiusKm,
     })
   );
   return {
@@ -131,7 +123,6 @@ async function fetchWalkInNearbyProviders(
   longitude: string,
   limit: number
 ): Promise<WalkInProvider[]> {
-  const radiusKm = readWalkInDiscoveryRadiusKm();
   const { providers } = await fetchWalkInNearbyPage({
     latitude,
     longitude,
@@ -139,16 +130,16 @@ async function fetchWalkInNearbyProviders(
     limit,
   });
 
-  const cached = readWalkInSessionCache(phone, latitude, longitude, radiusKm);
+  const cached = readWalkInSessionCache(phone, latitude, longitude);
   if (cached && walkInProvidersEqual(cached.providers, providers)) {
     return cached.providers;
   }
 
-  writeHomeSessionCache(phone, sessionSuffix(phone, latitude, longitude, radiusKm), {
+  writeHomeSessionCache(phone, sessionSuffix(phone, latitude, longitude), {
     providers,
     latitude,
     longitude,
-    radiusKm,
+    geoToken: WALK_IN_GEO_CACHE_TOKEN,
     fetchedAt: Date.now(),
   } satisfies CachedWalkInNearby);
 
@@ -167,20 +158,18 @@ export function useWalkInNearbyProviders(params: UseWalkInNearbyProvidersParams 
   const { phone, latitude, longitude, limit = WALK_IN_NEARBY_HOME_LIMIT, enabled = true } = params;
   const effectivePhone = resolveCustomerDiscoveryPhone(phone);
   const hasCoords = Boolean(latitude && longitude);
-  const radiusKm = readWalkInDiscoveryRadiusKm();
   const sessionCached = useMemo(
     () =>
       hasCoords && latitude && longitude
-        ? readWalkInSessionCache(effectivePhone, latitude, longitude, radiusKm)
+        ? readWalkInSessionCache(effectivePhone, latitude, longitude)
         : null,
-    [effectivePhone, hasCoords, latitude, longitude, radiusKm]
+    [effectivePhone, hasCoords, latitude, longitude]
   );
 
   return useQuery({
     queryKey: walkInNearbyKeys.list({
       latitude: latitude || '',
       longitude: longitude || '',
-      radiusKm,
       limit,
     }),
     enabled: enabled !== false && hasCoords,
@@ -197,7 +186,6 @@ export function useWalkInNearbyProviders(params: UseWalkInNearbyProvidersParams 
 
 export function useWalkInNearbyFeed(params: UseWalkInNearbyProvidersParams = {}) {
   const { phone, latitude, longitude, limit = WALK_IN_NEARBY_PAGE_SIZE, enabled = true } = params;
-  const radiusKm = readWalkInDiscoveryRadiusKm();
   const hasCoords = Boolean(latitude && longitude);
   const buildUrl = useCallback(
     ({ limit: pageLimit, cursor }: { limit: number; cursor?: string }) =>
@@ -207,9 +195,8 @@ export function useWalkInNearbyFeed(params: UseWalkInNearbyProvidersParams = {})
         longitude,
         phone,
         cursor,
-        maxDistanceKm: radiusKm,
       }),
-    [latitude, longitude, phone, radiusKm]
+    [latitude, longitude, phone]
   );
 
   const feed = useDiscoveryVendorFeed({
@@ -221,7 +208,7 @@ export function useWalkInNearbyFeed(params: UseWalkInNearbyProvidersParams = {})
   useEffect(() => {
     if (enabled === false || !hasCoords) return;
     void feed.reload();
-  }, [enabled, hasCoords, latitude, longitude, radiusKm, feed.reload]);
+  }, [enabled, hasCoords, latitude, longitude, feed.reload]);
 
   const providers = useMemo(
     () =>
