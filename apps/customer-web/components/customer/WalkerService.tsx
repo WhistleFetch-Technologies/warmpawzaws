@@ -56,12 +56,17 @@ import {
 } from '@/lib/vendor-package-purchase-nav';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { useDiscoveryVendorFeed } from '@/hooks/useDiscoveryVendorFeed';
+import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
+import {
+  shouldLoadWalkerMarketplaceDiscovery,
+  wapptFeaturedVendorToWalkerRow,
+} from '@/lib/wappt-walker-featured-map';
 import {
   buildWalkerProviderProfileNavPayload,
   buildWalkerWapptProfileNavFromRow,
@@ -371,7 +376,9 @@ function resolveWalkerRowAddress(walker: Record<string, unknown>): string {
 export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }: WalkerServiceProps) {
   const router = useRouter();
   const wapptWalkerUi = isWarmpawzAppointmentsHubEnabled('walker');
+  const loadMarketplaceWalkers = shouldLoadWalkerMarketplaceDiscovery(wapptWalkerUi);
   const wapptTile = buildWapptHubTile('walker');
+  const wapptFeatured = useWapptHubFeaturedVendors('walker', wapptWalkerUi);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFallbackList, setSearchFallbackList] = useState<any[] | null>(null);
   const [searchSupplement, setSearchSupplement] = useState<any[]>([]);
@@ -392,6 +399,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     serviceStyle: 'at_home',
     category: 'walker',
     roleId: 'walker',
+    enabled: loadMarketplaceWalkers,
   });
 
   useEffect(() => {
@@ -484,9 +492,11 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
   } = useDiscoveryVendorFeed({
     buildUrl: buildWalkerFeedUrl,
     pageSize: WALKER_FEED_PAGE_SIZE,
+    enabled: loadMarketplaceWalkers,
   });
 
   useEffect(() => {
+    if (!loadMarketplaceWalkers) return;
     let cancelled = false;
     void (async () => {
       const coords = await resolveCustomerDiscoveryCoords(phone);
@@ -500,9 +510,10 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return () => {
       cancelled = true;
     };
-  }, [phone, feedReload]);
+  }, [phone, feedReload, loadMarketplaceWalkers]);
 
   useEffect(() => {
+    if (!loadMarketplaceWalkers) return;
     if (feedLoading || feedLoadingMore || feedWalkers.length > 0 || feedHasMore) {
       if (feedWalkers.length > 0 && searchFallbackList) {
         setSearchFallbackList(null);
@@ -540,11 +551,11 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
         }
       }
     })();
-  }, [feedLoading, feedLoadingMore, feedWalkers.length, feedHasMore, searchFallbackList]);
+  }, [feedLoading, feedLoadingMore, feedWalkers.length, feedHasMore, searchFallbackList, loadMarketplaceWalkers]);
 
   /** vendors/search includes trainer_solo + walk catalog rows that paginated discover may omit on page 1. */
   useEffect(() => {
-    if (feedLoading || searchFallbackList) return;
+    if (!loadMarketplaceWalkers || feedLoading || searchFallbackList) return;
     let cancelled = false;
     void (async () => {
       const { latitude, longitude } = coordsRef.current;
@@ -562,16 +573,23 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return () => {
       cancelled = true;
     };
-  }, [feedLoading, feedWalkers.length, phone, searchFallbackList]);
+  }, [feedLoading, feedWalkers.length, phone, searchFallbackList, loadMarketplaceWalkers]);
+
+  const wapptWalkers = useMemo(
+    () => wapptFeatured.vendors.map(wapptFeaturedVendorToWalkerRow),
+    [wapptFeatured.vendors],
+  );
 
   const allWalkers = useMemo(
     () =>
-      mergeWalkerDiscoveryRows(
-        feedWalkers as Record<string, unknown>[],
-        (searchFallbackList ?? []) as Record<string, unknown>[],
-        searchSupplement as Record<string, unknown>[]
-      ),
-    [feedWalkers, searchFallbackList, searchSupplement]
+      wapptWalkerUi
+        ? wapptWalkers
+        : mergeWalkerDiscoveryRows(
+            feedWalkers as Record<string, unknown>[],
+            (searchFallbackList ?? []) as Record<string, unknown>[],
+            searchSupplement as Record<string, unknown>[]
+          ),
+    [wapptWalkerUi, wapptWalkers, feedWalkers, searchFallbackList, searchSupplement]
   );
 
   const displayedWalkers = useMemo((): any[] => {
@@ -585,8 +603,9 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return list;
   }, [allWalkers, searchQuery]);
 
-  const walkersLoading =
-    feedLoading && allWalkers.length === 0 && !searchFallbackList;
+  const walkersLoading = wapptWalkerUi
+    ? wapptFeatured.loading && allWalkers.length === 0
+    : feedLoading && allWalkers.length === 0 && !searchFallbackList;
 
   const totalDiscoveryCount =
     typeof walkerDiscovery.data === 'number' ? walkerDiscovery.data : 0;
@@ -594,7 +613,9 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
   const showViewAllButton =
     !searchQuery.trim() &&
     !walkersLoading &&
-    (allWalkers.length > 0 || totalDiscoveryCount > 0);
+    (wapptWalkerUi
+      ? allWalkers.length > 0 || wapptFeatured.hasMore
+      : allWalkers.length > 0 || totalDiscoveryCount > 0);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();
@@ -1278,7 +1299,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                 );
               })}
 
-              {!searchQuery.trim() && !searchFallbackList ? (
+              {!wapptWalkerUi && !searchQuery.trim() && !searchFallbackList ? (
                 <DiscoveryVendorFeedSentinel
                   hasMore={feedHasMore}
                   loading={feedLoading}

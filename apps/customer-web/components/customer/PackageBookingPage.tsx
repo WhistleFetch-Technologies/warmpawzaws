@@ -16,10 +16,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
-import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
+import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
+import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { toast } from 'sonner';
 import { Package, Check, ChevronRight, Info, Star, Users, Dog, Footprints, Receipt } from 'lucide-react';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
@@ -979,7 +977,7 @@ export function PackageBookingPage({
 
           let completed = false;
           await new Promise<void>((resolve) => {
-            const options = buildSanitizedStandardRazorpayCheckoutOptions({
+            void openStandardRazorpayCheckout({
               key: res.razorpayKeyId,
               amountPaise: Math.max(1, Math.round(amountRupees * 100)),
               currency: res.currency || 'INR',
@@ -988,7 +986,6 @@ export function PackageBookingPage({
               order_id: res.razorpayOrderId,
               customerPhone,
               customerEmail: checkoutEmail,
-              includeInstrumentBlocks: true,
               handler: async (response: any) => {
                 try {
                   const walletApplied = Number(res?.walletApplied ?? walletToUse ?? 0) || 0;
@@ -1021,16 +1018,14 @@ export function PackageBookingPage({
               modal: {
                 ondismiss: () => resolve(),
               },
-            });
-            const RazorpayCtor = (window as unknown as { Razorpay?: new (o: Record<string, unknown>) => { open: () => void } })
-              .Razorpay;
-            if (!RazorpayCtor) {
-              toast.error('Payment gateway not available');
+              onPaymentFailed: (err) => {
+                toast.error(err.message);
+                resolve();
+              },
+            }).catch((e: unknown) => {
+              toast.error(e instanceof Error ? e.message : 'Payment gateway not available');
               resolve();
-              return;
-            }
-            const rz = new RazorpayCtor(options);
-            rz.open();
+            });
           });
           if (completed) return;
           return;

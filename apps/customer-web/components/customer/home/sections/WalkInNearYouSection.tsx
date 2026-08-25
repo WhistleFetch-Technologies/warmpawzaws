@@ -2,14 +2,12 @@
 
 import React, { memo, useCallback, useMemo } from 'react';
 import { MapPin } from 'lucide-react';
-import { type FeaturedProviderCategory } from '@/lib/featured-provider';
-import { type WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
 import {
   useWalkInNearbyProviders,
   WALK_IN_NEARBY_HOME_LIMIT,
 } from '@/hooks/useWalkInNearbyProviders';
+import { useWalkInDiscoveryLocation } from '@/hooks/useWalkInDiscoveryLocation';
 import { useWalkInVendorActions } from '@/lib/walk-in-vendor-actions';
-import { shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
 import {
   WALK_IN_SECTION_SUBTITLE,
   WALK_IN_SECTION_TITLE,
@@ -46,11 +44,9 @@ function WalkInSectionHeader({ onViewAll }: { onViewAll: () => void }) {
   );
 }
 
-/** Phase 1 walk-in categories (vet + grooming). Training deferred to a later step. */
-export const WALK_IN_NEAR_YOU_CATEGORIES: FeaturedProviderCategory[] = ['vet', 'grooming'];
-
 export interface WalkInNearYouSectionProps {
   phone?: string;
+  isGuest?: boolean;
   onNavigate: HomeNavigateFn;
   className?: string;
   /** When false, skips fetch (e.g. section not yet visible). Default true. */
@@ -69,24 +65,24 @@ function WalkInNearYouSectionSkeleton() {
 
 function WalkInNearYouSectionComponent({
   phone,
+  isGuest,
   onNavigate,
   className = '',
   enabled = true,
 }: WalkInNearYouSectionProps) {
   const commerce = useCommerceConfigOptional();
   const showWalkIn = shouldShowWalkInNearYou(commerce);
-  const fetchEnabled = showWalkIn && enabled !== false;
+  const discoveryLocation = useWalkInDiscoveryLocation({ phone, isGuest });
+  const fetchEnabled = showWalkIn && enabled !== false && discoveryLocation.ready;
 
   const { data: providers = [], isLoading, isError } = useWalkInNearbyProviders({
     phone,
+    latitude: discoveryLocation.latitude,
+    longitude: discoveryLocation.longitude,
+    limit: WALK_IN_NEARBY_HOME_LIMIT,
     enabled: fetchEnabled,
   });
-  const { payBill, bookNow, openVendorDetails } = useWalkInVendorActions(onNavigate);
-
-  const carouselProviders = useMemo(
-    () => providers.slice(0, WALK_IN_NEARBY_HOME_LIMIT),
-    [providers]
-  );
+  const { payBill, bookNow } = useWalkInVendorActions(onNavigate);
 
   const handleViewAll = useCallback(() => {
     onNavigate(WALK_IN_VENDORS_PATH);
@@ -101,7 +97,7 @@ function WalkInNearYouSectionComponent({
     return null;
   }
 
-  if (isLoading && carouselProviders.length === 0) {
+  if (isLoading && providers.length === 0) {
     return (
       <section className={`mb-6 mt-6 ${className}`} aria-label="Walk-in services near you">
         {header}
@@ -110,11 +106,11 @@ function WalkInNearYouSectionComponent({
     );
   }
 
-  if (isError && carouselProviders.length === 0) {
+  if (isError && providers.length === 0) {
     return null;
   }
 
-  if (carouselProviders.length === 0) {
+  if (providers.length === 0) {
     return null;
   }
 
@@ -122,22 +118,18 @@ function WalkInNearYouSectionComponent({
     <section className={`mb-6 mt-6 ${className}`} aria-label="Walk-in services near you">
       {header}
       <div className="flex min-w-0 snap-x snap-mandatory gap-2 overflow-x-auto scroll-smooth px-3 pb-1 scrollbar-hide [-webkit-overflow-scrolling:touch]">
-        {carouselProviders.map((provider) => {
-          const showPayActions = shouldUseWapptPayVendorCardUi(provider.category);
-          return (
+        {providers.map((provider) => (
           <WalkInProviderCard
             key={provider.id}
             provider={provider}
-            showPayActions={showPayActions}
             onSelect={() => payBill(provider)}
-            onBook={() => (showPayActions ? bookNow(provider) : openVendorDetails(provider))}
+            onBook={() => bookNow(provider)}
           />
-          );
-        })}
+        ))}
       </div>
     </section>
   );
 }
 
-/** Nearby walk-in (at_center) vendors — vet + grooming. */
+/** Nearby Walk-in vendors from WPay ∪ Appointment catalogues. */
 export const WalkInNearYouSection = memo(WalkInNearYouSectionComponent);

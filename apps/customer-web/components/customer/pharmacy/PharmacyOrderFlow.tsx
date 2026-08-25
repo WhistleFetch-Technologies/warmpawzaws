@@ -34,10 +34,8 @@ import {
   geolocationErrorMessage,
   resolveCurrentGeolocationCoords,
 } from '@/lib/address-from-geolocation';
-import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
+import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
+import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { toast } from 'sonner';
 import { PharmacyOrderStatus } from './PharmacyOrderStatus';
 import { PharmacyBroadcastMap } from './PharmacyBroadcastMap';
@@ -407,7 +405,7 @@ export function PharmacyOrderFlow({
         }
 
         const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
-        const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        await openStandardRazorpayCheckout({
           key: (process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
             process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
           amountPaise: Math.max(1, Math.round(feeBreakdown.total * 100)),
@@ -417,7 +415,6 @@ export function PharmacyOrderFlow({
           order_id: response.razorpayOrderId,
           customerPhone: phone,
           customerEmail: checkoutEmail,
-          includeInstrumentBlocks: true,
           handler: async function (razorpayResponse: any) {
             // Verify payment
             try {
@@ -441,11 +438,11 @@ export function PharmacyOrderFlow({
           },
           theme: {
             color: '#F97316'
-          }
+          },
+          onPaymentFailed: (err) => {
+            toast.error(err.message);
+          },
         });
-
-        const razorpay = new (window as any).Razorpay(options);
-        razorpay.open();
       } else {
         toast.error('Failed to initiate payment');
       }

@@ -12,7 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
+import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { buildRazorpayEcommerceCreateOrderPayload } from '@/lib/ecommerce/ecommerce-razorpay-payload';
 
 // Razorpay type declaration
@@ -489,7 +489,7 @@ export function EnhancedPaymentPage({
           ? [rawOfferId.trim()]
           : [];
 
-      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+      await openStandardRazorpayCheckout({
         key: (orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
         amountPaise: Math.max(1, Math.round(Number(amountToCharge) * 100)),
         currency: 'INR',
@@ -500,7 +500,6 @@ export function EnhancedPaymentPage({
         customerPhone,
         customerEmail,
         offers: razorpayOfferIds.length > 0 ? razorpayOfferIds : undefined,
-        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment with retry
@@ -584,14 +583,11 @@ export function EnhancedPaymentPage({
           enabled: true,
           max_count: 3,
         },
+        onPaymentFailed: (err) => {
+          toast.error(err.message);
+          setProcessing(false);
+        },
       });
-      
-      if (window.Razorpay) {
-        const razorpay = new window.Razorpay(options);
-        razorpay.open();
-      } else {
-        throw new Error('Payment gateway not loaded');
-      }
       
     } catch (error: any) {
       // Enhanced error logging

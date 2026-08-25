@@ -23,11 +23,12 @@ import {
 } from 'lucide-react';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { useDiscoverServicesFeed } from '@/hooks/useDiscoverServicesFeed';
+import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/DiscoveryVendorFeedSentinel';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
 import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
-import { shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
+import { shouldUseWapptDiscoveryFeed, shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 
@@ -133,23 +134,29 @@ export function HomeServiceProviderListView({
   };
   const category = categoryMap[serviceType] || serviceType;
   const payVendorCardUi = shouldUseWapptPayVendorCardUi(category);
+  const useWapptFeed = shouldUseWapptDiscoveryFeed(category);
 
   const feedEnabled = Boolean(userLocation);
-  const {
-    rows: feedRows,
-    loading: feedLoading,
-    loadingMore,
-    hasMore,
-    loadMore,
-  } = useDiscoverServicesFeed({
+  const marketplaceFeed = useDiscoverServicesFeed({
     phone,
     category,
     serviceStyle: 'at_home',
     // Walker hub: omit roleId so trainer_solo vendors with Dog Walker services still appear.
     roleId: serviceType === 'walker' ? undefined : config.roleId || category,
-    enabled: feedEnabled,
+    enabled: feedEnabled && !useWapptFeed,
     pageSize: 3,
   });
+  const wapptFeed = useWarmpawzAppointmentsByCategoryFeed({
+    category,
+    serviceStyle: 'at_home',
+    enabled: feedEnabled && useWapptFeed,
+    pageSize: 3,
+  });
+  const feedRows = useWapptFeed ? wapptFeed.vendors : marketplaceFeed.rows;
+  const feedLoading = useWapptFeed ? wapptFeed.loading : marketplaceFeed.loading;
+  const loadingMore = useWapptFeed ? wapptFeed.loadingMore : marketplaceFeed.loadingMore;
+  const hasMore = useWapptFeed ? wapptFeed.hasMore : marketplaceFeed.hasMore;
+  const loadMore = useWapptFeed ? wapptFeed.loadMore : marketplaceFeed.loadMore;
 
   const mapFeedRowToProvider = useCallback(
     (row: Record<string, unknown>): Provider => {

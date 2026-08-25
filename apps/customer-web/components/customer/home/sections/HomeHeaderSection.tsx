@@ -7,6 +7,8 @@ import { PresignableImage } from '@/components/shared/PresignableImage';
 import { resolveCustomerLocation } from '@/lib/customer-location';
 import { useLocationContextOptional } from '@/context/LocationContext';
 import { ManualLocationSheet } from '@/components/customer/ManualLocationSheet';
+import { WalkInLocationSheet } from '@/components/customer/walk-in/WalkInLocationSheet';
+import { useWalkInDiscoveryLocation } from '@/hooks/useWalkInDiscoveryLocation';
 import { IconBadgeButton } from '../shared/IconBadgeButton';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -61,7 +63,9 @@ function HomeHeaderSectionComponent({
   const locationCtx = useLocationContextOptional();
   const [accountLocationLabel, setAccountLocationLabel] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
+  const [addressOpen, setAddressOpen] = useState(false);
   const [detecting, setDetecting] = useState(false);
+  const walkInLocation = useWalkInDiscoveryLocation({ phone, isGuest });
 
   const contextLocationLabel = useMemo(() => {
     if (!locationCtx) return '';
@@ -100,6 +104,7 @@ function HomeHeaderSectionComponent({
   const hasCoords =
     locationCtx?.latitude != null && locationCtx?.longitude != null;
   const locationLabel =
+    walkInLocation.label ||
     contextLocationLabel ||
     accountLocationLabel ||
     (locationCtx
@@ -119,9 +124,13 @@ function HomeHeaderSectionComponent({
       if (!isGuest) onProfileClick?.();
       return;
     }
+    if (!isGuest) {
+      setAddressOpen(true);
+      return;
+    }
     setDetecting(true);
     try {
-      const ok = await locationCtx.requestForegroundLocation({ force: true });
+      const ok = await walkInLocation.selectCurrentLocation();
       if (ok) {
         toast.success('Location updated');
         return;
@@ -130,7 +139,7 @@ function HomeHeaderSectionComponent({
     } finally {
       setDetecting(false);
     }
-  }, [onLocationClick, locationCtx, isGuest, onProfileClick]);
+  }, [onLocationClick, locationCtx, isGuest, onProfileClick, walkInLocation.selectCurrentLocation]);
 
   return (
     <div>
@@ -204,6 +213,18 @@ function HomeHeaderSectionComponent({
         </div>
       </div>
       <ManualLocationSheet open={manualOpen} onClose={() => setManualOpen(false)} />
+      <WalkInLocationSheet
+        open={addressOpen}
+        onClose={() => setAddressOpen(false)}
+        addresses={walkInLocation.addresses}
+        selectedAddressId={walkInLocation.addressId}
+        onSelectAddress={walkInLocation.selectAddress}
+        onSelectCurrent={async () => {
+          const ok = await walkInLocation.selectCurrentLocation();
+          if (ok) toast.success('Location updated');
+          return ok;
+        }}
+      />
     </div>
   );
 }

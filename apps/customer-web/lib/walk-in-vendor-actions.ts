@@ -3,13 +3,11 @@
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
-import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
-import { shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
+import { buildWpayVendorPayPath } from '@/lib/warmpawz-pay/wpay-guest-journey';
 import {
   buildWarmpawzAppointmentsProfileNav,
   WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
-import { buildSearchVendorDetailsUrl } from '@/lib/search-booking-launch';
 import { withBannerNavigationOrigin } from '@/lib/banner-navigation-origin';
 import { resolveWalkInProviderProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
@@ -53,26 +51,10 @@ export function consumeWalkInShellNav(): WalkInPendingShellNav | null {
 }
 
 export function payWalkInBill(provider: WalkInProvider, router: AppRouterInstance): void {
-  if (!shouldUseWapptPayVendorCardUi(provider.category)) {
-    openWalkInVendorDetails(provider, router);
-    return;
-  }
+  if (!provider.warmpawzPayEligible) return;
   const vendorId = String(provider.id ?? '').trim();
   if (!vendorId) return;
-  launchWarmpawzPayServiceBooking({
-    router,
-    serviceKey: provider.category,
-    category: provider.category,
-    vendorId,
-  });
-}
-
-export function openWalkInVendorDetails(provider: WalkInProvider, router: AppRouterInstance): void {
-  const vendorId = String(provider.id ?? '').trim();
-  if (!vendorId) return;
-  router.push(
-    buildSearchVendorDetailsUrl(vendorId, provider.displayName, provider.category)
-  );
+  router.push(buildWpayVendorPayPath(vendorId));
 }
 
 /** Open WAPPT vendor profile; booking continues via Select Slot for Appointment. */
@@ -81,10 +63,7 @@ export function bookWalkInAppointment(
   router: AppRouterInstance,
   onNavigate?: HomeNavigateFn
 ): void {
-  if (!shouldUseWapptPayVendorCardUi(provider.category)) {
-    openWalkInVendorDetails(provider, router);
-    return;
-  }
+  if (!provider.appointmentEligible) return;
 
   const vendorId = String(provider.id ?? '').trim();
   if (!vendorId) return;
@@ -123,10 +102,5 @@ export function useWalkInVendorActions(onNavigate?: HomeNavigateFn) {
     [onNavigate, router]
   );
 
-  const openVendorDetails = useCallback(
-    (provider: WalkInProvider) => openWalkInVendorDetails(provider, router),
-    [router]
-  );
-
-  return { payBill, bookNow, openVendorDetails };
+  return { payBill, bookNow };
 }

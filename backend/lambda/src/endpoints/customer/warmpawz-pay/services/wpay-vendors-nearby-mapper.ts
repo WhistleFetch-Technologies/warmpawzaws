@@ -8,6 +8,10 @@ import type { WpayVendorsNearbyDbRow } from '../repos/wpay-vendors-nearby.repo';
 import { WPAY_LIST_PHOTO_CONCURRENCY } from './wpay-vendors-list-mapper';
 import type { WpayHomeVendorCardDto } from './wpay-vendors-nearby/types';
 
+function asBool(raw: unknown): boolean {
+  return raw === true || raw === 't' || raw === 'true' || raw === 1 || raw === '1';
+}
+
 function normalizeNearbyProfileServiceStyle(raw: unknown): 'at_center' | 'at_home' | null {
   const style = String(raw ?? '').trim().toLowerCase();
   if (style === 'at_home' || style === 'home_visit') return 'at_home';
@@ -16,31 +20,24 @@ function normalizeNearbyProfileServiceStyle(raw: unknown): 'at_center' | 'at_hom
 }
 
 function resolveNearbyProfileServiceStyle(row: WpayVendorsNearbyDbRow): 'at_center' | 'at_home' {
-  const fromServices = normalizeNearbyProfileServiceStyle(row.preferred_service_style);
-  if (fromServices) return fromServices;
+  const hasAtHome = asBool(row.has_at_home);
+  const hasAtCenter = asBool(row.has_at_center);
+  if (hasAtHome && !hasAtCenter) return 'at_home';
+  if (hasAtCenter && !hasAtHome) return 'at_center';
+  return normalizeNearbyProfileServiceStyle(row.preferred_service_style) ?? 'at_center';
+}
 
-  const vendorType = String(row.vendor_type ?? '').toLowerCase();
-  const roleHaystack = `${row.role_display_name ?? ''} ${row.role_name ?? ''}`.toLowerCase();
-
-  const homeHint =
-    vendorType === 'solo' ||
-    roleHaystack.includes('solo') ||
-    roleHaystack.includes('home visit') ||
-    roleHaystack.includes('at home') ||
-    roleHaystack.includes('home grooming') ||
-    roleHaystack.includes('home vet');
-
-  if (homeHint) return 'at_home';
-
-  const centerHint =
-    roleHaystack.includes('center') ||
-    roleHaystack.includes('centre') ||
-    roleHaystack.includes('clinic') ||
-    roleHaystack.includes('salon');
-
-  if (centerHint) return 'at_center';
-
-  return 'at_center';
+function mapRadiusSource(
+  raw: unknown
+): WpayHomeVendorCardDto['radiusSource'] {
+  if (
+    raw === 'walk_in_at_center_50km' ||
+    raw === 'vendor_service_radius' ||
+    raw === 'walk_in_mixed_style_union'
+  ) {
+    return raw;
+  }
+  return null;
 }
 
 function mapRating(raw: unknown): number {
@@ -90,7 +87,9 @@ export async function mapWpayVendorsNearbyRows(
 
     const category =
       categoryMeta.serviceCategoryId !== 'unknown' ? categoryMeta.serviceCategoryId : 'unknown';
-    const discountPercent = resolveWpayDiscountPercent(row);
+    const warmpawzPayEligible = Boolean(row.warmpawz_pay_eligible);
+    const appointmentEligible = Boolean(row.appointment_eligible);
+    const discountPercent = warmpawzPayEligible ? resolveWpayDiscountPercent(row) : 0;
     const distanceKm = mapDistanceKm(row.distance_km);
     const distanceText =
       distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
@@ -111,9 +110,14 @@ export async function mapWpayVendorsNearbyRows(
       reviewCount: mapReviewCount(row.review_count),
       distanceKm,
       distanceText,
-      warmpawzPayEligible: true as const,
+      warmpawzPayEligible,
+      appointmentEligible,
+      effectiveRadiusKm: mapDistanceKm(row.effective_radius_km),
+      radiusSource: mapRadiusSource(row.radius_source),
       discountPercent,
-      payViaWarmpawzLabel: buildPayViaWarmpawzLabel(discountPercent),
+      payViaWarmpawzLabel: warmpawzPayEligible
+        ? buildPayViaWarmpawzLabel(discountPercent)
+        : undefined,
       profilePath: {
         vertical: category,
         serviceStyle: profileServiceStyle,

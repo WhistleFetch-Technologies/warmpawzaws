@@ -80,7 +80,7 @@ const CARD_RADIUS = 'rounded-[14px]';
 const CARD_SHADOW = 'shadow-[0_4px_16px_rgba(0,0,0,0.08)]';
 
 export function walkInCategoryDisplayLabel(
-  category: FeaturedProviderCategory,
+  category: FeaturedProviderCategory | string,
   subtitle?: string
 ): string {
   const trimmed = (subtitle || '').trim();
@@ -103,6 +103,12 @@ export function walkInCategoryDisplayLabel(
       return 'Pet Sitting';
     case 'walker':
       return 'Dog Walking';
+    case 'nutrition':
+    case 'nutritionist':
+      return 'Pet Nutrition';
+    case 'behaviorist':
+    case 'behaviourist':
+      return 'Behavior Specialist';
     default:
       return trimmed || 'Walk-in Service';
   }
@@ -160,8 +166,7 @@ export interface WalkInProviderCardProps {
   badges?: string[];
   onSelect?: () => void;
   onBook?: () => void;
-  onCardClick?: () => void;
-  /** When false (marketplace), show a single View Details action instead of Pay Bill + Book Now. */
+  /** @deprecated Capability flags on the provider are authoritative. */
   showPayActions?: boolean;
   layout?: 'carousel' | 'stack';
   className?: string;
@@ -172,8 +177,7 @@ function WalkInProviderCardComponent({
   badges,
   onSelect,
   onBook,
-  onCardClick,
-  showPayActions = true,
+  showPayActions: _showPayActions,
   layout = 'carousel',
   className = '',
 }: WalkInProviderCardProps) {
@@ -201,31 +205,23 @@ function WalkInProviderCardComponent({
   const visibleBadges = (badges || []).filter((b) => String(b).trim().length > 0);
   const hasOptionalMeta = visibleBadges.length > 0 || Boolean(priceText);
   const optionalMetaHeightPx = hasOptionalMeta ? CARD_META_HEIGHT_PX : 0;
+  const showPayBill = provider.warmpawzPayEligible === true;
+  const showBookNow = provider.appointmentEligible === true;
+  const actionCount = (showPayBill ? 1 : 0) + (showBookNow ? 1 : 0);
+  const extraActionHeight =
+    actionCount <= 1 ? -(CARD_BOOK_BUTTON_HEIGHT_PX + CARD_BUTTON_STACK_GAP_PX) : 0;
   const widthClass = layout === 'stack' ? 'w-full max-w-customer' : CARD_WIDTH_CLASS;
   const layoutClass =
     layout === 'stack' ? 'snap-none' : 'shrink-0 snap-start';
   const contentMinHeightPx =
-    walkInCardContentMinHeightPx(layout) + optionalMetaHeightPx;
+    walkInCardContentMinHeightPx(layout) + optionalMetaHeightPx + extraActionHeight;
   const cardHeightPx =
-    walkInCardHeightPx(layout) + optionalMetaHeightPx;
+    walkInCardHeightPx(layout) + optionalMetaHeightPx + extraActionHeight;
 
   return (
     <article
-      className={`${widthClass} flex ${layoutClass} flex-col overflow-hidden ${CARD_RADIUS} bg-white ${CARD_SHADOW} ${onCardClick ? 'cursor-pointer' : ''} ${className}`}
+      className={`${widthClass} flex ${layoutClass} flex-col overflow-hidden ${CARD_RADIUS} bg-white ${CARD_SHADOW} ${className}`}
       style={{ height: cardHeightPx }}
-      onClick={onCardClick}
-      onKeyDown={
-        onCardClick
-          ? (event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onCardClick();
-              }
-            }
-          : undefined
-      }
-      role={onCardClick ? 'button' : undefined}
-      tabIndex={onCardClick ? 0 : undefined}
     >
       <div
         className="relative w-full shrink-0 overflow-hidden bg-gradient-to-br from-orange-50/80 via-slate-50 to-slate-100"
@@ -331,37 +327,29 @@ function WalkInProviderCardComponent({
             )}
           </div>
 
+          {showPayBill ? (
           <button
             type="button"
             className={`inline-flex w-full shrink-0 items-center justify-center gap-1.5 ${CARD_BUTTON_RADIUS} bg-[#FF8C42] text-xs font-semibold leading-none text-white shadow-[0_2px_8px_rgba(255,140,66,0.32)] active:scale-[0.98]`}
             style={{ height: CARD_PAY_BUTTON_HEIGHT_PX, minHeight: CARD_PAY_BUTTON_HEIGHT_PX }}
             onClick={(event) => {
               event.stopPropagation();
-              if (showPayActions) {
-                onSelect?.();
-                return;
-              }
-              onBook?.();
+              onSelect?.();
             }}
           >
-            {showPayActions ? (
-              <>
-                <Wallet className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} aria-hidden />
-                <span>Pay Bill</span>
-              </>
-            ) : (
-              <span>View Details</span>
-            )}
+            <Wallet className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} aria-hidden />
+            <span>Pay Bill</span>
           </button>
+          ) : null}
 
-          {showPayActions ? (
+          {showBookNow ? (
           <button
             type="button"
             className={`inline-flex w-full shrink-0 items-center justify-center gap-1.5 ${CARD_BUTTON_RADIUS} border border-[#FF8C42] bg-white text-xs font-semibold leading-none text-[#FF8C42] active:scale-[0.98]`}
             style={{
               height: CARD_BOOK_BUTTON_HEIGHT_PX,
               minHeight: CARD_BOOK_BUTTON_HEIGHT_PX,
-              marginTop: CARD_BUTTON_STACK_GAP_PX,
+              marginTop: showPayBill ? CARD_BUTTON_STACK_GAP_PX : 0,
             }}
             onClick={(event) => {
               event.stopPropagation();

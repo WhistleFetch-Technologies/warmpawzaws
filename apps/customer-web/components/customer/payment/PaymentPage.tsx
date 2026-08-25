@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
+import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { toast } from 'sonner';
 
@@ -446,7 +446,7 @@ export function PaymentPage({
         typeof customerEmail === 'string' && customerEmail.includes('@')
           ? customerEmail.trim()
           : profileCheckoutEmail;
-      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+      await openStandardRazorpayCheckout({
         key: (orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
         amountPaise: Math.max(1, Math.round(Number(finalAmount) * 100)),
         currency: 'INR',
@@ -455,7 +455,6 @@ export function PaymentPage({
         order_id: orderRes.orderId,
         customerPhone,
         customerEmail: resolvedCheckoutEmail,
-        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment with retry
@@ -505,14 +504,11 @@ export function PaymentPage({
             toast.info('Payment cancelled');
           },
         },
+        onPaymentFailed: (err) => {
+          toast.error(err.message);
+          setProcessing(false);
+        },
       });
-      
-      if (window.Razorpay) {
-        const razorpay = new window.Razorpay(options);
-        razorpay.open();
-      } else {
-        throw new Error('Payment gateway not loaded');
-      }
       
     } catch (error: any) {
       console.error('Payment error:', error);
