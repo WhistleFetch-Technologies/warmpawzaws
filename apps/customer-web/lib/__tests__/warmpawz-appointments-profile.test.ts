@@ -1,6 +1,7 @@
 import {
   buildWarmpawzAppointmentsProfileNav,
   isWarmpawzAppointmentsPaymentRequest,
+  isWalletDebitAllowedOnPaymentRequest,
   WAPPT_APPOINTMENT_SERVICE_ID,
   WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
@@ -55,6 +56,25 @@ describe('isWarmpawzAppointmentsPaymentRequest', () => {
       isWarmpawzAppointmentsPaymentRequest({
         bookingMode: 'warmpawz_appointments',
         serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('isWalletDebitAllowedOnPaymentRequest', () => {
+  it('hides wallet on Warmpawz Pay appointment-fee checkout', () => {
+    expect(
+      isWalletDebitAllowedOnPaymentRequest({
+        bookingMode: 'warmpawz_appointments',
+        serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps wallet on marketplace bookings', () => {
+    expect(
+      isWalletDebitAllowedOnPaymentRequest({
+        serviceId: 'regular-service',
       }),
     ).toBe(true);
   });

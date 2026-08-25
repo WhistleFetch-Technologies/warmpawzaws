@@ -98,6 +98,14 @@ export function isWarmpawzAppointmentsPaymentRequest(opts: {
   return opts.bookingMode === WAPPT_BOOKING_MODE || sid === WAPPT_APPOINTMENT_SERVICE_ID;
 }
 
+/** Book-a-slot appointment-fee checkout on Pay — wallet debit is not offered. */
+export function isWalletDebitAllowedOnPaymentRequest(opts: {
+  bookingMode?: string;
+  serviceId?: string;
+}): boolean {
+  return !isWarmpawzAppointmentsPaymentRequest(opts);
+}
+
 export function resolveWarmpawzBookingCategory(serviceType?: string): string {
   const raw = String(serviceType || 'grooming').trim().toLowerCase();
   if (raw === 'vet' || raw === 'veterinarian') return 'vet';

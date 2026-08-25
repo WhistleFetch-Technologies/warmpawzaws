@@ -60,7 +60,11 @@ import {
 } from '@/lib/razorpay/build-standard-checkout-options';
 import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
-import { isWarmpawzAppointmentsPaymentRequest, WAPPT_APPOINTMENT_SERVICE_ID } from '@/lib/warmpawz-appointments-customer';
+import {
+  isWarmpawzAppointmentsPaymentRequest,
+  isWalletDebitAllowedOnPaymentRequest,
+  WAPPT_APPOINTMENT_SERVICE_ID,
+} from '@/lib/warmpawz-appointments-customer';
 import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
 import {
   isWarmpawzCustomerNativeWebView,
@@ -524,6 +528,18 @@ export function UniversalPaymentPage({
       }),
     [bookingMode, resolvedServiceId, serviceId],
   );
+  const walletDebitAllowed = useMemo(
+    () =>
+      isWalletDebitAllowedOnPaymentRequest({
+        bookingMode,
+        serviceId: resolvedServiceId || serviceId,
+      }),
+    [bookingMode, resolvedServiceId, serviceId],
+  );
+
+  useEffect(() => {
+    if (!walletDebitAllowed) setUseWallet(false);
+  }, [walletDebitAllowed]);
 
   // Coupon state — resume freezes create-time coupon; do not re-apply live.
   const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(() => {
@@ -1346,7 +1362,7 @@ export function UniversalPaymentPage({
         if (walletRes.wallet) {
           setWallet(walletRes.wallet);
           const bal = Number(walletRes.wallet.balance ?? 0);
-          if (type === 'booking' && Number.isFinite(bal) && bal > 0.009) {
+          if (walletDebitAllowed && type === 'booking' && Number.isFinite(bal) && bal > 0.009) {
             setUseWallet(true);
           }
           if (type === 'meal_subscription' && Number.isFinite(bal) && bal > 0.009) {
@@ -2014,7 +2030,8 @@ export function UniversalPaymentPage({
       : isMealPay
         ? Math.max(0, resolvedMealPayTotal - finalTax - razorpayOfferDiscount)
         : Math.max(0, totalAfterDiscounts - finalTax - razorpayOfferDiscount);
-  const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
+  const walletAmount =
+    walletDebitAllowed && useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
   // If subscription covers this booking, final amount is 0
   const computedFinalAmount = subscriptionCovered
@@ -3023,7 +3040,7 @@ export function UniversalPaymentPage({
       }
 
       // âœ… Wallet fields (extracted from raw body by backend)
-      if (useWallet) {
+      if (walletDebitAllowed && useWallet) {
         paymentPayload.useWallet = useWallet;
         paymentPayload.walletAmount = walletAmount || 0;
       }
@@ -3221,7 +3238,7 @@ export function UniversalPaymentPage({
           const createPayload = {
             ...deferredBookingPayload,
             paymentId: paymentRes?.id,
-            ...(useWallet && (walletAmount || 0) > 0
+            ...(walletDebitAllowed && useWallet && (walletAmount || 0) > 0
               ? {
                   useWallet: true,
                   walletAmount: Math.round((walletAmount || 0) * 100) / 100,
@@ -3331,7 +3348,7 @@ export function UniversalPaymentPage({
                   : undefined,
               vendorId:
                 flowType === 'tele-instant' || bookingCreationDeferred ? vendorId : undefined,
-              ...(type === 'booking' && currentBookingId && useWallet
+              ...(type === 'booking' && currentBookingId && walletDebitAllowed && useWallet
                 ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
                 : {}),
             };
@@ -3577,7 +3594,7 @@ export function UniversalPaymentPage({
               ...deferredBookingPayload,
               razorpayPaymentId: response.razorpay_payment_id,
               razorpayOrderId: response.razorpay_order_id,
-              ...(useWallet && (walletAmount || 0) > 0
+              ...(walletDebitAllowed && useWallet && (walletAmount || 0) > 0
                 ? {
                     useWallet: true,
                     walletAmount: Math.round((walletAmount || 0) * 100) / 100,
@@ -4007,7 +4024,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Wallet Section â€” right after booking summary */}
-        {wallet && wallet.balance > 0 && (
+        {walletDebitAllowed && wallet && wallet.balance > 0 && (
           <div className={paymentSecondaryCardClass}>
             <button
               onClick={() => setUseWallet(!useWallet)}
