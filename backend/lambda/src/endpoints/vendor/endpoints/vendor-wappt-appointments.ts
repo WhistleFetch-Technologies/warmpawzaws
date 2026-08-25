@@ -12,6 +12,7 @@ import {
   dbLoadBookingForVendor,
   rowToBookingForPolicy,
 } from '../../customer/warmpawz-appointments/repos/wappt_booking_policy.repo';
+import { notifyBookingCancelledByVendor } from '../../../utils/booking-notifications';
 
 export function registerVendorWapptAppointmentsEndpoints(app: Hono): void {
   app.get('/vendor/warmpawz-appointments/policies', async (c) => {
@@ -99,6 +100,16 @@ export function registerVendorWapptAppointmentsEndpoints(app: Hono): void {
         console.warn('[vendor/wappt/cancel] refund failed:', e?.message);
         return null;
       });
+
+      try {
+        await notifyBookingCancelledByVendor({
+          bookingId,
+          reason: cancellation_reason,
+          refundInfo,
+        });
+      } catch (notifErr) {
+        console.warn('[vendor/wappt/cancel] customer notification failed:', notifErr);
+      }
 
       return c.json({
         success: true,

@@ -69,6 +69,8 @@ import {
   finalizeCapturedPayment,
   recordRazorpayWebhookEvent,
 } from '../../../utils/payments/finalize-captured-payment';
+import { ensurePostPaymentLifecycleNotifications } from '../../../utils/payment-lifecycle-notifications';
+import { notifyBookingCreatedIfNeeded } from '../../../utils/notification-idempotency';
 import { isHoldExpiryCancelReason } from '../../../utils/payments/payment-attempt';
 
 // Razorpay configuration is imported from utils
@@ -747,6 +749,9 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           // promo/coupon usage now (idempotent for coupons via coupon_usages booking check).
           if (walletFullyPaidBooking) {
             scheduleBookingStartOtpIfNeeded(String(bookingId), '[RAZORPAY-CREATE-ORDER]');
+            void notifyBookingCreatedIfNeeded(String(bookingId)).catch((err) =>
+              console.warn('[RAZORPAY-CREATE-ORDER] wallet-only booking notify failed:', err)
+            );
             Promise.resolve()
               .then(async () => {
                 const { recordBookingPromotionUsageFromBooking } = await import(
@@ -1745,6 +1750,10 @@ class VerifyPaymentHandler extends BaseHandler {
         if (fin.outcome === 'refunded' || fin.outcome === 'duplicate_refunded') {
           Object.assign(result, { refunded: true, outcome: fin.outcome });
         }
+        await ensurePostPaymentLifecycleNotifications(
+          fin,
+          (context as HandlerContext & { requestId?: string }).requestId
+        );
       }
 
       if (bookingStatusChange) {
@@ -1822,6 +1831,10 @@ class VerifyPaymentHandler extends BaseHandler {
             razorpayOrderId: orderId,
             razorpayPaymentId: paymentId,
           });
+          await ensurePostPaymentLifecycleNotifications(
+            fin,
+            (context as HandlerContext & { requestId?: string }).requestId
+          );
           if (fin.outcome === 'fulfilled' || fin.outcome === 'already_final') {
             return this.success({
               success: true,
@@ -1974,6 +1987,7 @@ class RazorpayWebhookHandler extends BaseHandler {
             )
             .catch((e) => console.warn('[RAZORPAY-WEBHOOK] booking invoice generate failed:', e));
         }
+        await ensurePostPaymentLifecycleNotifications(fin);
       } else {
         await recordRazorpayWebhookEvent(
           String(webhookEventId),

@@ -14,6 +14,10 @@ import {
 } from '../slot-occupancy';
 import { notifyBookingCreated } from '../booking-notifications';
 import { notifyShopOrderPaid } from '../shop-order-notifications';
+import {
+  notifyBookingCreatedIfNeeded,
+  notifyShopOrderPaidIfNeeded,
+} from '../notification-idempotency';
 import { scheduleBookingStartOtpIfNeeded } from '../booking-start-otp';
 import { triggerAutoShipment } from '../logistics/trigger-auto-shipment';
 import { applyOrderCommissionAudit } from '../resolve-ecommerce-commission-rate';
@@ -470,6 +474,14 @@ export async function finalizeCapturedPayment(
       console.error('[PAYMENT-SAFETY] booking notify failed:', e)
     );
     scheduleBookingStartOtpIfNeeded(notifyBookingId, `[PAYMENT-FINALIZE:${input.source}]`);
+  } else if (
+    result.outcome === 'already_final' &&
+    result.entityType === 'booking' &&
+    result.entityId
+  ) {
+    await notifyBookingCreatedIfNeeded(String(result.entityId)).catch((e) =>
+      console.error('[PAYMENT-SAFETY] booking notify (already_final) failed:', e)
+    );
   }
   if (notifyShopOrderId) {
     triggerAutoShipment(notifyShopOrderId, 'ecommerce').catch((e) =>
@@ -491,6 +503,14 @@ export async function finalizeCapturedPayment(
     }
     await notifyShopOrderPaid(notifyShopOrderId).catch((e) =>
       console.error('[PAYMENT-SAFETY] shop notify failed:', e)
+    );
+  } else if (
+    result.outcome === 'already_final' &&
+    result.entityType === 'shop_order' &&
+    result.entityId
+  ) {
+    await notifyShopOrderPaidIfNeeded(String(result.entityId)).catch((e) =>
+      console.error('[PAYMENT-SAFETY] shop notify (already_final) failed:', e)
     );
   }
 

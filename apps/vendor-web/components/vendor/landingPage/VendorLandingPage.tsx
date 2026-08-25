@@ -189,7 +189,7 @@ export function VendorLandingPage({
     onNewNotification: (notification) => {
       const type = notification.type || notification.notification_type;
 
-      if (type === 'new_booking' || type === 'new_order') {
+      if (type === 'new_booking' || type === 'new_order' || type === 'warmpawz_pay_received') {
         setNewBookingAlert(notification);
       }
     }

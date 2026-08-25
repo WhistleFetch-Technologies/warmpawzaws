@@ -85,6 +85,21 @@ describe('single payment finalization path', () => {
     expect(file).toContain('INSERT INTO razorpay_webhook_events');
     expect(file).toContain('ON CONFLICT (event_id) DO NOTHING');
   });
+
+  test('already_final path triggers idempotent booking and shop notify helpers', () => {
+    const file = read('src/utils/payments/finalize-captured-payment.ts');
+    expect(file).toContain('notifyBookingCreatedIfNeeded');
+    expect(file).toContain('notifyShopOrderPaidIfNeeded');
+    expect(file).toContain("outcome === 'already_final'");
+  });
+
+  test('razorpay verify and webhook call post-payment lifecycle notify safety net', () => {
+    const razorpay = read('src/endpoints/razorpay/endpoints/razorpay.razorpay.ts');
+    const enhanced = read('src/endpoints/payments-enhanced.ts');
+    expect(razorpay).toContain('ensurePostPaymentLifecycleNotifications');
+    expect(enhanced).toContain('ensurePostPaymentLifecycleNotifications');
+    expect(razorpay).toContain('notifyBookingCreatedIfNeeded');
+  });
 });
 
 describe('payment order reuse', () => {

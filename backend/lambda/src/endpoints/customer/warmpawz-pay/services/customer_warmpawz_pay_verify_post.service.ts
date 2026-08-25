@@ -15,6 +15,7 @@ import { accrueWpaySettlement } from '../shared/accrue-wpay-settlement';
 import { resolveWapptAppointmentFeeCredit } from '../shared/wpay-appointment-credit';
 import { computeWpayDiscountQuote, resolveWpayDiscountPercent } from '../shared/wpay-discount';
 import { dbWpayVendorById } from '../repos/wpay-vendor-detail.repo';
+import { notifyWpayPaymentCompleted } from '../../../../utils/wpay-notifications';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,6 +42,12 @@ async function tryAccrueWpaySettlement(
   } catch (error) {
     console.error('[customer/warmpawz-pay/verify] settlement accrual failed', error);
   }
+}
+
+function tryNotifyWpayVendor(paymentId: string): void {
+  void notifyWpayPaymentCompleted(paymentId).catch((error) => {
+    console.error('[customer/warmpawz-pay/verify] vendor notify failed', error);
+  });
 }
 
 async function validateAppointmentCreditForVerify(params: {
@@ -124,6 +131,7 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
 
     if (existing.payment_status === 'completed') {
       await tryAccrueWpaySettlement(existing);
+      tryNotifyWpayVendor(paymentId);
       return c.json({
         success: true,
         paymentId,
@@ -200,6 +208,7 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
     }
 
     await tryAccrueWpaySettlement(completed);
+    tryNotifyWpayVendor(paymentId);
 
     return c.json({
       success: true,

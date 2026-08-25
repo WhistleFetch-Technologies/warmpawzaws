@@ -22,6 +22,7 @@ import {
   dispatchPipelineDisabledResult,
   isNotificationPipelineEnabled,
 } from './notification-pipeline-kill-switch';
+import { pushDeliveryNeedsRetry } from './notification-idempotency';
 
 const PUSH_BATCH_SIZE = 500;
 const DEDUPE_LOOKBACK_HOURS = 48;
@@ -250,6 +251,10 @@ export async function dispatchNotification(
   );
   dataRecord.dedupeKey = dedupeKey;
 
+  let notificationId: string | undefined;
+  let inboxOk = false;
+  let skippedDuplicate = false;
+
   if (channels.inApp) {
     const existingId = await findDuplicateNotification(
       input.recipientId,
@@ -258,24 +263,40 @@ export async function dispatchNotification(
       dedupeKey
     );
     if (existingId) {
+      skippedDuplicate = true;
+      notificationId = existingId;
+      inboxOk = true;
+      const needsPushRetry =
+        channels.push && (await pushDeliveryNeedsRetry(existingId));
+      if (!needsPushRetry) {
+        console.log(
+          JSON.stringify({
+            metric: 'notification_dispatch',
+            status: 'skipped_duplicate',
+            type: input.notificationType,
+            recipientType: input.recipientType,
+            dedupeKey,
+            durationMs: Date.now() - started,
+          })
+        );
+        return {
+          inboxOk: true,
+          notificationId: existingId,
+          skippedDuplicate: true,
+          pushSent: 0,
+          pushFailed: 0,
+          tokensDeactivated: 0,
+        };
+      }
       console.log(
         JSON.stringify({
           metric: 'notification_dispatch',
-          status: 'skipped_duplicate',
+          status: 'duplicate_push_retry',
           type: input.notificationType,
           recipientType: input.recipientType,
           dedupeKey,
-          durationMs: Date.now() - started,
         })
       );
-      return {
-        inboxOk: true,
-        notificationId: existingId,
-        skippedDuplicate: true,
-        pushSent: 0,
-        pushFailed: 0,
-        tokensDeactivated: 0,
-      };
     }
   }
 
@@ -289,10 +310,7 @@ export async function dispatchNotification(
     deepLinkOverride: input.deepLinkOverride,
   });
 
-  let notificationId: string | undefined;
-  let inboxOk = false;
-
-  if (channels.inApp) {
+  if (!notificationId && channels.inApp) {
     try {
       const row = await insert('notifications', {
         recipient_type: input.recipientType,
@@ -327,6 +345,13 @@ export async function dispatchNotification(
       console.error('[notification-dispatch] Inbox insert failed:', err);
       inboxOk = false;
     }
+  } else if (notificationId && channels.push && skippedDuplicate) {
+    await ensureDeliveryLogEntries(notificationId, ['push'], {
+      title: input.title,
+      body: input.message,
+      type: input.notificationType,
+      deep_link: deepLink,
+    }).catch(() => undefined);
   }
 
   let pushSent = 0;
@@ -392,7 +417,7 @@ export async function dispatchNotification(
   return {
     inboxOk,
     notificationId,
-    skippedDuplicate: false,
+    skippedDuplicate,
     pushSent,
     pushFailed,
     tokensDeactivated,

@@ -48,6 +48,7 @@ import {
   finalizeCapturedPayment,
   recordRazorpayWebhookEvent,
 } from '../utils/payments/finalize-captured-payment';
+import { ensurePostPaymentLifecycleNotifications } from '../utils/payment-lifecycle-notifications';
 
 // Type-only helper (no runtime emit)
 type BookingStatusChange = { bookingId: string; from: string | null; to: string | null };
@@ -974,6 +975,8 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
           };
         }
         bookingToNotify = null;
+
+        await ensurePostPaymentLifecycleNotifications(fin, requestId);
 
         // Log booking status change (if any)
         if (bookingStatusChange) {

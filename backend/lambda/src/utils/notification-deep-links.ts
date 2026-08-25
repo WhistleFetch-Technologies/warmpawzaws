@@ -48,7 +48,7 @@ export function resolveNotificationDeepLink(params: {
     return '/orders';
   }
 
-  if (eventType.includes('settlement') || eventType.includes('payout')) {
+  if (eventType.includes('settlement') || eventType.includes('payout') || eventType === 'warmpawz_pay_received') {
     return isVendor ? '/settlements' : '/wallet';
   }
 
