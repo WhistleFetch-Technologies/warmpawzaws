@@ -1,9 +1,6 @@
-import type { FeaturedProviderCategory } from '@/lib/featured-provider';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
-import {
-  resolveWalkInProviderProfileServiceStyle,
-  resolveWapptVendorProfileServiceStyle,
-} from '@/lib/resolve-wappt-vendor-profile-service-style';
+import { resolveWalkInProviderProfileServiceStyle } from '@/lib/resolve-wappt-vendor-profile-service-style';
+import { readWalkInDiscoveryRadiusKm } from '@/lib/walk-in-discovery-radius';
 
 /** Mirrors GET /customer/warmpawz-pay/vendors/nearby success payload (frontend-only). */
 export type WpayNearbyVendorDto = {
@@ -16,7 +13,8 @@ export type WpayNearbyVendorDto = {
   reviewCount: number;
   distanceKm: number | null;
   distanceText: string | null;
-  warmpawzPayEligible: true;
+  warmpawzPayEligible: boolean;
+  appointmentEligible?: boolean;
   discountPercent: number;
   payViaWarmpawzLabel?: string;
   fromPrice?: number;
@@ -31,14 +29,19 @@ export type WpayNearbyVendorsResponse = {
   success: boolean;
   vendors?: WpayNearbyVendorDto[];
   total?: number;
+  nextCursor?: string | null;
   error?: string;
 };
 
-const WALK_IN_PHASE1_CATEGORIES = new Set<FeaturedProviderCategory>(['vet', 'grooming']);
-
-const WALK_IN_PRICE_LABEL: Record<'vet' | 'grooming', string> = {
+const WALK_IN_PRICE_LABEL: Record<string, string> = {
   vet: 'per visit',
   grooming: 'starts at',
+  training: 'starting',
+  walker: 'from',
+  boarding: '/night',
+  sitting: 'from',
+  nutrition: 'from',
+  nutritionist: 'from',
 };
 
 function num(v: unknown): number | null {
@@ -47,39 +50,43 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function mapWalkInCategory(raw: string | null | undefined): FeaturedProviderCategory | null {
+function mapWalkInCategory(raw: string | null | undefined): string {
   const token = String(raw ?? '')
     .trim()
     .toLowerCase();
-  if (!token || token === 'unknown') return null;
+  if (!token) return 'unknown';
   if (token === 'vet' || token === 'veterinary' || token === 'veterinarian') return 'vet';
   if (token === 'grooming' || token === 'groomer') return 'grooming';
-  return null;
+  if (token === 'training' || token === 'trainer') return 'training';
+  if (token === 'walker' || token === 'walking' || token === 'dog_walker') return 'walker';
+  if (token === 'boarding' || token === 'pet_boarding') return 'boarding';
+  if (token === 'sitting' || token === 'sitter' || token === 'pet_sitter' || token === 'pet-sitter') {
+    return 'sitting';
+  }
+  if (token === 'nutrition' || token === 'nutritionist') return 'nutrition';
+  if (token === 'behaviorist' || token === 'behaviourist') return 'behaviorist';
+  return token;
 }
 
-function resolveWalkInCategory(dto: WpayNearbyVendorDto): FeaturedProviderCategory | null {
-  return (
-    mapWalkInCategory(dto.category) ??
-    mapWalkInCategory(dto.profilePath?.vertical) ??
-    null
-  );
-}
-
-/** Map one nearby WPay vendor row to WalkInProvider (Phase 1: vet + grooming only). */
+/** Map one nearby Walk-in row. Category is display-only; capabilities come from the API. */
 export function adaptWpayNearbyVendorToWalkInProvider(
   dto: WpayNearbyVendorDto
 ): WalkInProvider | null {
-  const category = resolveWalkInCategory(dto);
-  if (!category || !WALK_IN_PHASE1_CATEGORIES.has(category)) return null;
+  const warmpawzPayEligible = dto.warmpawzPayEligible === true;
+  const appointmentEligible = dto.appointmentEligible === true;
+  if (!warmpawzPayEligible && !appointmentEligible) return null;
 
   const vendorId = String(dto.vendorId ?? '').trim();
   const displayName = String(dto.name ?? '').trim();
   if (!vendorId || !displayName) return null;
 
+  const category =
+    mapWalkInCategory(dto.category) !== 'unknown'
+      ? mapWalkInCategory(dto.category)
+      : mapWalkInCategory(dto.profilePath?.vertical);
+
   const fromPrice = num(dto.fromPrice);
-  const priceLabel =
-    String(dto.priceLabel ?? '').trim() ||
-    WALK_IN_PRICE_LABEL[category as keyof typeof WALK_IN_PRICE_LABEL];
+  const priceLabel = String(dto.priceLabel ?? '').trim() || WALK_IN_PRICE_LABEL[category] || '';
 
   const profileStyle = dto.profilePath?.serviceStyle;
   const serviceStyle = resolveWalkInProviderProfileServiceStyle({
@@ -87,9 +94,7 @@ export function adaptWpayNearbyVendorToWalkInProvider(
     subtitle: String(dto.categoryLabel ?? '').trim(),
     displayName,
     serviceStyle:
-      profileStyle === 'at_home' || profileStyle === 'at_center'
-        ? profileStyle
-        : undefined,
+      profileStyle === 'at_home' || profileStyle === 'at_center' ? profileStyle : undefined,
   });
 
   return {
@@ -105,25 +110,22 @@ export function adaptWpayNearbyVendorToWalkInProvider(
     priceLabel,
     category,
     serviceStyle: serviceStyle === 'tele' ? 'at_center' : serviceStyle,
+    warmpawzPayEligible,
+    appointmentEligible,
   };
 }
 
-/** Map nearby WPay API response to carousel providers (server-sorted; capped client-side). */
+/** Map nearby API page. Backend already filtered, sorted, and paginated. */
 export function adaptWpayNearbyVendorsToWalkInProviders(
-  response: WpayNearbyVendorsResponse,
-  options?: { limit?: number }
+  response: WpayNearbyVendorsResponse
 ): WalkInProvider[] {
   if (!response?.success || !Array.isArray(response.vendors)) return [];
 
-  const limit = options?.limit ?? 8;
   const mapped: WalkInProvider[] = [];
-
   for (const row of response.vendors) {
     const provider = adaptWpayNearbyVendorToWalkInProvider(row);
     if (provider) mapped.push(provider);
-    if (mapped.length >= limit) break;
   }
-
   return mapped;
 }
 
@@ -132,6 +134,8 @@ export function buildWpayNearbyVendorsUrl(opts: {
   latitude?: string;
   longitude?: string;
   phone?: string;
+  cursor?: string;
+  maxDistanceKm?: number | null;
 }): string {
   const params = new URLSearchParams();
   params.set('limit', String(opts.limit));
@@ -139,6 +143,15 @@ export function buildWpayNearbyVendorsUrl(opts: {
   if (opts.latitude && opts.longitude) {
     params.set('latitude', opts.latitude);
     params.set('longitude', opts.longitude);
+  }
+
+  const radiusKm = opts.maxDistanceKm ?? readWalkInDiscoveryRadiusKm();
+  if (radiusKm != null) {
+    params.set('maxDistanceKm', String(radiusKm));
+  }
+
+  if (opts.cursor?.trim()) {
+    params.set('cursor', opts.cursor.trim());
   }
 
   const phone = String(opts.phone ?? '').trim();

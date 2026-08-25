@@ -1,10 +1,12 @@
 import { query } from '../../../../database/rds-connection';
 import { wpayCatalogueCustomerVisibleSql } from '../../../warmpawz-pay/shared/merchant/merchant-eligibility-sql';
+import { wapptCatalogueCustomerVisibleSql } from '../../../warmpawz-appointments/shared/catalogue-eligibility-sql';
 import { merchantServiceCategoryFilterSql } from '../../../warmpawz-pay/shared/merchant/merchant-role-sql';
 import { expandServiceCategoryFilterTokens } from '../../../warmpawz-pay/shared/merchant/merchant-service-category.resolver';
 import type { WpayVendorListDbRow } from './wpay-vendors-list.repo';
 
-const CATALOGUE_TABLE = 'warmpawz_pay_vendor_catalog';
+const WPAY_CATALOGUE = 'warmpawz_pay_vendor_catalog';
+const WAPPT_CATALOGUE = 'warmpawz_appointments_vendor_catalog';
 const PRICING_TABLE = 'warmpawz_pay_merchant_pricing';
 
 /** Same haversine expression as discovery/repos/radar-providers.repo.ts */
@@ -20,22 +22,38 @@ export type WpayVendorsNearbyDbRow = WpayVendorListDbRow & {
   distance_km: string | number;
   avg_rating: string | number;
   review_count: string | number;
+  warmpawz_pay_eligible: boolean;
+  appointment_eligible: boolean;
 };
 
 export type DbWpayVendorsNearbyListOpts = {
   customerLat?: number;
   customerLng?: number;
   limit?: number;
+  offset?: number;
   maxDistanceKm?: number | null;
   category?: string | null;
+};
+
+export type DbWpayVendorsNearbyPage = {
+  rows: WpayVendorsNearbyDbRow[];
+  hasMore: boolean;
 };
 
 export async function dbWpayVendorsNearbyList(
   opts: DbWpayVendorsNearbyListOpts
 ): Promise<WpayVendorsNearbyDbRow[]> {
+  const page = await dbWpayVendorsNearbyPage(opts);
+  return page.rows;
+}
+
+export async function dbWpayVendorsNearbyPage(
+  opts: DbWpayVendorsNearbyListOpts
+): Promise<DbWpayVendorsNearbyPage> {
   const customerLat = opts.customerLat;
   const customerLng = opts.customerLng;
   const limit = opts.limit;
+  const offset = Math.max(0, Math.floor(opts.offset ?? 0));
 
   if (
     customerLat == null ||
@@ -46,14 +64,14 @@ export async function dbWpayVendorsNearbyList(
     !Number.isFinite(limit) ||
     limit <= 0
   ) {
-    return [];
+    return { rows: [], hasMore: false };
   }
 
   const conditions: string[] = [
     '(v.is_deleted IS NOT TRUE)',
-    wpayCatalogueCustomerVisibleSql('c'),
     'v.latitude IS NOT NULL',
     'v.longitude IS NOT NULL',
+    '(c.id IS NOT NULL OR a.id IS NOT NULL)',
   ];
   const params: unknown[] = [customerLat, customerLng];
 
@@ -70,14 +88,16 @@ export async function dbWpayVendorsNearbyList(
     }
   }
 
-  params.push(Math.floor(limit));
+  params.push(Math.floor(limit) + 1);
   const limitParam = params.length;
+  params.push(offset);
+  const offsetParam = params.length;
 
   const sql = `
     WITH scored AS (
       SELECT
-        c.id AS catalogue_id,
-        c.vendor_id,
+        COALESCE(c.id, a.id) AS catalogue_id,
+        v.id AS vendor_id,
         v.business_name,
         v.owner_name,
         v.address,
@@ -99,17 +119,23 @@ export async function dbWpayVendorsNearbyList(
         r.config AS role_config,
         r.name AS role_name,
         r.display_name AS role_display_name,
+        (c.id IS NOT NULL) AS warmpawz_pay_eligible,
+        (a.id IS NOT NULL) AS appointment_eligible,
         ${HAVERSINE_KM_SQL} AS distance_km
-      FROM ${CATALOGUE_TABLE} c
-      INNER JOIN vendors v ON v.id = c.vendor_id
+      FROM vendors v
+      LEFT JOIN ${WPAY_CATALOGUE} c
+        ON c.vendor_id = v.id AND ${wpayCatalogueCustomerVisibleSql('c')}
+      LEFT JOIN ${WAPPT_CATALOGUE} a
+        ON a.vendor_id = v.id AND ${wapptCatalogueCustomerVisibleSql('a')}
       LEFT JOIN roles r ON r.id = v.role_id
       WHERE ${conditions.join(' AND ')}
     ),
     nearby AS (
       SELECT *
       FROM scored
-      ORDER BY distance_km ASC, business_name ASC, catalogue_id ASC
+      ORDER BY distance_km ASC, business_name ASC, vendor_id ASC
       LIMIT $${limitParam}
+      OFFSET $${offsetParam}
     )
     SELECT
       n.catalogue_id,
@@ -131,6 +157,8 @@ export async function dbWpayVendorsNearbyList(
       n.role_name,
       n.role_display_name,
       n.distance_km,
+      n.warmpawz_pay_eligible,
+      n.appointment_eligible,
       (
         SELECT vs.service_style
         FROM vendor_services vs
@@ -149,9 +177,12 @@ export async function dbWpayVendorsNearbyList(
       COALESCE((SELECT COUNT(*) FROM reviews WHERE vendor_id = n.vendor_id), 0)::int AS review_count
     FROM nearby n
     LEFT JOIN ${PRICING_TABLE} p ON p.vendor_id = n.vendor_id AND p.status = 'active'
-    ORDER BY n.distance_km ASC, n.business_name ASC, n.catalogue_id ASC
+    ORDER BY n.distance_km ASC, n.business_name ASC, n.vendor_id ASC
   `;
 
   const result = await query(sql, params);
-  return result.rows as WpayVendorsNearbyDbRow[];
+  const allRows = result.rows as WpayVendorsNearbyDbRow[];
+  const hasMore = allRows.length > Math.floor(limit);
+  const rows = hasMore ? allRows.slice(0, Math.floor(limit)) : allRows;
+  return { rows, hasMore };
 }

@@ -10,7 +10,8 @@ export type WpayHomeVendorCardDto = {
   reviewCount: number;
   distanceKm: number | null;
   distanceText: string | null;
-  warmpawzPayEligible: true;
+  warmpawzPayEligible: boolean;
+  appointmentEligible: boolean;
   discountPercent: number;
   payViaWarmpawzLabel?: string;
   fromPrice?: number;
@@ -25,4 +26,11 @@ export type WpayVendorsNearbyGetResponse = {
   success: true;
   vendors: WpayHomeVendorCardDto[];
   total: number;
+  nextCursor: string | null;
+  appliedFilters: {
+    radiusKm: number | null;
+    radiusSource: 'query' | 'env' | 'unconfigured';
+    category?: string | null;
+    limit: number;
+  };
 };

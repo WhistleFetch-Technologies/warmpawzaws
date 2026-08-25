@@ -3,16 +3,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, MapPin } from 'lucide-react';
-import { useWalkInNearbyProviders } from '@/hooks/useWalkInNearbyProviders';
+import { toast } from 'sonner';
+import { useWalkInNearbyFeed, WALK_IN_NEARBY_PAGE_SIZE } from '@/hooks/useWalkInNearbyProviders';
+import { useWalkInDiscoveryLocation } from '@/hooks/useWalkInDiscoveryLocation';
 import { useWalkInVendorActions } from '@/lib/walk-in-vendor-actions';
-import { shouldUseWapptPayVendorCardUi } from '@/lib/commerce-switch-routing';
 import {
   WALK_IN_SECTION_SUBTITLE,
   WALK_IN_SECTION_TITLE,
 } from '@/lib/walk-in-constants';
 import { shouldShowWalkInNearYou } from '@/lib/walk-in-commerce-gate';
 import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
+import { hasAuthenticatedCustomerSession } from '@/lib/guest-auth-gate';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
+import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/DiscoveryVendorFeedSentinel';
+import { ManualLocationSheet } from '@/components/customer/ManualLocationSheet';
+import { WalkInLocationSheet } from '@/components/customer/walk-in/WalkInLocationSheet';
 import {
   WalkInProviderCard,
   WalkInProviderCardSkeleton,
@@ -35,9 +40,13 @@ export function WalkInVendorsPageClient() {
   const commerce = useCommerceConfigOptional();
   const showWalkIn = shouldShowWalkInNearYou(commerce);
   const [phone, setPhone] = useState<string | undefined>(undefined);
+  const [isGuest, setIsGuest] = useState(true);
+  const [addressOpen, setAddressOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
 
   useEffect(() => {
     setPhone(localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || undefined);
+    setIsGuest(!hasAuthenticatedCustomerSession());
   }, []);
 
   useEffect(() => {
@@ -46,9 +55,13 @@ export function WalkInVendorsPageClient() {
     }
   }, [commerce?.isLoaded, showWalkIn, router]);
 
-  const { data: providers = [], isLoading, isError, isFetching } = useWalkInNearbyProviders({
+  const discoveryLocation = useWalkInDiscoveryLocation({ phone, isGuest });
+  const { providers, isLoading, isError, isFetching, hasMore, loadMore } = useWalkInNearbyFeed({
     phone,
-    enabled: showWalkIn,
+    latitude: discoveryLocation.latitude,
+    longitude: discoveryLocation.longitude,
+    limit: WALK_IN_NEARBY_PAGE_SIZE,
+    enabled: showWalkIn && discoveryLocation.ready,
   });
   const { payBill, bookNow, openVendorDetails } = useWalkInVendorActions();
 
@@ -86,6 +99,26 @@ export function WalkInVendorsPageClient() {
               {WALK_IN_SECTION_TITLE}
             </h1>
             <p className="mt-0.5 text-xs leading-[18px] text-slate-500">{WALK_IN_SECTION_SUBTITLE}</p>
+            <button
+              type="button"
+              className="mt-1 flex min-w-0 max-w-full items-center gap-1 text-left text-xs font-medium text-[#FF8C42]"
+              onClick={() => {
+                if (isGuest) {
+                  void discoveryLocation.selectCurrentLocation().then((ok) => {
+                    if (ok) toast.success('Location updated');
+                    else setManualOpen(true);
+                  });
+                  return;
+                }
+                setAddressOpen(true);
+              }}
+              aria-label="Change Walk-in discovery location"
+            >
+              <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+              <span className="truncate">
+                {discoveryLocation.label || 'Set discovery location'}
+              </span>
+            </button>
           </div>
         </div>
       </header>
@@ -114,24 +147,39 @@ export function WalkInVendorsPageClient() {
               </div>
             ) : null}
             <div className="flex flex-col gap-4">
-              {listingProviders.map((provider) => {
-                const showPayActions = shouldUseWapptPayVendorCardUi(provider.category);
-                return (
+              {listingProviders.map((provider) => (
                 <WalkInProviderCard
                   key={provider.id}
                   provider={provider}
                   layout="stack"
-                  showPayActions={showPayActions}
                   onCardClick={() => openVendorDetails(provider)}
                   onSelect={() => payBill(provider)}
-                  onBook={() => (showPayActions ? bookNow(provider) : openVendorDetails(provider))}
+                  onBook={() => bookNow(provider)}
                 />
-                );
-              })}
+              ))}
             </div>
+            <DiscoveryVendorFeedSentinel
+              hasMore={hasMore}
+              loading={isLoading}
+              loadingMore={isFetching && listingProviders.length > 0}
+              onLoadMore={loadMore}
+            />
           </>
         )}
       </main>
+      <ManualLocationSheet open={manualOpen} onClose={() => setManualOpen(false)} />
+      <WalkInLocationSheet
+        open={addressOpen}
+        onClose={() => setAddressOpen(false)}
+        addresses={discoveryLocation.addresses}
+        selectedAddressId={discoveryLocation.addressId}
+        onSelectAddress={discoveryLocation.selectAddress}
+        onSelectCurrent={async () => {
+          const ok = await discoveryLocation.selectCurrentLocation();
+          if (ok) toast.success('Location updated');
+          return ok;
+        }}
+      />
     </div>
   );
 }

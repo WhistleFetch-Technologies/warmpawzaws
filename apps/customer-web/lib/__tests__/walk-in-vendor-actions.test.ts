@@ -5,14 +5,9 @@ import {
   persistWalkInShellNav,
   WALK_IN_PENDING_SHELL_NAV_KEY,
 } from '@/lib/walk-in-vendor-actions';
-import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import { WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { WALK_IN_VENDORS_PATH } from '@/lib/walk-in-constants';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
-
-jest.mock('@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking', () => ({
-  launchWarmpawzPayServiceBooking: jest.fn(),
-}));
 
 jest.mock('@/lib/commerce-switch-routing/should-use-wappt-vendor-card-ui', () => ({
   shouldUseWapptPayVendorCardUi: jest.fn(() => true),
@@ -38,6 +33,8 @@ function makeProvider(overrides: Partial<WalkInProvider> = {}): WalkInProvider {
     fromPrice: null,
     priceLabel: 'starts at',
     category: 'grooming',
+    warmpawzPayEligible: true,
+    appointmentEligible: true,
     ...overrides,
   };
 }
@@ -194,15 +191,30 @@ describe('bookWalkInAppointment', () => {
     expect(sessionStorage.getItem(WALK_IN_PENDING_SHELL_NAV_KEY)).toBeNull();
   });
 
-  it('Pay Bill opens the shared vendor Pay Bill screen without immediate login', () => {
+  it('Pay Bill opens the existing Warmpawz Pay vendor path', () => {
     const router = makeRouter();
     payWalkInBill(makeProvider(), router);
-    expect(launchWarmpawzPayServiceBooking).toHaveBeenCalledWith(
-      expect.objectContaining({
-        vendorId: 'vendor-bindu-groom',
-        category: 'grooming',
-      })
+    expect(router.push).toHaveBeenCalledWith(
+      '/warmpawz-pay/vendors/placeholder?vendorId=vendor-bindu-groom'
     );
+  });
+
+  it('Pay Bill is hidden when the vendor is not WPay eligible', () => {
+    const router = makeRouter();
+    payWalkInBill(makeProvider({ warmpawzPayEligible: false }), router);
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('Book Now is hidden when the vendor is not Appointment eligible', () => {
+    const onNavigate = jest.fn();
+    const router = makeRouter();
+    bookWalkInAppointment(
+      makeProvider({ appointmentEligible: false }),
+      router,
+      onNavigate
+    );
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it('persistWalkInShellNav stores screen for home handoff', () => {

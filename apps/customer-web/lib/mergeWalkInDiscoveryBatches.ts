@@ -4,9 +4,11 @@ import type {
 } from '@/lib/featured-provider';
 
 export type WalkInProvider = FeaturedProvider & {
-  category: FeaturedProviderCategory;
+  category: FeaturedProviderCategory | string;
   /** Resolved WAPPT profile style — from nearby API or category default. */
   serviceStyle?: 'at_center' | 'at_home';
+  warmpawzPayEligible: boolean;
+  appointmentEligible: boolean;
 };
 
 export type WalkInDiscoveryBatch = {
@@ -44,7 +46,12 @@ export function mergeWalkInDiscoveryBatches(
     for (const provider of batch.providers) {
       const id = String(provider.id || '').trim();
       if (!id) continue;
-      const tagged: WalkInProvider = { ...provider, category: batch.category };
+      const tagged: WalkInProvider = {
+        ...provider,
+        category: batch.category,
+        warmpawzPayEligible: Boolean((provider as WalkInProvider).warmpawzPayEligible),
+        appointmentEligible: Boolean((provider as WalkInProvider).appointmentEligible),
+      };
       const existing = byId.get(id);
       byId.set(id, existing ? pickNearer(existing, tagged) : tagged);
     }

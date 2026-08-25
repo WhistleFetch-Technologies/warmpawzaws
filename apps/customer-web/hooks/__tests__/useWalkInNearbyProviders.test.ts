@@ -14,6 +14,8 @@ function provider(id: string, distanceKm = 1.2): WalkInProvider {
     reviewCount: 10,
     photoUrl: null,
     experienceYears: null,
+    warmpawzPayEligible: true,
+    appointmentEligible: true,
   };
 }
 
@@ -32,5 +34,14 @@ describe('walkInProvidersEqual', () => {
 
   it('returns false when distance changes', () => {
     expect(walkInProvidersEqual([provider('a', 1.0)], [provider('a', 2.0)])).toBe(false);
+  });
+
+  it('returns false when catalogue capabilities change', () => {
+    expect(
+      walkInProvidersEqual(
+        [provider('a')],
+        [{ ...provider('a'), appointmentEligible: false }]
+      )
+    ).toBe(false);
   });
 });

@@ -90,7 +90,9 @@ export async function mapWpayVendorsNearbyRows(
 
     const category =
       categoryMeta.serviceCategoryId !== 'unknown' ? categoryMeta.serviceCategoryId : 'unknown';
-    const discountPercent = resolveWpayDiscountPercent(row);
+    const warmpawzPayEligible = Boolean(row.warmpawz_pay_eligible);
+    const appointmentEligible = Boolean(row.appointment_eligible);
+    const discountPercent = warmpawzPayEligible ? resolveWpayDiscountPercent(row) : 0;
     const distanceKm = mapDistanceKm(row.distance_km);
     const distanceText =
       distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
@@ -111,9 +113,12 @@ export async function mapWpayVendorsNearbyRows(
       reviewCount: mapReviewCount(row.review_count),
       distanceKm,
       distanceText,
-      warmpawzPayEligible: true as const,
+      warmpawzPayEligible,
+      appointmentEligible,
       discountPercent,
-      payViaWarmpawzLabel: buildPayViaWarmpawzLabel(discountPercent),
+      payViaWarmpawzLabel: warmpawzPayEligible
+        ? buildPayViaWarmpawzLabel(discountPercent)
+        : undefined,
       profilePath: {
         vertical: category,
         serviceStyle: profileServiceStyle,

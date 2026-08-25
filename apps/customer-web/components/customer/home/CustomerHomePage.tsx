@@ -199,7 +199,7 @@ function CustomerHomePageContentComponent({
         onNavigate={onNavigate}
         reviewDemoAccount={reviewDemoAccount}
       />
-      <WalkInNearYouSection phone={phone} onNavigate={onNavigate} />
+      <WalkInNearYouSection phone={phone} isGuest={isGuest} onNavigate={onNavigate} />
       <ServiceCategoryRow
         services={services}
         onNavigate={onNavigate}
