@@ -79,6 +79,8 @@ export function useByStyleDiscoveryFeed({
     await feedReload();
   }, [enabled, feedReload, phone]);
 
+  const queryExtrasKey = JSON.stringify(queryExtras ?? {});
+
   useEffect(() => {
     void reloadWithCoords();
   }, [
@@ -89,6 +91,7 @@ export function useByStyleDiscoveryFeed({
     roleId,
     specialization,
     problemTitle,
+    queryExtrasKey,
     reloadWithCoords,
   ]);
 

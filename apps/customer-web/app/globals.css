@@ -98,7 +98,21 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   overflow-x: clip;
+}
+
+/**
+ * iOS WKWebView auto-zooms when focused inputs have computed font-size < 16px.
+ * Touch-only rule prevents focus-zoom without affecting desktop form styling.
+ */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 body {

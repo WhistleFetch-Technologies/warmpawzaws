@@ -19,4 +19,16 @@ describe('isPublicEndpoint', () => {
   it('keeps PUT of the Google Maps key authenticated', () => {
     expect(isPublicEndpoint('/config/google-maps-key', 'PUT')).toBe(false);
   });
+
+  it('allows guest shop categories and published articles via /public aliases', () => {
+    expect(isPublicEndpoint('/public/ecommerce/categories', 'GET')).toBe(true);
+    expect(isPublicEndpoint('/public/articles', 'GET')).toBe(true);
+    expect(isPublicEndpoint('/public/articles/summer-grooming', 'GET')).toBe(true);
+  });
+
+  it('allows guest catalogue reads for shop categories and published articles', () => {
+    expect(isPublicEndpoint('/ecommerce/categories', 'GET')).toBe(true);
+    expect(isPublicEndpoint('/customer/articles', 'GET')).toBe(true);
+    expect(isPublicEndpoint('/customer/articles/summer-grooming', 'GET')).toBe(true);
+  });
 });

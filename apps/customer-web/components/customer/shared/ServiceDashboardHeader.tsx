@@ -41,6 +41,11 @@ export interface ServiceDashboardHeaderProps {
   // Navigation
   onBack?: () => void;
   showBackButton?: boolean;
+  /**
+   * `inline` — back arrow beside the title (default).
+   * `topRight` — back text button on the top row, title block below (no home X).
+   */
+  backButtonPlacement?: 'inline' | 'topRight';
   /** When set: X (left) = home, Back (right) = previous — same pattern as profile / address book */
   onCloseToHome?: () => void;
   
@@ -162,6 +167,7 @@ export function ServiceDashboardHeader({
   steps,
   onBack,
   showBackButton = true,
+  backButtonPlacement = 'inline',
   onCloseToHome,
   // ✅ FIX: Standardized orange color matching customer home header
   headerColor = 'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]',
@@ -375,18 +381,24 @@ export function ServiceDashboardHeader({
           </div>
         ) : null}
         <div className={`relative z-10 ${innerShellClass}`}>
-        {/* Profile-style header: X = home, Back = previous */}
-        {onCloseToHome ? (
+        {/* Split nav row: optional X (home) + Back (previous), then title block below */}
+        {onCloseToHome || backButtonPlacement === 'topRight' ? (
           <>
-            <div className={`relative z-20 flex items-center justify-between gap-2 ${titleRowMb}`}>
-              <button
-                type="button"
-                onClick={onCloseToHome}
-                className={`relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full pointer-events-auto ${isPremium ? premiumGlassBtn : 'bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30'}`}
-                aria-label="Close to home"
-              >
-                <X className="h-6 w-6 text-white" />
-              </button>
+            <div
+              className={`relative z-20 flex items-center gap-2 ${titleRowMb} ${
+                onCloseToHome ? 'justify-between' : 'justify-end'
+              }`}
+            >
+              {onCloseToHome ? (
+                <button
+                  type="button"
+                  onClick={onCloseToHome}
+                  className={`relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full pointer-events-auto ${isPremium ? premiumGlassBtn : 'bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30'}`}
+                  aria-label="Close to home"
+                >
+                  <X className="h-6 w-6 text-white" />
+                </button>
+              ) : null}
               {showBackButton && onBack && (
                 <button
                   type="button"

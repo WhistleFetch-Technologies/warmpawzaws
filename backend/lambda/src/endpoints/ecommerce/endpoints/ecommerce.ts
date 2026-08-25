@@ -1498,8 +1498,9 @@ export function registerEcommerceEndpoints(app: Hono) {
    * GET /ecommerce/categories
    * Get e-commerce product categories
    * Query: with_products_only=true — omit categories with zero storefront-active products
+   * Also registered under /public/ecommerce/categories for guest browse.
    */
-  app.get("/ecommerce/categories", async (c) => {
+  const handleListEcommerceCategories = async (c: any) => {
     try {
       const withProductsOnly =
         c.req.query('with_products_only') === 'true' ||
@@ -1585,7 +1586,11 @@ export function registerEcommerceEndpoints(app: Hono) {
       console.error('Error fetching e-commerce categories:', error);
       return c.json({ error: error.message }, 500);
     }
-  });
+  };
+
+  app.get("/ecommerce/categories", handleListEcommerceCategories);
+  /** Guest-safe public-read alias (auth middleware allows /^\/public\//). */
+  app.get("/public/ecommerce/categories", handleListEcommerceCategories);
 
   // ============================================
   // SHOPPING CART

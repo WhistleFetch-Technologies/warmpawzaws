@@ -259,7 +259,7 @@ export function useHomePageData({
           apiClient.get(`/customer/banners?${homeTopQuery.toString()}`),
           apiClient.get(`/customer/banners?${homeMiddleQuery.toString()}`),
           apiClient.get(`/customer/banners?${homeLowerQuery.toString()}`),
-          apiClient.getCustomerArticlesList('/customer/articles?limit=3&featured=true'),
+          apiClient.getCustomerArticlesList('/customer/articles?limit=3'),
           apiClient.get('/customer/announcements?limit=3'),
         ]);
 

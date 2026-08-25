@@ -78,6 +78,27 @@ describe('resolveGuestPublicApiPath', () => {
     expect(resolveGuestPublicApiPath('/ecommerce/products/p1')).toBe('/public/ecommerce/products/p1');
   });
 
+  it('rewrites ecommerce categories and featured products for guests', () => {
+    expect(resolveGuestPublicApiPath('/ecommerce/categories?with_products_only=true')).toBe(
+      '/public/ecommerce/categories?with_products_only=true'
+    );
+    expect(resolveGuestPublicApiPath('/products?featured=true&limit=3')).toBe(
+      '/public/ecommerce/products?featured=true&limit=3'
+    );
+  });
+
+  it('rewrites published articles for guests', () => {
+    expect(resolveGuestPublicApiPath('/customer/articles?limit=3')).toBe(
+      '/public/articles?limit=3'
+    );
+    expect(resolveGuestPublicApiPath('/customer/articles?limit=3&featured=true')).toBe(
+      '/public/articles?limit=3&featured=true'
+    );
+    expect(resolveGuestPublicApiPath('/customer/articles/summer-grooming')).toBe(
+      '/public/articles/summer-grooming'
+    );
+  });
+
   it('rewrites marketplace search to the public alias', () => {
     expect(resolveGuestPublicApiPath('/search?q=grooming&category=vet')).toBe(
       '/public/search?q=grooming&category=vet'

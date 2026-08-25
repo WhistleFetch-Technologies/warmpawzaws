@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { 
   X, Camera, Upload, ChevronRight, ChevronLeft, Check, AlertCircle,
   Calendar, Syringe, Heart, Shield, Dog, Cat, Sparkles, Image as ImageIcon,
@@ -39,6 +39,12 @@ import {
   keysToAbandon,
 } from '@/lib/pet-photo-upload';
 import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics, requestGuestAuth } from '@/lib/guest-auth-gate';
+import {
+  isCapacitorNativePlatform,
+  isNarrowMobileViewport,
+  resolveServiceHeaderTopPad,
+  subscribeToNarrowMobileViewport,
+} from '@/lib/service-header-safe-area';
 
 // ============================================================================
 // TYPES
@@ -239,6 +245,21 @@ export function EnhancedAddPetModal({
   onSkipPetCreation,
 }: EnhancedAddPetModalProps) {
   const isModal = variant === 'modal';
+  const isCapacitorNative = useSyncExternalStore(
+    () => () => {},
+    isCapacitorNativePlatform,
+    () => false,
+  );
+  const isNarrowMobile = useSyncExternalStore(
+    subscribeToNarrowMobileViewport,
+    isNarrowMobileViewport,
+    () => true,
+  );
+  const fullscreenHeaderTopPadStyle = resolveServiceHeaderTopPad(
+    false,
+    isCapacitorNative,
+    isNarrowMobile,
+  );
   const strictFields = !allowSkipPetCreation || !!editPet;
   const committedPhotoKeyRef = useRef<string | null>(
     editPet ? extractPetImageKey(editPet.photo) : null,
@@ -798,14 +819,19 @@ export function EnhancedAddPetModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className={`bg-gradient-to-r from-orange-500 via-amber-500 to-orange-400 p-5 flex-shrink-0 ${isModal ? 'rounded-t-3xl' : ''}`}>
+        <div
+          className={`bg-gradient-to-r from-orange-500 via-amber-500 to-orange-400 flex-shrink-0 ${
+            isModal ? 'rounded-t-3xl p-5' : 'px-5 pb-5 cw-header-safe-x'
+          }`}
+          style={isModal ? undefined : fullscreenHeaderTopPadStyle}
+        >
           <div className="flex items-center justify-between mb-4 gap-2">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               {!isModal && (
                 <button
                   type="button"
                   onClick={() => void handleHeaderDismiss()}
-                  className="w-10 h-10 shrink-0 bg-white/20 backdrop-blur rounded-full flex items-center justify-center hover:bg-white/30 transition"
+                  className="min-h-[44px] min-w-[44px] shrink-0 bg-white/20 backdrop-blur rounded-full flex items-center justify-center hover:bg-white/30 transition touch-manipulation"
                   aria-label="Back"
                 >
                   <ChevronLeft className="w-5 h-5 text-white" />

@@ -1113,7 +1113,7 @@ export function CustomerHomeComplete({
           apiClient.get<any>(`/customer/banners?${homeTopQuery.toString()}`),
           apiClient.get<any>(`/customer/banners?${homeMiddleQuery.toString()}`),
           apiClient.get<any>(`/customer/banners?${homeLowerQuery.toString()}`),
-          apiClient.getCustomerArticlesList<any>('/customer/articles?limit=3&featured=true'),
+          apiClient.getCustomerArticlesList<any>('/customer/articles?limit=3'),
           apiClient.get<any>('/customer/announcements?limit=3'),
           apiClient.get<any>('/customer/adoption-stats'),
         ]);

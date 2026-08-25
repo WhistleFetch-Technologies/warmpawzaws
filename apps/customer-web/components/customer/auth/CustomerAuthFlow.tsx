@@ -829,7 +829,7 @@ export function CustomerAuthFlow({
                   placeholder="74493 38923"
                   className={
                     isModal
-                      ? 'min-w-0 flex-1 h-full px-2.5 text-[13px] outline-none bg-transparent placeholder:text-gray-400'
+                      ? 'min-w-0 flex-1 h-full px-2.5 text-base outline-none bg-transparent placeholder:text-gray-400'
                       : 'min-w-0 flex-1 py-4 px-4 text-lg outline-none bg-transparent transition-colors duration-200'
                   }
                   autoFocus
