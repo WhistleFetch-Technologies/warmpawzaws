@@ -19,6 +19,7 @@ import { CommerceConfigProvider } from '@/lib/commerce-config-provider';
 import { LocationProvider } from '@/context/LocationContext';
 import { GuestSessionAnalyticsBootstrap } from '@/components/customer/GuestSessionAnalyticsBootstrap';
 import { GuestAuthModalProvider } from '@/components/customer/auth/GuestAuthModalProvider';
+import { IosViewportZoomGuard } from '@/components/IosViewportZoomGuard';
 
 // Lazy load DevTools - only imported in development mode
 const ReactQueryDevtools = lazy(() =>
@@ -62,6 +63,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             <CommerceConfigProvider>
               <LocationProvider>
                 <GuestAuthModalProvider>
+                  <IosViewportZoomGuard />
                   <GuestSessionAnalyticsBootstrap />
                   <ScrollToTop />
                   <Suspense fallback={null}>

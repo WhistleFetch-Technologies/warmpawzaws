@@ -53,13 +53,13 @@ export type AuthModalUiClasses = {
 
 export const AUTH_MODAL_FORM: AuthModalUiClasses = {
   field:
-    'w-full h-10 px-2.5 text-[13px] border border-gray-200 rounded-[9px] outline-none bg-white transition-colors duration-150 focus:border-[#FF8C42] focus:ring-1 focus:ring-[#FF8C42]/25',
+    'w-full h-10 px-2.5 text-base border border-gray-200 rounded-[9px] outline-none bg-white transition-colors duration-150 focus:border-[#FF8C42] focus:ring-1 focus:ring-[#FF8C42]/25',
   fieldInGroup:
-    'w-full h-10 pl-2.5 pr-10 text-[13px] border border-gray-200 rounded-[9px] outline-none bg-white transition-colors duration-150 focus:border-[#FF8C42] focus:ring-1 focus:ring-[#FF8C42]/25',
+    'w-full h-10 pl-2.5 pr-10 text-base border border-gray-200 rounded-[9px] outline-none bg-white transition-colors duration-150 focus:border-[#FF8C42] focus:ring-1 focus:ring-[#FF8C42]/25',
   inputGroup:
     'flex items-stretch h-10 border border-gray-200 rounded-[9px] overflow-hidden transition-colors duration-150 focus-within:border-[#FF8C42] focus-within:ring-1 focus-within:ring-[#FF8C42]/25 bg-white',
   otpInner:
-    'min-w-0 flex-1 h-10 px-2.5 text-sm text-center tracking-[0.16em] outline-none bg-transparent',
+    'min-w-0 flex-1 h-10 px-2.5 text-base text-center tracking-[0.16em] outline-none bg-transparent',
   primaryButton:
     'w-full h-10 text-white text-[13px] font-semibold rounded-full border border-white/25 bg-gradient-to-b from-[#FF9A4A] to-[#FF7A2E] shadow-[0_5px_14px_rgba(200,90,16,0.26)] transition-all duration-150 hover:shadow-[0_7px_16px_rgba(200,90,16,0.32)] hover:brightness-105 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/35 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
   textLink:
@@ -72,7 +72,7 @@ export const AUTH_MODAL_FORM: AuthModalUiClasses = {
     'w-full h-9 border border-dashed border-gray-300 rounded-[9px] text-gray-500 hover:border-[#FF8C42]/60 hover:text-[#FF8C42] transition-colors flex items-center justify-center gap-1 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/20',
   referralPanel: 'overflow-hidden p-2.5 border border-[#FF8C42]/25 rounded-[9px] bg-[#FF8C42]/5',
   referralInput:
-    'min-w-0 flex-1 w-full h-8 px-2 border border-gray-200 rounded-[7px] text-[11px] uppercase bg-white transition-colors focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/20',
+    'min-w-0 flex-1 w-full h-8 px-2 border border-gray-200 rounded-[7px] text-base uppercase bg-white transition-colors focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/20',
   referralApply:
     'shrink-0 px-2.5 py-1.5 text-[11px] font-semibold rounded-[7px] text-white bg-gradient-to-b from-[#FF9A4A] to-[#FF7A2E] shadow-sm transition-colors hover:brightness-105 active:scale-[0.98]',
   phoneLabel: 'block text-gray-900 font-semibold mb-0.5 text-[11px]',

@@ -629,7 +629,7 @@ export function CustomerShopOrdersScreen({
               placeholder="Order # or product"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full min-h-11 pl-10 pr-3 py-2.5 text-[15px] sm:text-sm border border-orange-100/90 rounded-2xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-300/80 touch-manipulation"
+              className="w-full min-h-11 pl-10 pr-3 py-2.5 text-[16px] sm:text-sm border border-orange-100/90 rounded-2xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-300/80 touch-manipulation"
             />
           </div>
           <Select
