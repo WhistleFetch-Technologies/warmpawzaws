@@ -119,6 +119,18 @@ describe('wappt discovery API url contract', () => {
     expect(url).toContain('cursor=abc');
   });
 
+  it('builds walker featured URL with published-catalogue by-category path', () => {
+    const qs = new URLSearchParams({
+      category: 'walker',
+      serviceStyle: 'all',
+      limit: '3',
+    });
+    const url = `/customer/warmpawz-appointments/discovery/by-category?${qs}`;
+    expect(url).toBe(
+      '/customer/warmpawz-appointments/discovery/by-category?category=walker&serviceStyle=all&limit=3',
+    );
+  });
+
   it('builds vet tele discovery URL', () => {
     const qs = new URLSearchParams({
       category: 'vet',

@@ -30,4 +30,10 @@ describe('shouldUseWapptDiscoveryFeed', () => {
     (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockReturnValue(true);
     expect(shouldUseWapptDiscoveryFeed('training')).toBe(true);
   });
+
+  it('uses WAPPT by-category for walker featured lists', () => {
+    (isWarmpawzAppointmentsHubEnabled as jest.Mock).mockReturnValue(true);
+    expect(shouldUseWapptDiscoveryFeed('walker')).toBe(true);
+    expect(isWarmpawzAppointmentsHubEnabled).toHaveBeenCalledWith('walker');
+  });
 });
