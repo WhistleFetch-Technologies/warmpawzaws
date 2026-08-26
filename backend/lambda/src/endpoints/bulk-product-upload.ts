@@ -65,6 +65,7 @@ import {
 } from '../utils/product-vendor-persist';
 import { validateAndApplyVendorDeclaredOwnership } from '../utils/compute-listing-ownership';
 import { cleanupRemovedProductS3Images, collectImageUrlsFromJsonb } from '../utils/product-s3-image';
+import { expandBulkRowImages } from '../utils/expand-bulk-row-images';
 
 /**
  * Represents one row from the bulk product upload spreadsheet.
@@ -199,17 +200,36 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       const warnings: ValidationWarning[] = [];
       const validProducts: BulkProductRow[] = [];
 
+      // Assign rowNums then expand Drive folder Image cells → file URLs (idempotent for file lists)
+      const expandRows = rowsToValidate.map((p: Record<string, unknown>, index: number) => ({
+        ...p,
+        rowNum: index + 1,
+      }));
+      const expandResult = await expandBulkRowImages(vendorId, expandRows);
+      const expandErrorRows = new Set(expandResult.errors.map((e) => e.row));
+      for (const e of expandResult.errors) {
+        errors.push({ row: e.row, field: e.field, message: e.message, value: e.value });
+      }
+      for (const w of expandResult.warnings) {
+        warnings.push({ row: w.row, field: w.field, message: w.message, value: w.value });
+      }
+
       // Get valid categories (parents + children accepted for legacy sheets; upload coerces to parent)
       const categories = await select('ecommerce_categories', { is_active: true });
       const validCategories = new Set(
         categories.map((c: any) => String(c.name ?? '').trim().toLowerCase()).filter(Boolean)
       );
 
-      rowsToValidate.forEach((product: any, index: number) => {
+      expandRows.forEach((product: any, index: number) => {
         const rowNum = index + 1;
         const rowErrors: ValidationError[] = [];
         const push = (field: string, message: string, value?: unknown) =>
           rowErrors.push({ row: rowNum, field, message, value });
+
+        if (expandErrorRows.has(rowNum)) {
+          errors.push(...rowErrors);
+          return;
+        }
 
         const validation = validateEcommerceProductInput(product as Record<string, unknown>, {
           mode: 'bulk',
@@ -389,7 +409,18 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         rowsWithNum.push({ ...(product as BulkVariantRow), rowNum: product.rowNum ?? titledRowNum });
       }
 
-      const groups = groupBulkRows(rowsWithNum, vendorId);
+      // Safety net: expand any remaining Drive folder Image cells (idempotent if already file URLs)
+      const uploadExpand = await expandBulkRowImages(vendorId, rowsWithNum as Record<string, unknown>[]);
+      const uploadExpandFailRows = new Set(uploadExpand.errors.map((e) => e.row));
+      for (const e of uploadExpand.errors) {
+        results.failed++;
+        results.errors.push({ row: e.row, error: e.message });
+      }
+      const rowsForUpload = rowsWithNum.filter(
+        (r) => !uploadExpandFailRows.has(Number(r.rowNum ?? 0)),
+      );
+
+      const groups = groupBulkRows(rowsForUpload, vendorId);
 
       for (const group of groups) {
         const primaryRowNum = group.rowNums[0] ?? 1;

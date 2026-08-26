@@ -214,7 +214,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     }
     if (h === 'Image (1000X1000px)*') {
       cell.note =
-        'One or more direct image URLs, comma-separated. Use stable CDN or website links (not Google Drive view links). Images are shown on the storefront from these URLs.';
+        'Either comma-separated direct image file URLs, or one Google Drive folder link per row (that folder’s images only). Size/color rows of the same product may use different folders. Do not reuse one folder across different products. Prefer stable CDN links when possible.';
     }
     if (h === 'Product Specifications') {
       cell.note = 'Optional. Format: Material:Cotton, Size:Medium';
@@ -402,7 +402,7 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   manufacturedby: 'manufactured_by',
 };
 
-function cellValueToDisplayString(v: ExcelJS.CellValue): string {
+export function cellValueToDisplayString(v: ExcelJS.CellValue): string {
   if (v === null || v === undefined) return '';
   if (typeof v === 'object' && v !== null && 'formula' in v) {
     const f = v as { result?: ExcelJS.CellValue };
@@ -413,7 +413,16 @@ function cellValueToDisplayString(v: ExcelJS.CellValue): string {
   }
   if (typeof v === 'object' && v !== null && 'hyperlink' in v) {
     const h = v as ExcelJS.CellHyperlinkValue;
-    return String(h.text ?? h.hyperlink ?? '');
+    const link = String(h.hyperlink ?? '').trim();
+    if (/^https?:\/\//i.test(link)) {
+      return link;
+    }
+    // Prefer hyperlink text only when link is absent/invalid
+    if (h.text != null && typeof h.text === 'object' && 'richText' in (h.text as object)) {
+      const rt = (h.text as { richText?: Array<{ text: string }> }).richText;
+      if (Array.isArray(rt)) return rt.map((t) => t.text).join('').trim();
+    }
+    return String(h.text ?? h.hyperlink ?? '').trim();
   }
   if (typeof v === 'object' && v !== null && 'richText' in v) {
     const rt = (v as { richText?: Array<{ text: string }> }).richText;
