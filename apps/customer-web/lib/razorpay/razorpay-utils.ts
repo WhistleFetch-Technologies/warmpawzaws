@@ -13,15 +13,10 @@ export const RAZORPAY_PREFILL_EMAIL_FALLBACK = 'test@example.com';
  * Razorpay Standard Checkout: custom display so UPI is not QR-only (shows collect / VPA where Razorpay still offers it).
  * Pattern from https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/sample-code/
  *
- * NOTE (Capacitor / Android WebView): a single `banks` block listing
- * `{ method: 'upi' }` alongside other methods causes Razorpay to drop UPI on
- * many Android WebView builds — UPI options disappear and only cards / wallets
- * show. Prefer {@link getWarmpawzRazorpayUpiDisplayConfig} (UPI block with
- * `flows: ['collect', 'intent', 'qr']`) plus `method: { upi: true }` for
- * payment surfaces, same as `buildSanitizedStandardRazorpayCheckoutOptions`.
- *
- * Kept for any non-payment legacy callers (e.g. wallet-add fallbacks) that
- * still need the old layout. Do not use for new code.
+ * Do not attach these blocks to Pay Bill / Appointment / shop checkout.
+ * `config.display` + `method: { upi: true }` replace Razorpay's default
+ * saved-method sheet (PhonePe + Pay + More Options) with the Appointment-style
+ * custom list. Canonical checkout is minimal options only.
  */
 export function getWarmpawzRazorpayStandardDisplayConfig(): {
   display: {
@@ -54,11 +49,9 @@ export function getWarmpawzRazorpayStandardDisplayConfig(): {
 /**
  * UPI display block for Razorpay Standard Checkout.
  *
- * Required for Capacitor Android: `flows: ['collect', 'intent', 'qr']` keeps
- * intent (GPay / PhonePe / Paytm app launch) visible alongside collect (VPA)
- * and qr. Pair with `method: { upi: true }` on the checkout options. If the
- * Android manifest is missing UPI `<queries>` (`upi://` scheme + UPI app
- * packages), intent silently disappears even with this config.
+ * Do not attach this to checkout options. `config.display` + `method: { upi: true }`
+ * replace Razorpay's default saved-method sheet with a custom list.
+ * Native UPI app launch still needs Android `<queries>` / iOS URL schemes.
  */
 export function getWarmpawzRazorpayUpiDisplayConfig(): {
   display: {
@@ -111,6 +104,8 @@ export function razorpaySafeDescription(text: string): string {
  */
 export function sanitizeRazorpayInstanceOptions<T extends Record<string, any>>(opts: T): T {
   const out = { ...opts } as Record<string, any>;
+  delete out.config;
+  delete out.method;
 
   for (const key of Object.keys(out)) {
     const v = out[key];
@@ -159,8 +154,8 @@ export function sanitizeRazorpayInstanceOptions<T extends Record<string, any>>(o
       continue;
     }
 
-    if (key === 'config' && typeof v === 'object' && v !== null && !Array.isArray(v)) {
-      out[key] = v;
+    if (key === 'config' || key === 'method') {
+      delete out[key];
       continue;
     }
   }

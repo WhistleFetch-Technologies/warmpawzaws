@@ -17,24 +17,14 @@ Chrome at the same URL), fix all three:
    project (likely outside this repo, signed with the [keystore repo](https://github.com/AbhayankarBellur/keystore))
 3. Razorpay Dashboard — UPI enabled on the live merchant account
 
-## 1. JS fix (already in this repo)
+## 1. JS checkout (canonical = old Pay Bill)
 
-`UniversalPaymentPage.tsx` and `lib/razorpay/razorpay-utils.ts` now use
-`getWarmpawzRazorpayUpiDisplayConfig()`:
+Do **not** inject `config.display` or `method: { upi: true }`. Those options
+replace Razorpay's default saved-method sheet (PhonePe + Pay + More Options)
+with a custom Appointment-style list.
 
-```ts
-config.display.blocks.upi = {
-  name: 'Pay using UPI',
-  instruments: [{ method: 'upi', flows: ['collect', 'intent', 'qr'] }],
-};
-config.display.sequence = ['block.upi'];
-options.method = { upi: true };
-```
-
-The legacy `banks` block (`{ method: 'upi' }, { method: 'card' }, ...`) caused
-Razorpay to drop UPI on Android WebView — verified against the new pattern
-already used by `CheckoutView`, `CustomerWallet`, `BookingFlow` and other
-flows via `buildSanitizedStandardRazorpayCheckoutOptions`.
+All customer checkouts use `openStandardRazorpayCheckout` → minimal options
+only. `sanitizeRazorpayInstanceOptions` strips leftover `config` / `method`.
 
 After deploying customer-web to prod (S3 + CloudFront), do a hard refresh in
 the APK or rebuild and reinstall — the WebView caches `_next/static` chunks.
@@ -45,8 +35,8 @@ the APK or rebuild and reinstall — the WebView caches `_next/static` chunks.
 
 | Console line | Meaning |
 |--------------|---------|
-| `Razorpay options: { config: { display: { blocks: { upi: { instruments: [{ method: 'upi', flows: ['collect','intent','qr'] }] } } } }, method: { upi: true }, ... }` | JS fix is live |
-| `blocks.banks` | Old chunk still cached → invalidate CloudFront / reinstall APK |
+| Options have **no** `config.display` / `method` | Canonical Pay Bill sheet is live |
+| `config.display` or `method: { upi: true }` | Stale UPI-block chunk → invalidate CloudFront / reinstall APK |
 | Correct JS but no UPI app chips on intent picker | Manifest `<queries>` missing → step 2 |
 
 ## 2. Customer Android manifest (Capacitor project)

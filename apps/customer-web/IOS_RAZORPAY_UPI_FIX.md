@@ -6,7 +6,7 @@ Three layers (same as Android):
 
 | Layer | What | Ships in IPA? |
 |-------|------|----------------|
-| **1. JS** | `getWarmpawzRazorpayUpiDisplayConfig()` + `method: { upi: true }` | No — from URL after prod deploy |
+| **1. JS** | Minimal Pay Bill Standard Checkout (`openStandardRazorpayCheckout`). Do not inject UPI `config.display` / `method`. | No — from URL after prod deploy |
 | **2. Capacitor config** | `ios.overrideUserAgent` (recommended) | Yes — after `cap sync ios` |
 | **3. Native** | `LSApplicationQueriesSchemes` + WKWebView navigation handler for `upi://`, `tez://`, etc. | Yes — Xcode archive |
 
@@ -217,9 +217,9 @@ Same as Android — in this repo:
 
 | File | Change |
 |------|--------|
-| `lib/razorpay/razorpay-utils.ts` | `getWarmpawzRazorpayUpiDisplayConfig()` |
-| `components/customer/payment/UniversalPaymentPage.tsx` | `config` + `method: { upi: true }` |
-| `lib/razorpay/build-standard-checkout-options.ts` | Other checkout flows |
+| `lib/razorpay/open-standard-razorpay-checkout.ts` | Shared opener for Pay Bill, Appointment, shop |
+| `lib/razorpay/razorpay-utils.ts` | `sanitizeRazorpayInstanceOptions` strips `config` / `method` |
+| `lib/razorpay/build-standard-checkout-options.ts` | Minimal Pay Bill options only |
 
 Deploy **customer-web** to prod before testing the IPA.
 

@@ -3,6 +3,7 @@ import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   WARMPAWZ_RAZORPAY_CHECKOUT_THEME,
 } from '@/lib/razorpay/build-standard-checkout-options';
+import { sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
 
 describe('buildSanitizedStandardRazorpayCheckoutOptions', () => {
   const minimalInput = {
@@ -38,6 +39,26 @@ describe('buildSanitizedStandardRazorpayCheckoutOptions', () => {
     expect(options.config).toBeUndefined();
     expect(options.prefill).toEqual({ contact: '+917204349299' });
     expect(options.prefill.email).toBeUndefined();
+  });
+
+  test('strips leftover UPI display config so Pay Bill sheet stays default', () => {
+    const options = sanitizeRazorpayInstanceOptions({
+      key: 'rzp_test_key',
+      amount: 2302920,
+      currency: 'INR',
+      name: 'Warmpawz',
+      description: 'Warmpawz Pay - Harley\'s Corner',
+      method: { upi: true },
+      config: {
+        display: {
+          blocks: { upi: { name: 'Pay using UPI', instruments: [{ method: 'upi' }] } },
+          sequence: ['block.upi'],
+        },
+      },
+    });
+    expect(options.method).toBeUndefined();
+    expect(options.config).toBeUndefined();
+    expect(options.amount).toBe(2302920);
   });
 
   test('prefills a real profile email and does not invent one', () => {
