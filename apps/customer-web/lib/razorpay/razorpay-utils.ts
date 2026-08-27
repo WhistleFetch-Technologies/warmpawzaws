@@ -199,6 +199,7 @@ export interface RazorpayCheckoutOptions {
   keyId?: string; // Razorpay key ID from API response
   onSuccess: (response: any) => Promise<void>;
   onDismiss?: () => void;
+  onFailure?: (error: Error) => void;
 }
 
 /**
@@ -290,9 +291,10 @@ export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions
   });
 
   const razorpay = new (window as any).Razorpay(razorpayOptions);
-  if (typeof razorpay.on === 'function' && options.onFailure) {
+  const onFailure = options.onFailure;
+  if (typeof razorpay.on === 'function' && onFailure) {
     razorpay.on('payment.failed', (resp: { error?: { description?: string; reason?: string } }) => {
-      options.onFailure(new Error(resp?.error?.description || resp?.error?.reason || 'Payment failed'));
+      onFailure(new Error(resp?.error?.description || resp?.error?.reason || 'Payment failed'));
     });
   }
   razorpay.open();
