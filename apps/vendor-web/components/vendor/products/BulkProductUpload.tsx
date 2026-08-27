@@ -479,7 +479,7 @@ export function BulkProductUpload({
                 <ul className="text-sm text-amber-700 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <li>• <strong>Title*</strong> — product name</li>
                   <li>• <strong>Quantity*</strong> — whole number ≥ 0</li>
-                  <li>• <strong>Image*</strong> — at least one http(s) URL per row; multiple images = comma-separated in the same cell. Images are shown on the storefront from your URLs (not copied to Warmpawz storage during bulk upload). Prefer direct CDN links over Google Drive.</li>
+                  <li>• <strong>Image*</strong> — either comma-separated http(s) file URLs in the same cell, or one Google Drive folder link per row (images in that folder only). Variants of the same product may use different folders; do not reuse one folder across different products. Prefer direct CDN links when possible. Images are shown from your URLs (not copied to Warmpawz storage during bulk upload).</li>
                   <li>• <strong>MRP*</strong> — maximum retail price in ₹ (&gt; 0)</li>
                   <li>• <strong>Category*</strong> — column Y (dropdown)</li>
                   <li>• <strong>Tax*</strong> — 0, 5, 12, 18, or 28%</li>
