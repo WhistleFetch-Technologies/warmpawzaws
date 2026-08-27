@@ -17,6 +17,10 @@ import { EMPTY_SERVICE_HEADER_STATS } from "@/lib/service-header-stats";
 import { findBoardingListVendorByProfileKey } from "@/lib/boarding-vendor-discovery-map";
 import { isWapptHubCategoryEnabled } from "@/lib/warmpawz-appointments-customer";
 import { WarmpawzAppointmentsVendorList } from "../warmpawz-appointments/WarmpawzAppointmentsVendorList";
+import { DayVisitsDetailView } from "./DayVisitsDetailView";
+import { DropInVisitsDetailView } from "./DropInVisitsDetailView";
+import { ExtendedStayDetailView } from "./ExtendedStayDetailView";
+import { OvernightSittingDetailView } from "./OvernightSittingDetailView";
 
 const OPTION_TITLES: Record<string, string> = {
   overnight_sitting: "Overnight sitting",
@@ -32,7 +36,51 @@ export interface PetSittingVendorListViewProps {
   onNavigate?: (screen: string, data?: Record<string, unknown>) => void;
 }
 
-export function PetSittingVendorListView({
+export function PetSittingVendorListView(props: PetSittingVendorListViewProps) {
+  if (props.sittingOptionId === "overnight_sitting") {
+    return (
+      <OvernightSittingDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  if (props.sittingOptionId === "day_visits") {
+    return (
+      <DayVisitsDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  if (props.sittingOptionId === "extended_home") {
+    return (
+      <ExtendedStayDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  if (props.sittingOptionId === "drop_in") {
+    return (
+      <DropInVisitsDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  return <PetSittingVendorListViewInner {...props} />;
+}
+
+function PetSittingVendorListViewInner({
   phone,
   sittingOptionId,
   onBack,
