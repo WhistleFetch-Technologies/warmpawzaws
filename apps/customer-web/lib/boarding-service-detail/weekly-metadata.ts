@@ -1,0 +1,57 @@
+import { defineSpecialization } from '@/lib/specialization-detail/define';
+
+/** Static service copy for the Weekly Boarding details page only. */
+export const weeklyBoardingMetadata = defineSpecialization({
+  id: 'weekly',
+  category: 'boarding',
+  title: 'Weekly Boarding',
+  description:
+    "A safe, comfortable and supervised weekly stay for your pet with complete care, playtime, meals and lots of love while you're away for a longer time.",
+  heroImage: '/images/home/Boarding/weekly-detail-hero.webp',
+  heroImagePosition: 'center 42%',
+  highlightChips: ['Ideal for Long Stays', 'Safe & Supervised', 'Complete Care'],
+  whatsIncluded: [
+    { label: 'Supervised weekly stay', icon: 'calendar' },
+    { label: 'Safe indoor/outdoor play', icon: 'activity' },
+    { label: 'Feeding as per routine', icon: 'heart' },
+    { label: 'Regular potty breaks', icon: 'check' },
+    { label: 'Fresh water always available', icon: 'heart' },
+    { label: 'Cozy bedding', icon: 'home' },
+    { label: 'Play & enrichment sessions', icon: 'sparkles' },
+    { label: 'Basic health monitoring', icon: 'shield' },
+    { label: 'Care updates', icon: 'check' },
+    { label: 'Lots of love & attention', icon: 'heart' },
+    { label: 'Hygiene & cleanliness', icon: 'sparkles' },
+    { label: '24×7 supervision', icon: 'shield' },
+  ],
+  whoIsThisFor: [
+    'Pet parents on vacations',
+    'Business trips & longer absences',
+    'Pets needing company & care for a week',
+    'Avoiding long crate time at home',
+    'Dogs who enjoy a homely environment',
+  ],
+  audienceTitle: 'Best For',
+  timelineTitle: 'Weekly Routine',
+  timeline: [
+    { period: 'Check-in & Settle', title: 'Warm welcome and settling in' },
+    { period: 'Play & Social Time', title: 'Supervised social play' },
+    { period: 'Meal Time', title: 'Scheduled feeding' },
+    { period: 'Training & Enrichment', title: 'Mental and physical enrichment' },
+    { period: 'Rest & Relax', title: 'Quiet rest period' },
+    { period: 'Evening Play', title: 'Evening activity session' },
+    { period: 'Good Night Care', title: 'Comfortable overnight care' },
+    { period: 'Daily Care Routine', title: 'Consistent daily care through the week' },
+    { period: 'Check-out', title: 'Pickup and handover' },
+  ],
+  importantNotesTitle: 'Important Notes',
+  importantNotes: [
+    'Exact activity schedules vary by facility.',
+    "Meal instructions should follow the pet's routine.",
+    'Pickup/check-out timing depends on the facility.',
+    'Facility-specific health, vaccination and behavior requirements may apply.',
+    'Pets may be grouped separately based on temperament, size and facility policy.',
+  ],
+  tips: [],
+  benefits: [],
+});

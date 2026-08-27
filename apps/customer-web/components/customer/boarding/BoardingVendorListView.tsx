@@ -15,6 +15,12 @@ import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { isWapptHubCategoryEnabled } from '@/lib/warmpawz-appointments-customer';
 import { WarmpawzAppointmentsVendorList } from '../warmpawz-appointments/WarmpawzAppointmentsVendorList';
+import { FullDayBoardingDetailView } from './FullDayBoardingDetailView';
+import { OvernightBoardingDetailView } from './OvernightBoardingDetailView';
+import { HalfDayBoardingDetailView } from './HalfDayBoardingDetailView';
+import { SwimmingDetailView } from './SwimmingDetailView';
+import { WeekendBoardingDetailView } from './WeekendBoardingDetailView';
+import { WeeklyBoardingDetailView } from './WeeklyBoardingDetailView';
 
 export type { BoardingPlanRow, BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 
@@ -25,14 +31,80 @@ export interface BoardingVendorListViewProps {
   onNavigate?: (screen: string, data?: Record<string, unknown>) => void;
 }
 
-export function BoardingVendorListView({
+export function BoardingVendorListView(props: BoardingVendorListViewProps) {
+  const serviceSlug = normalizeBoardingServiceSlug(props.serviceSlug);
+
+  if (serviceSlug === 'full-day') {
+    return (
+      <FullDayBoardingDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  if (serviceSlug === 'overnight') {
+    return (
+      <OvernightBoardingDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  if (serviceSlug === 'half-day') {
+    return (
+      <HalfDayBoardingDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  if (serviceSlug === 'swimming') {
+    return (
+      <SwimmingDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  if (serviceSlug === 'weekend') {
+    return (
+      <WeekendBoardingDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  if (serviceSlug === 'weekly') {
+    return (
+      <WeeklyBoardingDetailView
+        phone={props.phone}
+        onBack={props.onBack}
+        onNavigate={props.onNavigate}
+      />
+    );
+  }
+
+  return <BoardingVendorListViewInner {...props} serviceSlug={serviceSlug} />;
+}
+
+function BoardingVendorListViewInner({
   phone,
-  serviceSlug: serviceSlugProp,
+  serviceSlug,
   onBack,
   onNavigate,
-}: BoardingVendorListViewProps) {
+}: BoardingVendorListViewProps & { serviceSlug: ReturnType<typeof normalizeBoardingServiceSlug> }) {
   const router = useRouter();
-  const serviceSlug = normalizeBoardingServiceSlug(serviceSlugProp);
+
   const {
     loading,
     vendors,
