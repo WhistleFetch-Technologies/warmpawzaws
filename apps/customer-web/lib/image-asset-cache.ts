@@ -3,6 +3,8 @@
  * Keys are stable paths, not expiring presigned URLs.
  */
 
+import { isDerivedThumbImageSrc } from './full-image-url-from-thumb';
+
 const DB_NAME = 'warmpawz-image-cache-v1';
 const STORE_NAME = 'blobs';
 const DB_VERSION = 1;
@@ -168,6 +170,7 @@ export async function fetchAndCacheImageSrc(
   src: string,
   init?: RequestInit
 ): Promise<string | null> {
+  if (isDerivedThumbImageSrc(src)) return null;
   const cacheKey = cacheKeyForImageSrc(src);
   if (!cacheKey) return null;
 

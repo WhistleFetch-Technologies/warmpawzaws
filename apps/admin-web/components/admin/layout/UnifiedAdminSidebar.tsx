@@ -34,7 +34,6 @@ import {
 import { useState, useEffect, useMemo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { filterMarketingSidebarNavItems, isLegacyPromotionUiEnabled } from '@/lib/legacy-promotion-ui';
-import { isWarmpawzAppointmentsAdminEnabled } from '@/lib/warmpawz-appointments-admin-feature';
 import {
   MARKETING_PORTAL_NAV_GROUPS,
   MARKETING_PORTAL_TOP_LINKS,
@@ -285,12 +284,8 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
   const visibleMainNav = useMemo(() => {
     if (!hydrated) return mainNavItems;
     const perms = getStoredAdminPermissions();
-    let items = mainNavItems;
-    if (!isWarmpawzAppointmentsAdminEnabled()) {
-      items = items.filter((item) => item.id !== 'warmpawz-appointments-catalogue');
-    }
-    if (perms.includes('admin.full_access') || perms.includes('*')) return items;
-    return items.filter((item) => canSeeNavItem(item, hydrated));
+    if (perms.includes('admin.full_access') || perms.includes('*')) return mainNavItems;
+    return mainNavItems.filter((item) => canSeeNavItem(item, hydrated));
   }, [hydrated, mainNavItems, pathname, activeView]);
 
   const visibleMarketingNav = useMemo(() => {

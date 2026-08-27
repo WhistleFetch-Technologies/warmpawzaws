@@ -39,6 +39,20 @@ describe('resolveGuestPublicApiPath', () => {
         '/customer/warmpawz-appointments/discovery/by-style?style=at_center&category=vet'
       )
     ).toBe('/public/warmpawz-appointments/discovery/by-style?style=at_center&category=vet');
+    expect(
+      resolveGuestPublicApiPath(
+        '/customer/warmpawz-appointments/discovery/by-category?category=grooming&serviceStyle=at_home'
+      )
+    ).toBe(
+      '/public/warmpawz-appointments/discovery/by-category?category=grooming&serviceStyle=at_home'
+    );
+    expect(resolveGuestPublicApiPath('/customer/vendors/search?category=grooming')).toBe(
+      '/public/vendors/search?category=grooming'
+    );
+    expect(resolveGuestPublicApiPath('/customer/services?roleId=groomer')).toBe(
+      '/public/services?roleId=groomer'
+    );
+    expect(resolveGuestPublicApiPath('/customer/discovery/meta')).toBe('/public/discovery/meta');
   });
 
   it('rewrites vendor services and slots for guests', () => {
@@ -112,6 +126,9 @@ describe('resolveGuestPublicApiPath', () => {
     expect(resolveGuestPublicApiPath('/customer/pets')).toBe('/customer/pets');
     expect(resolveGuestPublicApiPath('/customer/pets/9876543210')).toBe('/customer/pets/9876543210');
     expect(resolveGuestPublicApiPath('/ecommerce/orders')).toBe('/ecommerce/orders');
+    expect(
+      resolveGuestPublicApiPath('/customer/warmpawz-appointments/vendors/abc/fee'),
+    ).toBe('/customer/warmpawz-appointments/vendors/abc/fee');
   });
 
   it('leaves paths unchanged when JWT present', () => {

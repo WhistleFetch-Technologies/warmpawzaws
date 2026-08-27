@@ -7,6 +7,7 @@ import {
   getCachedImageBlobUrl,
   isIndexedDbCacheableImageSrc,
 } from '@/lib/image-asset-cache';
+import { fullImageUrlFromThumbSrc, isDerivedThumbImageSrc } from '@/lib/full-image-url-from-thumb';
 
 type CachedImageProps = {
   src?: string | null;
@@ -46,6 +47,7 @@ function classNameForFill(fill: boolean, className?: string): string | undefined
 
 function scheduleIdleWarm(raw: string): void {
   if (typeof window === 'undefined') return;
+  if (isDerivedThumbImageSrc(raw)) return;
   const warm = () => {
     void fetchAndCacheImageSrc(raw);
   };
@@ -78,6 +80,7 @@ export function CachedImage({
 }: CachedImageProps) {
   const [displaySrc, setDisplaySrc] = useState<string>(src?.trim() || '');
   const [failed, setFailed] = useState(false);
+  const [triedThumbSibling, setTriedThumbSibling] = useState(false);
   const [triedRefresh, setTriedRefresh] = useState(false);
 
   const cacheable = isIndexedDbCacheableImageSrc(src);
@@ -87,6 +90,7 @@ export function CachedImage({
     const raw = src?.trim() || '';
     setFailed(false);
     setTriedRefresh(false);
+    setTriedThumbSibling(false);
     if (!raw) {
       setDisplaySrc('');
       return;
@@ -130,6 +134,15 @@ export function CachedImage({
       return;
     }
 
+    if (!triedThumbSibling) {
+      const sibling = fullImageUrlFromThumbSrc(raw) || fullImageUrlFromThumbSrc(displaySrc);
+      if (sibling && sibling !== raw && sibling !== displaySrc) {
+        setTriedThumbSibling(true);
+        setDisplaySrc(sibling);
+        return;
+      }
+    }
+
     if (!triedRefresh && raw.includes('amazonaws.com')) {
       setTriedRefresh(true);
       const refreshed = await refreshSignedUrlIfNeeded(raw);
@@ -147,7 +160,7 @@ export function CachedImage({
     }
 
     markUnavailable();
-  }, [src, triedRefresh, displaySrc, markUnavailable]);
+  }, [src, triedRefresh, triedThumbSibling, displaySrc, markUnavailable]);
 
   if (!src?.trim() || failed) return null;
 

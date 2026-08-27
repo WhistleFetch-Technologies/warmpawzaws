@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Bell, Loader2, MapPin, MessageSquare } from 'lucide-react';
+import { Bell, ChevronDown, Loader2, MapPin, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { resolveCustomerLocation } from '@/lib/customer-location';
@@ -189,6 +189,7 @@ function HomeHeaderSectionComponent({
                   <MapPin className="h-3 w-3 shrink-0 text-white/75" aria-hidden />
                 )}
                 <span className="truncate text-[11px] font-medium text-white/80">{locationLabel}</span>
+                <ChevronDown className="h-3 w-3 shrink-0 text-white/70" aria-hidden />
               </button>
             ) : null}
           </div>

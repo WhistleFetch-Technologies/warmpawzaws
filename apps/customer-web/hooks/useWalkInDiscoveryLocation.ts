@@ -180,8 +180,15 @@ export function useWalkInDiscoveryLocation(opts: { phone?: string; isGuest?: boo
     setLabel(stored.label);
     setMode(stored.mode);
     setAddressId(stored.addressId);
+    locationCtx?.setManualLocation({
+      latitude: coords.lat,
+      longitude: coords.lng,
+      city: address.city,
+      pincode: address.pincode,
+      source: 'manual_city',
+    });
     return true;
-  }, []);
+  }, [locationCtx]);
 
   const selectCurrentLocation = useCallback(async (): Promise<boolean> => {
     const ok = locationCtx ? await locationCtx.requestForegroundLocation({ force: true }) : false;
@@ -189,11 +196,17 @@ export function useWalkInDiscoveryLocation(opts: { phone?: string; isGuest?: boo
     const lat = persisted?.latitude ?? locationCtx?.latitude;
     const lng = persisted?.longitude ?? locationCtx?.longitude;
     if (!ok || lat == null || lng == null) return false;
+    const cityLabel =
+      persisted?.city ||
+      locationCtx?.city ||
+      persisted?.locality ||
+      locationCtx?.locality ||
+      'Current location';
     const stored = writeWalkInDiscoveryLocation({
       mode: 'current',
       latitude: lat,
       longitude: lng,
-      label: 'Current location',
+      label: cityLabel,
     });
     setLatitude(String(stored.latitude));
     setLongitude(String(stored.longitude));

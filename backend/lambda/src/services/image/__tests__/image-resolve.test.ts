@@ -26,7 +26,7 @@ jest.mock('../image-url-builder', () => ({
 import { resolveImageForContext } from '../image-resolve';
 
 describe('resolveImageForContext', () => {
-  it('returns thumb displayUrl for list context on WebP keys', async () => {
+  it('returns full url for list context when thumbs are only derived (migrate false)', async () => {
     const resolved = await resolveImageForContext('products/vendor1/abc.webp', {
       assetType: 'product',
       ownerId: 'vendor1',
@@ -35,8 +35,10 @@ describe('resolveImageForContext', () => {
       migrate: false,
     });
     expect(resolved).not.toBeNull();
-    expect(resolved!.displayUrl).toContain('.thumb.webp');
-    expect(resolved!.url).toContain('abc.webp');
+    expect(resolved!.displayUrl).toBe(resolved!.url);
+    expect(resolved!.displayUrl).toContain('abc.webp');
+    expect(resolved!.displayUrl).not.toContain('.thumb.');
+    expect(resolved!.thumbUrl).toBeNull();
   });
 
   it('returns full url for detail context', async () => {

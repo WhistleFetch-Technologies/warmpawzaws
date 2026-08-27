@@ -4,4 +4,9 @@ import { discoveryByCategoryGetHandler } from '../handlers/discovery_by_category
 
 export function registerDiscoveryByCategoryGetRoute(app: Hono) {
   app.get(WAPPT_DISCOVERY_BY_CATEGORY_PATH, discoveryByCategoryGetHandler);
+  /** Guest-safe alias — same handler (JWT not required via /public/). */
+  app.get(
+    '/public/warmpawz-appointments/discovery/by-category',
+    discoveryByCategoryGetHandler
+  );
 }

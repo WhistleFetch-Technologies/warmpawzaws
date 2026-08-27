@@ -1,4 +1,4 @@
-/** Env / runtime flag — default false until Warmpawz Appointments admin is enabled. */
+/** Env / runtime flag — default ON (same as Warmpawz Pay). Set false to hide. */
 export function isWarmpawzAppointmentsAdminEnabled(): boolean {
   if (typeof window !== 'undefined') {
     const runtime = (
@@ -6,8 +6,9 @@ export function isWarmpawzAppointmentsAdminEnabled(): boolean {
         __WARMPAWZ_RUNTIME_CONFIG__?: { warmpawzAppointmentsAdminEnabled?: boolean | string };
       }
     ).__WARMPAWZ_RUNTIME_CONFIG__?.warmpawzAppointmentsAdminEnabled;
-    if (runtime === true || runtime === 'true') return true;
     if (runtime === false || runtime === 'false') return false;
+    if (runtime === true || runtime === 'true') return true;
   }
-  return process.env.NEXT_PUBLIC_WARMPAWZ_APPOINTMENTS_ADMIN_ENABLED === 'true';
+  if (process.env.NEXT_PUBLIC_WARMPAWZ_APPOINTMENTS_ADMIN_ENABLED === 'false') return false;
+  return true;
 }

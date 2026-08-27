@@ -47,6 +47,22 @@ export function resolveGuestPublicApiPath(path: string): string {
     return `/public/warmpawz-appointments/discovery/by-style${q}`;
   }
 
+  if (pathname === '/customer/warmpawz-appointments/discovery/by-category') {
+    return `/public/warmpawz-appointments/discovery/by-category${q}`;
+  }
+
+  if (pathname === '/customer/vendors/search') {
+    return `/public/vendors/search${q}`;
+  }
+
+  if (pathname === '/customer/services') {
+    return `/public/services${q}`;
+  }
+
+  if (pathname === '/customer/discovery/meta') {
+    return `/public/discovery/meta${q}`;
+  }
+
   const vendorServicesMatch = pathname.match(/^\/customer\/vendor\/([^/]+)\/services$/);
   if (vendorServicesMatch) {
     return `/public/vendor/${vendorServicesMatch[1]}/services${q}`;

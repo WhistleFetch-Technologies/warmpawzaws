@@ -639,7 +639,7 @@ jobs:
               echo "⚠️  Warning: $D does not exist, skipping runtime-config injection"
               continue
             fi
-            printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__={apiBaseUrl:u,uatMode:false};if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
+            printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__={apiBaseUrl:u,uatMode:false,warmpawzAppointmentsAdminEnabled:true};if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
             echo "✅ Injected runtime-config.js into $D"
           done
           D="apps/customer-web/dist"

@@ -59,6 +59,15 @@ function pickDisplayUrl(
   return url || thumbUrl || '';
 }
 
+/** Derived `.thumb.webp` siblings are not verified on read. Skip them unless migrate created them. */
+function derivedListThumbKey(
+  imageKey: string,
+  migrate: boolean | undefined,
+): string | null {
+  if (migrate === false) return null;
+  return isWebpKey(imageKey) ? thumbKeyForDisplay(imageKey, null) : null;
+}
+
 async function resolveExternalUrl(raw: string): Promise<ResolvedImageDto | null> {
   const stripped = stripPresignQuery(raw);
   const url = (await urlForImageKey(stripped)) ?? stripped;
@@ -110,7 +119,7 @@ export async function resolveImageForContext(
     const stripped = stripPresignQuery(trimmed);
     const presigned = await presignS3GetUrlIfApplicable(stripped);
     if (presigned) {
-      const thumbKey = isWebpKey(key) ? thumbKeyForDisplay(key, null) : null;
+      const thumbKey = derivedListThumbKey(key, opts.migrate);
       let thumbUrl: string | null = null;
       if (thumbKey) {
         thumbUrl = await urlForImageKey(thumbKey);
@@ -132,7 +141,7 @@ export async function resolveImageForContext(
   let imageKey = key;
   let dto = await attachUrlsToImageDto({
     imageKey,
-    thumbKey: isWebpKey(imageKey) ? thumbKeyForDisplay(imageKey, null) : null,
+    thumbKey: derivedListThumbKey(imageKey, opts.migrate),
     width: 0,
     height: 0,
     thumbWidth: null,
@@ -178,13 +187,7 @@ export async function resolveBareImageUrl(
 
   const key = extractRawImageKey(trimmed);
   if (key && !trimmed.includes('://')) {
-    if (context === 'list' && isWebpKey(key)) {
-      const thumbKey = thumbKeyForDisplay(key, null);
-      if (thumbKey) {
-        const thumbUrl = await urlForImageKey(thumbKey);
-        if (thumbUrl) return thumbUrl;
-      }
-    }
+    // List thumbs are derived and often missing — serve the full object.
     return (await urlForImageKey(key)) ?? trimmed;
   }
 
