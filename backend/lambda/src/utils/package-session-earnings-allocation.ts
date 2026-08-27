@@ -66,6 +66,38 @@ export function allocatePackageSessionVendorNet(params: {
   });
 }
 
+/**
+ * Sum of correctly allocated vendor-net slices for the first `priorCount` sessions.
+ * Use this — not SUM(vendor_earnings.amount) — when prior rows may store the full
+ * package net (11440.80 × 3). Raw stored sums exhaust the pool and block later walks.
+ */
+export function allocatedPriorVendorNetSum(params: {
+  vendorPool: number;
+  sessionCount: number;
+  priorCount: number;
+}): number {
+  const n = Math.max(0, Math.floor(params.priorCount));
+  let priorSum = 0;
+  for (let i = 0; i < n; i += 1) {
+    const slice = allocatePackageSessionVendorNet({
+      vendorPool: params.vendorPool,
+      sessionCount: params.sessionCount,
+      priorCount: i,
+      priorSum,
+    });
+    priorSum = round2(priorSum + slice);
+  }
+  return priorSum;
+}
+
+/** True when a stored child net is the full package pool, not a 1/N slice. */
+export function isInflatedPackageSessionNet(storedNet: number, evenSlice: number): boolean {
+  const stored = round2(Math.max(0, storedNet));
+  const even = round2(Math.max(0, evenSlice));
+  if (even <= 0.009) return stored > 0.009;
+  return stored > even * 1.5 + 0.01;
+}
+
 /** Reconstruct gross + commission so stored total_amount + commission = net slice. */
 export function scaleGrossFromVendorNet(params: {
   vendorNet: number;
