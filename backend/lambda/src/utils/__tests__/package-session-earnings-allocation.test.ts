@@ -3,7 +3,9 @@ import {
   allocatePackageSessionGross,
   allocatePackageSessionVendorNet,
   allocatedEarningsFromStored,
+  allocatedPriorVendorNetSum,
   firstSessionPackageBreakdown,
+  isInflatedPackageSessionNet,
   scaleGrossFromVendorNet,
   sqlPackageAllocatedEarningsAgg,
   vendorEarningsAmountsForDisplay,
@@ -114,6 +116,26 @@ describe('package-session-earnings-allocation', () => {
         priorSum: 38136,
       }),
     ).toBe(0);
+  });
+
+  test('allocated prior sum ignores inflated stored nets so session 4 still gets 238.35', () => {
+    const pool = vendorPoolAfterCommission(12712, 10);
+    const priorSum = allocatedPriorVendorNetSum({
+      vendorPool: pool,
+      sessionCount: 48,
+      priorCount: 3,
+    });
+    expect(priorSum).toBe(715.05);
+    expect(
+      allocatePackageSessionVendorNet({
+        vendorPool: pool,
+        sessionCount: 48,
+        priorCount: 3,
+        priorSum,
+      }),
+    ).toBe(238.35);
+    expect(isInflatedPackageSessionNet(11440.8, 238.35)).toBe(true);
+    expect(isInflatedPackageSessionNet(238.35, 238.35)).toBe(false);
   });
 
   test('vendor earnings display reslices 11440.80 to 238.35 per walk', () => {

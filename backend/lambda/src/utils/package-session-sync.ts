@@ -210,9 +210,87 @@ async function countNonTerminalPackageSessions(
 
 import {
   allocatePackageSessionVendorNet,
+  allocatedPriorVendorNetSum,
+  isInflatedPackageSessionNet,
   scaleGrossFromVendorNet,
   vendorPoolAfterCommission,
 } from './package-session-earnings-allocation';
+
+/**
+ * Rewrite pending child rows that stored the full package net (11440.80) to the 1/N slice.
+ * Adjusts vendor denormalized totals by the same delta. Idempotent once rows are sliced.
+ */
+async function repairInflatedPackageSessionChildEarnings(
+  db: SqlClient,
+  params: {
+    packagePurchaseId: string;
+    vendorId: string;
+    vendorPool: number;
+    sessionCount: number;
+    commissionRate: number;
+  }
+): Promise<void> {
+  const evenSlice = allocatePackageSessionVendorNet({
+    vendorPool: params.vendorPool,
+    sessionCount: params.sessionCount,
+    priorCount: 0,
+    priorSum: 0,
+  });
+  if (evenSlice <= 0.009) return;
+
+  const rowsRes = await db.query(
+    `SELECT ve.id::text AS id, ve.amount::numeric AS amount
+     FROM vendor_earnings ve
+     INNER JOIN bookings b ON b.id = ve.booking_id
+     WHERE b.package_purchase_id = $1::uuid
+       AND COALESCE(b.is_package_session, false) = true
+       AND ve.status = 'pending'
+     ORDER BY ve.realized_at NULLS LAST, ve.created_at, ve.id`,
+    [params.packagePurchaseId]
+  );
+  const rows = rowsRes.rows || [];
+  let priorSum = 0;
+  for (let i = 0; i < rows.length; i += 1) {
+    const stored = Number(rows[i]?.amount ?? 0);
+    const expectedNet = allocatePackageSessionVendorNet({
+      vendorPool: params.vendorPool,
+      sessionCount: params.sessionCount,
+      priorCount: i,
+      priorSum,
+    });
+    priorSum = Math.round((priorSum + expectedNet) * 100) / 100;
+    if (!isInflatedPackageSessionNet(stored, evenSlice) || expectedNet <= 0.009) {
+      continue;
+    }
+    const scaled = scaleGrossFromVendorNet({
+      vendorNet: expectedNet,
+      commissionRate: params.commissionRate,
+    });
+    const delta = Math.round((expectedNet - stored) * 100) / 100;
+    await db.query(
+      `UPDATE vendor_earnings
+       SET amount = $1::numeric,
+           commission_amount = $2::numeric,
+           total_amount = $3::numeric
+       WHERE id = $4::uuid AND status = 'pending'`,
+      [scaled.vendorNet, scaled.commissionAmount, scaled.allocatedGross, String(rows[i].id)]
+    );
+    if (Math.abs(delta) >= 0.01) {
+      await db
+        .query(
+          `UPDATE vendors
+           SET pending_payout = GREATEST(COALESCE(pending_payout, 0) + $1, 0),
+               total_earnings = GREATEST(COALESCE(total_earnings, 0) + $1, 0),
+               updated_at = NOW()
+           WHERE id = $2::uuid`,
+          [delta, params.vendorId]
+        )
+        .catch((err: unknown) =>
+          console.warn('[package-session-sync] inflated earnings vendor totals:', err)
+        );
+    }
+  }
+}
 
 /**
  * One slice of (base − tier commission) per completed child session.
@@ -284,9 +362,19 @@ async function accrueVendorEarningsForPackageSessionChild(
 
     await db.query(`SELECT id FROM package_purchases WHERE id = $1::uuid FOR UPDATE`, [packagePurchaseId]).catch(() => undefined);
 
+    const commissionRate = await getVendorCommissionRate(String(parentRow.vendor_id));
+    const vendorPool = vendorPoolAfterCommission(parentTotal, commissionRate);
+
+    await repairInflatedPackageSessionChildEarnings(db, {
+      packagePurchaseId,
+      vendorId: String(parentRow.vendor_id),
+      vendorPool,
+      sessionCount: n,
+      commissionRate,
+    });
+
     const priorRes = await db.query(
-      `SELECT COALESCE(SUM(ve.amount), 0)::numeric AS sum_net,
-              COUNT(*)::int AS cnt
+      `SELECT COUNT(*)::int AS cnt
        FROM vendor_earnings ve
        INNER JOIN bookings b ON b.id = ve.booking_id
        WHERE b.package_purchase_id = $1::uuid
@@ -294,11 +382,14 @@ async function accrueVendorEarningsForPackageSessionChild(
          AND (ve.status IS DISTINCT FROM 'cancelled')`,
       [packagePurchaseId]
     );
-    const sumPriorNet = Number(priorRes.rows?.[0]?.sum_net ?? 0);
     const priorCnt = Number(priorRes.rows?.[0]?.cnt ?? 0);
-
-    const commissionRate = await getVendorCommissionRate(String(parentRow.vendor_id));
-    const vendorPool = vendorPoolAfterCommission(parentTotal, commissionRate);
+    // Allocated slices only. SUM(ve.amount) of inflated full-package rows
+    // (11440.80 × 3) exhausts the pool and skips remaining completed walks.
+    const sumPriorNet = allocatedPriorVendorNetSum({
+      vendorPool,
+      sessionCount: n,
+      priorCount: priorCnt,
+    });
     const perSessionNet = allocatePackageSessionVendorNet({
       vendorPool,
       sessionCount: n,
@@ -596,7 +687,7 @@ export async function backfillPackageSessionEarningsForCompletedBookings(
          AND b.package_purchase_id IS NOT NULL
          AND COALESCE(b.is_package_session, false) = true
          AND NOT EXISTS (SELECT 1 FROM vendor_earnings ve WHERE ve.booking_id = b.id)
-       ORDER BY COALESCE(b.completed_at::timestamptz, b.updated_at::timestamptz) DESC NULLS LAST
+       ORDER BY COALESCE(b.completed_at::timestamptz, b.updated_at::timestamptz) ASC NULLS LAST
        LIMIT $2`,
       [unique, cappedLimit]
     )
