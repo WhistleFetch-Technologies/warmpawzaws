@@ -14,8 +14,9 @@ Do not start feature code until this contract is agreed. Implementation work sho
 **Locked product defaults**
 
 - Convenience is **global** (one WPay amount + GST rate), not per vendor.
-- Convenience GST is **exclusive** (`F × G`).
-- WPay revenue GST is **inclusive** (`revenue × G / (100 + G)`).
+- Convenience GST is **exclusive** (`F × G`): admin configures `F`; customer pays `F` plus 18% on top.
+- WPay platform-revenue GST is **inclusive** (`revenue × G / (100 + G)`): GST is already inside the leftover platform revenue (`C − D` on `Q`), not added on top.
+- **Final GST = both components:** inclusive GST extracted from platform revenue **plus** exclusive GST on the convenience fee. Never report only one of them as “the GST”.
 - Appointment credit does **not** shrink `Q` before C/D.
 - Historical withhold rows are **never** converted.
 
@@ -68,10 +69,17 @@ discount = Q × D
 vendor_payable = Q × (1 − C)
 service_payable = Q × (1 − D)
 wpay_revenue = gross_commission − discount
-pay_now = service_payable − appointment_credit + F + F×G
+convenience_gst = F × G_conv / 100          # exclusive, on top of admin F
+convenience_gross = F + convenience_gst
+platform_gst = wpay_revenue × G_platform / (100 + G_platform)   # inclusive extract
+net_wpay_revenue = wpay_revenue − platform_gst
+final_gst = platform_gst + convenience_gst  # both must be reflected
+pay_now = service_payable − appointment_credit + convenience_gross
 ```
 
-Constraint: `0 ≤ D < C ≤ 100`.
+Constraint: `0 ≤ D < C ≤ 100`. Defaults: `G_conv = 18`, `G_platform = 18`.
+
+**Worked GST (Q=₹10,000, C=20%, D=15%, F=₹20):** `wpay_revenue` ₹500 → `platform_gst` ₹76.27 (18/118); `convenience_gst` ₹3.60; **`final_gst` ₹79.87**. Walk-in `pay_now` ₹8,523.60; appointment credit ₹200 → `pay_now` ₹8,323.60. Vendor payable stays ₹8,000.
 
 ---
 
@@ -125,7 +133,8 @@ Constraint: `0 ≤ D < C ≤ 100`.
 
 - Admin: existing `admin.warmpawz_pay` / `dashboard.view` / `pricing.write`
 - Vendor: [`vendor-wpay-payments.ts`](../backend/lambda/src/endpoints/vendor/endpoints/vendor-wpay-payments.ts) — quoted, paid, **vendor earnings only**. Strip withhold/revenue/GST/margin from vendor DTO.
-- Customer: initiate/verify + [`WarmpawzPayVendorClient.tsx`](../apps/customer-web/app/warmpawz-pay/vendors/[vendorId]/WarmpawzPayVendorClient.tsx) — quote, discount, credit, convenience, convenience GST, pay now. Never commission / WPay revenue / vendor payable.
+- Customer: initiate/verify + [`WarmpawzPayVendorClient.tsx`](../apps/customer-web/app/warmpawz-pay/vendors/[vendorId]/WarmpawzPayVendorClient.tsx) — quote, discount, credit, convenience, **convenience GST (exclusive)**, pay now. Never commission / WPay revenue / vendor payable / platform GST extract.
+- Admin: must show **both** GST legs and **`finalGst`** (platform inclusive + convenience exclusive). Do not label convenience GST alone as total GST.
 
 ---
 
@@ -175,14 +184,25 @@ commercialModel: 'tier_commission' | 'withhold'
 Q, C, D, appointmentCredit, F, G_conv, G_platform
 → { grossCommission, discountAmount, vendorPayable, servicePayable, wpayRevenue,
     platformGst, netWpayRevenue, convenienceFee, convenienceGst, convenienceGross,
+    finalGst,   // platformGst + convenienceGst  (required; do not omit either leg)
     payNow, appointmentFeeCredit }
 ```
 
 Money: existing `round2` / `NUMERIC` — no raw JS float persistence.
 
+### Combined GST (Abhi calculator must implement)
+
+| Component | Treatment | Formula | Who sees it |
+| --------- | --------- | ------- | ----------- |
+| Convenience GST | **Exclusive** — 18% on top of admin-configured `F` | `F × G_conv / 100` | Customer Pay Bill + admin |
+| Platform-revenue GST | **Inclusive** — already inside leftover WPay revenue | `wpay_revenue × G_platform / (100 + G_platform)` | Admin / settlement only |
+| **Final GST** | **Sum of both** | `platformGst + convenienceGst` | Admin / snapshot (`finalGstAmount`) |
+
+If `F = 0`, convenience GST is 0 and `finalGst` is still the inclusive extract from platform revenue. Do not treat Marketplace `feeCalculator` GST as this total.
+
 ### Snapshot keys (extend metadata / settlement_breakup)
 
-`commercialModel`, `tierId`, `tierNameSnapshot`, `commissionPercentSnapshot`, `discountPercentSnapshot`, `quotedAmount`, `grossCommissionAmount`, `discountAmount`, `vendorPayableAmount`, `wpayRevenueAmount`, `platformGstRateSnapshot`, `platformGstAmount`, `netWpayRevenueAmount`, `appointmentFeeCredit`, `convenienceFee`, `convenienceGstRateSnapshot`, `convenienceGstAmount`, `payNowAmount`, plus keep old withhold keys on historical rows.
+`commercialModel`, `tierId`, `tierNameSnapshot`, `commissionPercentSnapshot`, `discountPercentSnapshot`, `quotedAmount`, `grossCommissionAmount`, `discountAmount`, `vendorPayableAmount`, `wpayRevenueAmount`, `platformGstRateSnapshot`, `platformGstAmount`, `netWpayRevenueAmount`, `appointmentFeeCredit`, `convenienceFee`, `convenienceGstRateSnapshot`, `convenienceGstAmount`, `finalGstAmount`, `payNowAmount`, plus keep old withhold keys on historical rows.
 
 ### APIs
 
@@ -191,7 +211,8 @@ Money: existing `round2` / `NUMERIC` — no raw JS float persistence.
 | Bindu | Live path is **`/admin/payments/tiers`**. Every GET/POST/PUT returns `marketplaceEnabled` + `warmpawzPayEnabled`. `GET /admin/payments/tiers?warmpawzPayEnabled=true&isActive=true` is the WPay publish dropdown. |
 | Bindu | `POST/PUT /admin/warmpawz-pay/pricing`: **`tierId` + `discountValue` required**. Reject `platformWithholdPercent` on new writes (400 / strict). Server: load `vendor_tiers.commission_rate`, reject unless `warmpawz_pay_enabled AND is_active`, reject unless `discountValue < commission_rate`. Response includes inherited `commissionRate`, `platformMargin = C − D`. Keep `platformWithholdPercent` on GET for historical rows. |
 | Bindu | Catalogue list/detail join: `tierId`, `tierName`, `commissionRate`, `platformMargin` (read-only). |
-| Abhi | Initiate/verify/quote: `payNow` includes convenience; customer payload never includes C / revenue. |
+| Abhi | Initiate/verify/quote: `payNow` includes `F + convenienceGst`; customer payload never includes C / revenue / `platformGst`. |
+| Abhi | Calculator + settlement snapshot: persist `platformGstAmount`, `convenienceGstAmount`, and **`finalGstAmount = platformGst + convenienceGst`**. Admin GST column/drawer uses `finalGst`. |
 | Abhi | Admin payments DTO: add new columns; keep withhold fields **only** when `commercialModel === 'withhold'`. |
 | Abhi | Vendor DTO: vendor payable + quoted + paid + status only. |
 | Bindu | `GET/PUT /admin/warmpawz-pay/settings/convenience` → `{ convenienceFee, convenienceGstRate, platformGstRate }` on `admin_settings` category `wpay` only. Abhi builds the settings UI. |
@@ -225,7 +246,7 @@ Admin dashboard: if `settlement_breakup.commercialModel === 'tier_commission'` (
 5. UI: Applies To on [`TierManagement.tsx`](../apps/admin-web/components/admin/finance/tierManagement/TierManagement.tsx) under Set as Default.
 6. UI: Catalogue — tier dropdown, read-only commission, discount guardrail; remove withhold input for new publish.
 7. UI: Admin dashboard + **[ADD NEW]** transaction drawer; historical withhold rows still render old columns.
-8. Customer Pay Bill: convenience + GST + credit after service payable. Vendor list: no platform margin.
+8. Customer Pay Bill: convenience + **exclusive** convenience GST + credit after service payable. Vendor list: no platform margin. Admin GST = inclusive platform GST + exclusive convenience GST (`finalGst`).
 9. Global convenience settings UI on WPay admin (not Marketplace Finance).
 10. Cases 8–12 integration/UI: old withhold row, tier C change, deactivated WPay tier, marketplace-only vs Both.
 
@@ -296,6 +317,7 @@ flowchart LR
 - **`is_default` is global** — backfill `marketplace_enabled=true` so Marketplace onboarding does not flip.
 - **Dirty customer 4-layer tree:** WPay customer routes are already layered; stay in `endpoints/customer/warmpawz-pay/**`. Run `npm run validate:customer-layers` after Abhi edits.
 - **GST guard:** keep new GST math inside WPay modules.
+- **Split GST treatments:** reporting convenience GST (₹3.60) or platform extract (₹76.27) alone as “GST” is a product bug. Admin/settlement `finalGst` must be the sum.
 
 **Backward compatibility**
 
@@ -310,10 +332,10 @@ flowchart LR
 
 | Case | Inputs | Expected |
 | ---- | ------ | -------- |
-| 1 | Q=₹10,000, C=20%, D=15%, no credit, no convenience | vendor ₹8,000, discount ₹1,500, WPay revenue ₹500, service payable ₹8,500 |
-| 2 | Case 1 + appointment credit ₹200 | vendor ₹8,000, revenue ₹500, pay before convenience ₹8,300 |
-| 3 | Case 2 + F=₹20 + GST 18% | convenience GST ₹3.60, pay now ₹8,323.60 |
-| 4 | Walk-in + convenience | pay now ₹8,523.60 |
+| 1 | Q=₹10,000, C=20%, D=15%, no credit, no convenience | vendor ₹8,000, discount ₹1,500, WPay revenue ₹500, service payable ₹8,500, platform GST ₹76.27, convenience GST ₹0, **final GST ₹76.27** |
+| 2 | Case 1 + appointment credit ₹200 | vendor ₹8,000, revenue ₹500, pay before convenience ₹8,300; GST same as Case 1 |
+| 3 | Case 2 + F=₹20 + GST 18% | convenience GST ₹3.60 (exclusive), platform GST ₹76.27 (inclusive), **final GST ₹79.87**, pay now ₹8,323.60 |
+| 4 | Walk-in + convenience | pay now ₹8,523.60; **final GST still ₹79.87** (credit does not change GST) |
 | 5 | C=20%, D=20% | REJECT |
 | 6 | C=20%, D=21% | REJECT |
 | 7 | C=20%, D=15% | ACCEPT |
