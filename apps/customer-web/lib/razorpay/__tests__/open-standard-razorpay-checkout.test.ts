@@ -5,7 +5,7 @@
 const loadRazorpayScript = jest.fn(async () => undefined);
 
 jest.mock('../razorpay-utils', () => ({
-  loadRazorpayScript: (...args: unknown[]) => loadRazorpayScript(...args),
+  loadRazorpayScript: (...args: unknown[]) => loadRazorpayScript(...(args as [])),
   digitsToRazorpayContactE164: jest.requireActual('../razorpay-utils').digitsToRazorpayContactE164,
   razorpaySafeDescription: jest.requireActual('../razorpay-utils').razorpaySafeDescription,
   sanitizeRazorpayInstanceOptions: jest.requireActual('../razorpay-utils').sanitizeRazorpayInstanceOptions,

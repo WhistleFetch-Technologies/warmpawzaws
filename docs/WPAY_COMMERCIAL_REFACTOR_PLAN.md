@@ -6,10 +6,11 @@ Do not start feature code until this contract is agreed. Implementation work sho
 
 | Role | Branch |
 |------|--------|
-| Plan / contract | `feature-tier-system` |
-| Bindu implementation | `feature/bindu-wpay-tier-publish` |
-| Abhi implementation | `feature/abhi-wpay-commercial-engine` |
+| Plan + Bindu backend (landed) | `feature-tier-system` |
+| Abhi implementation (remaining) | `feature/abhi-wpay-commercial-engine` |
 | PR target | `develop` |
+
+**Bindu status (2026-08-27):** schema + admin APIs are **done** and merged into `feature-tier-system`. Migrations **1101–1103 applied on DEV** via RDS Data API (`vendor_tiers.marketplace_enabled` / `warmpawz_pay_enabled`, `warmpawz_pay_merchant_pricing.tier_id`, `admin_settings` category `wpay` with F=0, G=18/18). Prod migrate only when explicitly requested. Do not reopen Bindu files unless the contract changes.
 
 **Locked product defaults**
 
@@ -223,31 +224,33 @@ Admin dashboard: if `settlement_breakup.commercialModel === 'tier_commission'` (
 
 ---
 
-## 5. Bindu task list
+## 5. Bindu task list — DONE
 
-1. Confirm next migration number; land 1101–1103; apply **dev** only after commit. Prod only when explicitly requested.
-2. Extend tier CRUD SQL + response in [`admin-advanced.ts`](../backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts) (and [`tier-system.ts`](../backend/lambda/src/endpoints/tier-system.ts) if that list path is still live). Preserve `is_default` / soft `is_active`.
-3. WPay-eligible tier query for catalogue dropdown.
-4. Pricing: [`merchant-pricing.repository.ts`](../backend/lambda/src/endpoints/warmpawz-pay/repositories/merchant-pricing.repository.ts), [`pricing.requests.ts`](../backend/lambda/src/endpoints/warmpawz-pay/admin/pricing/dto/pricing.requests.ts), [`warmpawz-pay-pricing.service.ts`](../backend/lambda/src/endpoints/warmpawz-pay/admin/pricing/services/warmpawz-pay-pricing.service.ts), [`pricing-audit.service.ts`](../backend/lambda/src/endpoints/warmpawz-pay/admin/pricing/services/pricing-audit.service.ts), [`vendor-catalog.repository.ts`](../backend/lambda/src/endpoints/warmpawz-pay/repositories/vendor-catalog.repository.ts).
-5. Server guardrails: `D < C`, WPay-enabled active tier, publish still requires existing readiness.
-6. Convenience settings API (new keys only). Do not change [`FeeConfigurationManager`](../apps/admin-web/components/admin/finance/FeeConfigurationManager.tsx) or [`feeCalculator.ts`](../backend/lambda/src/utils/feeCalculator.ts).
-7. Document request/response in this file if the contract changes. No UI.
+1. ~~Confirm next migration number; land 1101–1103; apply **dev** only after commit.~~ DEV applied 2026-08-27 via RDS Data API. Prod only when explicitly requested.
+2. ~~Extend tier CRUD SQL + response~~ — `GET/POST/PUT /admin/payments/tiers` + `?warmpawzPayEnabled=true&isActive=true`.
+3. ~~WPay-eligible tier query for catalogue dropdown.~~
+4. ~~Pricing + catalogue join + audit snapshot (`tier_id` / discount).~~
+5. ~~Server guardrails: `D < C`, WPay-enabled active tier.~~
+6. ~~Convenience settings API~~ — `GET/PUT /admin/warmpawz-pay/settings/convenience`. Do not change Marketplace `feeCalculator`.
+7. ~~Contract documented in this file. No UI.~~
 
-**Bindu must not:** Razorpay, webhook, verify, settlement engine rewrite, marketplace checkout.
+**Bindu must not (still):** Razorpay, webhook, verify, settlement engine rewrite, marketplace checkout.
 
 ---
 
-## 6. Abhi task list
+## 6. Abhi remaining work
 
-1. **[MODIFY EXISTING]** Expand [`wpay-discount.ts`](../backend/lambda/src/endpoints/customer/warmpawz-pay/shared/wpay-discount.ts) into the full calculator (keep filename or add `computeWpayCommercialQuote` in the same module — do not add a parallel package). Update [`wpay-quote.ts`](../apps/customer-web/lib/warmpawz-pay/wpay-quote.ts) to match.
-2. Wire initiate + verify to calculator; snapshot metadata in [`wpay-razorpay-order.ts`](../backend/lambda/src/utils/wpay-razorpay-order.ts). Charge Razorpay **`payNow`**.
-3. Settlement: new transactions write `vendor_payable = Q×(1−C)` into `settlements.net_amount` and `wpay_revenue` into `commission_amount` (or breakup fields — pick one and document). Historical rows unchanged. Keep withhold helper for old `commercialModel`.
+Cut `feature/abhi-wpay-commercial-engine` from `feature-tier-system`. Consume Bindu’s APIs; do not edit pricing Zod/SQL or re-run 1101–1103.
+
+1. **[MODIFY EXISTING]** Expand [`wpay-discount.ts`](../backend/lambda/src/endpoints/customer/warmpawz-pay/shared/wpay-discount.ts) into the full calculator (keep filename or add `computeWpayCommercialQuote` in the same module — do not add a parallel package). Update [`wpay-quote.ts`](../apps/customer-web/lib/warmpawz-pay/wpay-quote.ts) to match. **`finalGst = platformGst + convenienceGst`.**
+2. Wire initiate + verify to calculator; snapshot metadata in [`wpay-razorpay-order.ts`](../backend/lambda/src/utils/wpay-razorpay-order.ts). Charge Razorpay **`payNow`**. Read F / G from `admin_settings` category `wpay` (not Marketplace `fees`).
+3. Settlement: new transactions write `vendor_payable = Q×(1−C)` into `settlements.net_amount` and `wpay_revenue` into `commission_amount` (or breakup fields — pick one and document). Persist `platformGstAmount`, `convenienceGstAmount`, `finalGstAmount`. Historical rows unchanged. Keep withhold helper for old `commercialModel`.
 4. Cases 1–7, 13–14 unit tests beside existing [`wpay-discount.test.ts`](../backend/lambda/src/endpoints/customer/warmpawz-pay/shared/__tests__/wpay-discount.test.ts) and [`accrue-wpay-settlement` tests](../backend/lambda/src/endpoints/customer/warmpawz-pay/shared/__tests__/accrue-wpay-settlement.test.ts).
-5. UI: Applies To on [`TierManagement.tsx`](../apps/admin-web/components/admin/finance/tierManagement/TierManagement.tsx) under Set as Default.
-6. UI: Catalogue — tier dropdown, read-only commission, discount guardrail; remove withhold input for new publish.
-7. UI: Admin dashboard + **[ADD NEW]** transaction drawer; historical withhold rows still render old columns.
-8. Customer Pay Bill: convenience + **exclusive** convenience GST + credit after service payable. Vendor list: no platform margin. Admin GST = inclusive platform GST + exclusive convenience GST (`finalGst`).
-9. Global convenience settings UI on WPay admin (not Marketplace Finance).
+5. UI: Applies To on [`TierManagement.tsx`](../apps/admin-web/components/admin/finance/tierManagement/TierManagement.tsx) under Set as Default (`marketplaceEnabled` / `warmpawzPayEnabled`).
+6. UI: Catalogue — tier dropdown from `GET /admin/payments/tiers?warmpawzPayEnabled=true&isActive=true`, read-only commission, discount guardrail; remove withhold input for new publish. POST `{ vendorId, tierId, discountValue, ... }`.
+7. UI: Admin dashboard + **[ADD NEW]** transaction drawer; show **`finalGst`** (both GST legs). Historical withhold rows still render old columns.
+8. Customer Pay Bill: convenience + **exclusive** convenience GST + credit after service payable. Vendor list: no platform margin.
+9. Global convenience settings UI on WPay admin calling `GET/PUT /admin/warmpawz-pay/settings/convenience` (not Marketplace Finance).
 10. Cases 8–12 integration/UI: old withhold row, tier C change, deactivated WPay tier, marketplace-only vs Both.
 
 **Abhi must not:** migrations, second initiate/verify/webhook, marketplace feeCalculator / GST lineage files. If a protected GST file is unavoidable: `GST-PROTECTED-CHANGE` + `npm run test:gst-financial`.

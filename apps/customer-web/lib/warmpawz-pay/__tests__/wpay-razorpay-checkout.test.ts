@@ -9,11 +9,11 @@ const openStandardRazorpayCheckout = jest.fn();
 const fetchCheckoutEmailForPrefill = jest.fn(async () => 'owner@example.com');
 
 jest.mock('@/lib/razorpay/open-standard-razorpay-checkout', () => ({
-  openStandardRazorpayCheckout: (...args: unknown[]) => openStandardRazorpayCheckout(...args),
+  openStandardRazorpayCheckout: (...args: unknown[]) => openStandardRazorpayCheckout(...(args as [])),
 }));
 
 jest.mock('@/lib/razorpay/build-standard-checkout-options', () => ({
-  fetchCheckoutEmailForPrefill: (...args: unknown[]) => fetchCheckoutEmailForPrefill(...args),
+  fetchCheckoutEmailForPrefill: (...args: unknown[]) => fetchCheckoutEmailForPrefill(...(args as [])),
 }));
 
 jest.mock('@/lib/api-client', () => ({
