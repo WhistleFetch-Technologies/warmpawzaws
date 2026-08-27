@@ -1,13 +1,25 @@
-import {
-  PRICING_STATUS,
-  type PricingDiscountType,
-  type PricingStatus,
-} from '../constants/merchant-pricing';
+import type {
+  PricingDiscountType,
+  PricingStatus,
+} from '../../constants/merchant-pricing';
+
+export interface WpayPublishTierRow {
+  readonly id: string;
+  readonly tierName: string;
+  readonly displayName: string;
+  readonly commissionRate: number;
+  readonly isActive: boolean;
+  readonly warmpawzPayEnabled: boolean;
+}
 
 export interface PricingRow {
   readonly id: string;
   readonly vendorId: string;
   readonly catalogueId: string | null;
+  readonly tierId: string | null;
+  readonly tierName: string | null;
+  readonly tierDisplayName: string | null;
+  readonly commissionRate: number | null;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
   readonly platformWithholdPercent: number;
@@ -33,6 +45,7 @@ export interface PricingRowWithMerchant extends PricingRow {
 
 export interface CreatePricingInput {
   readonly vendorId: string;
+  readonly tierId: string;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
   readonly platformWithholdPercent: number;
@@ -43,6 +56,7 @@ export interface CreatePricingInput {
 }
 
 export interface UpdatePricingInput {
+  readonly tierId?: string;
   readonly discountType?: PricingDiscountType;
   readonly discountValue?: number;
   readonly platformWithholdPercent?: number;
@@ -69,4 +83,6 @@ export interface IMerchantPricingRepository {
   getAverageActiveDiscountPercent(): Promise<number>;
 
   assertCatalogueVendor(vendorId: string): Promise<{ catalogueId: string } | null>;
+
+  findWpayPublishTier(tierId: string): Promise<WpayPublishTierRow | null>;
 }

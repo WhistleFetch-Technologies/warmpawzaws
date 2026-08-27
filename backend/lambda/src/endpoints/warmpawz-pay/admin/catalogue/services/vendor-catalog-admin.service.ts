@@ -593,6 +593,9 @@ export class VendorCatalogAdminService {
 
     return {
       pricingId: row.pricingId,
+      tierId: row.pricingTierId,
+      tierName: row.pricingTierName,
+      commissionRate: row.pricingCommissionRate,
       discountType: row.pricingDiscountType as PricingDiscountType,
       discountValue: row.pricingDiscountValue,
       platformWithholdPercent: row.pricingPlatformWithholdPercent ?? 0,
@@ -676,6 +679,9 @@ export class VendorCatalogAdminService {
 
     return {
       pricingId: row.pricingId,
+      tierId: row.pricingTierId,
+      tierName: row.pricingTierName,
+      commissionRate: row.pricingCommissionRate,
       discountType: row.pricingDiscountType as PricingDiscountType,
       discountValue: row.pricingDiscountValue,
       platformWithholdPercent: row.pricingPlatformWithholdPercent ?? 0,

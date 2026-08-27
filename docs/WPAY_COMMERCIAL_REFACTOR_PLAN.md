@@ -188,13 +188,13 @@ Money: existing `round2` / `NUMERIC` — no raw JS float persistence.
 
 | Owner | Change |
 | ----- | ------ |
-| Bindu | `GET/POST/PUT /admin/tiers` add `marketplaceEnabled`, `warmpawzPayEnabled`. `GET /admin/tiers?warmpawzPayEnabled=true&isActive=true` for publish dropdown. |
-| Bindu | `POST/PUT /admin/warmpawz-pay/pricing`: **`tierId` + `discountValue` required**. Reject `platformWithholdPercent` on new writes (ignore or 400). Server: load `vendor_tiers.commission_rate`, reject unless `warmpawz_pay_enabled AND is_active`, reject unless `discountValue < commission_rate`. Response includes inherited `commissionRate`, `platformMargin = C − D`. |
-| Bindu | Catalogue list join: `tier_id`, tier name, commission (read-only). |
+| Bindu | Live path is **`/admin/payments/tiers`**. Every GET/POST/PUT returns `marketplaceEnabled` + `warmpawzPayEnabled`. `GET /admin/payments/tiers?warmpawzPayEnabled=true&isActive=true` is the WPay publish dropdown. |
+| Bindu | `POST/PUT /admin/warmpawz-pay/pricing`: **`tierId` + `discountValue` required**. Reject `platformWithholdPercent` on new writes (400 / strict). Server: load `vendor_tiers.commission_rate`, reject unless `warmpawz_pay_enabled AND is_active`, reject unless `discountValue < commission_rate`. Response includes inherited `commissionRate`, `platformMargin = C − D`. Keep `platformWithholdPercent` on GET for historical rows. |
+| Bindu | Catalogue list/detail join: `tierId`, `tierName`, `commissionRate`, `platformMargin` (read-only). |
 | Abhi | Initiate/verify/quote: `payNow` includes convenience; customer payload never includes C / revenue. |
 | Abhi | Admin payments DTO: add new columns; keep withhold fields **only** when `commercialModel === 'withhold'`. |
 | Abhi | Vendor DTO: vendor payable + quoted + paid + status only. |
-| Bindu | `GET/PUT` WPay convenience settings (admin-only). Abhi builds the settings UI. |
+| Bindu | `GET/PUT /admin/warmpawz-pay/settings/convenience` → `{ convenienceFee, convenienceGstRate, platformGstRate }` on `admin_settings` category `wpay` only. Abhi builds the settings UI. |
 
 ### Dual-read rule
 

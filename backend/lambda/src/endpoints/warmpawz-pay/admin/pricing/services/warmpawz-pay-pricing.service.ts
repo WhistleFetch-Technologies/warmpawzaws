@@ -5,6 +5,7 @@ import type {
   PricingRow,
   PricingRowWithMerchant,
   UpdatePricingInput,
+  WpayPublishTierRow,
 } from '../../../repositories/interfaces/IMerchantPricingRepository';
 import { merchantPricingRepository } from '../../../repositories/merchant-pricing.repository';
 import {
@@ -34,6 +35,28 @@ export class PricingAdminError extends Error {
     this.name = 'PricingAdminError';
     this.code = code;
   }
+}
+
+export function assertDiscountBelowCommission(discountValue: number, commissionRate: number): void {
+  if (!(discountValue < commissionRate)) {
+    throw new PricingAdminError(
+      PricingErrorCode.VALIDATION_ERROR,
+      `Discount must be strictly less than the selected tier commission (${commissionRate}%).`,
+    );
+  }
+}
+
+function assertWpayPublishTier(tier: WpayPublishTierRow | null): WpayPublishTierRow {
+  if (!tier) {
+    throw new PricingAdminError(PricingErrorCode.VALIDATION_ERROR, 'WPay tier not found');
+  }
+  if (!tier.isActive || !tier.warmpawzPayEnabled) {
+    throw new PricingAdminError(
+      PricingErrorCode.VALIDATION_ERROR,
+      'Selected tier is not an active Warmpawz Pay tier',
+    );
+  }
+  return tier;
 }
 
 function assertEffectiveDates(from: Date, until: Date | null): void {
@@ -76,6 +99,9 @@ export class WarmpawzPayPricingService {
       );
     }
 
+    const tier = assertWpayPublishTier(await this.pricingRepository.findWpayPublishTier(input.tierId));
+    assertDiscountBelowCommission(input.discountValue, tier.commissionRate);
+
     const effectiveFrom = new Date(input.effectiveFrom);
     const effectiveUntil = input.effectiveUntil ? new Date(input.effectiveUntil) : null;
     assertEffectiveDates(effectiveFrom, effectiveUntil);
@@ -86,9 +112,10 @@ export class WarmpawzPayPricingService {
 
     const createInput: CreatePricingInput = {
       vendorId: input.vendorId,
+      tierId: tier.id,
       discountType: input.discountType,
       discountValue: input.discountValue,
-      platformWithholdPercent: input.platformWithholdPercent ?? 0,
+      platformWithholdPercent: 0,
       status: input.status,
       effectiveFrom,
       effectiveUntil,
@@ -146,10 +173,21 @@ export class WarmpawzPayPricingService {
       await this.assertNoActiveConflict(merchantId);
     }
 
+    const nextTierId = input.tierId ?? existing.tierId;
+    if (!nextTierId) {
+      throw new PricingAdminError(
+        PricingErrorCode.VALIDATION_ERROR,
+        'A WPay-enabled tier is required to update pricing',
+      );
+    }
+    const tier = assertWpayPublishTier(await this.pricingRepository.findWpayPublishTier(nextTierId));
+    const nextDiscount = input.discountValue ?? existing.discountValue;
+    assertDiscountBelowCommission(nextDiscount, tier.commissionRate);
+
     const updateInput: UpdatePricingInput = {
+      tierId: nextTierId,
       discountType: input.discountType,
       discountValue: input.discountValue,
-      platformWithholdPercent: input.platformWithholdPercent,
       status: input.status,
       effectiveFrom: input.effectiveFrom ? effectiveFrom : undefined,
       effectiveUntil: input.effectiveUntil !== undefined ? effectiveUntil : undefined,
@@ -246,14 +284,22 @@ export class WarmpawzPayPricingService {
       roleName: row.roleName,
     });
 
+    const commissionRate = row.commissionRate;
+    const platformMargin =
+      commissionRate != null ? Math.round((commissionRate - row.discountValue) * 100) / 100 : null;
+
     return {
       pricingId: row.id,
       vendorId: row.vendorId,
       merchantName: displayName,
       businessName: displayName,
       category,
+      tierId: row.tierId,
+      tierName: row.tierDisplayName ?? row.tierName,
+      commissionRate,
       discountType: row.discountType,
       discountValue: row.discountValue,
+      platformMargin,
       platformWithholdPercent: row.platformWithholdPercent,
       status: row.status,
       effectiveFrom: row.effectiveFrom.toISOString(),

@@ -45,6 +45,9 @@ export interface CatalogueAdminListRow {
   readonly customerService: string | null;
   readonly roleConfig: unknown;
   readonly pricingId: string | null;
+  readonly pricingTierId: string | null;
+  readonly pricingTierName: string | null;
+  readonly pricingCommissionRate: number | null;
   readonly pricingDiscountType: string | null;
   readonly pricingDiscountValue: number | null;
   readonly pricingPlatformWithholdPercent: number | null;
@@ -72,6 +75,9 @@ export interface CatalogueRowWithVendor extends CatalogueRow {
   readonly customerService: string | null;
   readonly roleConfig: unknown;
   readonly pricingId: string | null;
+  readonly pricingTierId: string | null;
+  readonly pricingTierName: string | null;
+  readonly pricingCommissionRate: number | null;
   readonly pricingDiscountType: string | null;
   readonly pricingDiscountValue: number | null;
   readonly pricingPlatformWithholdPercent: number | null;

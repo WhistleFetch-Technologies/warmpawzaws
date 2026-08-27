@@ -9,6 +9,10 @@ describe('MerchantPricingRepository', () => {
           id: 'pricing-1',
           vendor_id: 'vendor-1',
           catalogue_id: 'cat-1',
+          tier_id: '22222222-2222-4222-8222-222222222222',
+          tier_name: 'both',
+          tier_display_name: 'Both',
+          commission_rate: '20',
           discount_type: 'percentage',
           discount_value: '10',
           platform_withhold_percent: '5',
@@ -33,6 +37,8 @@ describe('MerchantPricingRepository', () => {
 
     expect(row?.discountValue).toBe(10);
     expect(row?.platformWithholdPercent).toBe(5);
+    expect(row?.tierId).toBe('22222222-2222-4222-8222-222222222222');
+    expect(row?.commissionRate).toBe(20);
     expect(row?.businessName).toBe('Happy Paws');
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('warmpawz_pay_merchant_pricing'),
@@ -65,6 +71,7 @@ describe('MerchantPricingRepository', () => {
           id: 'pricing-1',
           vendor_id: 'vendor-1',
           catalogue_id: 'cat-1',
+          tier_id: '22222222-2222-4222-8222-222222222222',
           discount_type: 'percentage',
           discount_value: '15',
           platform_withhold_percent: '0',
@@ -82,6 +89,7 @@ describe('MerchantPricingRepository', () => {
     await repo.insert(
       {
         vendorId: 'vendor-1',
+        tierId: '22222222-2222-4222-8222-222222222222',
         discountType: 'percentage',
         discountValue: 15,
         platformWithholdPercent: 5,

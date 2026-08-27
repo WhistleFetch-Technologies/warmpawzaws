@@ -7,8 +7,12 @@ export interface PricingDetailDTO {
   readonly merchantName: string;
   readonly businessName: string;
   readonly category: string;
+  readonly tierId: string | null;
+  readonly tierName: string | null;
+  readonly commissionRate: number | null;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
+  readonly platformMargin: number | null;
   readonly platformWithholdPercent: number;
   readonly status: PricingStatus;
   readonly effectiveFrom: string;

@@ -11,6 +11,7 @@ import type {
   PricingRow,
   PricingRowWithMerchant,
   UpdatePricingInput,
+  WpayPublishTierRow,
 } from './interfaces/IMerchantPricingRepository';
 import type { VendorCatalogDbClient } from './vendor-catalog.repository';
 import { toOptionalAdminActorUuid } from '../admin/catalogue/utils/admin-actor-id';
@@ -23,6 +24,7 @@ const PRICING_COLUMNS = `
   p.id,
   p.vendor_id,
   p.catalogue_id,
+  p.tier_id,
   p.discount_type,
   p.discount_value,
   p.platform_withhold_percent,
@@ -31,7 +33,10 @@ const PRICING_COLUMNS = `
   p.effective_until,
   p.created_by,
   p.created_at,
-  p.updated_at
+  p.updated_at,
+  vt.tier_name AS tier_name,
+  vt.display_name AS tier_display_name,
+  vt.commission_rate AS commission_rate
 `;
 
 const MERCHANT_JOIN_SELECT = `
@@ -51,6 +56,7 @@ const PRICING_FROM_JOIN = `
   INNER JOIN ${CATALOGUE_TABLE} c ON c.vendor_id = p.vendor_id
   INNER JOIN vendors v ON v.id = p.vendor_id
   LEFT JOIN roles r ON r.id = v.role_id
+  LEFT JOIN vendor_tiers vt ON vt.id = p.tier_id
 `;
 
 const ACTIVE_PRICING_PREDICATE = `
@@ -63,6 +69,10 @@ interface PricingDbRow {
   readonly id: string;
   readonly vendor_id: string;
   readonly catalogue_id: string | null;
+  readonly tier_id: string | null;
+  readonly tier_name: string | null;
+  readonly tier_display_name: string | null;
+  readonly commission_rate: string | number | null;
   readonly discount_type: string;
   readonly discount_value: string | number;
   readonly platform_withhold_percent: string | number;
@@ -99,6 +109,10 @@ function mapPricingRow(row: PricingDbRow): PricingRow {
     id: row.id,
     vendorId: row.vendor_id,
     catalogueId: row.catalogue_id,
+    tierId: row.tier_id ?? null,
+    tierName: row.tier_name ?? null,
+    tierDisplayName: row.tier_display_name ?? null,
+    commissionRate: row.commission_rate == null ? null : toNumber(row.commission_rate),
     discountType: row.discount_type as PricingDiscountType,
     discountValue: toNumber(row.discount_value),
     platformWithholdPercent: toNumber(row.platform_withhold_percent ?? 0),
@@ -142,8 +156,9 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
 
   async findRowByVendorId(vendorId: string): Promise<PricingRow | null> {
     const sql = `
-      SELECT ${PRICING_COLUMNS.replace(/\bp\./g, 'p.')}
+      SELECT ${PRICING_COLUMNS}
       FROM ${PRICING_TABLE} p
+      LEFT JOIN vendor_tiers vt ON vt.id = p.tier_id
       WHERE p.vendor_id = $1
     `;
     const result = await this.db.query(sql, [vendorId]);
@@ -156,6 +171,7 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
       INSERT INTO ${PRICING_TABLE} (
         vendor_id,
         catalogue_id,
+        tier_id,
         discount_type,
         discount_value,
         platform_withhold_percent,
@@ -166,11 +182,12 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
         created_at,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
       RETURNING
         id,
         vendor_id,
         catalogue_id,
+        tier_id,
         discount_type,
         discount_value,
         platform_withhold_percent,
@@ -185,6 +202,7 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
     const result = await this.db.query(sql, [
       input.vendorId,
       catalogueId,
+      input.tierId,
       input.discountType,
       input.discountValue,
       input.platformWithholdPercent,
@@ -202,6 +220,10 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
     const assignments: string[] = ['updated_at = NOW()'];
     const params: unknown[] = [vendorId];
 
+    if (input.tierId !== undefined) {
+      params.push(input.tierId);
+      assignments.push(`tier_id = $${params.length}`);
+    }
     if (input.discountType !== undefined) {
       params.push(input.discountType);
       assignments.push(`discount_type = $${params.length}`);
@@ -235,6 +257,7 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
         id,
         vendor_id,
         catalogue_id,
+        tier_id,
         discount_type,
         discount_value,
         platform_withhold_percent,
@@ -297,6 +320,34 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
     const result = await this.db.query(sql);
     const value = Number(result.rows[0]?.average_discount ?? 0);
     return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
+  }
+
+  async findWpayPublishTier(tierId: string): Promise<WpayPublishTierRow | null> {
+    const sql = `
+      SELECT id, tier_name, display_name, commission_rate, is_active, warmpawz_pay_enabled
+      FROM vendor_tiers
+      WHERE id = $1::uuid
+    `;
+    const result = await this.db.query(sql, [tierId]);
+    const row = result.rows[0] as
+      | {
+          id: string;
+          tier_name: string;
+          display_name: string;
+          commission_rate: string | number;
+          is_active: boolean;
+          warmpawz_pay_enabled: boolean;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      tierName: row.tier_name,
+      displayName: row.display_name,
+      commissionRate: toNumber(row.commission_rate),
+      isActive: row.is_active !== false,
+      warmpawzPayEnabled: row.warmpawz_pay_enabled === true,
+    };
   }
 
   async assertCatalogueVendor(vendorId: string): Promise<{ catalogueId: string } | null> {

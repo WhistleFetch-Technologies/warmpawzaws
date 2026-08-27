@@ -139,16 +139,28 @@ export function registerTierSystemEndpoints(app: Hono) {
       }
       const actualVendorId = vendor.id;
 
-      // Fetch all active tiers from vendor_tiers (admin-configured)
+      // Fetch all active Marketplace-applicable tiers from vendor_tiers (admin-configured)
       const tiersResult = await query(
         `SELECT id, tier_name, tier_level, display_name, commission_rate, payout_period_days,
                 monthly_cost, yearly_cost, six_month_cost, twelve_month_cost,
                 features, applicable_roles, is_default, is_free_tier,
-                terms_and_conditions, terms_version, allow_split_payment, split_payment_installments
+                terms_and_conditions, terms_version, allow_split_payment, split_payment_installments,
+                marketplace_enabled, warmpawz_pay_enabled
          FROM vendor_tiers
          WHERE is_active = true
+           AND COALESCE(marketplace_enabled, true) = true
          ORDER BY tier_level ASC`
-      ).catch(() => ({ rows: [] }));
+      ).catch(async () =>
+        query(
+          `SELECT id, tier_name, tier_level, display_name, commission_rate, payout_period_days,
+                  monthly_cost, yearly_cost, six_month_cost, twelve_month_cost,
+                  features, applicable_roles, is_default, is_free_tier,
+                  terms_and_conditions, terms_version, allow_split_payment, split_payment_installments
+           FROM vendor_tiers
+           WHERE is_active = true
+           ORDER BY tier_level ASC`,
+        ).catch(() => ({ rows: [] })),
+      );
       const dbTiers = tiersResult.rows || [];
 
       // Resolve current tier: vendor.tier → lookup in dbTiers; else use default

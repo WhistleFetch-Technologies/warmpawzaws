@@ -11,6 +11,7 @@ import { pricingAuditRepository } from '../../../repositories/pricing-audit.repo
 export interface PricingAuditEntity {
   readonly pricingId: string;
   readonly vendorId: string;
+  readonly tierId: string | null;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
   readonly platformWithholdPercent: number;
@@ -21,6 +22,7 @@ export interface PricingAuditEntity {
 
 function buildEntitySnapshot(entity: PricingAuditEntity): Record<string, unknown> {
   return {
+    tier_id: entity.tierId,
     discount_type: entity.discountType,
     discount_value: entity.discountValue,
     platform_withhold_percent: entity.platformWithholdPercent,
@@ -34,6 +36,7 @@ export function toPricingAuditEntity(row: PricingRow): PricingAuditEntity {
   return {
     pricingId: row.id,
     vendorId: row.vendorId,
+    tierId: row.tierId,
     discountType: row.discountType,
     discountValue: row.discountValue,
     platformWithholdPercent: row.platformWithholdPercent,

@@ -37,6 +37,7 @@ import { registerAdminEndpoints } from '../endpoints/admin/endpoints/admin.contr
 import { registerWarmpawzPayCatalogueAdminRoutes } from '../endpoints/warmpawz-pay/admin/catalogue';
 import { registerWarmpawzPayDashboardAdminRoutes } from '../endpoints/warmpawz-pay/admin/dashboard';
 import { registerWarmpawzPayPricingAdminRoutes } from '../endpoints/warmpawz-pay/admin/pricing';
+import { registerWarmpawzPayConvenienceSettingsRoutes } from '../endpoints/warmpawz-pay/admin/settings';
 import { registerWarmpawzPayPaymentsAdminRoutes } from '../endpoints/warmpawz-pay/admin/payments';
 import { registerWarmpawzAppointmentsCatalogueAdminRoutes } from '../endpoints/warmpawz-appointments/admin/catalogue';
 import { registerWarmpawzAppointmentsPoliciesAdminRoutes } from '../endpoints/warmpawz-appointments/admin/policies';
@@ -694,6 +695,7 @@ registerAdminEndpoints(app);
 registerWarmpawzPayDashboardAdminRoutes(app);
 registerWarmpawzPayPaymentsAdminRoutes(app);
 registerWarmpawzPayPricingAdminRoutes(app);
+registerWarmpawzPayConvenienceSettingsRoutes(app);
 registerWarmpawzPayCatalogueAdminRoutes(app);
 registerWarmpawzAppointmentsDashboardAdmin(app);
 registerWarmpawzAppointmentsCatalogueAdminRoutes(app);

@@ -29,8 +29,12 @@ export interface CatalogueMerchantEnrichmentInput {
 export interface CataloguePricingSummaryDTO {
   readonly configured: boolean;
   readonly pricingId?: string;
+  readonly tierId?: string | null;
+  readonly tierName?: string | null;
+  readonly commissionRate?: number | null;
   readonly discountType?: PricingDiscountType;
   readonly discountValue?: number;
+  readonly platformMargin?: number | null;
   readonly platformWithholdPercent?: number;
   readonly status?: PricingStatus;
   readonly effectiveFrom?: string;
@@ -49,6 +53,9 @@ export interface CatalogueMerchantEnrichmentDTO {
 
 export interface CataloguePricingRowInput {
   readonly pricingId: string;
+  readonly tierId?: string | null;
+  readonly tierName?: string | null;
+  readonly commissionRate?: number | null;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
   readonly platformWithholdPercent: number;
@@ -71,11 +78,20 @@ export function buildCataloguePricingSummary(
     discountValue: pricing.discountValue,
   };
 
+  const platformMargin =
+    pricing.commissionRate != null
+      ? Math.round((pricing.commissionRate - pricing.discountValue) * 100) / 100
+      : null;
+
   return {
     configured: isPricingConfigured(effectiveInput),
     pricingId: pricing.pricingId,
+    tierId: pricing.tierId ?? null,
+    tierName: pricing.tierName ?? null,
+    commissionRate: pricing.commissionRate ?? null,
     discountType: pricing.discountType,
     discountValue: pricing.discountValue,
+    platformMargin,
     platformWithholdPercent: pricing.platformWithholdPercent,
     status: pricing.status,
     effectiveFrom: pricing.effectiveFrom.toISOString(),

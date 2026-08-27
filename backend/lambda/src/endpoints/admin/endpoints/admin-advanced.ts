@@ -31,6 +31,12 @@ import {
 } from '../../../utils/tax-category-display-rate';
 import { isValidUUID } from '../../../types/entities';
 import {
+  buildPaymentTierListWhere,
+  mapVendorPaymentTierRow,
+  parseOptionalBooleanQuery,
+  parseTierApplicabilityFlags,
+} from '../shared/payment-tier-applicability';
+import {
   listFeeSettingsFromDb,
   scalarFromJsonbSetting,
   upsertFeeSetting,
@@ -6428,49 +6434,47 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // Payment tiers (vendor_tiers table) - CRUD for admin finance tier configuration
   app.get('/admin/payments/tiers', async (c) => {
     try {
+      const listWhere = buildPaymentTierListWhere({
+        warmpawzPayEnabled: parseOptionalBooleanQuery(c.req.query('warmpawzPayEnabled')),
+        isActive: parseOptionalBooleanQuery(c.req.query('isActive')),
+      });
       let result: { rows?: any[] };
       try {
-        result = await query(`
+        result = await query(
+          `
           SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
                  monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
-                 terms_and_conditions, terms_version, created_at, updated_at
+                 terms_and_conditions, terms_version, marketplace_enabled, warmpawz_pay_enabled,
+                 created_at, updated_at
           FROM vendor_tiers
+          ${listWhere.sql}
           ORDER BY tier_level ASC NULLS LAST, created_at DESC
-        `);
+        `,
+          listWhere.values,
+        );
       } catch (colErr: unknown) {
         const colMsg = String(getErrorMessage(colErr));
-        if (/column "terms_and_conditions" does not exist/i.test(colMsg)) {
-          result = await query(`
+        if (/column "terms_and_conditions" does not exist|column "marketplace_enabled" does not exist/i.test(colMsg)) {
+          result = await query(
+            `
             SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
                    monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
                    created_at, updated_at
             FROM vendor_tiers
             ORDER BY tier_level ASC NULLS LAST, created_at DESC
-          `);
+          `,
+          );
           (result.rows || []).forEach((r: any) => {
             r.terms_and_conditions = null;
             r.terms_version = '1.0';
+            if (r.marketplace_enabled === undefined) r.marketplace_enabled = true;
+            if (r.warmpawz_pay_enabled === undefined) r.warmpawz_pay_enabled = false;
           });
         } else {
           throw colErr;
         }
       }
-      const rows = (result.rows || []).map((row: Record<string, unknown>) => ({
-        id: row.id,
-        name: row.tier_name,
-        displayName: row.display_name,
-        description: row.description ?? '',
-        commissionRate: Number(row.commission_rate) ?? 0,
-        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
-        monthlyCost: Number(row.monthly_cost) ?? 0,
-        yearlyCost: Number(row.yearly_cost) ?? 0,
-        isDefault: Boolean(row.is_default),
-        isActive: row.is_active !== false,
-        features: Array.isArray(row.features) ? row.features : (row.features ? [row.features] : []),
-        roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
-        termsAndConditions: row.terms_and_conditions ?? '',
-        termsVersion: row.terms_version ?? '1.0',
-      }));
+      const rows = (result.rows || []).map((row: Record<string, unknown>) => mapVendorPaymentTierRow(row));
       return c.json({ success: true, tiers: rows });
     } catch (error: unknown) {
       const msg = String(getErrorMessage(error));
@@ -6502,6 +6506,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const yearlyCost = Number(body.yearlyCost ?? body.yearly_cost ?? 0);
       const isDefault = Boolean(body.isDefault ?? body.is_default);
       const isActive = body.isActive !== false && body.is_active !== false;
+      const { marketplaceEnabled, warmpawzPayEnabled } = parseTierApplicabilityFlags(body, {
+        marketplaceEnabled: true,
+        warmpawzPayEnabled: false,
+      });
       const features = Array.isArray(body.features) ? body.features : [];
       const roles = Array.isArray(body.roles) ? body.roles : [];
       const roleUuids = roles.filter((r): r is string => typeof r === 'string' && /^[0-9a-f-]{36}$/i.test(r));
@@ -6517,11 +6525,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           `INSERT INTO vendor_tiers (
             tier_name, tier_level, display_name, description, commission_rate, payout_period_days,
             monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
-            terms_and_conditions, terms_version
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            terms_and_conditions, terms_version, marketplace_enabled, warmpawz_pay_enabled
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
           RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days,
                     monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
-                    terms_and_conditions, terms_version, created_at`,
+                    terms_and_conditions, terms_version, marketplace_enabled, warmpawz_pay_enabled, created_at`,
           [
             name,
             nextLevel,
@@ -6537,6 +6545,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             roleUuids.length ? roleUuids : [],
             termsAndConditions || null,
             termsVersion || '1.0',
+            marketplaceEnabled,
+            warmpawzPayEnabled,
           ]
         );
       } catch (colErr: unknown) {
@@ -6558,23 +6568,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (!row) {
         return c.json({ success: false, error: 'Failed to create tier' }, 500);
       }
-      const tier = {
-        id: row.id,
-        name: row.tier_name,
-        displayName: row.display_name,
-        description: row.description ?? '',
-        commissionRate: Number(row.commission_rate) ?? 0,
-        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
-        monthlyCost: Number(row.monthly_cost) ?? 0,
-        yearlyCost: Number(row.yearly_cost) ?? 0,
-        isDefault: Boolean(row.is_default),
-        isActive: row.is_active !== false,
-        features: Array.isArray(row.features) ? row.features : [],
-        roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
-        termsAndConditions: row.terms_and_conditions ?? '',
-        termsVersion: row.terms_version ?? '1.0',
-      };
-      return c.json({ success: true, tier });
+      return c.json({ success: true, tier: mapVendorPaymentTierRow(row) });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -6597,6 +6591,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const yearlyCost = body.yearlyCost != null ? Number(body.yearlyCost) : body.yearly_cost != null ? Number(body.yearly_cost) : undefined;
       const isDefault = body.isDefault !== undefined ? Boolean(body.isDefault) : body.is_default !== undefined ? Boolean(body.is_default) : undefined;
       const isActive = body.isActive !== undefined ? Boolean(body.isActive) : body.is_active !== undefined ? Boolean(body.is_active) : undefined;
+      const applicability =
+        body.marketplaceEnabled !== undefined ||
+        body.marketplace_enabled !== undefined ||
+        body.warmpawzPayEnabled !== undefined ||
+        body.warmpawz_pay_enabled !== undefined
+          ? parseTierApplicabilityFlags(body, { marketplaceEnabled: true, warmpawzPayEnabled: false })
+          : undefined;
       const features = body.features !== undefined ? (Array.isArray(body.features) ? body.features : []) : undefined;
       const roles = Array.isArray(body.roles) ? body.roles : [];
       const roleUuids = roles.filter((r): r is string => typeof r === 'string' && /^[0-9a-f-]{36}$/i.test(r));
@@ -6613,6 +6614,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (yearlyCost !== undefined) { updates.push(`yearly_cost = $${idx++}`); values.push(yearlyCost); }
       if (isDefault !== undefined) { updates.push(`is_default = $${idx++}`); values.push(isDefault); }
       if (isActive !== undefined) { updates.push(`is_active = $${idx++}`); values.push(isActive); }
+      if (applicability) {
+        updates.push(`marketplace_enabled = $${idx++}`);
+        values.push(applicability.marketplaceEnabled);
+        updates.push(`warmpawz_pay_enabled = $${idx++}`);
+        values.push(applicability.warmpawzPayEnabled);
+      }
       if (features !== undefined) { updates.push(`features = $${idx++}`); values.push(JSON.stringify(features)); }
       if (body.roles !== undefined) { updates.push(`applicable_roles = $${idx++}`); values.push(roleUuids); }
       if (body.termsAndConditions !== undefined || body.terms_and_conditions !== undefined) {
@@ -6629,30 +6636,14 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       updates.push(`updated_at = NOW()`);
       values.push(id);
       const updateResult = await query(
-        `UPDATE vendor_tiers SET ${updates.join(', ')} WHERE id = $${idx}::uuid RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, terms_and_conditions, terms_version`,
+        `UPDATE vendor_tiers SET ${updates.join(', ')} WHERE id = $${idx}::uuid RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, terms_and_conditions, terms_version, marketplace_enabled, warmpawz_pay_enabled`,
         values
       );
       const row = updateResult.rows?.[0] as Record<string, unknown> | undefined;
       if (!row) {
         return c.json({ success: false, error: 'Tier not found' }, 404);
       }
-      const tier = {
-        id: row.id,
-        name: row.tier_name,
-        displayName: row.display_name,
-        description: row.description ?? '',
-        commissionRate: Number(row.commission_rate) ?? 0,
-        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
-        monthlyCost: Number(row.monthly_cost) ?? 0,
-        yearlyCost: Number(row.yearly_cost) ?? 0,
-        isDefault: Boolean(row.is_default),
-        isActive: row.is_active !== false,
-        features: Array.isArray(row.features) ? row.features : [],
-        roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
-        termsAndConditions: row.terms_and_conditions ?? '',
-        termsVersion: row.terms_version ?? '1.0',
-      };
-      return c.json({ success: true, tier });
+      return c.json({ success: true, tier: mapVendorPaymentTierRow(row) });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -6701,23 +6692,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           updated_at = NOW()
       `);
       const listResult = await query(`
-        SELECT id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles
+        SELECT id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, marketplace_enabled, warmpawz_pay_enabled
         FROM vendor_tiers ORDER BY tier_level ASC
       `);
-      const tiers = (listResult.rows || []).map((row: Record<string, unknown>) => ({
-        id: row.id,
-        name: row.tier_name,
-        displayName: row.display_name,
-        description: row.description ?? '',
-        commissionRate: Number(row.commission_rate) ?? 0,
-        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
-        monthlyCost: Number(row.monthly_cost) ?? 0,
-        yearlyCost: Number(row.yearly_cost) ?? 0,
-        isDefault: Boolean(row.is_default),
-        isActive: row.is_active !== false,
-        features: Array.isArray(row.features) ? row.features : [],
-        roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
-      }));
+      const tiers = (listResult.rows || []).map((row: Record<string, unknown>) => mapVendorPaymentTierRow(row));
       return c.json({ success: true, message: 'Default tiers seeded', tiers });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);

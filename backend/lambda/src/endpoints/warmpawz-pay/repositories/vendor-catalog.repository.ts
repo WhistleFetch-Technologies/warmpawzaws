@@ -58,6 +58,9 @@ const VENDOR_JOIN_SELECT = `
   r.customer_service,
   r.config AS role_config,
   p.id AS pricing_id,
+  p.tier_id AS pricing_tier_id,
+  vt.display_name AS pricing_tier_name,
+  vt.commission_rate AS pricing_commission_rate,
   p.discount_type AS pricing_discount_type,
   p.discount_value AS pricing_discount_value,
   p.platform_withhold_percent AS pricing_platform_withhold_percent,
@@ -93,6 +96,9 @@ const ADMIN_LIST_SELECT = `
   r.customer_service,
   r.config AS role_config,
   p.id AS pricing_id,
+  p.tier_id AS pricing_tier_id,
+  vt.display_name AS pricing_tier_name,
+  vt.commission_rate AS pricing_commission_rate,
   p.discount_type AS pricing_discount_type,
   p.discount_value AS pricing_discount_value,
   p.platform_withhold_percent AS pricing_platform_withhold_percent,
@@ -106,6 +112,7 @@ const CATALOGUE_DETAIL_FROM_JOIN = `
   INNER JOIN vendors v ON v.id = c.vendor_id
   LEFT JOIN roles r ON r.id = v.role_id
   LEFT JOIN ${PRICING_TABLE} p ON p.vendor_id = c.vendor_id
+  LEFT JOIN vendor_tiers vt ON vt.id = p.tier_id
 `;
 
 const ADMIN_LIST_FROM_JOIN = `
@@ -113,6 +120,7 @@ const ADMIN_LIST_FROM_JOIN = `
   LEFT JOIN ${CATALOGUE_TABLE} c ON c.vendor_id = v.id
   LEFT JOIN roles r ON r.id = v.role_id
   LEFT JOIN ${PRICING_TABLE} p ON p.vendor_id = v.id
+  LEFT JOIN vendor_tiers vt ON vt.id = p.tier_id
 `;
 
 const ADMIN_LIST_BASE_WHERE = VENDOR_APPROVED_ACTIVE_SQL.trim();
@@ -179,6 +187,9 @@ interface AdminListDbRow {
   readonly customer_service: string | null;
   readonly role_config: unknown;
   readonly pricing_id: string | null;
+  readonly pricing_tier_id: string | null;
+  readonly pricing_tier_name: string | null;
+  readonly pricing_commission_rate: string | number | null;
   readonly pricing_discount_type: string | null;
   readonly pricing_discount_value: string | number | null;
   readonly pricing_platform_withhold_percent: string | number | null;
@@ -206,6 +217,9 @@ interface CatalogueWithVendorDbRow extends CatalogueDbRow {
   readonly customer_service: string | null;
   readonly role_config: unknown;
   readonly pricing_id: string | null;
+  readonly pricing_tier_id: string | null;
+  readonly pricing_tier_name: string | null;
+  readonly pricing_commission_rate: string | number | null;
   readonly pricing_discount_type: string | null;
   readonly pricing_discount_value: string | number | null;
   readonly pricing_platform_withhold_percent: string | number | null;
@@ -324,6 +338,9 @@ function mapAdminListRow(row: AdminListDbRow): CatalogueAdminListRow {
     customerService: row.customer_service,
     roleConfig: row.role_config,
     pricingId: row.pricing_id,
+    pricingTierId: row.pricing_tier_id,
+    pricingTierName: row.pricing_tier_name,
+    pricingCommissionRate: toOptionalNumber(row.pricing_commission_rate),
     pricingDiscountType: row.pricing_discount_type,
     pricingDiscountValue: toOptionalNumber(row.pricing_discount_value),
     pricingPlatformWithholdPercent: toOptionalNumber(row.pricing_platform_withhold_percent),
@@ -365,6 +382,9 @@ function mapCatalogueRowWithVendor(row: CatalogueWithVendorDbRow): CatalogueRowW
     customerService: row.customer_service,
     roleConfig: row.role_config,
     pricingId: row.pricing_id,
+    pricingTierId: row.pricing_tier_id,
+    pricingTierName: row.pricing_tier_name,
+    pricingCommissionRate: toOptionalNumber(row.pricing_commission_rate),
     pricingDiscountType: row.pricing_discount_type,
     pricingDiscountValue: toOptionalNumber(row.pricing_discount_value),
     pricingPlatformWithholdPercent: toOptionalNumber(row.pricing_platform_withhold_percent),

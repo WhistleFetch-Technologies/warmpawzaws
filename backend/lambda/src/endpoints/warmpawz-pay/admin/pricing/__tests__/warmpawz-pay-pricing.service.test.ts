@@ -1,17 +1,73 @@
 import { PRICING_DISCOUNT_TYPE, PRICING_STATUS } from '../../../constants/merchant-pricing';
-import type { IMerchantPricingRepository, PricingRow } from '../../../repositories/interfaces/IMerchantPricingRepository';
+import type {
+  IMerchantPricingRepository,
+  PricingRow,
+  PricingRowWithMerchant,
+  WpayPublishTierRow,
+} from '../../../repositories/interfaces/IMerchantPricingRepository';
+import type { CreatePricingRequest } from '../dto/pricing.requests';
 import { PricingErrorCode } from '../dto/pricing.errors';
 import {
+  assertDiscountBelowCommission,
   PricingAdminError,
   WarmpawzPayPricingService,
 } from '../services/warmpawz-pay-pricing.service';
 import { PricingAuditService } from '../services/pricing-audit.service';
 
+const TIER_BOTH = '22222222-2222-4222-8222-222222222222';
+const TIER_MARKETPLACE = '33333333-3333-4333-8333-333333333333';
+const TIER_INACTIVE = '44444444-4444-4444-8444-444444444444';
+
+const bothTier: WpayPublishTierRow = {
+  id: TIER_BOTH,
+  tierName: 'both',
+  displayName: 'Both',
+  commissionRate: 20,
+  isActive: true,
+  warmpawzPayEnabled: true,
+};
+
+const marketplaceOnlyTier: WpayPublishTierRow = {
+  id: TIER_MARKETPLACE,
+  tierName: 'marketplace',
+  displayName: 'Marketplace only',
+  commissionRate: 20,
+  isActive: true,
+  warmpawzPayEnabled: false,
+};
+
+const inactiveTier: WpayPublishTierRow = {
+  id: TIER_INACTIVE,
+  tierName: 'inactive',
+  displayName: 'Inactive',
+  commissionRate: 20,
+  isActive: false,
+  warmpawzPayEnabled: true,
+};
+
+describe('assertDiscountBelowCommission', () => {
+  it('rejects discount equal to commission (Case 5)', () => {
+    expect(() => assertDiscountBelowCommission(20, 20)).toThrow(PricingAdminError);
+  });
+
+  it('rejects discount greater than commission (Case 6)', () => {
+    expect(() => assertDiscountBelowCommission(21, 20)).toThrow(PricingAdminError);
+  });
+
+  it('accepts discount strictly below commission (Case 7)', () => {
+    expect(() => assertDiscountBelowCommission(15, 20)).not.toThrow();
+  });
+});
+
 describe('WarmpawzPayPricingService', () => {
-  const sampleRow = {
+  const sampleRow: PricingRowWithMerchant = {
     id: 'pricing-1',
     vendorId: 'vendor-1',
     catalogueId: 'cat-1',
+    tierId: TIER_BOTH,
+    tierName: 'both',
+    tierDisplayName: 'Both',
+    commissionRate: 20,
     discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
     discountValue: 10,
     platformWithholdPercent: 5,
@@ -23,11 +79,14 @@ describe('WarmpawzPayPricingService', () => {
     updatedAt: new Date('2026-07-23T00:00:00.000Z'),
     businessName: 'Happy Paws',
     ownerName: 'Anjali',
+    vendorType: null,
+    roleName: null,
+    isSoloProvider: false,
     legacyCategory: null,
     roleCategory: 'grooming',
     customerService: 'grooming',
     roleConfig: null,
-  } as const;
+  };
 
   const auditService = {
     logCreated: jest.fn().mockResolvedValue(undefined),
@@ -37,7 +96,19 @@ describe('WarmpawzPayPricingService', () => {
     logDeleted: jest.fn().mockResolvedValue(undefined),
   } as unknown as PricingAuditService;
 
-  it('returns pricing detail by merchant id', async () => {
+  function createInput(overrides: Partial<CreatePricingRequest> = {}): CreatePricingRequest {
+    return {
+      vendorId: 'vendor-1',
+      tierId: TIER_BOTH,
+      discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
+      discountValue: 15,
+      status: PRICING_STATUS.ACTIVE,
+      effectiveFrom: '2026-07-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('returns pricing detail by merchant id with inherited commission and margin', async () => {
     const repository: IMerchantPricingRepository = {
       findByVendorId: jest.fn().mockResolvedValue(sampleRow),
     } as unknown as IMerchantPricingRepository;
@@ -47,6 +118,10 @@ describe('WarmpawzPayPricingService', () => {
 
     expect(result?.businessName).toBe('Happy Paws');
     expect(result?.discountValue).toBe(10);
+    expect(result?.tierId).toBe(TIER_BOTH);
+    expect(result?.tierName).toBe('Both');
+    expect(result?.commissionRate).toBe(20);
+    expect(result?.platformMargin).toBe(10);
     expect(result?.platformWithholdPercent).toBe(5);
   });
 
@@ -58,19 +133,7 @@ describe('WarmpawzPayPricingService', () => {
 
     const service = new WarmpawzPayPricingService(repository, auditService);
 
-    await expect(
-      service.createPricing(
-        {
-          vendorId: 'vendor-1',
-          discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
-          discountValue: 10,
-          platformWithholdPercent: 0,
-          status: PRICING_STATUS.ACTIVE,
-          effectiveFrom: '2026-07-01T00:00:00.000Z',
-        },
-        'admin-1',
-      ),
-    ).rejects.toMatchObject({
+    await expect(service.createPricing(createInput(), 'admin-1')).rejects.toMatchObject({
       code: PricingErrorCode.DUPLICATE_PRICING,
     });
   });
@@ -79,23 +142,110 @@ describe('WarmpawzPayPricingService', () => {
     const repository: IMerchantPricingRepository = {
       assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
       findRowByVendorId: jest.fn().mockResolvedValue(null),
+      findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
     } as unknown as IMerchantPricingRepository;
 
     const service = new WarmpawzPayPricingService(repository, auditService);
 
     await expect(
       service.createPricing(
-        {
-          vendorId: 'vendor-1',
-          discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
-          discountValue: 10,
-          platformWithholdPercent: 0,
-          status: PRICING_STATUS.ACTIVE,
+        createInput({
           effectiveFrom: '2026-08-01T00:00:00.000Z',
           effectiveUntil: '2026-07-01T00:00:00.000Z',
-        },
+        }),
         'admin-1',
       ),
     ).rejects.toBeInstanceOf(PricingAdminError);
+  });
+
+  it('rejects discount equal to commission on create (Case 5)', async () => {
+    const repository: IMerchantPricingRepository = {
+      assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
+      findRowByVendorId: jest.fn().mockResolvedValue(null),
+      findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
+    } as unknown as IMerchantPricingRepository;
+
+    const service = new WarmpawzPayPricingService(repository, auditService);
+
+    await expect(service.createPricing(createInput({ discountValue: 20 }), 'admin-1')).rejects.toMatchObject({
+      code: PricingErrorCode.VALIDATION_ERROR,
+    });
+  });
+
+  it('rejects discount greater than commission on create (Case 6)', async () => {
+    const repository: IMerchantPricingRepository = {
+      assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
+      findRowByVendorId: jest.fn().mockResolvedValue(null),
+      findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
+    } as unknown as IMerchantPricingRepository;
+
+    const service = new WarmpawzPayPricingService(repository, auditService);
+
+    await expect(service.createPricing(createInput({ discountValue: 21 }), 'admin-1')).rejects.toMatchObject({
+      code: PricingErrorCode.VALIDATION_ERROR,
+    });
+  });
+
+  it('accepts Both-tier publish when discount is below commission (Cases 7 + 12)', async () => {
+    const inserted: PricingRow = {
+      ...sampleRow,
+      discountValue: 15,
+      platformWithholdPercent: 0,
+    };
+    const repository: IMerchantPricingRepository = {
+      assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
+      findRowByVendorId: jest.fn().mockResolvedValue(null),
+      findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
+      hasActiveConfiguredPricing: jest.fn().mockResolvedValue(false),
+      insert: jest.fn().mockResolvedValue(inserted),
+      findByVendorId: jest.fn().mockResolvedValue({ ...sampleRow, discountValue: 15, platformWithholdPercent: 0 }),
+    } as unknown as IMerchantPricingRepository;
+
+    const service = new WarmpawzPayPricingService(repository, auditService);
+    const result = await service.createPricing(createInput({ discountValue: 15 }), 'admin-1');
+
+    expect(result.commissionRate).toBe(20);
+    expect(result.discountValue).toBe(15);
+    expect(result.platformMargin).toBe(5);
+    expect(repository.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tierId: TIER_BOTH,
+        discountValue: 15,
+        platformWithholdPercent: 0,
+      }),
+      'cat-1',
+    );
+  });
+
+  it('rejects marketplace-only tier (Case 11)', async () => {
+    const repository: IMerchantPricingRepository = {
+      assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
+      findRowByVendorId: jest.fn().mockResolvedValue(null),
+      findWpayPublishTier: jest.fn().mockResolvedValue(marketplaceOnlyTier),
+    } as unknown as IMerchantPricingRepository;
+
+    const service = new WarmpawzPayPricingService(repository, auditService);
+
+    await expect(
+      service.createPricing(createInput({ tierId: TIER_MARKETPLACE }), 'admin-1'),
+    ).rejects.toMatchObject({
+      code: PricingErrorCode.VALIDATION_ERROR,
+    });
+  });
+
+  it('rejects inactive WPay tier (Case 10)', async () => {
+    const repository: IMerchantPricingRepository = {
+      assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
+      findRowByVendorId: jest.fn().mockResolvedValue(null),
+      findWpayPublishTier: jest.fn().mockResolvedValue(inactiveTier),
+    } as unknown as IMerchantPricingRepository;
+
+    const service = new WarmpawzPayPricingService(repository, auditService);
+
+    await expect(
+      service.createPricing(createInput({ tierId: TIER_INACTIVE }), 'admin-1'),
+    ).rejects.toMatchObject({
+      code: PricingErrorCode.VALIDATION_ERROR,
+    });
   });
 });
