@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Clock, Search } from 'lucide-react';
 import { useWpayVendorFeed } from '@/hooks/useWpayVendorFeed';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
+import { rememberWpayHistoryBackFromCurrentUrl } from '@/lib/go-back-or-replace';
 import { mapWpayVendorCardToProps } from '@/lib/warmpawz-pay/map-wpay-vendor-card-to-props';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { buildWpayVendorPayPath } from '@/lib/warmpawz-pay/wpay-guest-journey';
@@ -123,7 +124,10 @@ function WarmpawzPayPageContent() {
           </button>
           <button
             type="button"
-            onClick={() => router.push(WPAY_HISTORY_PATH)}
+            onClick={() => {
+              rememberWpayHistoryBackFromCurrentUrl();
+              router.push(WPAY_HISTORY_PATH);
+            }}
             aria-label="Payment history"
             className="rounded-full bg-white/20 p-2"
           >

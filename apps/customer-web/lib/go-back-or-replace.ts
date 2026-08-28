@@ -750,3 +750,73 @@ export function getSetPasswordBackFallback(): string {
 export function handleSetPasswordPageBack(router: MinimalRouter): void {
   goBackOrReplace(router, getSetPasswordBackFallback());
 }
+
+// --- Warmpawz Pay History: return to profile menu or prior route (not always `/warmpawz-pay`) ---
+
+export const WPAY_HISTORY_BACK_INTENT_KEY = 'warmpawz_wpay_history_back_intent';
+
+type WpayHistoryBackIntent =
+  | { kind: 'account-menu' }
+  | { kind: 'path'; path: string };
+
+/** Call before `/warmpawz-pay/history` from account sidebar on home `/`. */
+export function rememberWpayHistoryBackFromAccountMenu(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(
+    WPAY_HISTORY_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'account-menu' } satisfies WpayHistoryBackIntent)
+  );
+}
+
+/** Call before `/warmpawz-pay/history` from another standalone route (e.g. `/warmpawz-pay`). */
+export function rememberWpayHistoryBackFromCurrentUrl(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname + window.location.search;
+  if (!isSafeInternalPath(path) || path.startsWith('/warmpawz-pay/history')) return;
+  if (path === '/' || path === '') {
+    rememberWpayHistoryBackFromAccountMenu();
+    return;
+  }
+  sessionStorage.setItem(
+    WPAY_HISTORY_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'path', path } satisfies WpayHistoryBackIntent)
+  );
+}
+
+/** Pick account-menu vs path intent from current URL before navigating to Pay History. */
+export function rememberBeforeWpayHistoryNav(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname + window.location.search;
+  if (path === '/' || path === '') {
+    rememberWpayHistoryBackFromAccountMenu();
+    return;
+  }
+  rememberWpayHistoryBackFromCurrentUrl();
+}
+
+/** Warmpawz Pay History header Back — profile menu, prior route, or Pay hub. */
+export function handleWpayHistoryPageBack(router: RouterWithPush): void {
+  if (typeof window === 'undefined') {
+    router.replace('/warmpawz-pay');
+    return;
+  }
+  const raw = sessionStorage.getItem(WPAY_HISTORY_BACK_INTENT_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as WpayHistoryBackIntent;
+      sessionStorage.removeItem(WPAY_HISTORY_BACK_INTENT_KEY);
+      if (parsed.kind === 'path' && isSafeInternalPath(parsed.path)) {
+        router.push(parsed.path);
+        return;
+      }
+      if (parsed.kind === 'account-menu') {
+        setOpenAccountMenuAfterNav();
+        router.push('/');
+        return;
+      }
+    } catch {
+      sessionStorage.removeItem(WPAY_HISTORY_BACK_INTENT_KEY);
+    }
+  }
+  goBackOrReplace(router, '/warmpawz-pay');
+}

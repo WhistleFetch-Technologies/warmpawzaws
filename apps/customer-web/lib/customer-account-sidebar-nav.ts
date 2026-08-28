@@ -2,6 +2,7 @@ import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import {
   rememberBeforeMyPackagesNav,
+  rememberBeforeWpayHistoryNav,
   rememberHelpBackFromCurrentUrl,
   rememberOrdersBackFromCurrentUrl,
   rememberPromotionsBackFromCurrentUrl,
@@ -36,6 +37,7 @@ export function navigateFromStandaloneAccountMenu(
     return;
   }
   if (path === 'warmpawz-pay') {
+    rememberBeforeWpayHistoryNav();
     router.push(WPAY_HISTORY_PATH);
     return;
   }
