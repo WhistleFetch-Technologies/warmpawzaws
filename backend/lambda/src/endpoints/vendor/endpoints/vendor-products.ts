@@ -86,6 +86,7 @@ import {
   applyProductSubcategoryClassification,
   resolveCanonicalParentCategory,
 } from '../../../utils/product-subcategory-classifier';
+import { buildStorefrontCategoryFilter } from '../../../utils/storefront-category-filter';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 /** Cached information_schema snapshot so we avoid hitting metadata column when it is not migrated yet */
@@ -555,9 +556,12 @@ class GetVendorProductsHandler extends BaseHandler {
       }
 
       if (category) {
-        productQuery += ` AND (p.category_id = $${paramIndex} OR p.category = $${paramIndex})`;
-        params.push(category);
-        paramIndex++;
+        const categoryFilter = await buildStorefrontCategoryFilter(category, paramIndex);
+        if (categoryFilter) {
+          productQuery += categoryFilter.clause;
+          params.push(...categoryFilter.params);
+          paramIndex = categoryFilter.nextParamIndex;
+        }
       }
 
       if (status === 'active') {
@@ -590,9 +594,12 @@ class GetVendorProductsHandler extends BaseHandler {
         }
 
         if (category) {
-          countQuery += ` AND (p.category_id = $${countParamIndex} OR p.category = $${countParamIndex})`;
-          countParams.push(category);
-          countParamIndex++;
+          const categoryFilter = await buildStorefrontCategoryFilter(category, countParamIndex);
+          if (categoryFilter) {
+            countQuery += categoryFilter.clause;
+            countParams.push(...categoryFilter.params);
+            countParamIndex = categoryFilter.nextParamIndex;
+          }
         }
 
         if (status === 'active') {

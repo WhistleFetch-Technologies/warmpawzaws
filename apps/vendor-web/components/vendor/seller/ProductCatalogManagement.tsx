@@ -136,9 +136,22 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     enabled: Boolean(sellerId),
   });
 
+  const topLevelCategories = useMemo(
+    () => categories.filter((c) => !c.parent_category_id),
+    [categories],
+  );
+
   useEffect(() => {
     loadCategories();
   }, [sellerId]);
+
+  useEffect(() => {
+    if (selectedCategory === 'all') return;
+    const stillValid = topLevelCategories.some((c) => String(c.id) === selectedCategory);
+    if (!stillValid) {
+      setSelectedCategory('all');
+    }
+  }, [selectedCategory, topLevelCategories]);
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -431,7 +444,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
             className="px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 min-w-[180px] bg-white"
           >
             <option value="all">All Categories</option>
-            {categories.map(cat => (
+            {topLevelCategories.map(cat => (
               <option key={cat.id} value={cat.id}>{cat.name}</option>
             ))}
           </select>
