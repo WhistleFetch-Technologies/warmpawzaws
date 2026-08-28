@@ -38,6 +38,9 @@ import { discoveryServiceSections } from '@/lib/vendor-services-package-sections
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
+  MIXED_PACKAGE_SERVICE_BOOK_ERROR,
+  partitionVendorServiceRowsByPackage,
+  toggleExclusivePackageOrServiceSelection,
 } from '@/lib/vendor-package-purchase-nav';
 import { VendorProfileDashboardHeader } from './VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from './VendorHeroPhotoCarousel';
@@ -639,13 +642,13 @@ export function UniversalProviderProfile({
       });
       return;
     }
-    const newSelected = new Set(selectedServices);
-    if (newSelected.has(serviceId)) {
-      newSelected.delete(serviceId);
-    } else {
-      newSelected.add(serviceId);
-    }
-    setSelectedServices(newSelected);
+    setSelectedServices((prev) =>
+      toggleExclusivePackageOrServiceSelection(
+        prev,
+        serviceId,
+        services as unknown as Record<string, unknown>[]
+      )
+    );
   };
 
   // Calculate total for selected services
@@ -712,10 +715,10 @@ export function UniversalProviderProfile({
       toast.error('Please select at least one service');
       return;
     }
-    const pkgOnly = selectedServicesList.filter((s) =>
-      isVendorServicePackageRow(s as unknown as Record<string, unknown>)
+    const { packages: pkgOnly, services: oneOffRows } = partitionVendorServiceRowsByPackage(
+      selectedServicesList as unknown as Record<string, unknown>[]
     );
-    if (pkgOnly.length === 1 && selectedServicesList.length === 1) {
+    if (pkgOnly.length === 1 && oneOffRows.length === 0) {
       const pkg = pkgOnly[0]!;
       const vendorIdForPkg = String(provider.vendorId || provider.providerId || '').trim();
       const nav = buildWalkerServiceDataForVendorPackagePurchase({
@@ -732,8 +735,8 @@ export function UniversalProviderProfile({
       toast.error('Could not start package booking. Please try again.');
       return;
     }
-    if (pkgOnly.length > 0 && selectedServicesList.length > 1) {
-      toast.error('Packages must be booked separately from one-off services.');
+    if (pkgOnly.length > 0 && (oneOffRows.length > 0 || pkgOnly.length > 1)) {
+      toast.error(MIXED_PACKAGE_SERVICE_BOOK_ERROR);
       return;
     }
     setShowBookingForm(true);

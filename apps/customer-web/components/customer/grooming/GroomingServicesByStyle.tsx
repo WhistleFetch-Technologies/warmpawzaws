@@ -18,7 +18,11 @@ import { ServicePricingDisplay } from '@/components/customer/ServicePricingDispl
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
+  MIXED_PACKAGE_SERVICE_BOOK_ERROR,
+  partitionVendorServiceRowsByPackage,
+  toggleExclusivePackageOrServiceSelection,
 } from '@/lib/vendor-package-purchase-nav';
+import { toast } from 'sonner';
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
@@ -636,13 +640,13 @@ export function GroomingServicesByStyle({
   });
 
   const toggleServiceSelection = (serviceId: string) => {
-    const newSelection = new Set(selectedServices);
-    if (newSelection.has(serviceId)) {
-      newSelection.delete(serviceId);
-    } else {
-      newSelection.add(serviceId);
-    }
-    setSelectedServices(newSelection);
+    setSelectedServices((prev) =>
+      toggleExclusivePackageOrServiceSelection(
+        prev,
+        serviceId,
+        profileProvider?.services as unknown as Record<string, unknown>[] | undefined
+      )
+    );
   };
 
   // ✅ FIX: Pass all selected services to booking, not just the first one
@@ -661,7 +665,14 @@ export function GroomingServicesByStyle({
     ).filter(Boolean);
 
     if (selectedServicesData.length > 0) {
-      const pkgRow = selectedServicesData.find((s) => isVendorServicePackageRow(s as any));
+      const { packages: pkgRows, services: oneOffRows } = partitionVendorServiceRowsByPackage(
+        selectedServicesData as Record<string, unknown>[]
+      );
+      if (pkgRows.length > 0 && (oneOffRows.length > 0 || pkgRows.length > 1)) {
+        toast.error(MIXED_PACKAGE_SERVICE_BOOK_ERROR);
+        return;
+      }
+      const pkgRow = pkgRows[0];
       if (pkgRow && profileProvider) {
         const vid =
           profileProvider.providerType === 'vendor'
