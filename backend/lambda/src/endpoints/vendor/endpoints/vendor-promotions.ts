@@ -657,7 +657,7 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
 
       const amount = orderAmount || bookingAmount || 0;
       const now = new Date().toISOString();
-      const cartLines: CartLineItem[] = Array.isArray(items)
+      const rawValidateLines: CartLineItem[] = Array.isArray(items)
         ? items.map((item: Record<string, unknown>) => ({
             productId: String(item.productId || item.product_id || item.id || ''),
             quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
@@ -666,6 +666,15 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
             categoryId: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
           }))
         : [];
+      const { fillProductCategoryIfMissing } = await import(
+        '../../../utils/fill-product-category-if-missing'
+      );
+      const { enrichLinesWithListingOwnership } = await import(
+        '../../../utils/compute-listing-ownership'
+      );
+      const cartLines = await enrichLinesWithListingOwnership(
+        await fillProductCategoryIfMissing(rawValidateLines)
+      );
 
       const lineSubtotal = cartLines.length
         ? cartLines.reduce((s, i) => s + i.price * i.quantity, 0)
