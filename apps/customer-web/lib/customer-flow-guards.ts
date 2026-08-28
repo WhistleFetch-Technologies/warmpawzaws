@@ -10,10 +10,21 @@ import {
   type GuestBookingIntentV1,
 } from './guest-booking-intent';
 
+const NEEDS_PROFILE_CREATE_KEY = '_warmpawz_needs_profile_create';
+
 function setCustomerOnboardingCompleteFromProfile(value: 'true' | 'false'): void {
   if (typeof window === 'undefined') return;
   if (value === 'false' && localStorage.getItem('onboarding_completed') === 'true') return;
   localStorage.setItem('customerOnboardingComplete', value);
+}
+
+function readNeedsProfileCreate(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return sessionStorage.getItem(NEEDS_PROFILE_CREATE_KEY) === 'true';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -43,15 +54,82 @@ export function applyUnifiedProfileToCustomerLocalStorage(
   const hasMeaningfulProfile = (hasProfileId && hasName) || (hasProfileId && hasBookings);
 
   if (backendFullyOnboarded || hasMeaningfulProfile) {
+    if (readNeedsProfileCreate()) return;
     markOnboardingCompleteAfterProfile();
   } else {
     setCustomerOnboardingCompleteFromProfile('false');
   }
 }
 
+/** OTP / login created a customer who still needs the profile form. Clears leftover guest flags. */
+export function markProfileCreationRequired(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('profile_completed', 'false');
+  localStorage.setItem('onboarding_completed', 'false');
+  localStorage.setItem('customerOnboardingComplete', 'false');
+  try {
+    sessionStorage.setItem(NEEDS_PROFILE_CREATE_KEY, 'true');
+  } catch {
+    /* private mode */
+  }
+}
+
+export function extractOtpAuthState(payload: unknown): 'new' | 'existing' | null {
+  const walk = (value: unknown, depth = 0): 'new' | 'existing' | null => {
+    if (!value || typeof value !== 'object' || depth > 3) return null;
+    const rec = value as Record<string, unknown>;
+    if (rec.state === 'new' || rec.state === 'existing') return rec.state;
+    return walk(rec.data, depth + 1);
+  };
+  return walk(payload);
+}
+
+/** After OTP: new users always create a profile; existing complete users go home. */
+export function applyOtpVerifyProfileFlags(opts: {
+  authState?: 'new' | 'existing' | null;
+  profile?: Record<string, unknown> | null;
+  phoneDigits10: string;
+}): 'create-profile' | 'home' {
+  if (typeof window === 'undefined') return 'create-profile';
+
+  if (opts.authState === 'new') {
+    markProfileCreationRequired();
+    return 'create-profile';
+  }
+
+  if (opts.authState === 'existing') {
+    try {
+      sessionStorage.removeItem(NEEDS_PROFILE_CREATE_KEY);
+    } catch {
+      /* private mode */
+    }
+    if (opts.profile) {
+      applyUnifiedProfileToCustomerLocalStorage(opts.profile, opts.phoneDigits10);
+    }
+    if (!readProfileCompleted()) {
+      markOnboardingCompleteAfterProfile();
+    }
+    return 'home';
+  }
+
+  if (opts.profile) {
+    applyUnifiedProfileToCustomerLocalStorage(opts.profile, opts.phoneDigits10);
+    if (readNeedsProfileCreate()) return 'create-profile';
+    if (readProfileCompleted()) return 'home';
+  }
+
+  markProfileCreationRequired();
+  return 'create-profile';
+}
+
 /** Profile is the last required signup step; mark stage-selection complete too. */
 export function markOnboardingCompleteAfterProfile(): void {
   if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem(NEEDS_PROFILE_CREATE_KEY);
+  } catch {
+    /* private mode */
+  }
   localStorage.setItem('profile_completed', 'true');
   localStorage.setItem('onboarding_completed', 'true');
   setCustomerOnboardingCompleteFromProfile('true');
@@ -59,6 +137,7 @@ export function markOnboardingCompleteAfterProfile(): void {
 
 export function readProfileCompleted(): boolean {
   if (typeof window === 'undefined') return false;
+  if (readNeedsProfileCreate()) return false;
   if (localStorage.getItem('profile_completed') === 'true') return true;
   try {
     const raw = localStorage.getItem('customerData');

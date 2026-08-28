@@ -6,6 +6,12 @@ import { iconForCustomerHomeApiBanner, normalizeCustomerBannerTarget } from '@/l
 import { defaultBanners } from '../../homepage/constants';
 import type { HomeCarouselBanner } from '../types';
 
+/** Dev/UAT only — prod relies on CMS banners (no hardcoded hero fallback). */
+function shouldUseDefaultHomeBanners(): boolean {
+  if (process.env.NEXT_PUBLIC_UAT_MODE === 'true') return true;
+  return process.env.NODE_ENV !== 'production';
+}
+
 function mapApiBannerRecord(
   b: Record<string, unknown>,
   defaults?: { gradientFrom?: string; gradientTo?: string }
@@ -42,10 +48,14 @@ export function buildHomeTopCarouselBanners(
   dynamicBanners: Record<string, unknown>[]
 ): HomeCarouselBanner[] {
   if (dynamicBanners.length === 0) {
-    return defaultBanners as HomeCarouselBanner[];
+    return shouldUseDefaultHomeBanners() ? (defaultBanners as HomeCarouselBanner[]) : [];
   }
 
   const fromApi = dynamicBanners.map((b) => mapApiBannerRecord(b));
+
+  if (!shouldUseDefaultHomeBanners()) {
+    return fromApi.slice(0, 20);
+  }
 
   const coveredTargets = new Set(
     fromApi.map((b) => normalizeCustomerBannerTarget(b.ctaLink)).filter(Boolean)

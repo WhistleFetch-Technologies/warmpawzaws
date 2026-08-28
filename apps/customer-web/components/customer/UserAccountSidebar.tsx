@@ -522,7 +522,7 @@ function formatServiceTypeLabel(serviceType: string | undefined): string {
 
 interface UserAccountSidebarProps {
   phone: string;
-  /** Guest browse session — show Login / Sign Up only */
+  /** Guest browse session — show Login only (OTP covers login + signup) */
   isGuest?: boolean;
   onClose: () => void;
   /** X button: exit to app home (full shell reset). Falls back to closing the sheet if omitted. */
@@ -1448,21 +1448,6 @@ export function UserAccountSidebar({
                       <User className="h-6 w-6 text-[#FF8C42]" strokeWidth={2} />
                     </div>
                     <span className="text-[15px] font-semibold text-gray-900">Login</span>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-gray-400" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    requestGuestAuth({ mode: 'signup', returnPath: '/' });
-                  }}
-                  className="flex h-[72px] w-full items-center justify-between gap-3 rounded-[20px] border border-[#F1F1F1] bg-white px-3.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-blue-100">
-                      <Edit2 className="h-6 w-6 text-blue-600" strokeWidth={2} />
-                    </div>
-                    <span className="text-[15px] font-semibold text-gray-900">Sign Up</span>
                   </div>
                   <ChevronRight className="h-4 w-4 text-gray-400" />
                 </button>

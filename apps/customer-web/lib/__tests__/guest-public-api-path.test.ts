@@ -113,6 +113,25 @@ describe('resolveGuestPublicApiPath', () => {
     );
   });
 
+  it('rewrites home banners and resolve-cta for guests', () => {
+    expect(
+      resolveGuestPublicApiPath('/customer/banners?position=home_top&limit=20&state=Karnataka&city=Bengaluru')
+    ).toBe('/public/banners?position=home_top&limit=20&state=Karnataka&city=Bengaluru');
+    expect(
+      resolveGuestPublicApiPath('/customer/banners/resolve-cta?ctaLink=shop&title=Shop&serviceStyle=at_center')
+    ).toBe('/public/banners/resolve-cta?ctaLink=shop&title=Shop&serviceStyle=at_center');
+  });
+
+  it('does not rewrite banners when JWT is present', () => {
+    getJwt.mockReturnValue('jwt');
+    expect(resolveGuestPublicApiPath('/customer/banners?position=home_top')).toBe(
+      '/customer/banners?position=home_top'
+    );
+    expect(resolveGuestPublicApiPath('/customer/banners/resolve-cta?ctaLink=vet')).toBe(
+      '/customer/banners/resolve-cta?ctaLink=vet'
+    );
+  });
+
   it('rewrites marketplace search to the public alias', () => {
     expect(resolveGuestPublicApiPath('/search?q=grooming&category=vet')).toBe(
       '/public/search?q=grooming&category=vet'

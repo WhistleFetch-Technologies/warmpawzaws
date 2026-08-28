@@ -20,15 +20,19 @@ describe('isPublicEndpoint', () => {
     expect(isPublicEndpoint('/config/google-maps-key', 'PUT')).toBe(false);
   });
 
-  it('allows guest shop categories and published articles via /public aliases', () => {
+  it('allows guest shop categories, published articles, and banners via /public aliases', () => {
     expect(isPublicEndpoint('/public/ecommerce/categories', 'GET')).toBe(true);
     expect(isPublicEndpoint('/public/articles', 'GET')).toBe(true);
     expect(isPublicEndpoint('/public/articles/summer-grooming', 'GET')).toBe(true);
+    expect(isPublicEndpoint('/public/banners', 'GET')).toBe(true);
+    expect(isPublicEndpoint('/public/banners/resolve-cta', 'GET')).toBe(true);
   });
 
-  it('allows guest catalogue reads for shop categories and published articles', () => {
+  it('allows guest catalogue reads for shop categories, published articles, and banners', () => {
     expect(isPublicEndpoint('/ecommerce/categories', 'GET')).toBe(true);
     expect(isPublicEndpoint('/customer/articles', 'GET')).toBe(true);
     expect(isPublicEndpoint('/customer/articles/summer-grooming', 'GET')).toBe(true);
+    expect(isPublicEndpoint('/customer/banners', 'GET')).toBe(true);
+    expect(isPublicEndpoint('/customer/banners/resolve-cta', 'GET')).toBe(true);
   });
 });
