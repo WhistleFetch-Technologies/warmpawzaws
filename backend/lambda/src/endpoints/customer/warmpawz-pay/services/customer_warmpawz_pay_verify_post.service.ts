@@ -16,6 +16,7 @@ import { resolveWapptAppointmentFeeCredit } from '../shared/wpay-appointment-cre
 import { computeWpayDiscountQuote, resolveWpayDiscountPercent } from '../shared/wpay-discount';
 import { dbWpayVendorById } from '../repos/wpay-vendor-detail.repo';
 import { notifyWpayPaymentCompleted } from '../../../../utils/wpay-notifications';
+import { resolveWpayPayQuote } from '../shared/wpay-quote-resolver';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -53,6 +54,7 @@ function tryNotifyWpayVendor(paymentId: string): void {
 async function validateAppointmentCreditForVerify(params: {
   customerId: string;
   vendorId: string;
+  vendorRow: NonNullable<Awaited<ReturnType<typeof dbWpayVendorById>>>;
   meta: Record<string, unknown>;
   discountPercent: number;
 }): Promise<
@@ -76,16 +78,43 @@ async function validateAppointmentCreditForVerify(params: {
     return { ok: false, error: creditResult.error, status: creditResult.status ?? 409 };
   }
 
-  const originalAmount = readMetadataNumber(params.meta, 'quotedOriginalAmount');
+  const originalAmount =
+    readMetadataNumber(params.meta, 'quotedOriginalAmount') ??
+    readMetadataNumber(params.meta, 'quotedAmount');
   if (originalAmount == null || originalAmount <= 0) {
     return { ok: false, error: 'Payment quote missing', status: 400 };
+  }
+
+  const commercialModel = readMetadataString(params.meta, 'commercialModel');
+  if (commercialModel === 'tier_commission') {
+    const resolved = await resolveWpayPayQuote({
+      vendorRow: params.vendorRow,
+      quotedAmount: originalAmount,
+      appointmentFeeCredit: creditResult.credit,
+    });
+    if (resolved.commercialModel !== 'tier_commission') {
+      return { ok: false, error: 'Payment quote no longer valid', status: 409 };
+    }
+    const storedPayNow = readMetadataNumber(params.meta, 'payNowAmount');
+    const storedDiscount = readMetadataNumber(params.meta, 'quotedDiscountAmount');
+    if (
+      resolved.quote.appointmentFeeCredit !== storedCredit ||
+      storedDiscount != null && resolved.quote.discountAmount !== storedDiscount ||
+      storedPayNow != null && resolved.quote.payNowAmount !== storedPayNow
+    ) {
+      return { ok: false, error: 'Payment quote no longer valid for this appointment', status: 409 };
+    }
+    return { ok: true, bookingId, creditAmount: creditResult.credit };
   }
 
   const quote = computeWpayDiscountQuote(originalAmount, params.discountPercent, {
     appointmentFeeCredit: creditResult.credit,
   });
 
-  if (quote.appointmentFeeCredit !== storedCredit || quote.discountAmount !== readMetadataNumber(params.meta, 'quotedDiscountAmount')) {
+  if (
+    quote.appointmentFeeCredit !== storedCredit ||
+    quote.discountAmount !== readMetadataNumber(params.meta, 'quotedDiscountAmount')
+  ) {
     return { ok: false, error: 'Payment quote no longer valid for this appointment', status: 409 };
   }
 
@@ -162,7 +191,8 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
     }
 
     const meta = (existing.metadata ?? {}) as Record<string, unknown>;
-    const originalAmount = readMetadataNumber(meta, 'quotedOriginalAmount');
+    const originalAmount =
+      readMetadataNumber(meta, 'quotedOriginalAmount') ?? readMetadataNumber(meta, 'quotedAmount');
     const discountAmount = readMetadataNumber(meta, 'quotedDiscountAmount');
     if (originalAmount == null || discountAmount == null) {
       return c.json({ success: false, error: 'Payment quote missing' }, 400);
@@ -170,13 +200,19 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
 
     const vendorId = String(existing.vendor_id ?? '');
     const vendorRow = vendorId ? await dbWpayVendorById(vendorId) : null;
+    if (!vendorRow) {
+      return c.json({ success: false, error: 'Vendor not found' }, 404);
+    }
+
     const discountPercent =
       readMetadataNumber(meta, 'quotedDiscountPercent') ??
-      (vendorRow ? resolveWpayDiscountPercent(vendorRow) : 0);
+      readMetadataNumber(meta, 'discountPercentSnapshot') ??
+      resolveWpayDiscountPercent(vendorRow);
 
     const creditCheck = await validateAppointmentCreditForVerify({
       customerId,
       vendorId,
+      vendorRow,
       meta,
       discountPercent,
     });

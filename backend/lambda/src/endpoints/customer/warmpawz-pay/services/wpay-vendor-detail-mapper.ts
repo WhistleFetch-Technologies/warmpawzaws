@@ -1,6 +1,8 @@
 import { getVendorListingPhotoUrl } from '../../../../utils/vendor-listing-photo';
+import { wpayConvenienceSettingsRepository } from '../../../warmpawz-pay/repositories/wpay-convenience-settings.repository';
 import type { WpayVendorListDbRow } from '../repos/wpay-vendors-list.repo';
 import type { WpayVendorReviewStats } from '../repos/wpay-vendor-reviews.repo';
+import { resolveWpayVendorCommercialConfig } from '../shared/wpay-commercial-config';
 import {
   type WpayVendorCardDto,
 } from './wpay-vendors-list-mapper';
@@ -11,6 +13,9 @@ export type WpayVendorDetailDto = WpayVendorCardDto & {
   reviewCount: number;
   maxDiscountAmount: number | null;
   offerLabel: string;
+  commercialModel: 'tier_commission' | 'withhold';
+  convenienceFee: number;
+  convenienceGstRate: number;
 };
 
 function buildOfferLabel(discountPercent: number): string {
@@ -23,6 +28,8 @@ export async function mapWpayVendorDetailRow(
   reviews: WpayVendorReviewStats
 ): Promise<WpayVendorDetailDto> {
   const [card] = await mapWpayVendorListRows([row]);
+  const commercial = resolveWpayVendorCommercialConfig(row);
+  const convenience = await wpayConvenienceSettingsRepository.getConvenienceSettings();
   const photoUrl =
     card.photoUrl ??
     (await getVendorListingPhotoUrl({
@@ -40,5 +47,8 @@ export async function mapWpayVendorDetailRow(
     reviewCount: reviews.reviewCount,
     maxDiscountAmount: null,
     offerLabel: buildOfferLabel(card.discountPercent),
+    commercialModel: commercial.commercialModel,
+    convenienceFee: convenience.convenienceFee,
+    convenienceGstRate: convenience.convenienceGstRate,
   };
 }

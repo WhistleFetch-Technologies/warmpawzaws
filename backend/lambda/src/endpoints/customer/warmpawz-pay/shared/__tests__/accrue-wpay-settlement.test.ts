@@ -156,4 +156,41 @@ describe('accrue-wpay-settlement', () => {
 
     await expect(resolveWpayPlatformWithholdPercent('vendor-1')).resolves.toBe(100);
   });
+
+  it('uses tier commission snapshot for settlement insert', async () => {
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [] } as never)
+      .mockResolvedValueOnce({ rows: [{ id: 'settlement-tier' }] } as never);
+
+    const result = await accrueWpaySettlement({
+      ...basePayment,
+      amount: 8523.6,
+      metadata: {
+        commercialModel: 'tier_commission',
+        tierId: 'tier-1',
+        quotedOriginalAmount: 10_000,
+        quotedDiscountAmount: 1500,
+        quotedDiscountPercent: 15,
+        commissionPercentSnapshot: 20,
+        grossCommissionAmount: 2000,
+        vendorPayableAmount: 8000,
+        servicePayableAmount: 8500,
+        wpayRevenueAmount: 500,
+        platformGstAmount: 76.27,
+        convenienceFee: 20,
+        convenienceGstAmount: 3.6,
+        finalGstAmount: 79.87,
+        payNowAmount: 8523.6,
+        appointmentFeeCredit: 0,
+      },
+    });
+
+    expect(result.inserted).toBe(true);
+    const insertArgs = mockedQuery.mock.calls[1]?.[1];
+    expect(insertArgs?.[4]).toBe(500);
+    expect(insertArgs?.[5]).toBe(8000);
+    const breakup = JSON.parse(String(insertArgs?.[7]));
+    expect(breakup.commercialModel).toBe('tier_commission');
+    expect(breakup.finalGstAmount).toBe(79.87);
+  });
 });

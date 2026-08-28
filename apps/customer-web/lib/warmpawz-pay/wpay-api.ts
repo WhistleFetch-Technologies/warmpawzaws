@@ -17,6 +17,9 @@ export type WpayVendorDetail = WpayVendorCard & {
   reviewCount: number;
   maxDiscountAmount: number | null;
   offerLabel: string;
+  commercialModel?: 'tier_commission' | 'withhold';
+  convenienceFee?: number;
+  convenienceGstRate?: number;
 };
 
 export type WpayTransactionCard = {

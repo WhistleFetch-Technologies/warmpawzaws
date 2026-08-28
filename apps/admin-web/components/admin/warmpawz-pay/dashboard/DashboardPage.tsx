@@ -11,6 +11,7 @@ import { DashboardMetricsSkeleton } from './DashboardMetricsSkeleton';
 import { MetricsGrid } from './MetricsGrid';
 import { PaymentsFilterBar } from './PaymentsFilterBar';
 import { PaymentsTable } from './PaymentsTable';
+import { ConvenienceSettingsPanel } from './ConvenienceSettingsPanel';
 
 const PAYMENTS_PAGE_SIZE = 5;
 
@@ -51,6 +52,8 @@ export function DashboardPage() {
       {!isLoading && !error && data && !isEmpty ? (
         <MetricsGrid metrics={data.metrics} />
       ) : null}
+
+      <ConvenienceSettingsPanel />
 
       <section className="space-y-4">
         <div>

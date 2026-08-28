@@ -11,7 +11,7 @@ import {
   type WpayAppointmentContext,
   type WpayVendorDetail,
 } from '@/lib/warmpawz-pay/wpay-api';
-import { previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
+import { previewWpayCommercialQuote, previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
 import { consumeRestoredWpayPayBillAmount } from '@/lib/warmpawz-pay/wpay-guest-journey';
 import {
@@ -113,13 +113,26 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
   const quote = useMemo(() => {
     if (!vendor || billAmount <= 0) return null;
+    const credit = linkedBookingId ? appointmentFeeCredit : 0;
+    if (vendor.commercialModel === 'tier_commission') {
+      return previewWpayCommercialQuote({
+        originalAmount: billAmount,
+        discountPercent: vendor.discountPercent,
+        maxDiscountAmount: vendor.maxDiscountAmount,
+        appointmentFeeCredit: credit,
+        convenienceFee: vendor.convenienceFee ?? 0,
+        convenienceGstRate: vendor.convenienceGstRate ?? 18,
+      });
+    }
     return previewWpayQuote({
       originalAmount: billAmount,
       discountPercent: vendor.discountPercent,
       maxDiscountAmount: vendor.maxDiscountAmount,
-      appointmentFeeCredit: linkedBookingId ? appointmentFeeCredit : 0,
+      appointmentFeeCredit: credit,
     });
   }, [billAmount, vendor, linkedBookingId, appointmentFeeCredit]);
+
+  const isTierQuote = quote != null && 'commercialModel' in quote && quote.commercialModel === 'tier_commission';
 
   const onGetDiscount = useCallback(() => {
     if (billAmount <= 0) return;
@@ -245,7 +258,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
               <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-900">
                 <p className="font-semibold">Appointment found</p>
                 <p className="mt-1 text-xs text-green-800">
-                  {formatInr(creditEligibleBooking.appointmentFee)} appointment fee will be deducted from your bill.
+                  {formatInr(creditEligibleBooking.appointmentFee)} appointment fee credit will apply after your discount.
                 </p>
               </div>
             ) : null}
@@ -289,28 +302,46 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                   <span>Quoted bill</span>
                   <span>{formatInr(quote.originalAmount)}</span>
                 </div>
+                <div className="flex justify-between text-green-700">
+                  <span>Offer discount ({vendor.discountPercent}% OFF)</span>
+                  <span>- {formatInr(quote.discountAmount)}</span>
+                </div>
+                {isTierQuote ? (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Service payable</span>
+                    <span>{formatInr(quote.servicePayableAmount)}</span>
+                  </div>
+                ) : null}
                 {quote.appointmentFeeCredit > 0 ? (
                   <div className="flex justify-between text-[#FF6B00]">
                     <span>Appointment fee credit</span>
                     <span>- {formatInr(quote.appointmentFeeCredit)}</span>
                   </div>
                 ) : null}
-                {quote.appointmentFeeCredit > 0 ? (
+                {!isTierQuote && quote.appointmentFeeCredit > 0 && 'billBase' in quote ? (
                   <div className="flex justify-between text-gray-600">
                     <span>After credit</span>
                     <span>{formatInr(quote.billBase)}</span>
                   </div>
                 ) : null}
-                <div className="flex justify-between text-green-700">
-                  <span>Offer discount ({vendor.discountPercent}% OFF)</span>
-                  <span>- {formatInr(quote.discountAmount)}</span>
-                </div>
+                {isTierQuote && quote.convenienceFee > 0 ? (
+                  <>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Convenience fee</span>
+                      <span>{formatInr(quote.convenienceFee)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Convenience GST ({vendor.convenienceGstRate}%)</span>
+                      <span>{formatInr(quote.convenienceGstAmount)}</span>
+                    </div>
+                  </>
+                ) : null}
                 <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 font-semibold">
                   <span>You pay</span>
                   <span>{formatInr(quote.payableAmount)}</span>
                 </div>
                 <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
-                  You save {formatInr(quote.originalAmount - quote.payableAmount)} with this offer!
+                  You save {formatInr(quote.originalAmount - (isTierQuote ? quote.servicePayableAmount : quote.payableAmount))} with this offer!
                 </p>
               </div>
             ) : null}

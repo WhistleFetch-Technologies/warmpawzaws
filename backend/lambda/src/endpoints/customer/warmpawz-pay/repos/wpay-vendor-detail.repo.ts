@@ -32,11 +32,16 @@ export async function dbWpayVendorById(vendorId: string): Promise<WpayVendorList
       p.discount_value AS pricing_discount_value,
       p.status AS pricing_status,
       p.effective_from AS pricing_effective_from,
-      p.effective_until AS pricing_effective_until
+      p.effective_until AS pricing_effective_until,
+      p.tier_id AS pricing_tier_id,
+      vt.tier_name AS pricing_tier_name,
+      vt.commission_rate AS pricing_commission_rate,
+      p.platform_withhold_percent AS pricing_platform_withhold_percent
     FROM ${CATALOGUE_TABLE} c
     INNER JOIN vendors v ON v.id = c.vendor_id
     LEFT JOIN roles r ON r.id = v.role_id
     LEFT JOIN ${PRICING_TABLE} p ON p.vendor_id = c.vendor_id
+    LEFT JOIN vendor_tiers vt ON vt.id = p.tier_id
     WHERE c.vendor_id = $1
       AND (v.is_deleted IS NOT TRUE)
       AND ${wpayCatalogueCustomerVisibleSql('c')}

@@ -19,6 +19,11 @@ function readMetadataNumber(meta: Record<string, unknown> | null | undefined, ke
   return Number.isFinite(n) ? n : 0;
 }
 
+function readMetadataString(meta: Record<string, unknown> | null | undefined, key: string): string {
+  if (!meta) return '';
+  return String(meta[key] ?? '').trim();
+}
+
 /** Map settlements.settlement_status to vendor earnings transaction status. */
 export function mapWpaySettlementLedgerStatus(raw: string | undefined | null): string {
   const key = String(raw || '').toLowerCase();
@@ -39,6 +44,11 @@ export async function resolveWpayPlatformWithholdPercent(vendorId: string): Prom
   const n = Number(raw ?? 0);
   if (!Number.isFinite(n) || n < 0) return 0;
   return round2(Math.min(100, n));
+}
+
+function isTierCommissionPayment(meta: Record<string, unknown>): boolean {
+  if (readMetadataString(meta, 'commercialModel') === 'tier_commission') return true;
+  return Boolean(readMetadataString(meta, 'tierId') || readMetadataString(meta, 'tierIdSnapshot'));
 }
 
 export async function accrueWpaySettlement(
@@ -86,7 +96,119 @@ export async function accrueWpaySettlement(
     Number(payment.discount_amount ?? readMetadataNumber(meta, 'quotedDiscountAmount') ?? 0),
   );
   const appointmentFeeCredit = round2(readMetadataNumber(meta, 'appointmentFeeCredit'));
-  const discountPercent = round2(readMetadataNumber(meta, 'quotedDiscountPercent'));
+  const discountPercent = round2(
+    readMetadataNumber(meta, 'quotedDiscountPercent') ||
+      readMetadataNumber(meta, 'discountPercentSnapshot'),
+  );
+
+  const settlementDate = payment.completed_at
+    ? new Date(payment.completed_at).toISOString().split('T')[0]
+    : new Date().toISOString().split('T')[0];
+
+  const bookingId = resolveWapptSettlementBookingId(payment);
+
+  if (isTierCommissionPayment(meta)) {
+    const vendorPayableAmount = round2(
+      readMetadataNumber(meta, 'vendorPayableAmount') ||
+        Math.max(0, quotedAmount - readMetadataNumber(meta, 'grossCommissionAmount')),
+    );
+    const wpayRevenueAmount = round2(
+      readMetadataNumber(meta, 'wpayRevenueAmount') ||
+        Math.max(0, readMetadataNumber(meta, 'grossCommissionAmount') - discountAmount),
+    );
+    const platformGstAmount = round2(readMetadataNumber(meta, 'platformGstAmount'));
+    const convenienceGstAmount = round2(readMetadataNumber(meta, 'convenienceGstAmount'));
+    const finalGstAmount = round2(
+      readMetadataNumber(meta, 'finalGstAmount') || platformGstAmount + convenienceGstAmount,
+    );
+
+    const settlementBreakup = {
+      flowType: 'pay_bill',
+      commercialModel: 'tier_commission',
+      quotedAmount,
+      appointmentFeeCredit,
+      discountPercent,
+      discountAmount,
+      payableAmount,
+      tierId: readMetadataString(meta, 'tierId') || readMetadataString(meta, 'tierIdSnapshot') || null,
+      tierNameSnapshot: readMetadataString(meta, 'tierNameSnapshot') || null,
+      commissionPercentSnapshot: readMetadataNumber(meta, 'commissionPercentSnapshot'),
+      grossCommissionAmount: readMetadataNumber(meta, 'grossCommissionAmount'),
+      vendorPayableAmount,
+      servicePayableAmount: readMetadataNumber(meta, 'servicePayableAmount'),
+      wpayRevenueAmount,
+      platformGstRateSnapshot: readMetadataNumber(meta, 'platformGstRateSnapshot'),
+      platformGstAmount,
+      netWpayRevenueAmount: readMetadataNumber(meta, 'netWpayRevenueAmount'),
+      convenienceFee: readMetadataNumber(meta, 'convenienceFee'),
+      convenienceGstRateSnapshot: readMetadataNumber(meta, 'convenienceGstRateSnapshot'),
+      convenienceGstAmount,
+      finalGstAmount,
+      payNowAmount: readMetadataNumber(meta, 'payNowAmount') || payableAmount,
+    };
+
+    const insertResult = await query(
+      `INSERT INTO settlements (
+         vendor_id,
+         payment_id,
+         booking_id,
+         order_type,
+         total_amount,
+         commission_amount,
+         net_amount,
+         settlement_status,
+         settlement_period_start,
+         settlement_period_end,
+         payment_ids,
+         settlement_breakup,
+         settlement_date
+       ) VALUES (
+         $1::uuid,
+         $2::uuid,
+         $3::uuid,
+         'warmpawz_pay',
+         $4,
+         $5,
+         $6,
+         'pending',
+         $7::date,
+         $7::date,
+         ARRAY[$2::uuid],
+         $8::jsonb,
+         $7::date
+       )
+       ON CONFLICT DO NOTHING
+       RETURNING id::text AS id`,
+      [
+        vendorId,
+        payment.id,
+        bookingId,
+        payableAmount,
+        wpayRevenueAmount,
+        vendorPayableAmount,
+        settlementDate,
+        JSON.stringify(settlementBreakup),
+      ],
+    );
+
+    const settlementId = insertResult.rows[0]?.id ? String(insertResult.rows[0].id) : null;
+    if (settlementId) {
+      return { inserted: true, settlementId };
+    }
+
+    const raced = await query(
+      `SELECT id::text AS id
+       FROM settlements
+       WHERE payment_id = $1::uuid
+         AND order_type = 'warmpawz_pay'
+       LIMIT 1`,
+      [payment.id],
+    );
+    return {
+      inserted: false,
+      settlementId: raced.rows[0]?.id ? String(raced.rows[0].id) : null,
+    };
+  }
 
   const snapRaw = meta.platformWithholdPercent;
   const platformWithholdPercent =
@@ -96,14 +218,9 @@ export async function accrueWpaySettlement(
   const platformWithholdAmount = round2((payableAmount * platformWithholdPercent) / 100);
   const vendorNetAmount = round2(Math.max(0, payableAmount - platformWithholdAmount));
 
-  const settlementDate = payment.completed_at
-    ? new Date(payment.completed_at).toISOString().split('T')[0]
-    : new Date().toISOString().split('T')[0];
-
-  const bookingId = resolveWapptSettlementBookingId(payment);
-
   const settlementBreakup = {
     flowType: 'pay_bill',
+    commercialModel: 'withhold',
     quotedAmount,
     appointmentFeeCredit,
     discountPercent,

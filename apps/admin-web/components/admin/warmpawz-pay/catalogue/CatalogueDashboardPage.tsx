@@ -125,9 +125,9 @@ export function CatalogueDashboardPage() {
   const savePricing = async (item: CatalogueListItem, values: WarmpawzPayPricingFormValues) => {
     const catalogueId = await ensureCatalogueId(item);
     const pricingFields = {
+      tierId: values.tierId,
       discountType: 'percentage' as const,
       discountValue: values.discountValue,
-      platformWithholdPercent: values.platformWithholdPercent,
       status: 'active' as const,
       effectiveFrom: new Date().toISOString(),
       effectiveUntil: null,

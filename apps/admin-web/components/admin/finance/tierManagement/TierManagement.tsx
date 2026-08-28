@@ -52,6 +52,8 @@ interface Tier {
   termsVersion?: string;
   isDefault: boolean;
   isActive: boolean;
+  marketplaceEnabled?: boolean;
+  warmpawzPayEnabled?: boolean;
 }
 
 interface RoleOption {
@@ -205,6 +207,8 @@ export function TierManagement() {
         termsVersion: '1.0',
         isDefault: false,
         isActive: true,
+        marketplaceEnabled: true,
+        warmpawzPayEnabled: false,
       });
     }
     setIsModalOpen(true);
@@ -417,6 +421,74 @@ export function TierManagement() {
                       checked={currentTier.isDefault}
                       onCheckedChange={(c: boolean) => setCurrentTier({ ...currentTier, isDefault: c })}
                     />
+                  </div>
+                  <div className="space-y-3 border p-3 rounded-lg">
+                    <Label>Platform Applicability</Label>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={currentTier.marketplaceEnabled !== false}
+                        onChange={(e) => {
+                          const marketplaceEnabled = e.target.checked;
+                          setCurrentTier({
+                            ...currentTier,
+                            marketplaceEnabled,
+                            warmpawzPayEnabled:
+                              marketplaceEnabled && currentTier.warmpawzPayEnabled
+                                ? currentTier.warmpawzPayEnabled
+                                : currentTier.warmpawzPayEnabled,
+                          });
+                        }}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="font-medium">Marketplace</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Make this tier available for Marketplace.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={currentTier.warmpawzPayEnabled === true}
+                        onChange={(e) => {
+                          setCurrentTier({ ...currentTier, warmpawzPayEnabled: e.target.checked });
+                        }}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="font-medium">Warmpawz Pay</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Make this tier available for Warmpawz Pay.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={
+                          currentTier.marketplaceEnabled !== false &&
+                          currentTier.warmpawzPayEnabled === true
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setCurrentTier({
+                              ...currentTier,
+                              marketplaceEnabled: true,
+                              warmpawzPayEnabled: true,
+                            });
+                          }
+                        }}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="font-medium">Both</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Enable for Marketplace and Warmpawz Pay.
+                        </span>
+                      </span>
+                    </label>
                   </div>
                 </div>
               </div>

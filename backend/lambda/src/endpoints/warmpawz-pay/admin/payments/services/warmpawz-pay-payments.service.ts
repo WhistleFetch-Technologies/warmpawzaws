@@ -10,7 +10,11 @@ import {
   dbWpayPlatformWithholdPercentByVendorIds,
   type WpayAdminPaymentDbRow,
 } from '../../../repositories/wpay-payments-admin.repository';
-import type { WpayAdminPaymentItemDTO, WpayAdminPaymentsListDTO } from '../dto/payments.responses';
+import type {
+  WpayAdminPaymentItemDTO,
+  WpayAdminPaymentsListDTO,
+  WpayCommercialModel,
+} from '../dto/payments.responses';
 import type { PaymentsExportQuery, PaymentsListQuery } from '../dto/payments.requests';
 import {
   buildWpayPaymentsExportFilename,
@@ -23,13 +27,35 @@ function toFiniteNumber(value: string | number | null | undefined): number | nul
   return Number.isFinite(n) ? n : null;
 }
 
+function readBreakupNumber(
+  breakup: Record<string, unknown> | null | undefined,
+  key: string,
+): number | null {
+  if (!breakup) return null;
+  return toFiniteNumber(breakup[key] as string | number | null | undefined);
+}
+
+function resolveCommercialModel(row: WpayAdminPaymentDbRow): WpayCommercialModel {
+  const breakupModel = String(row.settlement_breakup?.commercialModel ?? '').trim();
+  if (breakupModel === 'tier_commission') return 'tier_commission';
+  const metaModel = String(row.payment_metadata?.commercialModel ?? '').trim();
+  if (metaModel === 'tier_commission') return 'tier_commission';
+  if (row.payment_metadata?.tierId || row.payment_metadata?.tierIdSnapshot) {
+    return 'tier_commission';
+  }
+  return 'withhold';
+}
+
 export function resolveWpayAdminPaymentSettlement(
   row: WpayAdminPaymentDbRow,
   payableAmount: number,
   withholdByVendor: ReadonlyMap<string, number>,
 ): Pick<
   WpayAdminPaymentItemDTO,
-  'platformWithholdPercent' | 'platformWithholdAmount' | 'vendorSettlementAmount' | 'settlementSource'
+  | 'platformWithholdPercent'
+  | 'platformWithholdAmount'
+  | 'vendorSettlementAmount'
+  | 'settlementSource'
 > {
   const vendorSettlementAmount = toFiniteNumber(row.vendor_settlement_amount);
   const platformWithholdAmount = toFiniteNumber(row.platform_withhold_amount);
@@ -78,9 +104,11 @@ function mapPaymentRow(
   const originalAmount = Number(row.original_amount ?? 0);
   const discountAmount = Number(row.discount_amount ?? 0);
   const payableAmount = Number(row.payable_amount ?? 0);
-  const settlement = resolveWpayAdminPaymentSettlement(row, payableAmount, withholdByVendor);
+  const commercialModel = resolveCommercialModel(row);
+  const breakup = row.settlement_breakup ?? undefined;
+  const meta = row.payment_metadata ?? undefined;
 
-  return {
+  const base = {
     paymentId: row.payment_id,
     customer: {
       name: String(row.customer_name ?? '').trim() || 'Customer',
@@ -94,18 +122,75 @@ function mapPaymentRow(
         isSoloProvider: String(row.vendor_type ?? '').toLowerCase() === 'solo',
       }),
       category: categoryMeta.categoryDisplay,
+      tierName:
+        (breakup?.tierNameSnapshot as string | undefined) ??
+        (meta?.tierNameSnapshot as string | undefined) ??
+        null,
     },
+    commercialModel,
     originalAmount,
     discountPercent: Number.isFinite(discountPercent) ? discountPercent : 0,
     discountAmount,
     payableAmount,
-    ...settlement,
     paidAt: row.paid_at,
+  };
+
+  if (commercialModel === 'tier_commission') {
+    const vendorPayableAmount =
+      readBreakupNumber(breakup, 'vendorPayableAmount') ??
+      toFiniteNumber(row.vendor_settlement_amount) ??
+      0;
+    const wpayRevenueAmount =
+      readBreakupNumber(breakup, 'wpayRevenueAmount') ??
+      toFiniteNumber(row.platform_withhold_amount) ??
+      0;
+
+    return {
+      ...base,
+      appointmentFeeCredit:
+        readBreakupNumber(breakup, 'appointmentFeeCredit') ??
+        toFiniteNumber(meta?.appointmentFeeCredit as number | undefined) ??
+        0,
+      commissionPercent:
+        readBreakupNumber(breakup, 'commissionPercentSnapshot') ??
+        toFiniteNumber(meta?.commissionPercentSnapshot as number | undefined) ??
+        undefined,
+      vendorPayableAmount,
+      wpayRevenueAmount,
+      platformGstAmount:
+        readBreakupNumber(breakup, 'platformGstAmount') ??
+        toFiniteNumber(meta?.platformGstAmount as number | undefined) ??
+        undefined,
+      convenienceFee:
+        readBreakupNumber(breakup, 'convenienceFee') ??
+        toFiniteNumber(meta?.convenienceFee as number | undefined) ??
+        undefined,
+      convenienceGstAmount:
+        readBreakupNumber(breakup, 'convenienceGstAmount') ??
+        toFiniteNumber(meta?.convenienceGstAmount as number | undefined) ??
+        undefined,
+      finalGstAmount:
+        readBreakupNumber(breakup, 'finalGstAmount') ??
+        toFiniteNumber(meta?.finalGstAmount as number | undefined) ??
+        undefined,
+      vendorSettlementAmount: vendorPayableAmount,
+      settlementSource: row.vendor_settlement_amount != null ? 'persisted' : 'computed',
+    };
+  }
+
+  const settlement = resolveWpayAdminPaymentSettlement(row, payableAmount, withholdByVendor);
+  return {
+    ...base,
+    ...settlement,
   };
 }
 
 async function mapPaymentRows(rows: WpayAdminPaymentDbRow[]): Promise<WpayAdminPaymentItemDTO[]> {
-  const needsFallback = rows.some((row) => toFiniteNumber(row.vendor_settlement_amount) == null);
+  const needsFallback = rows.some(
+    (row) =>
+      resolveCommercialModel(row) === 'withhold' &&
+      toFiniteNumber(row.vendor_settlement_amount) == null,
+  );
   const withholdByVendor = needsFallback
     ? await dbWpayPlatformWithholdPercentByVendorIds(rows.map((row) => String(row.vendor_id)))
     : new Map<string, number>();

@@ -31,6 +31,10 @@ export interface EligibilityDTO {
 export interface CataloguePricingSummary {
   readonly configured: boolean;
   readonly pricingId?: string;
+  readonly tierId?: string | null;
+  readonly tierName?: string | null;
+  readonly commissionRate?: number | null;
+  readonly platformMargin?: number | null;
   readonly discountType?: PricingDiscountType;
   readonly discountValue?: number;
   readonly platformWithholdPercent?: number;

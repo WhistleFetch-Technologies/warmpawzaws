@@ -11,6 +11,10 @@ export interface PricingDetail {
   readonly merchantName: string;
   readonly businessName: string;
   readonly category: string;
+  readonly tierId?: string | null;
+  readonly tierName?: string | null;
+  readonly commissionRate?: number | null;
+  readonly platformMargin?: number | null;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
   readonly platformWithholdPercent: number;
@@ -25,26 +29,27 @@ export interface PricingDetail {
 
 export interface CreatePricingPayload {
   readonly vendorId: string;
+  readonly tierId: string;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
-  readonly platformWithholdPercent?: number;
   readonly status: PricingStatus;
   readonly effectiveFrom: string;
   readonly effectiveUntil?: string | null;
 }
 
 export interface UpdatePricingPayload {
+  readonly tierId?: string;
   readonly discountType?: PricingDiscountType;
   readonly discountValue?: number;
-  readonly platformWithholdPercent?: number;
   readonly status?: PricingStatus;
   readonly effectiveFrom?: string;
   readonly effectiveUntil?: string | null;
 }
 
 export interface WarmpawzPayPricingFormValues {
+  readonly tierId: string;
   readonly discountValue: number;
-  readonly platformWithholdPercent: number;
+  readonly commissionRate: number;
 }
 
 interface SuccessEnvelope<T> {

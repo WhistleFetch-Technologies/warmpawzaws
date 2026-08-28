@@ -27,6 +27,8 @@ export type WpayAdminPaymentDbRow = {
   vendor_settlement_amount: string | number | null;
   platform_withhold_amount: string | number | null;
   platform_withhold_percent: string | number | null;
+  payment_metadata: Record<string, unknown> | null;
+  settlement_breakup: Record<string, unknown> | null;
 };
 
 const WPAY_PAYMENTS_BASE_WHERE = `
@@ -62,7 +64,9 @@ const WPAY_PAYMENTS_SELECT = `
   p.completed_at AS paid_at,
   s.net_amount AS vendor_settlement_amount,
   s.commission_amount AS platform_withhold_amount,
-  (s.settlement_breakup->>'platformWithholdPercent')::numeric AS platform_withhold_percent
+  (s.settlement_breakup->>'platformWithholdPercent')::numeric AS platform_withhold_percent,
+  p.metadata AS payment_metadata,
+  s.settlement_breakup AS settlement_breakup
 `;
 
 const WPAY_PAYMENTS_FROM = `

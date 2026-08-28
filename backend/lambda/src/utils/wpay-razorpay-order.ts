@@ -19,23 +19,16 @@ export async function createWpayRazorpayOrder(params: {
   vendorId: string;
   payableAmount: number;
   bookingId?: string | null;
-  quote: {
-    originalAmount: number;
-    discountAmount: number;
-    discountPercent: number;
-    billBase?: number;
-    appointmentFeeCredit?: number;
-    appointmentFeeBookingId?: string | null;
-    platformWithholdPercent?: number;
-  };
+  quoteMetadata: Record<string, unknown>;
 }): Promise<{
   orderId: string;
   amount: number;
+  amountPaise: number;
   currency: string;
   keyId: string;
   paymentId: string;
 }> {
-  const { customerId, vendorId, payableAmount, bookingId, quote } = params;
+  const { customerId, vendorId, payableAmount, bookingId, quoteMetadata } = params;
   const config = await getRazorpayConfig();
   if (!config?.keyId || !config?.keySecret) {
     throw new Error('Razorpay is not configured');
@@ -46,9 +39,11 @@ export async function createWpayRazorpayOrder(params: {
     throw new Error('Invalid payable amount');
   }
 
+  const quotedOriginal =
+    quoteMetadata.quotedOriginalAmount ?? quoteMetadata.quotedAmount ?? amt;
   const idempotencyKey = createHash('sha256')
     .update(
-      `${customerId}|${vendorId}|${bookingId ?? 'walkin'}|${quote.originalAmount}|${ymdInIst()}`,
+      `${customerId}|${vendorId}|${bookingId ?? 'walkin'}|${quotedOriginal}|${ymdInIst()}`,
     )
     .digest('hex');
 
@@ -99,30 +94,23 @@ export async function createWpayRazorpayOrder(params: {
     throw new Error('Failed to create Razorpay order');
   }
 
+  const discountAmount = Number(quoteMetadata.quotedDiscountAmount ?? 0);
+  const originalAmount = Number(quotedOriginal);
+
   const payRows = await insert('payments', {
     booking_id: bookingId ?? null,
     customer_id: customerId,
     vendor_id: vendorId,
     razorpay_order_id: razorpayOrder.id,
     amount: amt,
+    original_amount: Number.isFinite(originalAmount) ? originalAmount : amt,
+    discount_amount: Number.isFinite(discountAmount) ? discountAmount : 0,
     currency: 'INR',
     payment_method: 'razorpay',
     payment_status: 'pending',
     payment_source: 'warmpawz_pay',
     idempotency_key: idempotencyKey,
-    metadata: {
-      quotedOriginalAmount: quote.originalAmount,
-      quotedDiscountAmount: quote.discountAmount,
-      quotedDiscountPercent: quote.discountPercent,
-      billBase: quote.billBase ?? quote.originalAmount,
-      appointmentFeeCredit: quote.appointmentFeeCredit ?? 0,
-      ...(quote.appointmentFeeBookingId
-        ? { appointmentFeeBookingId: quote.appointmentFeeBookingId }
-        : {}),
-      ...(Number.isFinite(quote.platformWithholdPercent) && (quote.platformWithholdPercent ?? 0) >= 0
-        ? { platformWithholdPercent: quote.platformWithholdPercent }
-        : {}),
-    },
+    metadata: quoteMetadata,
   });
 
   const row = Array.isArray(payRows) ? payRows[0] : payRows;

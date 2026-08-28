@@ -45,6 +45,8 @@ const baseRow: WpayAdminPaymentDbRow = {
   vendor_settlement_amount: null,
   platform_withhold_amount: null,
   platform_withhold_percent: null,
+  payment_metadata: null,
+  settlement_breakup: null,
 };
 
 describe('resolveWpayAdminPaymentSettlement', () => {

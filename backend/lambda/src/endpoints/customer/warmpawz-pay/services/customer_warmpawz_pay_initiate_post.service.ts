@@ -7,8 +7,8 @@ import {
   dbLoadWapptBookingForPayCredit,
 } from '../repos/wpay-appointment-context.repo';
 import { resolveWapptAppointmentFeeCredit } from '../shared/wpay-appointment-credit';
-import { computeWpayDiscountQuote, resolveWpayDiscountPercent } from '../shared/wpay-discount';
-import { resolveWpayPlatformWithholdPercent } from '../shared/accrue-wpay-settlement';
+import { WpayCommercialValidationError } from '../shared/wpay-discount';
+import { resolveWpayPayQuote } from '../shared/wpay-quote-resolver';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -70,29 +70,47 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       appointmentFeeBookingId = bookingId;
     }
 
-    const discountPercent = resolveWpayDiscountPercent(vendorRow);
-    const quote = computeWpayDiscountQuote(originalAmount, discountPercent, {
+    const resolved = await resolveWpayPayQuote({
+      vendorRow,
+      quotedAmount: originalAmount,
       appointmentFeeCredit,
     });
-
-    const platformWithholdPercent = await resolveWpayPlatformWithholdPercent(vendorId);
 
     const order = await createWpayRazorpayOrder({
       customerId,
       vendorId,
-      payableAmount: quote.payableAmount,
+      payableAmount: resolved.payableAmount,
       bookingId: appointmentFeeBookingId,
-      quote: {
-        originalAmount: quote.originalAmount,
-        discountAmount: quote.discountAmount,
-        discountPercent: quote.discountPercent,
-        billBase: quote.billBase,
-        appointmentFeeCredit: quote.appointmentFeeCredit,
-        appointmentFeeBookingId,
-        platformWithholdPercent,
+      quoteMetadata: {
+        ...resolved.metadata,
+        ...(appointmentFeeBookingId ? { appointmentFeeBookingId } : {}),
       },
     });
 
+    if (resolved.commercialModel === 'tier_commission') {
+      const q = resolved.quote;
+      return c.json({
+        success: true,
+        paymentId: order.paymentId,
+        razorpayOrderId: order.orderId,
+        razorpayKeyId: order.keyId,
+        amount: order.amount,
+        amountPaise: order.amountPaise,
+        currency: order.currency,
+        commercialModel: 'tier_commission',
+        originalAmount: q.quotedAmount,
+        discountPercent: q.discountPercent,
+        discountAmount: q.discountAmount,
+        servicePayableAmount: q.servicePayableAmount,
+        appointmentFeeCredit: q.appointmentFeeCredit,
+        convenienceFee: q.convenienceFee,
+        convenienceGstAmount: q.convenienceGstAmount,
+        payableAmount: q.payNowAmount,
+        bookingId: appointmentFeeBookingId,
+      });
+    }
+
+    const q = resolved.quote;
     return c.json({
       success: true,
       paymentId: order.paymentId,
@@ -101,14 +119,18 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       amount: order.amount,
       amountPaise: order.amountPaise,
       currency: order.currency,
-      originalAmount: quote.originalAmount,
-      appointmentFeeCredit: quote.appointmentFeeCredit,
-      billBase: quote.billBase,
-      discountAmount: quote.discountAmount,
-      payableAmount: quote.payableAmount,
+      commercialModel: 'withhold',
+      originalAmount: q.originalAmount,
+      appointmentFeeCredit: q.appointmentFeeCredit,
+      billBase: q.billBase,
+      discountAmount: q.discountAmount,
+      payableAmount: q.payableAmount,
       bookingId: appointmentFeeBookingId,
     });
   } catch (error: unknown) {
+    if (error instanceof WpayCommercialValidationError) {
+      return c.json({ success: false, error: error.message }, 400);
+    }
     const message = error instanceof Error ? error.message : 'Failed to initiate payment';
     console.error('[customer/warmpawz-pay/initiate]', error);
     return c.json({ success: false, error: message }, 500);
