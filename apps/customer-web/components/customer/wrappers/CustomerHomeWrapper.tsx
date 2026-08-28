@@ -60,6 +60,7 @@ import {
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
   consumeOpenAccountMenuAfterNav,
   rememberMyPackagesBackFromAccountMenu,
+  rememberWpayHistoryBackFromAccountMenu,
   rememberPromotionsBackSpaScreen,
   rememberAccountSidebarActiveView,
   rememberShopBackToSpaScreen,
@@ -2463,6 +2464,7 @@ export function CustomerHomeWrapper({
     } else if (path === 'appointments') {
       openAccountHubFromMenu('appointments');
     } else if (path === 'warmpawz-pay') {
+      rememberWpayHistoryBackFromAccountMenu();
       router.push(WPAY_HISTORY_PATH);
     } else if (path === 'support_help' || path === 'help') {
       if (currentScreen === 'wallet') {
