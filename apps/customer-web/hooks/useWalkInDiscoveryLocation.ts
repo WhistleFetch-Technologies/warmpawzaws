@@ -37,6 +37,26 @@ export type WalkInDiscoveryLocationState = {
   selectCurrentLocation: () => Promise<boolean>;
 };
 
+export function normalizeWalkInSavedAddress(raw: Record<string, unknown>): WalkInSavedAddress | null {
+  const id = String(raw.id ?? raw.addressId ?? raw.address_id ?? '').trim();
+  if (!id) return null;
+  const coords =
+    raw.coordinates && typeof raw.coordinates === 'object'
+      ? (raw.coordinates as Record<string, unknown>)
+      : raw;
+  const latitude = Number(raw.latitude ?? raw.lat ?? coords.lat ?? coords.latitude);
+  const longitude = Number(raw.longitude ?? raw.lng ?? raw.lon ?? coords.lng ?? coords.longitude);
+  return {
+    id,
+    label: String(raw.label ?? raw.name ?? raw.fullName ?? '').trim() || undefined,
+    addressLine1: String(raw.addressLine1 ?? raw.address_line1 ?? raw.street ?? '').trim() || undefined,
+    city: String(raw.city ?? '').trim() || undefined,
+    pincode: String(raw.pincode ?? raw.pin ?? '').trim() || undefined,
+    latitude: Number.isFinite(latitude) ? latitude : undefined,
+    longitude: Number.isFinite(longitude) ? longitude : undefined,
+  };
+}
+
 function coordsFromAddress(address: WalkInSavedAddress): { lat: number; lng: number } | null {
   const lat = Number(address.latitude);
   const lng = Number(address.longitude);
@@ -152,10 +172,18 @@ export function useWalkInDiscoveryLocation(opts: { phone?: string; isGuest?: boo
     let cancelled = false;
     void (async () => {
       try {
-        const res = await apiClient.get<{ addresses?: WalkInSavedAddress[] }>(
-          `/customer/addresses?phone=${encodeURIComponent(phone)}`
-        );
-        if (!cancelled) setAddresses(Array.isArray(res.addresses) ? res.addresses : []);
+        const res = await apiClient.get<{
+          addresses?: Record<string, unknown>[];
+          data?: { addresses?: Record<string, unknown>[] };
+        }>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+        const raw = Array.isArray(res.addresses)
+          ? res.addresses
+          : Array.isArray(res.data?.addresses)
+            ? res.data.addresses
+            : [];
+        if (!cancelled) {
+          setAddresses(raw.map((row) => normalizeWalkInSavedAddress(row)).filter((row): row is WalkInSavedAddress => row != null));
+        }
       } catch {
         if (!cancelled) setAddresses([]);
       }

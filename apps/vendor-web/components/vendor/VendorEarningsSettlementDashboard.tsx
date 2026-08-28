@@ -15,6 +15,7 @@ import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
 import { vendorNavigate, vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 import {
   fetchVendorEarningsSummary,
+  formatPayBillEarningsLabel,
   resolveSessionVendorIdForEarnings,
 } from '@/lib/load-vendor-earnings-summary';
 import { 
@@ -445,7 +446,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
             type: isPayBill ? 'pay_bill' : 'booking',
             amount: Number(row.amount || 0) || 0,
             description: isPayBill
-              ? `Pay Bill · ${customerName}`
+              ? formatPayBillEarningsLabel(customerName)
               : `${serviceName} · ${customerName}`,
             status: String(row.status || 'pending'),
             created_at: String(realizedAt),
@@ -1198,7 +1199,9 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-semibold text-gray-900">{row.customerName}</p>
+                          <p className="font-semibold text-gray-900">
+                            {formatPayBillEarningsLabel(row.customerName)}
+                          </p>
                           <p className="text-xs text-gray-500 mt-0.5">
                             {row.paidAt
                               ? new Date(row.paidAt).toLocaleString('en-IN', {

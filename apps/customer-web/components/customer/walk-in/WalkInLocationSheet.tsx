@@ -22,7 +22,7 @@ export function WalkInLocationSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[200] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
@@ -35,11 +35,10 @@ export function WalkInLocationSheet({
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 id="walk-in-location-title" className="text-base font-semibold text-slate-900">
-              Discovery location
+              Saved addresses
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Nearby vendors and home-visit discovery use this location. Saved addresses
-              override cached GPS.
+              Choose a saved address, or use your current location.
             </p>
           </div>
           <button
@@ -66,6 +65,11 @@ export function WalkInLocationSheet({
         </button>
 
         <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto">
+          {addresses.length === 0 ? (
+            <li className="rounded-xl border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-slate-500">
+              No saved addresses yet. Add one from Profile, or use current location.
+            </li>
+          ) : null}
           {addresses.map((address) => {
             const hasCoords =
               Number.isFinite(Number(address.latitude)) && Number.isFinite(Number(address.longitude));

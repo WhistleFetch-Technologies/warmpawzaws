@@ -1,6 +1,7 @@
 'use client';
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, ChevronDown, Loader2, MapPin, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { PresignableImage } from '@/components/shared/PresignableImage';
@@ -65,7 +66,12 @@ function HomeHeaderSectionComponent({
   const [manualOpen, setManualOpen] = useState(false);
   const [addressOpen, setAddressOpen] = useState(false);
   const [detecting, setDetecting] = useState(false);
+  const [sheetsMounted, setSheetsMounted] = useState(false);
   const walkInLocation = useWalkInDiscoveryLocation({ phone, isGuest });
+
+  useEffect(() => {
+    setSheetsMounted(true);
+  }, []);
 
   const contextLocationLabel = useMemo(() => {
     if (!locationCtx) return '';
@@ -115,17 +121,13 @@ function HomeHeaderSectionComponent({
           : 'Set location'
       : '');
 
-  const handleLocationPress = useCallback(async () => {
+  const handleDetectCurrent = useCallback(async () => {
     if (onLocationClick) {
       onLocationClick();
       return;
     }
     if (!locationCtx) {
       if (!isGuest) onProfileClick?.();
-      return;
-    }
-    if (!isGuest) {
-      setAddressOpen(true);
       return;
     }
     setDetecting(true);
@@ -135,11 +137,24 @@ function HomeHeaderSectionComponent({
         toast.success('Location updated');
         return;
       }
-      setManualOpen(true);
+      if (isGuest) setManualOpen(true);
+      else setAddressOpen(true);
     } finally {
       setDetecting(false);
     }
   }, [onLocationClick, locationCtx, isGuest, onProfileClick, walkInLocation.selectCurrentLocation]);
+
+  const handleOpenSavedAddresses = useCallback(() => {
+    if (!locationCtx) {
+      if (!isGuest) onProfileClick?.();
+      return;
+    }
+    if (isGuest) {
+      setManualOpen(true);
+      return;
+    }
+    setAddressOpen(true);
+  }, [locationCtx, isGuest, onProfileClick]);
 
   return (
     <div>
@@ -175,22 +190,34 @@ function HomeHeaderSectionComponent({
             <p className="truncate text-white/70 text-xs font-medium tracking-wide">
               Everything your pet needs, in one place
             </p>
-            {locationLabel ? (
-              <button
-                type="button"
-                onClick={() => void handleLocationPress()}
-                disabled={detecting}
-                className="mt-0.5 flex min-w-0 max-w-full items-center gap-1 text-left active:opacity-80 disabled:opacity-70"
-                aria-label={`Location: ${locationLabel}. Tap to detect or set location.`}
-              >
-                {detecting ? (
-                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-white/75" aria-hidden />
-                ) : (
-                  <MapPin className="h-3 w-3 shrink-0 text-white/75" aria-hidden />
-                )}
-                <span className="truncate text-[11px] font-medium text-white/80">{locationLabel}</span>
-                <ChevronDown className="h-3 w-3 shrink-0 text-white/70" aria-hidden />
-              </button>
+            {locationLabel || locationCtx || !isGuest ? (
+              <div className="mt-0.5 flex min-w-0 max-w-full items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => void handleDetectCurrent()}
+                  disabled={detecting}
+                  className="flex min-w-0 items-center gap-1 text-left active:opacity-80 disabled:opacity-70"
+                  aria-label={`Location: ${locationLabel || 'Set location'}. Tap to update current location.`}
+                >
+                  {detecting ? (
+                    <Loader2 className="h-3 w-3 shrink-0 animate-spin text-white/75" aria-hidden />
+                  ) : (
+                    <MapPin className="h-3 w-3 shrink-0 text-white/75" aria-hidden />
+                  )}
+                  <span className="truncate text-[11px] font-medium text-white/80">
+                    {locationLabel || 'Set location'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenSavedAddresses}
+                  className="shrink-0 rounded-full p-0.5 active:opacity-80"
+                  aria-label="Choose a saved address"
+                  aria-expanded={addressOpen}
+                >
+                  <ChevronDown className="h-3 w-3 text-white/70" aria-hidden />
+                </button>
+              </div>
             ) : null}
           </div>
         </div>
@@ -213,19 +240,26 @@ function HomeHeaderSectionComponent({
           ) : null}
         </div>
       </div>
-      <ManualLocationSheet open={manualOpen} onClose={() => setManualOpen(false)} />
-      <WalkInLocationSheet
-        open={addressOpen}
-        onClose={() => setAddressOpen(false)}
-        addresses={walkInLocation.addresses}
-        selectedAddressId={walkInLocation.addressId}
-        onSelectAddress={walkInLocation.selectAddress}
-        onSelectCurrent={async () => {
-          const ok = await walkInLocation.selectCurrentLocation();
-          if (ok) toast.success('Location updated');
-          return ok;
-        }}
-      />
+      {sheetsMounted
+        ? createPortal(
+            <>
+              <ManualLocationSheet open={manualOpen} onClose={() => setManualOpen(false)} />
+              <WalkInLocationSheet
+                open={addressOpen}
+                onClose={() => setAddressOpen(false)}
+                addresses={walkInLocation.addresses}
+                selectedAddressId={walkInLocation.addressId}
+                onSelectAddress={walkInLocation.selectAddress}
+                onSelectCurrent={async () => {
+                  const ok = await walkInLocation.selectCurrentLocation();
+                  if (ok) toast.success('Location updated');
+                  return ok;
+                }}
+              />
+            </>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

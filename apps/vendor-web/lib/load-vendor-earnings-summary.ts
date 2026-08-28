@@ -117,6 +117,11 @@ function parsePackageBreakdown(raw: unknown): VendorPackageEarningsBreakdown | n
   };
 }
 
+export function formatPayBillEarningsLabel(customerName?: string | null): string {
+  const name = String(customerName || '').trim() || 'Customer';
+  return `Pay Bill → ${name}`;
+}
+
 function mapTransactionsFromEarningsApi(txSource: unknown[]): VendorEarningsTransaction[] {
   return txSource.map((t: unknown) => {
     const row = t as Record<string, unknown>;
@@ -127,16 +132,17 @@ function mapTransactionsFromEarningsApi(txSource: unknown[]): VendorEarningsTran
       row.created_at ||
       row.date ||
       new Date().toISOString();
+    const customer = String(row.customerName || row.customer_name || row.customer || 'Customer');
     return {
       id: String(row.id || row.transactionId || Math.random()),
       date: String(credited),
       service:
         row.flowType === 'pay_bill'
-          ? 'Pay Bill'
+          ? formatPayBillEarningsLabel(customer)
           : String(row.serviceName || row.service_name || row.service || 'Service'),
       amount: Number(row.amount || row.price || 0) || 0,
       status: String(row.status || 'pending').toLowerCase(),
-      customer: String(row.customerName || row.customer_name || row.customer || 'Customer'),
+      customer,
       flowType: row.flowType ? String(row.flowType) : undefined,
       quotedAmount:
         row.quotedAmount != null ? Number(row.quotedAmount) : undefined,

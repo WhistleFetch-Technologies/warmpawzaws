@@ -11,6 +11,7 @@ import {
 import { VendorDynamicNavigation } from './navigation/VendorDynamicNavigation';
 import { CAPABILITY_ROUTES, getCapabilitiesByCategory } from '@/lib/capability-routes';
 import { vendorNavigate } from '@/lib/vendor-route-nav';
+import { formatPayBillEarningsLabel } from '@/lib/load-vendor-earnings-summary';
 import { MealPlansComingSoonPanel } from './MealPlansComingSoonPanel';
 
 // ============================================================================
@@ -823,7 +824,11 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
             {earnings.transactions.slice(0, 5).map((txn: any) => (
               <div key={txn.id} className="flex items-center justify-between py-3 border-b last:border-0">
                 <div>
-                  <p className="font-medium text-gray-900">{txn.description || txn.serviceName || 'Transaction'}</p>
+                  <p className="font-medium text-gray-900">
+                    {txn.flowType === 'pay_bill' || txn.serviceName === 'Pay Bill'
+                      ? formatPayBillEarningsLabel(txn.customerName || txn.customer)
+                      : txn.description || txn.serviceName || txn.service || 'Transaction'}
+                  </p>
                   <p className="text-sm text-gray-500">{new Date(txn.date || txn.created_at).toLocaleDateString()}</p>
                 </div>
                 <p className={`font-semibold ${txn.type === 'credit' || txn.type === 'booking' ? 'text-green-600' : 'text-red-600'}`}>

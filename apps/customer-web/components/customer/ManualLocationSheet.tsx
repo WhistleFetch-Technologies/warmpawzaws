@@ -61,7 +61,7 @@ export function ManualLocationSheet({ open, onClose, requiredForGuestHome = fals
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[200] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
       data-testid="manual-location-backdrop"
       onClick={requiredForGuestHome ? undefined : onClose}
     >
