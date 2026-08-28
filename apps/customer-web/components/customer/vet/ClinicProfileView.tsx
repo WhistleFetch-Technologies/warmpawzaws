@@ -5,8 +5,9 @@ import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
-import { resolveCustomerVendorAmenities } from '@/lib/vendor-display-media';
+import { resolveCustomerVendorAmenities, resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { AmenitiesSection } from '../shared/AmenitiesSection';
+import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { formatAverageForDisplay } from '@/lib/rating-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import {
@@ -175,7 +176,10 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         timing: vendorData.timing || vendorData.businessHours || '9:00 AM - 8:00 PM',
         services: mappedServices, // ✅ Real services with UUID
         doctors: vendorData.doctors || vendorData.staff || [],
-        photos: vendorData.photos || vendorData.gallery || facilityData.photos || [],
+        photos: resolveVendorProfileHeroGallery({
+          facility: facilityData,
+          vendor: vendorData,
+        }),
         amenities,
         customAmenities,
       });
@@ -274,6 +278,15 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
       <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-40 sm:rounded-t-[2rem]">
         <VendorServicePromotions vendorId={clinic.id} vendorName={clinic.name} className="mb-4" />
+        {clinic.photos.length > 0 && (
+          <div className="mb-4 overflow-hidden rounded-2xl bg-gray-200">
+            <VendorHeroPhotoCarousel
+              photos={clinic.photos}
+              name={clinic.name}
+              frameClassName="relative aspect-[5/4] w-full max-h-[420px] overflow-hidden sm:aspect-auto sm:h-[280px] sm:max-h-none"
+            />
+          </div>
+        )}
         {/* Clinic Card */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
           <div className="flex items-start gap-4">

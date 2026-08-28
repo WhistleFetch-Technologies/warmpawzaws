@@ -8,7 +8,7 @@ import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentity
 import { taxCalculationService } from '../../../../lib/services/tax-calculation-service';
 import { discountCalculationService } from '../../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../../constants';
-import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../../constants/helper';
+import { extractS3KeyFromUrl, normalizeStoredVendorMediaKey, regeneratePresignedUrl } from '../../../constants/helper';
 import { getCustomerCoordinates, resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { seedFinitePackagesMissingSessionsForScope, type SqlClient } from '../../../../utils/package-session-sync';
 import { sqlPackagePurchaseActiveForListing } from '../../../../utils/package-session-eligibility';
@@ -168,7 +168,12 @@ export async function executevendorFacilityUpload(c: Context) {
       }
 
       const existingMetadata = (vendor.metadata as any) || {};
-      const existingPhotos: string[] = existingMetadata.facility_photos || [];
+      const existingPhotos: string[] = (Array.isArray(existingMetadata.facility_photos)
+        ? existingMetadata.facility_photos
+        : []
+      )
+        .map((p: unknown) => (typeof p === 'string' ? normalizeStoredVendorMediaKey(p) : null))
+        .filter((k: string | null): k is string => Boolean(k));
       if (existingPhotos.length >= FACILITY_MAX_PHOTOS) {
         return c.json(
           { error: `Maximum ${FACILITY_MAX_PHOTOS} facility photos allowed` },

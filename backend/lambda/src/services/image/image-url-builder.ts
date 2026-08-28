@@ -22,10 +22,9 @@ export async function urlForImageKey(key: string | null | undefined): Promise<st
   const trimmed = String(key).trim();
   if (!trimmed) return null;
   if (trimmed.startsWith('data:') || trimmed.startsWith('/')) return trimmed;
-  if (trimmed.includes('X-Amz-Algorithm=')) return trimmed;
 
   const cdnDomain = (process.env.MEDIA_CDN_DOMAIN || '').trim().replace(/\/$/, '');
-  if (cdnDomain) {
+  if (cdnDomain && !trimmed.includes('://')) {
     const path = trimmed.replace(/^\/+/, '');
     return `https://${cdnDomain}/${path}`;
   }

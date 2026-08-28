@@ -1,6 +1,7 @@
 /**
  * Presign S3 object URLs for browser display when the bucket is private.
- * Leaves non-S3 URLs, data URLs, and already-presigned URLs unchanged.
+ * Leaves non-S3 URLs and data URLs unchanged. Always re-signs S3 URLs
+ * (including expired X-Amz query strings).
  */
 
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -27,7 +28,6 @@ export async function presignS3GetUrlIfApplicable(
   if (url == null || url === '') return url;
   if (typeof url !== 'string') return url;
   if (url.startsWith('data:')) return url;
-  if (url.includes('X-Amz-Algorithm=') || url.includes('X-Amz-Credential=')) return url;
 
   try {
     const u = new URL(url);

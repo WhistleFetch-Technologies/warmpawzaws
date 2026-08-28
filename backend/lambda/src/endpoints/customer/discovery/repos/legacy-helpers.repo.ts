@@ -10,7 +10,7 @@ import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentity
 import { taxCalculationService } from '../../../../lib/services/tax-calculation-service';
 import { discountCalculationService } from '../../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../../constants';
-import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../../constants/helper';
+import { extractS3KeyFromUrl, normalizeStoredVendorMediaKey, regeneratePresignedUrl } from '../../../constants/helper';
 import { getCustomerCoordinates, resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import {
   seedFinitePackagesMissingSessionsForScope,
@@ -65,6 +65,8 @@ import {
   mapWithConcurrency,
   resolveImageForContext,
 } from '../../../../services/image';
+import { persistMigratedImageKey } from '../../../../services/image/image-migrator-persist';
+import type { ImageDisplayContext } from '../../../../services/image/image-types';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
@@ -945,7 +947,11 @@ export async function resolveOneFacilityPhotoToPresignedUrl(
 }
 
 /** Presign all facility gallery items for customer display; deduped and order-stable. */
-export async function presignCustomerFacilityGalleryUrls(vendorId: string, rawInput: unknown[]): Promise<string[]> {
+export async function presignCustomerFacilityGalleryUrls(
+  vendorId: string,
+  rawInput: unknown[],
+  context: ImageDisplayContext = 'detail'
+): Promise<string[]> {
   const items = dedupeGalleryInputsPreserveOrder(flattenMetadataGalleryItems(rawInput));
   if (items.length === 0) return [];
 
@@ -954,7 +960,7 @@ export async function presignCustomerFacilityGalleryUrls(vendorId: string, rawIn
       assetType: 'facility',
       ownerId: vendorId,
       vendorId,
-      context: 'list',
+      context,
       migrate: true,
       persist: {
         kind: 'vendor_facility_photo',
@@ -962,6 +968,15 @@ export async function presignCustomerFacilityGalleryUrls(vendorId: string, rawIn
         legacyValue: photoItem,
       },
     });
+    const looksPresigned =
+      photoItem.includes('X-Amz-Algorithm') || photoItem.includes('X-Amz-Credential');
+    const storedKey = normalizeStoredVendorMediaKey(photoItem);
+    if (looksPresigned && storedKey && storedKey !== photoItem) {
+      await persistMigratedImageKey(
+        { kind: 'vendor_facility_photo', vendorId, legacyValue: photoItem },
+        storedKey
+      );
+    }
     return resolved?.displayUrl ?? null;
   });
 
