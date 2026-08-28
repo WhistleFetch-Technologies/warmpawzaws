@@ -173,7 +173,6 @@ export function useHomePageData({
   const [dynamicBanners, setDynamicBanners] = useState<Record<string, unknown>[]>([]);
   const [dynamicMiddleBanners, setDynamicMiddleBanners] = useState<Record<string, unknown>[]>([]);
   const [dynamicLowerBanners, setDynamicLowerBanners] = useState<Record<string, unknown>[]>([]);
-  const [dynamicArticles, setDynamicArticles] = useState<Record<string, unknown>[]>([]);
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<Record<string, unknown>[]>([]);
 
   const [groomingServices, setGroomingServices] = useState<Record<string, unknown>[]>([]);
@@ -254,12 +253,11 @@ export function useHomePageData({
       const homeLowerQuery = new URLSearchParams(bannerQuery);
       homeLowerQuery.append('position', 'home_lower');
 
-      const [bannersResp, middleBannersResp, lowerBannersResp, articlesResp, announcementsResp] =
+      const [bannersResp, middleBannersResp, lowerBannersResp, announcementsResp] =
         await Promise.allSettled([
           apiClient.get(`/customer/banners?${homeTopQuery.toString()}`),
           apiClient.get(`/customer/banners?${homeMiddleQuery.toString()}`),
           apiClient.get(`/customer/banners?${homeLowerQuery.toString()}`),
-          apiClient.getCustomerArticlesList('/customer/articles?limit=3'),
           apiClient.get('/customer/announcements?limit=3'),
         ]);
 
@@ -279,10 +277,6 @@ export function useHomePageData({
       setDynamicMiddleBanners(extractBanners(middleBannersResp));
       setDynamicLowerBanners(extractBanners(lowerBannersResp));
 
-      if (articlesResp.status === 'fulfilled') {
-        const articles = (articlesResp.value as { articles?: Record<string, unknown>[] })?.articles;
-        if (articles?.length) setDynamicArticles(articles);
-      }
       if (announcementsResp.status === 'fulfilled') {
         const announcements = (announcementsResp.value as { announcements?: Record<string, unknown>[] })
           ?.announcements;
@@ -553,7 +547,6 @@ export function useHomePageData({
     dynamicBanners,
     dynamicMiddleBanners,
     dynamicLowerBanners,
-    dynamicArticles,
     dynamicAnnouncements,
     homeCarouselBanners,
     groomingServices,

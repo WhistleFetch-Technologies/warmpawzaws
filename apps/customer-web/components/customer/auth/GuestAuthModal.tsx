@@ -18,6 +18,7 @@ import {
   emitCustomerAuthCompleted,
   persistCustomerAuthSessionSideEffects,
 } from '@/lib/customer-auth-session-event';
+import { readProfileCompleted, resolvePostAuthRedirectPath } from '@/lib/customer-flow-guards';
 
 export type GuestAuthModalOptions = {
   mode: 'login' | 'signup';
@@ -47,10 +48,16 @@ export function GuestAuthModal({ open, options, onOpenChange }: GuestAuthModalPr
     emitCustomerAuthCompleted();
     onOpenChange(false);
     const returnPath = result.redirectPath;
+    if (!readProfileCompleted()) {
+      const dest =
+        returnPath && (returnPath === '/profile' || returnPath.startsWith('/profile?'))
+          ? returnPath
+          : resolvePostAuthRedirectPath(returnPath || '/');
+      router.push(dest);
+      return;
+    }
     const isHomeReturn = !returnPath || returnPath === '/' || returnPath.startsWith('/?');
     if (!isHomeReturn && returnPath.startsWith('/')) {
-      router.push(returnPath);
-    } else if (returnPath === '/profile' || returnPath.startsWith('/profile?')) {
       router.push(returnPath);
     }
   };

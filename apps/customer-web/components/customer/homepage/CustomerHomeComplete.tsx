@@ -2,10 +2,6 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { buildWhatsNewAnnouncements, navigateWhatsNewFromFullPage } from '@/lib/whats-new-announcements';
-import {
-  navigateToArticleFromHome,
-  navigateToArticlesList,
-} from '@/lib/articles-back-nav';
 import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsNewAnnouncementList';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -13,14 +9,13 @@ import {
   Bell, Heart, Plus, ChevronRight, Star, MapPin, Clock,
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles,
-  Phone, Video, Building2, Bone, BookOpen, Wheat, Bot, Menu, Settings, Palmtree, Pill,
+  Phone, Video, Building2, Bone, Wheat, Bot, Menu, Settings, Palmtree, Pill,
   Navigation, AlertCircle, FlaskConical, MessageSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { fetchCustomerMessageUnreadBreakdown } from '@/lib/customer-message-unread';
 import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
-import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { EnhancedSearchBar } from '../EnhancedSearchBar';
@@ -31,7 +26,7 @@ import { TrendingProblems, type TrendingProblem } from '../TrendingProblems';
 import { CustomerNotificationModal } from '../CustomerNotificationModal';
 import { EcommerceLaunchPopup } from '../EcommerceLaunchPopup';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
-import { Dog, Cat, UtensilsCrossed, Shirt, Watch, Bed, Store } from 'lucide-react';
+import { Dog, Cat, Shirt, Watch, Bed, Store } from 'lucide-react';
 import { useActiveGpsTracking, ActiveTrackingSession } from '@/hooks/useActiveGpsTracking';
 import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 // Re-export type for VendorOnTheWayPopup
@@ -641,9 +636,6 @@ export function CustomerHomeComplete({
   const [dynamicLowerBanners, setDynamicLowerBanners] = useState<any[]>(
     () => cachedHomeDynamic?.dynamicLowerBanners ?? []
   );
-  const [dynamicArticles, setDynamicArticles] = useState<any[]>(
-    () => cachedHomeDynamic?.dynamicArticles ?? []
-  );
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>(
     () => cachedHomeDynamic?.dynamicAnnouncements ?? []
   );
@@ -1093,7 +1085,7 @@ export function CustomerHomeComplete({
     writeHomeSessionCache(phone, 'launch_tiles', { tiles: serializeLaunchTiles(tiles) });
   };
 
-  // Load dynamic content (banners, articles, announcements)
+  // Load dynamic content (banners, announcements)
   const loadDynamicContent = async (location: CustomerLocation) => {
     try {
       const { city: customerCity, state: customerState } = location;
@@ -1108,12 +1100,11 @@ export function CustomerHomeComplete({
       homeLowerQuery.append('position', 'home_lower');
 
       // Fetch all content in parallel with better error handling
-      const [bannersResp, middleBannersResp, lowerBannersResp, articlesResp, announcementsResp, adoptionResp] =
+      const [bannersResp, middleBannersResp, lowerBannersResp, announcementsResp, adoptionResp] =
         await Promise.allSettled([
           apiClient.get<any>(`/customer/banners?${homeTopQuery.toString()}`),
           apiClient.get<any>(`/customer/banners?${homeMiddleQuery.toString()}`),
           apiClient.get<any>(`/customer/banners?${homeLowerQuery.toString()}`),
-          apiClient.getCustomerArticlesList<any>('/customer/articles?limit=3'),
           apiClient.get<any>('/customer/announcements?limit=3'),
           apiClient.get<any>('/customer/adoption-stats'),
         ]);
@@ -1137,7 +1128,6 @@ export function CustomerHomeComplete({
       let nextTopBanners: any[] | undefined;
       let nextMiddleBanners: any[] | undefined;
       let nextLowerBanners: any[] | undefined;
-      let nextArticles: any[] | undefined;
       let nextAnnouncements: any[] | undefined;
       let nextAdoptionStats: { adoptablePets: number; rehomingListings: number } | undefined;
 
@@ -1195,18 +1185,6 @@ export function CustomerHomeComplete({
         }
       }
 
-      // Handle articles
-      if (articlesResp.status === 'fulfilled' && articlesResp.value?.articles?.length > 0) {
-        const articles = articlesResp.value.articles ?? [];
-        nextArticles = articles;
-        setDynamicArticles(articles);
-      } else if (articlesResp.status === 'rejected') {
-        const error = articlesResp.reason;
-        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-          console.warn('Failed to load articles:', error.message);
-        }
-      }
-
       // Handle announcements
       if (announcementsResp.status === 'fulfilled' && announcementsResp.value?.announcements?.length > 0) {
         const announcements = announcementsResp.value.announcements ?? [];
@@ -1245,7 +1223,6 @@ export function CustomerHomeComplete({
         ...(nextTopBanners?.length ? { dynamicBanners: nextTopBanners } : {}),
         ...(nextMiddleBanners ? { dynamicMiddleBanners: nextMiddleBanners } : {}),
         ...(nextLowerBanners ? { dynamicLowerBanners: nextLowerBanners } : {}),
-        ...(nextArticles?.length ? { dynamicArticles: nextArticles } : {}),
         ...(nextAnnouncements?.length ? { dynamicAnnouncements: nextAnnouncements } : {}),
         ...(nextAdoptionStats ? { adoptionStats: nextAdoptionStats } : {}),
       });
@@ -1589,7 +1566,6 @@ export function CustomerHomeComplete({
             if (dynamic.dynamicBanners?.length) setDynamicBanners(dynamic.dynamicBanners);
             if (dynamic.dynamicMiddleBanners?.length) setDynamicMiddleBanners(dynamic.dynamicMiddleBanners);
             if (dynamic.dynamicLowerBanners?.length) setDynamicLowerBanners(dynamic.dynamicLowerBanners);
-            if (dynamic.dynamicArticles?.length) setDynamicArticles(dynamic.dynamicArticles);
             if (dynamic.dynamicAnnouncements?.length) setDynamicAnnouncements(dynamic.dynamicAnnouncements);
             if (dynamic.adoptionStats) setAdoptionStats(dynamic.adoptionStats);
             await runServiceLaunchConfig(location, refreshKey > 0);
@@ -1645,7 +1621,6 @@ export function CustomerHomeComplete({
           if (dynamic.dynamicBanners?.length) setDynamicBanners(dynamic.dynamicBanners);
           if (dynamic.dynamicMiddleBanners?.length) setDynamicMiddleBanners(dynamic.dynamicMiddleBanners);
           if (dynamic.dynamicLowerBanners?.length) setDynamicLowerBanners(dynamic.dynamicLowerBanners);
-          if (dynamic.dynamicArticles?.length) setDynamicArticles(dynamic.dynamicArticles);
           if (dynamic.dynamicAnnouncements?.length) setDynamicAnnouncements(dynamic.dynamicAnnouncements);
           if (dynamic.adoptionStats) setAdoptionStats(dynamic.adoptionStats);
           await runServiceLaunchConfig(location, resetLaunchTiles);
@@ -2356,24 +2331,6 @@ export function CustomerHomeComplete({
   // Use API data or fallback to defaults
   const displayGroomingServices = groomingServices.length > 0 ? groomingServices : defaultGroomingServices;
   const displayVetServices = vetServicesData.length > 0 ? vetServicesData : defaultVetServices;
-  // ✅ FIX: Remove dummy articles - show only admin-created articles
-  const articles = dynamicArticles.map((a: any) => ({
-    id: a.id,
-    slug: a.slug,
-    title: a.title,
-    category: a.category || 'Tips',
-    readTime: a.readTime || '5 min',
-    excerpt: a.excerpt,
-    featured: a.featured,
-    Icon: a.category === 'Nutrition' ? UtensilsCrossed
-      : a.category === 'Insurance' ? Shield
-        : a.category === 'Health' ? Heart
-          : Dog,
-    url: a.url,
-    content: a.content,
-    description: a.description
-  }));
-
 
   /** When shell uses CustomerScreenWrapper, avoid nested min-h-screen vs padded min-dvh (iOS overflow / tab bar glitches). */
   const containerClassName = hideHeaderFooter
@@ -2626,20 +2583,6 @@ export function CustomerHomeComplete({
               handleNavigation(a.ctaLink?.trim() || 'ambulance');
             }}
             adoptionStats={adoptionStats}
-            petCareArticles={articles}
-            onPetCareArticlesSeeAll={() => navigateToArticlesList(router, '/')}
-            onPetCareArticleClick={(article) => {
-              if (article.slug) {
-                navigateToArticleFromHome(router, article.slug);
-              } else if (article.url) {
-                window.open(article.url, '_blank');
-              } else {
-                handleNavigation('article-detail', {
-                  articleId: article.id,
-                  article: { id: article.id, slug: article.slug },
-                });
-              }
-            }}
             isGuest={isGuest}
           />
         ) : (
@@ -3434,61 +3377,6 @@ export function CustomerHomeComplete({
           </div>
         </div>
         </ViewportSection>
-
-        {/* Pet Articles - ✅ FIX: Only show if admin-created articles exist */}
-        {articles.length > 0 && (
-          <ViewportSection placeholderMinHeight={88 + articles.length * 100}>
-          <div className="mb-6">
-            <div className="px-6 mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-teal-600" />
-                <h2 className="text-black font-semibold">Pet Care Articles</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigateToArticlesList(router, '/')}
-                className="text-xs text-teal-600 font-medium flex items-center gap-1"
-              >
-                Read more <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="px-6 space-y-3">
-              {articles.map((article, index) => (
-                <button
-                  key={article.id || index}
-                  onClick={() => {
-                    // ✅ FIX: Navigate to content page by slug
-                    if (article.slug) {
-                      navigateToArticleFromHome(router, article.slug);
-                    } else if (article.url) {
-                      window.open(article.url, '_blank');
-                    } else {
-                      handleNavigation('article-detail', { articleId: article.id, article: { id: article.id, slug: article.slug } });
-                    }
-                  }}
-                  className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex items-start gap-4 shadow-sm hover:shadow-md transition-shadow text-left"
-                >
-                  <div className="w-16 h-16 bg-gradient-to-br from-teal-100 to-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <article.Icon className="w-8 h-8 text-teal-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium capitalize">
-                        {getCustomerArticleCategoryLabel(article.category)}
-                      </span>
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> {article.readTime}
-                      </span>
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-800">{article.title}</h3>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                </button>
-              ))}
-            </div>
-          </div>
-          </ViewportSection>
-        )}
 
         <ViewportSection placeholderMinHeight={720}>
         <MoreServicesSection onNavigate={handleNavigation} />

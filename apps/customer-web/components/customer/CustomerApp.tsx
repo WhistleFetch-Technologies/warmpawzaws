@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   bootstrapPushNotifications,
   ensureCapacitorPushRegistrationPipeline,
@@ -15,6 +16,7 @@ import {
   CUSTOMER_AUTH_COMPLETED_EVENT,
   readCustomerAuthSessionFromStorage,
 } from '@/lib/customer-auth-session-event';
+import { readProfileCompleted } from '@/lib/customer-flow-guards';
 
 interface CustomerSession {
   phone: string;
@@ -55,6 +57,7 @@ export function CustomerApp({
   petBoardingServiceSlug,
   initialBannerNavigation,
 }: CustomerAppProps) {
+  const router = useRouter();
   const [session, setSession] = useState<CustomerSession>(initialSession);
 
   useEffect(() => {
@@ -67,6 +70,10 @@ export function CustomerApp({
       if (!next?.phone) return;
       resetHomeBootstrapForPhone(next.phone);
       setSession(next);
+      if (!readProfileCompleted()) {
+        router.replace('/profile');
+        return;
+      }
       void ensureCustomerProfileAndPets(next.phone).refreshPromise.then((result) => {
         const data = result.profile;
         if (!data) return;
@@ -83,7 +90,7 @@ export function CustomerApp({
     };
     window.addEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuthCompleted);
     return () => window.removeEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuthCompleted);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     const userId = getResolvedCustomerId();

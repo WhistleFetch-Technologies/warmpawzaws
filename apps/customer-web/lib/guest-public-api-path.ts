@@ -98,6 +98,14 @@ export function resolveGuestPublicApiPath(path: string): string {
     return `${pathname.replace('/customer/articles', '/public/articles')}${q}`;
   }
 
+  if (pathname === '/customer/banners/resolve-cta') {
+    return `/public/banners/resolve-cta${q}`;
+  }
+
+  if (pathname === '/customer/banners') {
+    return `/public/banners${q}`;
+  }
+
   if (pathname === '/search' || pathname === '/search/autocomplete') {
     return `/public${pathname}${q}`;
   }

@@ -27,7 +27,7 @@ function buildAuthUrlWithMode(returnPath: string, mode: 'signup' | 'login'): str
   return `/auth?${modeParam}&redirect=${encodeURIComponent(safe)}`;
 }
 
-/** OTP signup entry — guest conversion, booking, add pet, sidebar Sign Up. */
+/** OTP signup entry — guest conversion, booking, add pet. */
 export function buildAuthSignupUrl(returnPath: string): string {
   return buildAuthUrlWithMode(returnPath, 'signup');
 }

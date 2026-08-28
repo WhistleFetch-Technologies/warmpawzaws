@@ -6,6 +6,8 @@ import { registerCustomerArticlesGetRoute } from './routes/customer_articles_get
 import { registerCustomerArticlesSlugGetRoute } from './routes/customer_articles_slug_get.route';
 import { registerPublicArticlesGetRoute } from './routes/public_articles_get.route';
 import { registerPublicArticlesSlugGetRoute } from './routes/public_articles_slug_get.route';
+import { registerPublicBannersGetRoute } from './routes/public_banners_get.route';
+import { registerPublicBannersResolvectaGetRoute } from './routes/public_banners_resolvecta_get.route';
 import { registerMarketingArticlesGetRoute } from './routes/marketing_articles_get.route';
 import { registerCustomerAnnouncementsGetRoute } from './routes/customer_announcements_get.route';
 import { registerMarketingAnnouncementsGetRoute } from './routes/marketing_announcements_get.route';
@@ -19,6 +21,8 @@ export function registerCustomerContentEndpoints(app: Hono) {
   registerCustomerBannersGetRoute(app);
   registerMarketingBannersGetRoute(app);
   registerCustomerBannersResolvectaGetRoute(app);
+  registerPublicBannersGetRoute(app);
+  registerPublicBannersResolvectaGetRoute(app);
   registerCustomerArticlesGetRoute(app);
   registerCustomerArticlesSlugGetRoute(app);
   registerPublicArticlesGetRoute(app);

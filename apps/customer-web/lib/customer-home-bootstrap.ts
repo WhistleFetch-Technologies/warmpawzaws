@@ -260,7 +260,7 @@ function dedupeBannerList(rawList: unknown[]): Record<string, unknown>[] {
   }) as Record<string, unknown>[];
 }
 
-/** Read session cache, then refresh banners / articles / announcements / adoption stats. */
+/** Read session cache, then refresh banners / announcements / adoption stats. */
 export async function refreshHomeDynamicContent(
   phone: string,
   location?: CustomerLocation
@@ -280,12 +280,11 @@ export async function refreshHomeDynamicContent(
   const homeLowerQuery = new URLSearchParams(bannerQuery);
   homeLowerQuery.append('position', 'home_lower');
 
-  const [bannersResp, middleBannersResp, lowerBannersResp, articlesResp, announcementsResp, adoptionResp] =
+  const [bannersResp, middleBannersResp, lowerBannersResp, announcementsResp, adoptionResp] =
     await Promise.allSettled([
       apiClient.get(`/customer/banners?${homeTopQuery.toString()}`),
       apiClient.get(`/customer/banners?${homeMiddleQuery.toString()}`),
       apiClient.get(`/customer/banners?${homeLowerQuery.toString()}`),
-      apiClient.getCustomerArticlesList('/customer/articles?limit=3'),
       apiClient.get('/customer/announcements?limit=3'),
       apiClient.get('/customer/adoption-stats'),
     ]);
@@ -309,10 +308,6 @@ export async function refreshHomeDynamicContent(
   const lower = extractBanners(lowerBannersResp);
   if (lower.length > 0) next.dynamicLowerBanners = lower;
 
-  if (articlesResp.status === 'fulfilled') {
-    const articles = (articlesResp.value as { articles?: Record<string, unknown>[] })?.articles;
-    if (articles?.length) next.dynamicArticles = articles;
-  }
   if (announcementsResp.status === 'fulfilled') {
     const announcements = (announcementsResp.value as { announcements?: Record<string, unknown>[] })
       ?.announcements;

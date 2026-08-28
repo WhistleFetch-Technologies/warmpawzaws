@@ -27,7 +27,11 @@ import { LOGIN_OTP_RETRY_CONFIG } from '@/lib/forgot-password-cooldown';
 import { resolveAuthModeFromParams, resolveSafeAuthReturnPath } from '@/lib/auth-redirect';
 import { isGuestBrowsingEnabled } from '@/lib/guest-browsing-flag';
 import { emitGuestAuthAnalytics } from '@/lib/guest-auth-gate';
-import { resolvePostAuthRedirectPath } from '@/lib/customer-flow-guards';
+import {
+  applyOtpVerifyProfileFlags,
+  extractOtpAuthState,
+  resolvePostAuthRedirectPath,
+} from '@/lib/customer-flow-guards';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
 
 const AIChatbotWidget = dynamic(
@@ -98,12 +102,6 @@ function getAuthLayoutClasses(variant: 'page' | 'modal') {
     };
   }
   return getAuthModalLayoutClasses();
-}
-
-function setCustomerOnboardingCompleteFromAuth(value: 'true' | 'false'): void {
-  if (typeof window === 'undefined') return;
-  if (value === 'false' && localStorage.getItem('onboarding_completed') === 'true') return;
-  localStorage.setItem('customerOnboardingComplete', value);
 }
 
 export type CustomerAuthCompleteResult = {
@@ -458,7 +456,8 @@ export function CustomerAuthFlow({
           localStorage.setItem('pendingReferralCode', trimmedReferral);
         }
 
-        // Get customer profile; cache pets for app use without using pet count for routing
+        // Get customer profile; cache pets. New OTP users always go to profile creation.
+        const authState = extractOtpAuthState(response) ?? extractOtpAuthState(responseData);
         try {
           const profileResponse = await apiClient.get<any>(
             `/customer/profile/unified/${encodeURIComponent(shortPhone)}`
@@ -467,24 +466,6 @@ export function CustomerAuthFlow({
 
           if (profileResponse?.profile) {
             const profile = profileResponse.profile;
-            const onboardingStatus = profile.onboarding_status || profile.onboardingStatus || 'INIT';
-            const profileCompletedFlag = profile.profile_completed || profile.onboardingComplete || false;
-            const nameVal = profile.name || profile.full_name || '';
-            const digits = phone.replace(/\D/g, '').slice(-10);
-            const hasName =
-              !!nameVal &&
-              String(nameVal).trim() !== '' &&
-              nameVal !== `Customer ${digits.slice(-4)}`;
-            const hasBookings = (profile.bookings?.length || 0) > 0;
-            const hasProfileId = !!profile.id;
-
-            console.log('📊 [Auth] Profile check:', {
-              onboardingStatus,
-              profileCompleted: profileCompletedFlag,
-              hasName,
-              hasBookings,
-            });
-
             localStorage.setItem('customerData', JSON.stringify(stripPetsFromCustomerRecord(profile)));
             localStorage.setItem('customerProfile', JSON.stringify(stripPetsFromCustomerRecord(profile)));
             persistCustomerDatabaseId(profile);
@@ -498,39 +479,19 @@ export function CustomerAuthFlow({
               writeCachedPetsForPhone(shortPhone, []);
             }
 
-            const backendFullyOnboarded =
-              onboardingStatus === 'COMPLETED' || profileCompletedFlag === true;
-            const hasMeaningfulProfile =
-              (hasProfileId && hasName) || (hasProfileId && hasBookings);
-
-            if (backendFullyOnboarded || hasMeaningfulProfile) {
-              localStorage.setItem('profile_completed', 'true');
-              localStorage.setItem('onboarding_completed', 'true');
-              setCustomerOnboardingCompleteFromAuth('true');
-              console.log('✅ [Auth] Profile ready — skip stage selection');
-            } else {
-              setCustomerOnboardingCompleteFromAuth('false');
-              console.log('🆕 [Auth] New customer — start at profile');
-            }
+            const dest = applyOtpVerifyProfileFlags({
+              authState,
+              profile,
+              phoneDigits10: shortPhone,
+            });
+            console.log(dest === 'home' ? '✅ [Auth] Existing customer — home' : '🆕 [Auth] New customer — profile');
           } else {
             console.warn('⚠️ [Auth] No profile in response:', profileResponse);
-            setCustomerOnboardingCompleteFromAuth('false');
+            applyOtpVerifyProfileFlags({ authState, profile: null, phoneDigits10: shortPhone });
           }
         } catch (profileError: any) {
           console.error('❌ [Auth] Error fetching profile:', profileError);
-          // ✅ FIX: If profile fetch fails but customer exists, check localStorage for cached data
-          const cachedProfile = localStorage.getItem('customerProfile');
-          const cachedOnboarding = localStorage.getItem('customerOnboardingComplete');
-          const stageSelectionDone = localStorage.getItem('onboarding_completed') === 'true';
-
-          if (cachedProfile && (cachedOnboarding === 'true' || stageSelectionDone)) {
-            console.log('✅ [Auth] Using cached profile data');
-            // Keep existing onboarding status
-          } else {
-            // Customer doesn't exist yet - will be created by backend on first profile access
-            setCustomerOnboardingCompleteFromAuth('false');
-            console.log('🆕 [Auth] No cached profile - new customer');
-          }
+          applyOtpVerifyProfileFlags({ authState, profile: null, phoneDigits10: shortPhone });
         }
 
         const redirectPath =
@@ -774,7 +735,7 @@ export function CustomerAuthFlow({
             <p className={isModal ? modalForm?.description : 'text-center text-gray-600 mb-8 text-base leading-relaxed'}>
               {authMode === 'login' ? (
                 <>
-                  Log in with your mobile number.<br />
+                  Log in or create an account with your mobile number.<br />
                   We’ll send a one-time OTP to verify.
                 </>
               ) : (

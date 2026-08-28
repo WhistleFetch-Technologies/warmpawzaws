@@ -1,4 +1,8 @@
 import {
+  applyOtpVerifyProfileFlags,
+  extractOtpAuthState,
+  markOnboardingCompleteAfterProfile,
+  markProfileCreationRequired,
   readProfileCompleted,
   resolvePostAuthRedirectPath,
   resolvePostProfileRedirectPath,
@@ -8,6 +12,54 @@ import {
   clearGuestBookingIntent,
   saveGuestBookingIntent,
 } from '../guest-booking-intent';
+
+describe('OTP new vs existing profile flags', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('extracts state from nested OTP payloads', () => {
+    expect(extractOtpAuthState({ data: { data: { state: 'new' } } })).toBe('new');
+    expect(extractOtpAuthState({ state: 'existing' })).toBe('existing');
+    expect(extractOtpAuthState({ success: true })).toBeNull();
+  });
+
+  it('new OTP users create a profile even if leftover flags say complete', () => {
+    localStorage.setItem('profile_completed', 'true');
+    localStorage.setItem('onboarding_completed', 'true');
+    expect(applyOtpVerifyProfileFlags({ authState: 'new', phoneDigits10: '9876543210' })).toBe(
+      'create-profile'
+    );
+    expect(readProfileCompleted()).toBe(false);
+    expect(resolvePostAuthRedirectPath('/')).toBe('/profile');
+  });
+
+  it('existing OTP users go home and skip profile creation', () => {
+    expect(
+      applyOtpVerifyProfileFlags({
+        authState: 'existing',
+        phoneDigits10: '9876543210',
+        profile: {
+          id: 'cust-1',
+          name: 'Priya',
+          onboarding_status: 'COMPLETED',
+          profile_completed: true,
+        },
+      })
+    ).toBe('home');
+    expect(readProfileCompleted()).toBe(true);
+    expect(resolvePostAuthRedirectPath('/')).toBe('/');
+  });
+
+  it('keeps profile creation required until the form is submitted', () => {
+    markProfileCreationRequired();
+    localStorage.setItem('profile_completed', 'true');
+    expect(readProfileCompleted()).toBe(false);
+    markOnboardingCompleteAfterProfile();
+    expect(readProfileCompleted()).toBe(true);
+  });
+});
 
 describe('resolvePostAuthRedirectPath', () => {
   beforeEach(() => {

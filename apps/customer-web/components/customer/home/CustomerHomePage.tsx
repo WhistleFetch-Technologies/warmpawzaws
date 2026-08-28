@@ -27,8 +27,6 @@ import { OffersForYouSection } from './sections/OffersForYouSection';
 import { DiscoverMoreSection } from './sections/DiscoverMoreSection';
 import { WhatsNewSection } from './sections/WhatsNewSection';
 import { AdoptionSection } from './sections/AdoptionSection';
-import { PetCareArticlesSection } from './sections/PetCareArticlesSection';
-import type { PetCareArticleItem } from './sections/PetCareArticlesSection';
 import { NeedHelpSection } from './sections/NeedHelpSection';
 import { ViewportSection } from './shared/ViewportSection';
 import type { HomeNavigateFn } from './hooks/useHomeNavigation';
@@ -102,9 +100,6 @@ export interface CustomerHomePageContentProps {
   onWhatsNewRowPress?: (announcement: WhatsNewAnnouncement) => void;
   onWhatsNewSosPress?: (announcement: WhatsNewAnnouncement) => void;
   adoptionStats?: { adoptablePets: number | string; rehomingListings: number | string };
-  petCareArticles?: PetCareArticleItem[];
-  onPetCareArticleClick?: (article: PetCareArticleItem) => void;
-  onPetCareArticlesSeeAll?: () => void;
   /** App Store review demo account — hides under-build sections entirely. */
   reviewDemoAccount?: boolean;
   isGuest?: boolean;
@@ -173,9 +168,6 @@ function CustomerHomePageContentComponent({
   onWhatsNewRowPress,
   onWhatsNewSosPress,
   adoptionStats,
-  petCareArticles = [],
-  onPetCareArticleClick,
-  onPetCareArticlesSeeAll,
   reviewDemoAccount = false,
   isGuest = false,
 }: CustomerHomePageContentProps) {
@@ -253,15 +245,6 @@ function CustomerHomePageContentComponent({
           <PremiumPetFoodSection onNavigate={onNavigate} petFoodCategoryId={petFoodCategoryId || undefined} />
         </ViewportSection>
       ) : null}
-      {petCareArticles.length > 0 ? (
-        <ViewportSection placeholderMinHeight={120 + petCareArticles.length * 110}>
-          <PetCareArticlesSection
-            articles={petCareArticles}
-            onArticleClick={onPetCareArticleClick}
-            onSeeAll={onPetCareArticlesSeeAll}
-          />
-        </ViewportSection>
-      ) : null}
       <ViewportSection placeholderMinHeight={720}>
         <MoreServicesSection onNavigate={onNavigate} reviewDemoAccount={reviewDemoAccount} />
       </ViewportSection>
@@ -303,7 +286,6 @@ export { DiscoverMoreSection } from './sections/DiscoverMoreSection';
 export { WhatsNewSection } from './sections/WhatsNewSection';
 export { AdoptionSection } from './sections/AdoptionSection';
 export { PremiumPetFoodSection } from './sections/PremiumPetFoodSection';
-export { PetCareArticlesSection } from './sections/PetCareArticlesSection';
 export { MoreServicesSection } from './sections/MoreServicesSection';
 export { HomeLowerBannersSection } from './sections/HomeLowerBannersSection';
 export { NeedHelpSection } from './sections/NeedHelpSection';

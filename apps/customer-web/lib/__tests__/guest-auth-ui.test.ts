@@ -21,8 +21,19 @@ describe('Guest auth UI', () => {
 
   it('still renders Login and Sign Up copy', () => {
     expect(authFlow).toMatch(/Create Your Account/);
-    expect(authFlow).toMatch(/Log in with your mobile number/);
+    expect(authFlow).toMatch(/Log in or create an account with your mobile number/);
     expect(authFlow).toMatch(/Send Verification Code/);
+  });
+
+  it('guest account sidebar keeps Login and hides Sign Up', () => {
+    const sidebar = readSrc('components/customer/UserAccountSidebar.tsx');
+    const guestStart = sidebar.indexOf('if (isGuest)');
+    const guestEnd = sidebar.indexOf('displayName={displayName}');
+    const guestBlock = sidebar.slice(guestStart, guestEnd);
+    expect(guestBlock).toMatch(/mode: 'login'/);
+    expect(guestBlock).not.toMatch(/mode: 'signup'/);
+    expect(guestBlock).toMatch(/>Login</);
+    expect(guestBlock).not.toMatch(/>Sign Up</);
   });
 
   it('does not render Continue without booking / Continue browsing without login', () => {
@@ -73,5 +84,16 @@ describe('Guest appointment restore contracts', () => {
   it('OTP verify does not clear the guest booking snapshot', () => {
     const authFlow = readSrc('components/customer/auth/CustomerAuthFlow.tsx');
     expect(authFlow).not.toMatch(/clearGuestBookingIntent/);
+  });
+
+  it('login OTP sends new customers to profile creation', () => {
+    const authFlow = readSrc('components/customer/auth/CustomerAuthFlow.tsx');
+    const modal = readSrc('components/customer/auth/GuestAuthModal.tsx');
+    const app = readSrc('components/customer/CustomerApp.tsx');
+    expect(authFlow).toMatch(/applyOtpVerifyProfileFlags/);
+    expect(authFlow).toMatch(/extractOtpAuthState/);
+    expect(modal).toMatch(/readProfileCompleted\(\)/);
+    expect(modal).toMatch(/router\.push\(dest\)/);
+    expect(app).toMatch(/router\.replace\('\/profile'\)/);
   });
 });
