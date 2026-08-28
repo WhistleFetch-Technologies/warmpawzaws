@@ -1,4 +1,9 @@
-import { resolveCustomerVendorAmenities, shouldShowVendorAmenities } from '../vendor-display-media';
+import {
+  resolveCustomerVendorAmenities,
+  resolveVendorProfileHeroGallery,
+  resolveVendorProfilePhotoUrl,
+  shouldShowVendorAmenities,
+} from '../vendor-display-media';
 
 describe('resolveCustomerVendorAmenities', () => {
   it('reads amenities and customAmenities from facility-shaped payload', () => {
@@ -37,5 +42,27 @@ describe('shouldShowVendorAmenities', () => {
     expect(shouldShowVendorAmenities('at_home')).toBe(true);
     expect(shouldShowVendorAmenities(undefined)).toBe(true);
     expect(shouldShowVendorAmenities(null)).toBe(true);
+  });
+});
+
+describe('vendor photo URL sanitization', () => {
+  it('drops bare S3 keys from profile photo', () => {
+    expect(resolveVendorProfilePhotoUrl({ profile_photo_url: 'vendors/foo/profile.jpg' })).toBeUndefined();
+    expect(
+      resolveVendorProfilePhotoUrl({ photoUrl: 'https://cdn.example/ok.webp' })
+    ).toBe('https://cdn.example/ok.webp');
+  });
+
+  it('hero gallery ignores empty photos arrays and bare keys, uses facilityPhotos', () => {
+    const urls = resolveVendorProfileHeroGallery({
+      facility: { photos: [] },
+      vendor: {
+        photos: [],
+        gallery: [],
+        facilityPhotos: ['https://signed.example/clinic.webp'],
+        photoUrl: 'vendors/x/legacy.jpg',
+      },
+    });
+    expect(urls).toEqual(['https://signed.example/clinic.webp']);
   });
 });

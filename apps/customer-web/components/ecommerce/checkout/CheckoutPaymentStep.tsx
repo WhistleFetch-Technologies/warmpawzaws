@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useCheckout } from '@/context/CheckoutProvider';
 import { CartPromotionSelect } from '@/components/ecommerce/cart/CartPromotionSelect';
 import { apiClient } from '@/lib/api-client';
+import { parseCartLineKey } from '@/lib/product-sku-client';
 
 function formatINR(amount: number): string {
   return `₹${amount.toFixed(2)}`;
@@ -21,6 +22,7 @@ const ECOM_WALLET_ENABLED = false;
 export function CheckoutPaymentStep() {
   const {
     phone,
+    cart,
     pricing,
     goNext,
     primaryVendorId,
@@ -74,6 +76,21 @@ export function CheckoutPaymentStep() {
       <CartPromotionSelect
         orderAmount={pricing.lineSubtotal}
         vendorId={primaryVendorId}
+        cartItems={cart.map((item) => {
+          const productId =
+            parseCartLineKey(item.id).productId ||
+            (item.warmpawzLine?.product?.id != null
+              ? String(item.warmpawzLine.product.id)
+              : item.id);
+          return {
+            productId,
+            id: productId,
+            quantity: item.quantity,
+            price: item.price,
+            categoryId: item.categoryId || item.category,
+            category: item.categoryId || item.category,
+          };
+        })}
         selected={selectedPromo}
         onApply={(p) =>
           applyCoupon({

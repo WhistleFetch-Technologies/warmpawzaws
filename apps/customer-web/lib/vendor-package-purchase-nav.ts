@@ -62,6 +62,71 @@ export function isVendorServicePackageRow(row: VendorServiceLike | null | undefi
   return false;
 }
 
+export const MIXED_PACKAGE_SERVICE_BOOK_ERROR =
+  'Packages must be booked separately from one-off services.';
+
+export function findVendorServiceRowBySelectionId(
+  rows: VendorServiceLike[] | null | undefined,
+  selectionId: string
+): VendorServiceLike | undefined {
+  const sid = String(selectionId || '').trim();
+  if (!sid || !rows?.length) return undefined;
+  return rows.find((r) => {
+    const id = r.id != null ? String(r.id) : '';
+    const serviceId = r.serviceId != null ? String(r.serviceId) : '';
+    return id === sid || serviceId === sid;
+  });
+}
+
+export function partitionVendorServiceRowsByPackage<T extends VendorServiceLike>(
+  rows: T[]
+): { packages: T[]; services: T[] } {
+  const packages: T[] = [];
+  const services: T[] = [];
+  for (const row of rows) {
+    if (isVendorServicePackageRow(row)) packages.push(row);
+    else services.push(row);
+  }
+  return { packages, services };
+}
+
+/** Package vs one-off: selecting a package is single-select; selecting a service drops packages. */
+export function toggleExclusivePackageOrServiceSelection(
+  current: Set<string>,
+  toggledId: string,
+  rows: VendorServiceLike[] | null | undefined
+): Set<string> {
+  const tid = String(toggledId || '').trim();
+  if (!tid) return new Set(current);
+
+  if (current.has(tid)) {
+    const next = new Set(current);
+    next.delete(tid);
+    return next;
+  }
+
+  const row = findVendorServiceRowBySelectionId(rows, tid);
+  if (!row) {
+    const next = new Set(current);
+    next.add(tid);
+    return next;
+  }
+
+  if (isVendorServicePackageRow(row)) {
+    return new Set([tid]);
+  }
+
+  const next = new Set<string>();
+  for (const id of current) {
+    const existing = findVendorServiceRowBySelectionId(rows, id);
+    if (!existing || !isVendorServicePackageRow(existing)) {
+      next.add(id);
+    }
+  }
+  next.add(tid);
+  return next;
+}
+
 /**
  * Payload for CustomerHomeWrapper `purchase-package`: must match walkerServiceData fields used there.
  * `vendorServiceId` = vendor_services.id (UUID in API).

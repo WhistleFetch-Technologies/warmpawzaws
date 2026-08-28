@@ -4,7 +4,6 @@
 
 import type { AssetType, ImageDisplayContext } from './image-types';
 import { isWebpKey } from './image-key-builder';
-import { thumbKeyForDisplay } from './image-content-index';
 import { ensureWebpFromLegacy, extractRawImageKey } from './image-migrator';
 import type { ImagePersistTarget } from './image-migrator-persist';
 import { persistMigratedImageKey } from './image-migrator-persist';
@@ -110,16 +109,11 @@ export async function resolveImageForContext(
     const stripped = stripPresignQuery(trimmed);
     const presigned = await presignS3GetUrlIfApplicable(stripped);
     if (presigned) {
-      const thumbKey = isWebpKey(key) ? thumbKeyForDisplay(key, null) : null;
-      let thumbUrl: string | null = null;
-      if (thumbKey) {
-        thumbUrl = await urlForImageKey(thumbKey);
-      }
-      const displayUrl = pickDisplayUrl(opts.context, presigned, thumbUrl);
+      const displayUrl = pickDisplayUrl(opts.context, presigned, null);
       return {
         imageKey: key,
         url: presigned,
-        thumbUrl,
+        thumbUrl: null,
         displayUrl,
         width: 0,
         height: 0,
@@ -132,7 +126,7 @@ export async function resolveImageForContext(
   let imageKey = key;
   let dto = await attachUrlsToImageDto({
     imageKey,
-    thumbKey: isWebpKey(imageKey) ? thumbKeyForDisplay(imageKey, null) : null,
+    thumbKey: null,
     width: 0,
     height: 0,
     thumbWidth: null,
@@ -169,7 +163,7 @@ export async function resolveImageForContext(
 /** Resolve a bare S3 key or URL to a presigned/CDN URL without migration. */
 export async function resolveBareImageUrl(
   raw: string | null | undefined,
-  context: ImageDisplayContext = 'detail',
+  _context: ImageDisplayContext = 'detail',
 ): Promise<string | null> {
   if (!raw) return null;
   const trimmed = String(raw).trim();
@@ -178,13 +172,6 @@ export async function resolveBareImageUrl(
 
   const key = extractRawImageKey(trimmed);
   if (key && !trimmed.includes('://')) {
-    if (context === 'list' && isWebpKey(key)) {
-      const thumbKey = thumbKeyForDisplay(key, null);
-      if (thumbKey) {
-        const thumbUrl = await urlForImageKey(thumbKey);
-        if (thumbUrl) return thumbUrl;
-      }
-    }
     return (await urlForImageKey(key)) ?? trimmed;
   }
 

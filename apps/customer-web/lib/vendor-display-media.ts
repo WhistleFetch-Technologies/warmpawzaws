@@ -9,6 +9,16 @@ function pickNonEmptyString(v: unknown): string | undefined {
   return s.length > 0 ? s : undefined;
 }
 
+/** Only values safe for <img src> — never bare S3 keys. */
+function asDisplayImageUrl(raw: unknown): string | undefined {
+  const s = pickNonEmptyString(raw);
+  if (!s) return undefined;
+  if (/^https?:\/\//i.test(s)) return s;
+  if (/^\/\//.test(s)) return `https:${s}`;
+  if (s.startsWith('data:') || s.startsWith('blob:')) return s;
+  return undefined;
+}
+
 function pushNestedStrings(target: unknown[], obj: unknown, keys: string[]) {
   if (!obj || typeof obj !== 'object') return;
   const o = obj as Record<string, unknown>;
@@ -19,19 +29,19 @@ function pushNestedStrings(target: unknown[], obj: unknown, keys: string[]) {
 
 /** Single gallery item → display URL (string or { url, key, … }). */
 function photoUrlFromGalleryItem(item: unknown): string | undefined {
-  const direct = pickNonEmptyString(item);
+  const direct = asDisplayImageUrl(item);
   if (direct) return direct;
   if (item && typeof item === 'object' && !Array.isArray(item)) {
     const o = item as Record<string, unknown>;
     return (
-      pickNonEmptyString(o.url) ||
-      pickNonEmptyString(o.photoUrl) ||
-      pickNonEmptyString(o.photo_url) ||
-      pickNonEmptyString(o.src) ||
-      pickNonEmptyString(o.imageUrl) ||
-      pickNonEmptyString(o.image) ||
-      pickNonEmptyString(o.photo) ||
-      pickNonEmptyString(o.key)
+      asDisplayImageUrl(o.url) ||
+      asDisplayImageUrl(o.photoUrl) ||
+      asDisplayImageUrl(o.photo_url) ||
+      asDisplayImageUrl(o.src) ||
+      asDisplayImageUrl(o.imageUrl) ||
+      asDisplayImageUrl(o.image) ||
+      asDisplayImageUrl(o.photo) ||
+      asDisplayImageUrl(o.key)
     );
   }
   return undefined;
@@ -140,7 +150,7 @@ export function resolveVendorProfilePhotoUrl(raw: Record<string, unknown> | null
   pushNestedStrings(candidates, raw.onboarding, ['profilePhotoUrl', 'profile_photo_url', 'logoUrl', 'logo_url']);
 
   for (const c of candidates) {
-    const s = pickNonEmptyString(c);
+    const s = asDisplayImageUrl(c);
     if (s) return s;
   }
 
@@ -183,12 +193,12 @@ export function getVendorHeroPhotoUrls(args: {
     ordered.push(...coalesceUrlArrayFromUnknown(v.photos));
     ordered.push(...coalesceUrlArrayFromUnknown(v.gallery));
     const vOne =
-      pickNonEmptyString(v.photoUrl) ||
-      pickNonEmptyString(v.photo_url) ||
-      pickNonEmptyString(v.profile_photo_url) ||
-      pickNonEmptyString(v.profilePhotoUrl) ||
-      pickNonEmptyString(v.profile_image) ||
-      pickNonEmptyString(v.photo);
+      asDisplayImageUrl(v.photoUrl) ||
+      asDisplayImageUrl(v.photo_url) ||
+      asDisplayImageUrl(v.profile_photo_url) ||
+      asDisplayImageUrl(v.profilePhotoUrl) ||
+      asDisplayImageUrl(v.profile_image) ||
+      asDisplayImageUrl(v.photo);
     if (vOne) ordered.push(vOne);
   }
 
@@ -197,7 +207,7 @@ export function getVendorHeroPhotoUrls(args: {
     ordered.push(...coalesceUrlArrayFromUnknown(p.photos));
     ordered.push(...coalesceUrlArrayFromUnknown(p.gallery));
     const pOne =
-      pickNonEmptyString(p.photo) || pickNonEmptyString(p.photoUrl) || pickNonEmptyString(p.photo_url);
+      asDisplayImageUrl(p.photo) || asDisplayImageUrl(p.photoUrl) || asDisplayImageUrl(p.photo_url);
     if (pOne) ordered.push(pOne);
   }
 

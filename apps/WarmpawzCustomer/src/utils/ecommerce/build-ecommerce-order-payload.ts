@@ -16,6 +16,8 @@ export type MobileCartItem = {
   skuId?: string;
   vendorId?: string;
   vendor_id?: string;
+  categoryId?: string;
+  category?: string;
   price: number;
   quantity: number;
 };
@@ -54,6 +56,7 @@ export function buildMobileEcommerceOrderPayload(params: {
     idempotencyKey: params.idempotencyKey,
     items: params.cart.map((item) => {
       const productId = item.productId || item.product_id || item.id;
+      const categoryId = item.categoryId || item.category;
       return {
         product_id: productId,
         productId,
@@ -61,6 +64,7 @@ export function buildMobileEcommerceOrderPayload(params: {
         quantity: item.quantity,
         unitPrice: item.price,
         vendorId: item.vendorId || item.vendor_id || '',
+        ...(categoryId ? { categoryId, category: categoryId } : {}),
       };
     }),
     shippingAddress: {

@@ -112,15 +112,17 @@ describe('getVendorListingPhotoUrl', () => {
     expect(resolveImageForContext).not.toHaveBeenCalled();
   });
 
-  it('prefers regeneratePresignedUrl for legacy non-WebP keys', async () => {
+  it('prefers resolveImageForContext displayUrl over regeneratePresignedUrl', async () => {
     regeneratePresignedUrl.mockResolvedValueOnce('https://signed.example/legacy.jpg');
     const url = await getVendorListingPhotoUrl({
       id: 'solo-legacy',
       vendor_type: 'solo',
       profile_photo_url: 'vendors/solo-legacy/profile/photo.jpg',
     });
-    expect(url).toBe('https://signed.example/legacy.jpg');
-    expect(regeneratePresignedUrl).toHaveBeenCalled();
+    expect(url).toBe(
+      'https://resolved.example/list/profile/vendors%2Fsolo-legacy%2Fprofile%2Fphoto.jpg'
+    );
+    expect(regeneratePresignedUrl).not.toHaveBeenCalled();
   });
 
   it('returns null when no photo sources', async () => {
