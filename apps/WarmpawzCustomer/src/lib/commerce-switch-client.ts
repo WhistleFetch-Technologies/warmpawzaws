@@ -15,7 +15,7 @@ type CacheState = {
   fetchedAt: number;
 };
 
-const CACHE_TTL_MS = 300_000;
+export const COMMERCE_SWITCH_CACHE_TTL_MS = 300_000;
 
 let cache: CacheState | null = null;
 let inflight: Promise<PublicCommerceConfiguration> | null = null;
@@ -23,7 +23,7 @@ let startupPrefetchStarted = false;
 
 function isFresh(entry: CacheState | null): entry is CacheState {
   if (!entry) return false;
-  return Date.now() - entry.fetchedAt < CACHE_TTL_MS;
+  return Date.now() - entry.fetchedAt < COMMERCE_SWITCH_CACHE_TTL_MS;
 }
 
 function normalizeConfig(
@@ -50,8 +50,18 @@ function marketplaceFallback(degraded: boolean): PublicCommerceConfiguration {
   };
 }
 
+function maybeRefreshStaleCache(): void {
+  if (!cache || isFresh(cache) || inflight) return;
+  void prefetchCommerceSwitchConfiguration().catch(() => {
+    // Errors stay inside fetch; sync readers keep last-known.
+  });
+}
+
 function readCachedConfig(): PublicCommerceConfiguration {
-  if (isFresh(cache)) return cache.config;
+  if (cache) {
+    maybeRefreshStaleCache();
+    return cache.config;
+  }
   return marketplaceFallback(false);
 }
 
@@ -62,7 +72,11 @@ export function clearCommerceSwitchCache(): void {
 }
 
 export function hasCommerceSwitchConfiguration(): boolean {
-  return isFresh(cache);
+  return cache != null;
+}
+
+export function isCommerceSwitchCacheStale(): boolean {
+  return cache != null && !isFresh(cache);
 }
 
 export function getCommerceSwitchConfigurationVersion(): number {
@@ -87,7 +101,10 @@ async function fetchCommerceSwitchConfigurationOnce(): Promise<PublicCommerceCon
     }
     return config;
   } catch (err) {
-    console.warn('[CommerceSwitch] config fetch failed, using marketplace default', err);
+    console.warn('[CommerceSwitch] config fetch failed', err);
+    if (cache) {
+      return cache.config;
+    }
     const fallback = marketplaceFallback(true);
     cache = { config: fallback, fetchedAt: Date.now() };
     return fallback;

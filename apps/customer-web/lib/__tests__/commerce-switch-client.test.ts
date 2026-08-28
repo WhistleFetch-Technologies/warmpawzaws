@@ -20,6 +20,8 @@ import {
   subscribeCommerceSwitchConfiguration,
   applyCommerceSwitchOptimisticHint,
   getHydratedCommerceConfiguration,
+  COMMERCE_SWITCH_CACHE_TTL_MS,
+  isCommerceSwitchCacheStale,
 } from '../commerce-switch-client';
 
 const mockedGet = apiClient.get as jest.Mock;
@@ -274,6 +276,100 @@ describe('commerce-switch-client (read-only)', () => {
 
     expect(hydrated?.activeModelId).toBe('warmpawz_pay');
     expect(hydrated?.version).toBe(9);
+  });
+
+  it('keeps last-known Pay after cache TTL elapses', async () => {
+    const now = 1_700_000_000_000;
+    const dateNow = jest.spyOn(Date, 'now').mockReturnValue(now);
+    mockedGet.mockResolvedValue({
+      activeModelId: 'warmpawz_pay',
+      version: 4,
+      schemaVersion: '1.0',
+      availableModels: ['marketplace', 'warmpawz_pay'],
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    });
+
+    await prefetchCommerceSwitchConfiguration();
+    dateNow.mockReturnValue(now + COMMERCE_SWITCH_CACHE_TTL_MS + 1);
+
+    expect(isWarmpawzPay()).toBe(true);
+    expect(getActiveCommerceModel()).toBe('warmpawz_pay');
+    expect(isCommerceSwitchCacheStale()).toBe(true);
+    dateNow.mockRestore();
+  });
+
+  it('preserves last-known Pay when refresh fails after TTL', async () => {
+    const now = 1_700_000_000_000;
+    const dateNow = jest.spyOn(Date, 'now').mockReturnValue(now);
+    mockedGet.mockResolvedValueOnce({
+      activeModelId: 'warmpawz_pay',
+      version: 4,
+      schemaVersion: '1.0',
+      availableModels: ['marketplace', 'warmpawz_pay'],
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    });
+
+    await prefetchCommerceSwitchConfiguration();
+    dateNow.mockReturnValue(now + COMMERCE_SWITCH_CACHE_TTL_MS + 1);
+    mockedGet.mockRejectedValueOnce(new Error('network error'));
+
+    const result = await refreshCommerceSwitchConfiguration({ force: true });
+
+    expect(result.activeModelId).toBe('warmpawz_pay');
+    expect(getActiveCommerceModel()).toBe('warmpawz_pay');
+    expect(isWarmpawzPay()).toBe(true);
+    dateNow.mockRestore();
+  });
+
+  it('restores stale session snapshot on hydrate', () => {
+    clearCommerceSwitchCache();
+    sessionStorage.setItem(
+      'warmpawz_commerce_switch_v1',
+      JSON.stringify({
+        config: {
+          activeModelId: 'warmpawz_pay',
+          version: 9,
+          schemaVersion: '1.0',
+          availableModels: ['marketplace', 'warmpawz_pay'],
+          updatedAt: '2026-01-03T00:00:00.000Z',
+        },
+        fetchedAt: Date.now() - COMMERCE_SWITCH_CACHE_TTL_MS - 5_000,
+      })
+    );
+
+    const hydrated = getHydratedCommerceConfiguration();
+
+    expect(hydrated?.activeModelId).toBe('warmpawz_pay');
+    expect(hydrated?.version).toBe(9);
+    expect(isWarmpawzPay()).toBe(true);
+  });
+
+  it('accepts a newer admin version after TTL', async () => {
+    const now = 1_700_000_000_000;
+    const dateNow = jest.spyOn(Date, 'now').mockReturnValue(now);
+    mockedGet
+      .mockResolvedValueOnce({
+        activeModelId: 'warmpawz_pay',
+        version: 4,
+        schemaVersion: '1.0',
+        availableModels: ['marketplace', 'warmpawz_pay'],
+        updatedAt: '2026-01-03T00:00:00.000Z',
+      })
+      .mockResolvedValueOnce({
+        activeModelId: 'marketplace',
+        version: 5,
+        schemaVersion: '1.0',
+        availableModels: ['marketplace', 'warmpawz_pay'],
+        updatedAt: '2026-01-04T00:00:00.000Z',
+      });
+
+    await prefetchCommerceSwitchConfiguration();
+    dateNow.mockReturnValue(now + COMMERCE_SWITCH_CACHE_TTL_MS + 1);
+    await refreshCommerceSwitchConfiguration({ force: true });
+
+    expect(getActiveCommerceModel()).toBe('marketplace');
+    expect(getCommerceSwitchConfigurationVersion()).toBe(5);
+    dateNow.mockRestore();
   });
 
   it('applyCommerceSwitchOptimisticHint updates cache before fetch', () => {

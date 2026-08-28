@@ -37,6 +37,15 @@ describe('shouldAcceptCommerceConfig', () => {
     ).toBe(true);
   });
 
+  it('accepts newer marketplace version from admin', () => {
+    expect(
+      shouldAcceptCommerceConfig(
+        { ...warmpawzPayV4, activeModelId: 'marketplace', version: 5 },
+        warmpawzPayV4
+      )
+    ).toBe(true);
+  });
+
   it('accepts same version with different activeModelId', () => {
     expect(
       shouldAcceptCommerceConfig(

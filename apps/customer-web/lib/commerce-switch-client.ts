@@ -17,7 +17,7 @@ type CacheState = {
   fetchedAt: number;
 };
 
-const CACHE_TTL_MS = 300_000;
+export const COMMERCE_SWITCH_CACHE_TTL_MS = 300_000;
 const SESSION_STORAGE_KEY = 'warmpawz_commerce_switch_v1';
 
 let cache: CacheState | null = null;
@@ -33,7 +33,12 @@ const listeners = new Set<CommerceConfigListener>();
 
 function isFresh(entry: CacheState | null): entry is CacheState {
   if (!entry) return false;
-  return Date.now() - entry.fetchedAt < CACHE_TTL_MS;
+  return Date.now() - entry.fetchedAt < COMMERCE_SWITCH_CACHE_TTL_MS;
+}
+
+function lastKnownConfig(): PublicCommerceConfiguration | null {
+  restoreCacheFromSession();
+  return cache?.config ?? null;
 }
 
 function normalizeConfig(
@@ -60,8 +65,19 @@ function marketplaceFallback(degraded: boolean): PublicCommerceConfiguration {
   };
 }
 
+function maybeRefreshStaleCache(): void {
+  if (!cache || isFresh(cache) || inflight) return;
+  void prefetchCommerceSwitchConfiguration().catch(() => {
+    // Errors stay inside fetch; sync readers keep last-known.
+  });
+}
+
 function readCachedConfig(): PublicCommerceConfiguration {
-  if (isFresh(cache)) return cache.config;
+  const known = lastKnownConfig();
+  if (known) {
+    maybeRefreshStaleCache();
+    return known;
+  }
   return marketplaceFallback(false);
 }
 
@@ -71,7 +87,7 @@ function restoreCacheFromSession(): void {
     const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw) as CacheState;
-    if (parsed?.config && Date.now() - parsed.fetchedAt < CACHE_TTL_MS) {
+    if (parsed?.config) {
       cache = parsed;
     }
   } catch {
@@ -88,11 +104,15 @@ function persistCacheToSession(): void {
   }
 }
 
-/** Restore session snapshot and return cached config when fresh (survives HMR remounts). */
+/** Restore session snapshot and return last-known config (survives HMR remounts and TTL). */
 export function getHydratedCommerceConfiguration(): PublicCommerceConfiguration | null {
+  return lastKnownConfig();
+}
+
+/** True when a last-known config exists but TTL has elapsed (refresh signal, not discard). */
+export function isCommerceSwitchCacheStale(): boolean {
   restoreCacheFromSession();
-  if (isFresh(cache)) return cache.config;
-  return null;
+  return cache != null && !isFresh(cache);
 }
 
 /** Apply FCM/broadcast hint immediately so Pay UI updates before GET completes. */
@@ -106,8 +126,7 @@ export function applyCommerceSwitchOptimisticHint(hint: {
   if (version < 1 || !activeModelId) return false;
   if (activeModelId !== 'marketplace' && activeModelId !== 'warmpawz_pay') return false;
 
-  restoreCacheFromSession();
-  const current = isFresh(cache) ? cache.config : null;
+  const current = lastKnownConfig();
   if (current && !shouldAcceptCommerceConfig({ ...current, version, activeModelId }, current)) {
     return false;
   }
@@ -150,7 +169,7 @@ export function shouldAcceptCommerceConfig(
 }
 
 function storeConfig(config: PublicCommerceConfiguration): PublicCommerceConfiguration {
-  const current = isFresh(cache) ? cache.config : null;
+  const current = lastKnownConfig();
   if (current && !shouldAcceptCommerceConfig(config, current)) {
     return current;
   }
@@ -188,7 +207,7 @@ export function clearCommerceSwitchCache(): void {
 }
 
 export function hasCommerceSwitchConfiguration(): boolean {
-  return isFresh(cache);
+  return lastKnownConfig() != null;
 }
 
 export function getCommerceSwitchConfigurationVersion(): number {
@@ -200,7 +219,7 @@ async function fetchCommerceSwitchConfigurationOnce(
 ): Promise<PublicCommerceConfiguration> {
   const resolveAfterFetch = (config: PublicCommerceConfiguration): PublicCommerceConfiguration => {
     if (requestGeneration !== fetchGeneration) {
-      return isFresh(cache) ? cache.config : config;
+      return lastKnownConfig() ?? config;
     }
     return storeConfig(config);
   };
@@ -217,10 +236,11 @@ async function fetchCommerceSwitchConfigurationOnce(
   } catch (err) {
     console.warn('[CommerceSwitch] config fetch failed', err);
     if (requestGeneration !== fetchGeneration) {
-      return readCachedConfig();
+      return lastKnownConfig() ?? marketplaceFallback(true);
     }
-    if (isFresh(cache)) {
-      return cache.config;
+    const known = lastKnownConfig();
+    if (known) {
+      return known;
     }
     const fallback = marketplaceFallback(true);
     return storeConfig(fallback);
@@ -287,7 +307,7 @@ export async function syncCommerceSwitchConfiguration(options?: {
   syncInflight = refreshCommerceSwitchConfiguration({ force: true })
     .then((config) => {
       if (generation < syncGeneration && config.version < pendingMinVersion) {
-        return isFresh(cache) ? cache!.config : config;
+        return lastKnownConfig() ?? config;
       }
       if (config.version >= pendingMinVersion) {
         pendingMinVersion = config.version;

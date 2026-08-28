@@ -16,13 +16,13 @@ type CacheState = {
   fetchedAt: number;
 };
 
-const CACHE_TTL_MS = 300_000;
+export const COMMERCE_SWITCH_CACHE_TTL_MS = 300_000;
 let cache: CacheState | null = null;
 let inflight: Promise<PublicCommerceConfiguration | null> | null = null;
 
 function isFresh(entry: CacheState | null): entry is CacheState {
   if (!entry) return false;
-  return Date.now() - entry.fetchedAt < CACHE_TTL_MS;
+  return Date.now() - entry.fetchedAt < COMMERCE_SWITCH_CACHE_TTL_MS;
 }
 
 export function clearCommerceSwitchCache(): void {
@@ -51,9 +51,12 @@ export async function fetchCommerceSwitchConfiguration(): Promise<PublicCommerce
         return config;
       } catch (err) {
         console.warn('[CommerceSwitch] admin fetch failed', err);
+        if (cache) {
+          return cache.config;
+        }
         const fallback: PublicCommerceConfiguration = {
           activeModelId: DEFAULT_COMMERCE_MODEL_ID,
-          version: cache?.config.version ?? 1,
+          version: 1,
           schemaVersion: '1.0',
           availableModels: [DEFAULT_COMMERCE_MODEL_ID],
           updatedAt: new Date().toISOString(),

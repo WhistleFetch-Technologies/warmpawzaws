@@ -20,6 +20,7 @@ import { apiClient } from '@/lib/api-client';
 import {
   getCommerceSwitchConfiguration,
   getHydratedCommerceConfiguration,
+  isCommerceSwitchCacheStale,
   prefetchCommerceSwitchConfigurationOnStartup,
   shouldAcceptCommerceConfig,
   subscribeCommerceSwitchConfiguration,
@@ -92,10 +93,14 @@ export function CommerceConfigProvider({ children }: { children: ReactNode }) {
   const runFallbackVersionCheck = useCallback(async () => {
     const remoteVersion = await fetchRemoteConfigurationVersion();
     if (remoteVersion == null) return;
+    if (isCommerceSwitchCacheStale()) {
+      void syncCommerceSwitchConfiguration({ force: true }).then(applyConfigIfChanged);
+      return;
+    }
     if (!isLoaded || remoteVersion > config.version) {
       requestCommerceSwitchSync({ configurationVersion: remoteVersion }, 'fallback');
     }
-  }, [config.version, isLoaded]);
+  }, [applyConfigIfChanged, config.version, isLoaded]);
 
   useEffect(() => {
     prefetchCommerceSwitchConfigurationOnStartup();
