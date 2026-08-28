@@ -7,6 +7,12 @@ export const WAPPT_APPOINTMENT_SERVICE_ID = 'warmpawz_appointments';
 export const WAPPT_BOOKING_MODE = 'warmpawz_appointments' as const;
 export const WAPPT_DEFAULT_SLOT_DURATION_MIN = 30;
 
+/** Catalogue appointment fee only — never fall back to marketplace service list price. */
+export function wapptReviewAmount(appointmentFee: number | null | undefined): number {
+  const n = Number(appointmentFee);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0;
+}
+
 export function isWarmpawzPayCommerceActive(): boolean {
   return isWarmpawzPay();
 }

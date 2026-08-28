@@ -35,6 +35,7 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import {
   getWarmpawzAppointmentServiceLabel,
+  wapptReviewAmount,
   WAPPT_APPOINTMENT_SERVICE_ID,
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
   WAPPT_BOOKING_MODE,
@@ -1169,9 +1170,9 @@ export function VetBookingRouter({
 
   const bookingSummaryBaseAmount = useMemo(() => {
     if (useWapptUnifiedUi) {
-      return wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0;
+      return wapptReviewAmount(wapptBooking.appointmentFee);
     }
-    if (appointmentsMode) return wapptBooking.appointmentFee ?? selectedVendorService?.price ?? 0;
+    if (appointmentsMode) return wapptReviewAmount(wapptBooking.appointmentFee);
     if (selectedPackageForSwitch) return 0;
     return allSelectedServices?.length
       ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0)
@@ -1217,7 +1218,7 @@ export function VetBookingRouter({
   };
 
   const wapptReviewTotal = useWapptUnifiedUi
-    ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+    ? wapptReviewAmount(wapptBooking.appointmentFee)
     : bookingSummaryBaseAmount;
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader

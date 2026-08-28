@@ -4,6 +4,7 @@ import {
   isWalletDebitAllowedOnPaymentRequest,
   WAPPT_APPOINTMENT_SERVICE_ID,
   WAPPT_VENDOR_PROFILE_SCREEN,
+  wapptReviewAmount,
 } from '@/lib/warmpawz-appointments-customer';
 import { resolveWapptVendorProfileConfig } from '@/lib/warmpawz-appointments/wappt-vendor-profile-config';
 import { resolveWapptVendorListConfig } from '@/lib/warmpawz-appointments/wappt-vendor-list-config';
@@ -27,6 +28,14 @@ describe('warmpawz appointments profile nav', () => {
 
   it('exposes stable profile screen id', () => {
     expect(WAPPT_VENDOR_PROFILE_SCREEN).toBe('wappt-vendor-profile');
+  });
+});
+
+describe('wapptReviewAmount', () => {
+  it('uses catalogue fee only and ignores marketplace list prices', () => {
+    expect(wapptReviewAmount(99)).toBe(99);
+    expect(wapptReviewAmount(null)).toBe(0);
+    expect(wapptReviewAmount(0)).toBe(0);
   });
 });
 

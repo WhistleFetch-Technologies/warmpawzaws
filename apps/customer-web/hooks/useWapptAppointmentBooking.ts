@@ -77,7 +77,7 @@ export function useWapptAppointmentBooking(opts: {
           serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
           service_id: WAPPT_APPOINTMENT_SERVICE_ID,
           name: getWarmpawzAppointmentServiceLabel({ category: wapptCategory, serviceStyle: style }),
-          price: fee > 0 ? fee : initialPrice ?? 0,
+          price: fee > 0 ? fee : 0,
           duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
           serviceStyle: style,
         });

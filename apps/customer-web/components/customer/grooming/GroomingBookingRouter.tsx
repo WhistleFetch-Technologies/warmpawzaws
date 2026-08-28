@@ -30,6 +30,7 @@ import { BookingConfirmationSavings } from '../pricing/BookingConfirmationSaving
 import { MarketplaceReview } from '../marketplace/MarketplaceReview';
 import {
   getWarmpawzAppointmentServiceLabel,
+  wapptReviewAmount,
   WAPPT_APPOINTMENT_SERVICE_ID,
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
   WAPPT_BOOKING_MODE,
@@ -1076,7 +1077,7 @@ export function GroomingBookingRouter({
   };
 
   const reviewTotal = appointmentsMode
-    ? appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+    ? wapptReviewAmount(appointmentFee)
     : (allSelectedServices && allSelectedServices.length > 0
       ? allSelectedServices.reduce((sum, s) => sum + groomingCheckoutListPrice(s), 0)
       : groomingCheckoutListPrice(selectedServiceOption || allSelectedServices?.[0], price ?? 0)) ?? 0;
@@ -1214,7 +1215,7 @@ export function GroomingBookingRouter({
         showAddressSelection={selectedServiceType === 'at_home'}
         baseAmount={
           appointmentsMode
-            ? (appointmentFee ?? selectedVendorService?.price ?? price ?? 0)
+            ? wapptReviewAmount(appointmentFee)
             : allSelectedServices.reduce((total, s) => total + groomingCheckoutListPrice(s), 0) ||
               groomingCheckoutListPrice(selectedServiceOption, price || 499)
         }

@@ -18,6 +18,7 @@ import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import {
   getWarmpawzAppointmentServiceLabel,
   resolveWarmpawzBookingCategory,
+  wapptReviewAmount,
   WAPPT_APPOINTMENT_SERVICE_ID,
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
   WAPPT_BOOKING_MODE,
@@ -887,7 +888,7 @@ export function TrainingBookingRouter({
   const selectedServiceOption = getSelectedServiceOption();
 
   const reviewTotal = appointmentsMode
-    ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+    ? wapptReviewAmount(wapptBooking.appointmentFee)
     : allSelectedServices?.length
       ? allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0)
       : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;

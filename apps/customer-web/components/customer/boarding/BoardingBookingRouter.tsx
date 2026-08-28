@@ -42,6 +42,7 @@ import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
 import { useWapptBookingSlots } from '@/hooks/useWapptBookingSlots';
 import {
   getWarmpawzAppointmentServiceLabel,
+  wapptReviewAmount,
   WAPPT_APPOINTMENT_SERVICE_ID,
   WAPPT_BOOKING_MODE,
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
@@ -872,8 +873,7 @@ export function BoardingBookingRouter({
     selectedDate: checkInDate,
     enabled: appointmentsMode && !!vendorId,
   });
-  const wapptReviewTotal =
-    wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0;
+  const wapptReviewTotal = wapptReviewAmount(wapptBooking.appointmentFee);
 
   useEffect(() => {
     if (hasAuthenticatedCustomerSession() && phone) {

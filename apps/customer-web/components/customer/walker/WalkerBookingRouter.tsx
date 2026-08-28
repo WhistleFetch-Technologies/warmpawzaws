@@ -36,6 +36,7 @@ import {
   WAPPT_BOOKING_MODE,
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
   getWarmpawzAppointmentServiceLabel,
+  wapptReviewAmount,
 } from '@/lib/warmpawz-appointments-customer';
 import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
 import { WapptBookingSummaryStep } from '../warmpawz-appointments/WapptBookingSummaryStep';
@@ -847,7 +848,7 @@ export function WalkerBookingRouter({
   const selectedServiceOption = serviceOptions.find((s) => s.id === selectedVendorServiceId);
 
   const reviewTotal = appointmentsMode
-    ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+    ? wapptReviewAmount(wapptBooking.appointmentFee)
     : selectedServiceOption?.price ?? price ?? 0;
 
   const dashboardStats: Array<{ value: string; label: string }> = [];
@@ -935,7 +936,7 @@ export function WalkerBookingRouter({
         showAddressSelection={true}
         baseAmount={
           appointmentsMode
-            ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 299
+            ? wapptReviewAmount(wapptBooking.appointmentFee)
             : selectedServiceOption?.price || price || 299
         }
         priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}

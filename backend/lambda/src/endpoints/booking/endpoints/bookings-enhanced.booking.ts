@@ -97,6 +97,7 @@ import {
   UpdateBookingStatusRequestSchema,
 } from '@warmpawz/api-contracts/bookings';
 import {
+  applyWapptCatalogueFeeAmounts,
   isWarmpawzAppointmentsBooking,
   resolveWarmpawzAppointmentsBookingPreflight,
   WAPPT_BOOKING_MODE,
@@ -1222,7 +1223,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                   : petSittingServerTotalRupee != null
                     ? petSittingServerTotalRupee
                     : (amount || 0);
-        const bookingListPrice = resolveBookingListPrice({
+        let bookingListPrice = resolveBookingListPrice({
           stayOrServerBilledTotal:
             boardingServerTotalRupee ?? swimmingServerTotalRupee ?? petSittingServerTotalRupee,
           vendorCustomPrice: (service as any)?.custom_price,
@@ -1230,13 +1231,19 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           selectedServices,
         });
         const listedServerPrice = bookingListPrice;
-        const grossPayableBeforeWallet =
+        let grossPayableBeforeWallet =
           isPackageBooking || isSubscriptionBooking
             ? 0
             : listedServerPrice > 0
               ? Math.max(calculatedBasePrice, listedServerPrice)
               : calculatedBasePrice;
-        const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : grossPayableBeforeWallet;
+        let calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : grossPayableBeforeWallet;
+        if (wapptAppointmentFee != null) {
+          const locked = applyWapptCatalogueFeeAmounts(wapptAppointmentFee);
+          bookingListPrice = locked.basePrice;
+          grossPayableBeforeWallet = locked.totalAmount;
+          calculatedFinalAmount = locked.totalAmount;
+        }
 
         let resolvedBookingPromotions: Awaited<ReturnType<typeof resolveBookingPromotions>> | null =
           null;
@@ -1588,12 +1595,18 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           booking_time: bookingTime,
           service_type: serviceType || 'at_vendor',
           address: fullAddressText,
-          base_price: resolvePersistedBookingBasePrice({
-            listPrice: bookingListPrice,
-            clientServicePrice: null,
-            calculatedBasePrice,
-          }),
-          total_amount: calculatedFinalAmount, // ✅ 0 for package or subscription
+          base_price:
+            wapptAppointmentFee != null
+              ? applyWapptCatalogueFeeAmounts(wapptAppointmentFee).basePrice
+              : resolvePersistedBookingBasePrice({
+                  listPrice: bookingListPrice,
+                  clientServicePrice: null,
+                  calculatedBasePrice,
+                }),
+          total_amount:
+            wapptAppointmentFee != null
+              ? applyWapptCatalogueFeeAmounts(wapptAppointmentFee).totalAmount
+              : calculatedFinalAmount,
           // Slot validated in-tx: confirmed once paid (or immediately if no online payment due).
           // Note: omit confirmed_at / confirmed_by here — many RDS schemas lack these columns; INSERT retry budget is limited.
           status: bookingRowStatus,
@@ -1729,7 +1742,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         const financialMetaRaw = body.financialMeta ?? body.financial_meta;
-        if (financialMetaRaw && typeof financialMetaRaw === 'object') {
+        if (wapptAppointmentFee != null) {
+          const locked = applyWapptCatalogueFeeAmounts(wapptAppointmentFee);
+          bookingData.base_price = locked.basePrice;
+          bookingData.total_amount = locked.totalAmount;
+          bookingData.tax_amount = locked.taxAmount;
+        } else if (financialMetaRaw && typeof financialMetaRaw === 'object') {
           const fm = financialMetaRaw as Record<string, unknown>;
           const finalPaid = parseFloat(String(fm.finalPaid ?? fm.final_paid ?? ''));
           const servicePrice = parseFloat(String(fm.servicePrice ?? fm.service_price ?? ''));
