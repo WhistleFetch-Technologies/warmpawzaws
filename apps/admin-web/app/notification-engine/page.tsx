@@ -324,9 +324,11 @@ export default function NotificationEnginePage() {
         setSuccess('Campaign scheduled');
       } else {
         const sendRes = await apiClient.post<any>(`/admin/notifications/campaigns/${id}/send`);
-        const sent = sendRes.sentRecipients ?? estimate?.estimatedRecipients;
+        const queued = sendRes.estimatedRecipients ?? estimate?.estimatedRecipients;
         setSuccess(
-          `Campaign sent to ${sent ?? '?'} recipients (inbox + push). Use "New campaign" to send again.`
+          sendRes.status === 'QUEUED' || sendRes.queued
+            ? `Campaign queued for ${queued ?? '?'} recipients with fresh FCM (async delivery). Check analytics for progress.`
+            : `Campaign sent to ${sendRes.sentRecipients ?? queued ?? '?'} recipients (inbox + push). Use "New campaign" to send again.`
         );
         setDraftCampaignId(null);
         setEstimate(null);

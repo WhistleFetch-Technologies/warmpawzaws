@@ -123,7 +123,7 @@ export async function processDueScheduledCampaigns(): Promise<ScheduledDrainResu
       const targeting = await loadCampaignTargeting(campaignId);
       const delivery = await executeCampaignDelivery(campaign, targeting, null);
 
-      if (delivery.status === 'SENT' || delivery.sentRecipients > 0) {
+      if (delivery.status === 'QUEUED' || delivery.status === 'SENT' || delivery.estimatedRecipients > 0) {
         sent += 1;
       } else {
         failed += 1;
