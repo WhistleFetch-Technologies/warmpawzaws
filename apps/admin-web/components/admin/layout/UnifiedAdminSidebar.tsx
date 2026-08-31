@@ -41,6 +41,7 @@ import {
   type MarketingPortalNavGroup,
 } from '@/lib/marketing-portal-nav';
 import { getStoredAdminPermissions, hasAdminPortalPermission } from '@/lib/admin-permissions';
+import { apiClient } from '@/lib/api-client';
 import {
   adminPortalNavItemVisible,
   getAdminPortalFooterNavItems,
