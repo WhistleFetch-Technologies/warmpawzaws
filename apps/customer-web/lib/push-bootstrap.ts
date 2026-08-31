@@ -351,6 +351,29 @@ function markPushRegisteredForUser(userId: string): void {
   localStorage.setItem(PUSH_REGISTERED_USER_KEY, userId.trim());
 }
 
+/**
+ * Bearer for /push/register-device + unregister.
+ * Keepalive fetch must send Authorization — Lambda requireAuth rejects anonymous POSTs (401).
+ */
+async function resolvePushAuthBearer(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const { getCognitoIdToken, refreshCognitoTokensIfNeeded } = await import('./cognito-auth');
+    await refreshCognitoTokensIfNeeded().catch(() => undefined);
+    const cognito = getCognitoIdToken();
+    if (cognito) return cognito;
+  } catch {
+    /* fall through to legacy authToken */
+  }
+  return localStorage.getItem('authToken');
+}
+
+function buildPushAuthHeaders(bearer: string | null): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
+  return headers;
+}
+
 async function postRegisterDeviceToBackend(
   opts: Pick<PushBootstrapOptions, 'userId' | 'userType' | 'apiClient'>,
   fcmToken: string,
@@ -360,6 +383,12 @@ async function postRegisterDeviceToBackend(
   const dedupeKey = `${opts.userId}:${deviceId}:${fcmToken.slice(0, 32)}`;
   if (dedupeKey === lastBackendRegisterKey) {
     return true;
+  }
+
+  const bearer = await resolvePushAuthBearer();
+  if (!bearer) {
+    console.warn('[push-bootstrap] POST /push/register-device skipped — no auth token', { source });
+    return false;
   }
 
   const { getApiBaseUrl } = await import('./api-client');
@@ -374,7 +403,7 @@ async function postRegisterDeviceToBackend(
 
   const res = await fetch(`${apiBaseUrl}/push/register-device`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildPushAuthHeaders(bearer),
     body: JSON.stringify(body),
     keepalive: true,
   });
@@ -1078,6 +1107,7 @@ export async function teardownPushNotifications(
 ): Promise<void> {
   if (typeof window === 'undefined') return;
   const deviceId = localStorage.getItem(PUSH_DEVICE_ID_KEY);
+  const bearer = await resolvePushAuthBearer();
   localStorage.removeItem(PUSH_TOKEN_CACHE_KEY);
   clearLocalPushRegistrationMarkers();
   const { getApiBaseUrl } = await import('./api-client');
@@ -1085,7 +1115,7 @@ export async function teardownPushNotifications(
   try {
     await fetch(`${apiBaseUrl}/push/unregister-device`, {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildPushAuthHeaders(bearer),
       keepalive: true,
       body: JSON.stringify({
         userId:   opts.userId,
