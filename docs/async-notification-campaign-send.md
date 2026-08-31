@@ -5,9 +5,10 @@
 
 ## Approach (no EventBridge / no cron)
 1. `/send` resolves fresh-FCM audience, inserts `PENDING` deliveries, sets `QUEUED`→`SENDING`, returns **202**.
-2. `Lambda.invoke` (`InvocationType: Event`) on the **same** API handler with `{ job: "notification-campaign-delivery", campaignId }`.
+2. `Lambda.invoke` (`InvocationType: Event`) on the **same** API handler with `{ job: "notification-campaign-delivery", campaignId, hop }`.
 3. Worker claims ≤40 `PENDING` rows (`FOR UPDATE SKIP LOCKED`), delivers via existing `dispatchCampaignNotification` (unchanged FCM/APNs), max **2 attempts**.
-4. If more `PENDING` remain → **one** self-invoke. Idle → **zero** extra invocations.
+4. If more `PENDING` remain → **one** self-invoke with `hop + 1`. Idle → **zero** extra invocations.
+5. **Hard cap:** `MAX_CAMPAIGN_CHAIN_HOPS` = ceil(5000/40)+10 = **135** hops per campaign. Further self-invokes are refused; leftover `PENDING` rows fail as `chain_hop_cap`.
 
 ## Explicit non-goals
 - No new EventBridge schedules

@@ -152,7 +152,7 @@ export async function executeCampaignDelivery(
   }).catch(() => undefined);
 
   try {
-    await invokeCampaignDeliveryWorker(campaign.id);
+    await invokeCampaignDeliveryWorker(campaign.id, 1);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[campaign-enqueue] worker invoke failed:', msg);

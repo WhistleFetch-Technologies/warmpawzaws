@@ -7,14 +7,18 @@
 import { insert, query, update } from '../database/rds-connection';
 import { dispatchCampaignNotification } from './notification-dispatch';
 import {
+  CAMPAIGN_WORKER_BATCH_SIZE,
+  MAX_CAMPAIGN_CHAIN_HOPS,
   invokeCampaignDeliveryWorker,
+  isCampaignChainHopAllowed,
+  normalizeCampaignHop,
   type CampaignDeliveryJobEvent,
 } from './notification-campaign-invoke';
 import { isNotificationPipelineEnabled } from './notification-pipeline-kill-switch';
 import type { CampaignRow } from './notification-campaign-processor';
 
 /** Recipients per worker invoke — keeps one invoke well under API/Lambda timeout. */
-const BATCH_SIZE = 40;
+const BATCH_SIZE = CAMPAIGN_WORKER_BATCH_SIZE;
 /** Initial try + 1 retry for transient failures (promotional). */
 const MAX_ATTEMPTS = 2;
 
@@ -124,10 +128,39 @@ async function finalizeCampaignIfDone(campaignId: string): Promise<boolean> {
   return true;
 }
 
+async function abortChainAtHopCap(campaignId: string, hop: number): Promise<void> {
+  await query(
+    `UPDATE notification_campaign_deliveries
+     SET status = 'FAILED',
+         failure_reason = 'chain_hop_cap',
+         processed_at = NOW()
+     WHERE campaign_id = $1::uuid
+       AND status = 'PENDING'`,
+    [campaignId]
+  ).catch(() => undefined);
+
+  console.warn(
+    JSON.stringify({
+      metric: 'notification_campaign_worker',
+      status: 'chain_hop_cap',
+      campaignId,
+      hop,
+      maxHops: MAX_CAMPAIGN_CHAIN_HOPS,
+    })
+  );
+  await finalizeCampaignIfDone(campaignId);
+}
+
 export async function processCampaignDeliveryJob(event: CampaignDeliveryJobEvent): Promise<void> {
   const campaignId = event.campaignId;
+  const hop = normalizeCampaignHop(event.hop);
+  if (!isCampaignChainHopAllowed(hop)) {
+    await abortChainAtHopCap(campaignId, hop);
+    return;
+  }
+
   if (!isNotificationPipelineEnabled()) {
-    console.log(JSON.stringify({ metric: 'notification_campaign_worker', status: 'pipeline_disabled', campaignId }));
+    console.log(JSON.stringify({ metric: 'notification_campaign_worker', status: 'pipeline_disabled', campaignId, hop }));
     return;
   }
 
@@ -228,6 +261,7 @@ export async function processCampaignDeliveryJob(event: CampaignDeliveryJobEvent
     JSON.stringify({
       metric: 'notification_campaign_worker_batch',
       campaignId,
+      hop,
       batchSize: batch.length,
       pushSuccess,
       pushFailure,
@@ -235,8 +269,13 @@ export async function processCampaignDeliveryJob(event: CampaignDeliveryJobEvent
   );
 
   const done = await finalizeCampaignIfDone(campaignId);
-  if (!done) {
-    // One continuation invoke only — no fan-out, no cron
-    await invokeCampaignDeliveryWorker(campaignId);
+  if (done) return;
+
+  if (hop >= MAX_CAMPAIGN_CHAIN_HOPS) {
+    await abortChainAtHopCap(campaignId, hop);
+    return;
   }
+
+  // One continuation invoke only — no fan-out, no cron. Hop is strictly increasing.
+  await invokeCampaignDeliveryWorker(campaignId, hop + 1);
 }
