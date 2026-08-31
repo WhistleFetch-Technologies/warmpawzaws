@@ -501,7 +501,7 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
 
       const delivery = await executeCampaignDelivery(campaign, targeting, adminId);
 
-      if (delivery.status === 'FAILED' && delivery.sentRecipients === 0) {
+      if (delivery.status === 'FAILED' && delivery.estimatedRecipients === 0) {
         return c.json({
           error: 'Campaign delivery failed',
           warnings: estimate.warnings,
@@ -509,9 +509,11 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
         }, 500);
       }
 
+      // Async enqueue — worker self-chains; avoid waiting for FCM fan-out (API GW 30s).
       return c.json({
         success: true,
         status: delivery.status,
+        queued: delivery.status === 'QUEUED' || delivery.status === 'SENDING',
         estimatedRecipients: delivery.estimatedRecipients,
         sentRecipients: delivery.sentRecipients,
         failedRecipients: delivery.failedRecipients,
@@ -519,7 +521,11 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
         pushFailureCount: delivery.pushFailureCount,
         warnings: estimate.warnings,
         errors: delivery.errors,
-      });
+        message:
+          delivery.status === 'QUEUED' || delivery.estimatedRecipients > 0
+            ? 'Campaign queued; delivery runs asynchronously for recipients with fresh FCM tokens.'
+            : undefined,
+      }, delivery.status === 'FAILED' ? 500 : 202);
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Send failed';
       return c.json({ error: msg }, 500);

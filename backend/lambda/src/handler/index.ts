@@ -1317,11 +1317,36 @@ function applyHttpPathPrefixMapping(path: string): string {
 }
 
 export const handler = async (
-  event: APIGatewayProxyEventV2,
+  event: APIGatewayProxyEventV2 | Record<string, unknown>,
   context: Context
 ): Promise<APIGatewayProxyResultV2> => {
   // ✅ CRITICAL CORS FIX: Wrap entire handler in try-catch to ensure OPTIONS always returns 200
   try {
+    // Async campaign delivery job (Lambda.invoke Event) — no API Gateway, no EventBridge cron.
+    if (
+      event &&
+      typeof event === 'object' &&
+      (event as { job?: string }).job === 'notification-campaign-delivery' &&
+      typeof (event as { campaignId?: string }).campaignId === 'string'
+    ) {
+      try {
+        const { processCampaignDeliveryJob } = await import('../utils/notification-campaign-worker');
+        await processCampaignDeliveryJob(
+          event as { job: 'notification-campaign-delivery'; campaignId: string }
+        );
+        return { statusCode: 200, body: JSON.stringify({ ok: true, job: 'notification-campaign-delivery' }) };
+      } catch (jobErr) {
+        console.error('[HANDLER] campaign delivery job failed:', jobErr);
+        return {
+          statusCode: 500,
+          body: JSON.stringify({
+            ok: false,
+            error: jobErr instanceof Error ? jobErr.message : 'campaign job failed',
+          }),
+        };
+      }
+    }
+
     // ✅ CRITICAL CORS FIX: Handle OPTIONS requests FIRST, before ANY other code
     // This MUST be the absolute first thing - even before null checks
     // Self-contained OPTIONS handler that doesn't depend on any other functions
@@ -1329,7 +1354,7 @@ export const handler = async (
     // Check for OPTIONS method or preflight headers (handle null/undefined event safely)
     let isOptions = false;
     try {
-      const httpMethod = event?.requestContext?.http?.method || 
+      const httpMethod = (event as APIGatewayProxyEventV2)?.requestContext?.http?.method || 
                         (event as any)?.requestContext?.httpMethod || 
                         (event as any)?.httpMethod;
       isOptions = httpMethod === 'OPTIONS' || 
