@@ -18,8 +18,25 @@ type VendorHeroPhotoCarouselProps = {
 export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: VendorHeroPhotoCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const uniquePhotos = useMemo(() => dedupeHeroPhotoUrls(photos), [photos]);
+  const [failed, setFailed] = useState<Set<string>>(() => new Set());
+  const uniquePhotos = useMemo(
+    () => dedupeHeroPhotoUrls(photos).filter((src) => !failed.has(src)),
+    [photos, failed]
+  );
   const photosKey = uniquePhotos.join('|');
+
+  useEffect(() => {
+    setFailed(new Set());
+  }, [photos]);
+
+  const markFailed = useCallback((src: string) => {
+    setFailed((prev) => {
+      if (prev.has(src)) return prev;
+      const next = new Set(prev);
+      next.add(src);
+      return next;
+    });
+  }, []);
 
   const updateIndexFromScroll = useCallback(() => {
     const el = scrollerRef.current;
@@ -56,7 +73,12 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
   if (uniquePhotos.length === 1) {
     return (
       <div className={frameClassName}>
-        <img src={uniquePhotos[0]} alt={name} className="h-full w-full object-cover" />
+        <img
+          src={uniquePhotos[0]}
+          alt={name}
+          className="h-full w-full object-cover"
+          onError={() => markFailed(uniquePhotos[0])}
+        />
         <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/40 via-transparent to-transparent" />
       </div>
     );
@@ -72,12 +94,17 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
       >
         {uniquePhotos.map((src, i) => (
           <div key={`${i}-${src}`} className="h-full w-full min-w-full flex-shrink-0 snap-center snap-always">
-            <img src={src} alt={`${name} — photo ${i + 1}`} className="h-full w-full object-cover" draggable={false} />
+            <img
+              src={src}
+              alt={`${name} — photo ${i + 1}`}
+              className="h-full w-full object-cover"
+              draggable={false}
+              onError={() => markFailed(src)}
+            />
           </div>
         ))}
       </div>
       <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/45 via-transparent to-transparent" />
-      {/* Page dots: centered on bottom middle, light pill so rings read like the reference */}
       <div
         className="pointer-events-auto absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 flex-row items-center gap-2 rounded-full border border-neutral-200/90 bg-white/95 px-3.5 py-2 shadow-sm backdrop-blur-sm sm:bottom-5 sm:gap-2.5 sm:px-4"
         role="tablist"

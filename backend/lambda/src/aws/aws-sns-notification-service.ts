@@ -370,17 +370,16 @@ class PushNotificationServiceImpl {
 
   private async getUserDevices(userId: string, userType: string): Promise<any[]> {
     try {
-      // Check device_tokens table first (where devices are actually registered)
-      const deviceTokensResult = await query(
-        `SELECT id, fcm_token as device_token, platform, app_version, is_active 
-         FROM device_tokens 
-         WHERE user_id = $1 AND user_type = $2 AND is_active = true`,
-        [userId, userType]
-      );
-      
-      if (deviceTokensResult.rows && deviceTokensResult.rows.length > 0) {
-        console.log(`📱 [NOTIFICATION] Found ${deviceTokensResult.rows.length} device(s) in device_tokens for ${userType} ${userId}`);
-        return deviceTokensResult.rows;
+      const { loadFreshActiveFcmTokens } = await import('../utils/device-token-hygiene');
+      const fcmTokens = await loadFreshActiveFcmTokens(userId, userType);
+      if (fcmTokens.length > 0) {
+        console.log(`📱 [NOTIFICATION] Found ${fcmTokens.length} fresh device(s) in device_tokens for ${userType} ${userId}`);
+        return fcmTokens.map((fcm_token) => ({
+          fcm_token,
+          device_token: fcm_token,
+          platform: 'unknown',
+          is_active: true,
+        }));
       }
 
       // Fallback to user_devices table (legacy support)

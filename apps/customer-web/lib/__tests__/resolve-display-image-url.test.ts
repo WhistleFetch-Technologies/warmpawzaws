@@ -49,3 +49,14 @@ describe('pickVendorPhotoFromRow', () => {
     ).toBeUndefined();
   });
 });
+
+describe('normalizeProviderListPhoto bare keys', () => {
+  it('does not fall through to a bare S3 key as img src', () => {
+    expect(
+      normalizeProviderListPhoto({
+        profile_photo_url: 'vendors/abc/facility.jpeg',
+        photo: 'media/vendor/abc/x.webp',
+      })
+    ).toBeUndefined();
+  });
+});

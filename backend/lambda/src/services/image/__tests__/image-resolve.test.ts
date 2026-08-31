@@ -24,9 +24,10 @@ jest.mock('../image-url-builder', () => ({
 }));
 
 import { resolveImageForContext } from '../image-resolve';
+import { ensureWebpFromLegacy } from '../image-migrator';
 
 describe('resolveImageForContext', () => {
-  it('returns full url for list context when thumbs are only derived (migrate false)', async () => {
+  it('uses full url for list context on WebP keys without a known thumb', async () => {
     const resolved = await resolveImageForContext('products/vendor1/abc.webp', {
       assetType: 'product',
       ownerId: 'vendor1',
@@ -39,6 +40,31 @@ describe('resolveImageForContext', () => {
     expect(resolved!.displayUrl).toContain('abc.webp');
     expect(resolved!.displayUrl).not.toContain('.thumb.');
     expect(resolved!.thumbUrl).toBeNull();
+  });
+
+  it('uses migrated thumb for list context when migrate provides one', async () => {
+    (ensureWebpFromLegacy as jest.Mock).mockResolvedValueOnce({
+      imageKey: 'media/vendor/v1/facility/x.webp',
+      url: 'https://cdn.example/media/vendor/v1/facility/x.webp',
+      thumbUrl: 'https://cdn.example/media/vendor/v1/facility/x.thumb.webp',
+      thumbKey: 'media/vendor/v1/facility/x.thumb.webp',
+      width: 0,
+      height: 0,
+      thumbWidth: null,
+      thumbHeight: null,
+      size: 0,
+      thumbSize: null,
+      contentType: 'image/webp',
+    });
+    const resolved = await resolveImageForContext('vendors/v1/facility/old.jpg', {
+      assetType: 'facility',
+      ownerId: 'v1',
+      vendorId: 'v1',
+      context: 'list',
+      migrate: true,
+    });
+    expect(resolved!.displayUrl).toContain('.thumb.webp');
+    expect(resolved!.url).toContain('x.webp');
   });
 
   it('returns full url for detail context', async () => {

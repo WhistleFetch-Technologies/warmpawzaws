@@ -13,7 +13,7 @@
     "validate:commerce-switch": "node scripts/validate-commerce-switch.js",
     "validate:lambda-artifact": "node scripts/validate-lambda-deploy-artifact.js",
     "validate:gst-financial": "node scripts/gst-financial-lineage-guard.js",
-    "test:gst-financial": "jest --testPathPattern \"vendor-booking-earnings-report|booking-invoice-amounts|invoice-historical-gst-lineage|gst-financial-lineage|gst-split|canonical-gst-snapshot-lock|authoritative-final-paid|vendor-accrual-fee-breakdown|package-session-earnings-allocation|funding-aware-ledger-correction|invoice-row-gst|invoice-gst-rate|gst-place-of-supply|gst-catalog-role-resolution|tax-calculation-admin-gst-rate|resolve-booking-list-price|resolve-service-booking-tax-item|booking-financial-gross|vendor-earnings-settlement-snapshot|tax-category-display-rate|gst-tax-lines\" --no-coverage",
+    "test:gst-financial": "jest --testPathPattern \"vendor-booking-earnings-report|booking-invoice-amounts|invoice-historical-gst-lineage|gst-financial-lineage|gst-split|canonical-gst-snapshot-lock|authoritative-final-paid|vendor-accrual-fee-breakdown|package-session-earnings-allocation|package-session-sync-earnings|funding-aware-ledger-correction|invoice-row-gst|invoice-gst-rate|gst-place-of-supply|gst-catalog-role-resolution|tax-calculation-admin-gst-rate|resolve-booking-list-price|resolve-service-booking-tax-item|booking-financial-gross|vendor-earnings-settlement-snapshot|tax-category-display-rate|gst-tax-lines\" --no-coverage",
     "release-verify:commerce-switch": "node scripts/commerce-switch-release-verify.js",
     "post-deploy:lambda-verify": "node scripts/post-deploy-lambda-verify.js",
     "smoke:commerce-switch": "node scripts/commerce-switch-smoke.js",

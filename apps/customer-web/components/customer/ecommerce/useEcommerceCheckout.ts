@@ -88,6 +88,7 @@ export function buildEcommerceOrderPayload(
       const productId = parsed.productId;
       const productSkuId =
         item.warmpawzLine?.product_sku_id ?? parsed.productSkuId ?? undefined;
+      const categoryId = item.categoryId || item.category;
       return {
         product_id: productId,
         productId: productId,
@@ -97,6 +98,7 @@ export function buildEcommerceOrderPayload(
         vendorId: item.vendorId || '',
         selected_variations: item.selectedVariations,
         selectedVariations: item.selectedVariations,
+        ...(categoryId ? { categoryId, category: categoryId } : {}),
       };
     }),
     shippingAddress: normalizeShippingAddress(shippingAddress),

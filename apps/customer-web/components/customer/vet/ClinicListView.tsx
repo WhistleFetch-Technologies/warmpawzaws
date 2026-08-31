@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { discoveryVendorList, discoveryNextCursor } from '@/lib/discovery-list';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
@@ -247,7 +248,7 @@ function mapByStyleProvider(p: any, wapptVetHubEnabled: boolean): ClinicProvider
       return pickProviderDistanceKm(p);
     })(),
     timing: p.businessHours || p.timing || '9 AM - 8 PM',
-    photo: p.photo || p.vendorPhoto || p.photoUrl,
+    photo: normalizeProviderListPhoto(p as Record<string, unknown>),
     nextAvailableSlot: nextSlot,
     roleDisplayName: p.roleDisplayName || p.roleName || p.role,
     roleName: p.roleName || p.role,
@@ -443,7 +444,7 @@ export function ClinicListView({
             return pickProviderDistanceKm(service);
           })(),
           timing: actualTiming,
-          photo: service.vendorPhoto || service.photo || service.photoUrl || service.vendorProfileImage,
+          photo: normalizeProviderListPhoto(service as Record<string, unknown>),
           nextAvailableSlot: nextSlot,
           roleDisplayName: service.roleDisplayName || service.role_name || service.roleName,
           roleName: service.roleName || service.role,
@@ -559,7 +560,7 @@ export function ClinicListView({
                   ...applyResolvedRatingToStoredFields({ ...v, vendorId: id, id }, id),
                   distanceKm: null,
                   timing: v.timing || v.businessHours || '9 AM - 8 PM',
-                  photo: v.photo || v.businessPhoto || v.vendorPhoto,
+                  photo: normalizeProviderListPhoto(v as Record<string, unknown>),
                   services: [],
                   needsServiceFetch: true,
                 } as ClinicProvider;

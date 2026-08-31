@@ -31,7 +31,10 @@ import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
+  MIXED_PACKAGE_SERVICE_BOOK_ERROR,
+  partitionVendorServiceRowsByPackage,
   serviceTypeCategoryFromRoleId,
+  toggleExclusivePackageOrServiceSelection,
 } from '@/lib/vendor-package-purchase-nav';
 import { partitionVendorServicesForDiscovery } from '@/lib/vendor-services-package-sections';
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
@@ -683,13 +686,13 @@ export function UniversalServicesByStyle({
       });
       return;
     }
-    const newSelection = new Set(selectedServices);
-    if (newSelection.has(serviceId)) {
-      newSelection.delete(serviceId);
-    } else {
-      newSelection.add(serviceId);
-    }
-    setSelectedServices(newSelection);
+    setSelectedServices((prev) =>
+      toggleExclusivePackageOrServiceSelection(
+        prev,
+        serviceId,
+        profileProvider?.services as unknown as Record<string, unknown>[] | undefined
+      )
+    );
   };
 
   // ✅ FIX: Pass all selected services to booking (matches vet/grooming flow)
@@ -741,7 +744,14 @@ export function UniversalServicesByStyle({
         return;
       }
 
-      const pkgRow = selectedServicesData.find((s) => isVendorServicePackageRow(s as any));
+      const { packages: pkgRows, services: oneOffRows } = partitionVendorServiceRowsByPackage(
+        selectedServicesData as Record<string, unknown>[]
+      );
+      if (pkgRows.length > 0 && (oneOffRows.length > 0 || pkgRows.length > 1)) {
+        toast.error(MIXED_PACKAGE_SERVICE_BOOK_ERROR);
+        return;
+      }
+      const pkgRow = pkgRows[0];
       if (pkgRow && profileProvider) {
         const vid =
           profileProvider.providerType === 'vendor'

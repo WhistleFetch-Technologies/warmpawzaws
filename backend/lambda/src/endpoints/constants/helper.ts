@@ -39,6 +39,57 @@ export function extractS3KeyFromUrl(url: string | null | undefined): string | nu
     return null;
 }
 
+const MANAGED_MEDIA_KEY_PREFIXES = ['vendors/', 'media/', 'products/', 'admin/'] as const;
+
+/**
+ * Persistable S3 object key for vendor facility / profile photos.
+ * Accepts bare keys and S3/presigned URLs; never returns query strings.
+ */
+export function normalizeStoredVendorMediaKey(raw: string | null | undefined): string | null {
+    if (raw == null || typeof raw !== 'string') return null;
+    const t = raw.trim();
+    if (!t || t === 'null' || t === 'undefined') return null;
+
+    const strip = (s: string) => s.split('?')[0].split('#')[0].replace(/^\/+/, '');
+
+    if (!t.includes('://')) {
+        const key = strip(t);
+        if (MANAGED_MEDIA_KEY_PREFIXES.some((p) => key.startsWith(p))) return key;
+        return null;
+    }
+
+    if (t.includes('.s3.') && t.includes('.amazonaws.com/')) {
+        const urlParts = t.split('.amazonaws.com/');
+        if (urlParts.length > 1) {
+            const key = strip(urlParts[1]);
+            if (key) {
+                try {
+                    return decodeURIComponent(key);
+                } catch {
+                    return key;
+                }
+            }
+        }
+    }
+
+    try {
+        const u = new URL(t);
+        let path = strip(decodeURIComponent(u.pathname.replace(/^\/+/, '')));
+        if (u.hostname.startsWith('s3.') || u.hostname === 's3.amazonaws.com') {
+            const slash = path.indexOf('/');
+            if (slash > 0) path = path.slice(slash + 1);
+        }
+        if (MANAGED_MEDIA_KEY_PREFIXES.some((p) => path.startsWith(p))) return path;
+        const vendorsIndex = path.indexOf('vendors/');
+        if (vendorsIndex >= 0) return path.substring(vendorsIndex);
+        const mediaIndex = path.indexOf('media/');
+        if (mediaIndex >= 0) return path.substring(mediaIndex);
+    } catch {
+        return null;
+    }
+
+    return null;
+}
 
 /** Buckets that may hold vendor/product uploads (dev legacy + current user-uploads). */
 export function uploadBucketCandidates(): string[] {

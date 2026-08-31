@@ -534,7 +534,12 @@ app.post('/promotions/calculate-cart', async (c) => {
     const { enrichLinesWithListingOwnership } = await import(
       '../utils/compute-listing-ownership'
     );
-    const cartLines = await enrichLinesWithListingOwnership(rawCartLines);
+    const { fillProductCategoryIfMissing } = await import(
+      '../utils/fill-product-category-if-missing'
+    );
+    const cartLines = await fillProductCategoryIfMissing(
+      await enrichLinesWithListingOwnership(rawCartLines)
+    );
 
     let promotions: Record<string, unknown>[] = [];
 

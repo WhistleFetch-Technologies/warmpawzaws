@@ -8,7 +8,7 @@ import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentity
 import { taxCalculationService } from '../../../../lib/services/tax-calculation-service';
 import { discountCalculationService } from '../../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../../constants';
-import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../../constants/helper';
+import { extractS3KeyFromUrl, normalizeStoredVendorMediaKey, regeneratePresignedUrl } from '../../../constants/helper';
 import { getCustomerCoordinates, resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { seedFinitePackagesMissingSessionsForScope, type SqlClient } from '../../../../utils/package-session-sync';
 import { sqlPackagePurchaseActiveForListing } from '../../../../utils/package-session-eligibility';
@@ -125,35 +125,12 @@ export async function executevendorFacilityPut(c: Context) {
         const photosInput = facilityData.photos || facilityData.facility_photos || [];
         // ✅ FIX: Normalize photos - extract S3 keys from presigned URLs or full URLs
         const normalizedPhotos = photosInput.map((photoItem: string) => {
-          if (!photoItem || typeof photoItem !== 'string') {
-            return null;
+          const key = normalizeStoredVendorMediaKey(photoItem);
+          if (!key) {
+            console.warn(`[FACILITY-SAVE] Could not normalize photo, skipping:`, photoItem);
           }
-
-          // If it's already a key (starts with vendors/), return as-is
-          if (photoItem.startsWith('vendors/')) {
-            return photoItem;
-          }
-
-          // If it's a presigned URL or full S3 URL, extract the key
-          if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
-            // Extract key from full S3 URL
-            const urlParts = photoItem.split('.amazonaws.com/');
-            if (urlParts.length > 1) {
-              return urlParts[1].split('?')[0].split('#')[0];
-            }
-          } else if (photoItem.includes('?') && (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))) {
-            // Extract key from presigned URL
-            const urlParts = photoItem.split('?')[0];
-            if (urlParts.includes('vendors/')) {
-              const vendorsIndex = urlParts.indexOf('vendors/');
-              return urlParts.substring(vendorsIndex);
-            }
-          }
-
-          // If we can't extract a key, return null (invalid photo)
-          console.warn(`[FACILITY-SAVE] Could not normalize photo, skipping:`, photoItem);
-          return null;
-        }).filter((key: string): key is string => key !== null && key.length > 0);
+          return key;
+        }).filter((key: string | null): key is string => key !== null && key.length > 0);
 
         console.log(`[FACILITY-SAVE] Normalized ${normalizedPhotos.length} photos from ${photosInput.length} input photos`);
         updatedMetadata.facility_photos = normalizedPhotos;

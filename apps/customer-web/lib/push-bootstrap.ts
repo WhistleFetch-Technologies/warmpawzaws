@@ -20,6 +20,12 @@ const PUSH_TOKEN_CACHE_KEY = 'warmpawz_cust_push_token';
 const PUSH_REGISTERED_AT_KEY = 'warmpawz_cust_push_registered_at';
 /** Last user UUID successfully upserted to device_tokens (detect account switch). */
 const PUSH_REGISTERED_USER_KEY = 'warmpawz_cust_push_registered_user_id';
+/**
+ * Bump when register-device auth / pipeline semantics change.
+ * Forces one authenticated re-POST on next open/login for every logged-in device (no cron).
+ */
+const PUSH_PIPELINE_VERSION = 'auth-bearer-v1';
+const PUSH_PIPELINE_VERSION_KEY = 'warmpawz_cust_push_pipeline_version';
 
 /** Re-POST register-device periodically so token rotation and multi-device stay in sync. */
 const PUSH_RESYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -354,6 +360,7 @@ function clearLocalPushRegistrationMarkers(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(PUSH_REGISTERED_AT_KEY);
   localStorage.removeItem(PUSH_REGISTERED_USER_KEY);
+  localStorage.removeItem(PUSH_PIPELINE_VERSION_KEY);
   lastBackendRegisterKey = '';
 }
 
@@ -363,6 +370,7 @@ function clearLocalPushRegistrationMarkers(): void {
  */
 export function needsPushRegistrationSync(userId: string): boolean {
   if (typeof window === 'undefined' || !userId?.trim()) return false;
+  if (localStorage.getItem(PUSH_PIPELINE_VERSION_KEY) !== PUSH_PIPELINE_VERSION) return true;
   const registeredUser = localStorage.getItem(PUSH_REGISTERED_USER_KEY)?.trim();
   if (registeredUser !== userId.trim()) return true;
   if (!getCachedFcmToken()) return true;
@@ -375,6 +383,30 @@ export function needsPushRegistrationSync(userId: string): boolean {
 function markPushRegisteredForUser(userId: string): void {
   localStorage.setItem(PUSH_REGISTERED_AT_KEY, new Date().toISOString());
   localStorage.setItem(PUSH_REGISTERED_USER_KEY, userId.trim());
+  localStorage.setItem(PUSH_PIPELINE_VERSION_KEY, PUSH_PIPELINE_VERSION);
+}
+
+/**
+ * Bearer for /push/register-device + unregister.
+ * Keepalive fetch must send Authorization — Lambda requireAuth rejects anonymous POSTs (401).
+ */
+async function resolvePushAuthBearer(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const { getCognitoIdToken, refreshCognitoTokensIfNeeded } = await import('./cognito-auth');
+    await refreshCognitoTokensIfNeeded().catch(() => undefined);
+    const cognito = getCognitoIdToken();
+    if (cognito) return cognito;
+  } catch {
+    /* fall through to legacy authToken */
+  }
+  return localStorage.getItem('authToken');
+}
+
+function buildPushAuthHeaders(bearer: string | null): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
+  return headers;
 }
 
 async function postRegisterDeviceToBackend(
@@ -386,6 +418,12 @@ async function postRegisterDeviceToBackend(
   const dedupeKey = `${opts.userId}:${deviceId}:${fcmToken.slice(0, 32)}`;
   if (dedupeKey === lastBackendRegisterKey) {
     return true;
+  }
+
+  const bearer = await resolvePushAuthBearer();
+  if (!bearer) {
+    console.warn('[push-bootstrap] POST /push/register-device skipped — no auth token', { source });
+    return false;
   }
 
   const { getApiBaseUrl } = await import('./api-client');
@@ -400,7 +438,7 @@ async function postRegisterDeviceToBackend(
 
   const res = await fetch(`${apiBaseUrl}/push/register-device`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildPushAuthHeaders(bearer),
     body: JSON.stringify(body),
     keepalive: true,
   });
@@ -1114,6 +1152,7 @@ export async function teardownPushNotifications(
 ): Promise<void> {
   if (typeof window === 'undefined') return;
   const deviceId = localStorage.getItem(PUSH_DEVICE_ID_KEY);
+  const bearer = await resolvePushAuthBearer();
   localStorage.removeItem(PUSH_TOKEN_CACHE_KEY);
   clearLocalPushRegistrationMarkers();
   const { getApiBaseUrl } = await import('./api-client');
@@ -1121,7 +1160,7 @@ export async function teardownPushNotifications(
   try {
     await fetch(`${apiBaseUrl}/push/unregister-device`, {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildPushAuthHeaders(bearer),
       keepalive: true,
       body: JSON.stringify({
         userId:   opts.userId,

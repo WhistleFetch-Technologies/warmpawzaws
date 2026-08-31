@@ -22,7 +22,11 @@ import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profil
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
+  MIXED_PACKAGE_SERVICE_BOOK_ERROR,
+  partitionVendorServiceRowsByPackage,
+  toggleExclusivePackageOrServiceSelection,
 } from '@/lib/vendor-package-purchase-nav';
+import { toast } from 'sonner';
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
@@ -540,13 +544,13 @@ export function VetServicesByStyle({
       });
       return;
     }
-    const newSelection = new Set(selectedServices);
-    if (newSelection.has(serviceId)) {
-      newSelection.delete(serviceId);
-    } else {
-      newSelection.add(serviceId);
-    }
-    setSelectedServices(newSelection);
+    setSelectedServices((prev) =>
+      toggleExclusivePackageOrServiceSelection(
+        prev,
+        serviceId,
+        profileProvider?.services as unknown as Record<string, unknown>[] | undefined
+      )
+    );
   };
 
   // ✅ FIX: Pass all selected services to booking, not just the first one
@@ -598,7 +602,14 @@ export function VetServicesByStyle({
         return;
       }
 
-      const pkgRow = selectedServicesData.find((s) => isVendorServicePackageRow(s as any));
+      const { packages: pkgRows, services: oneOffRows } = partitionVendorServiceRowsByPackage(
+        selectedServicesData as Record<string, unknown>[]
+      );
+      if (pkgRows.length > 0 && (oneOffRows.length > 0 || pkgRows.length > 1)) {
+        toast.error(MIXED_PACKAGE_SERVICE_BOOK_ERROR);
+        return;
+      }
+      const pkgRow = pkgRows[0];
       if (pkgRow && profileProvider) {
         const vid =
           profileProvider.providerType === 'vendor'

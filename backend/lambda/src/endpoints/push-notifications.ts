@@ -23,7 +23,7 @@ import {
 } from '../utils/firebase-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import { capActiveDeviceTokens } from '../utils/device-token-hygiene';
+import { applyRegisterDeviceTokenHygiene } from '../utils/device-token-hygiene';
 
 const registerDeviceSchema = z.object({
   userId: z.string().uuid(),
@@ -71,11 +71,9 @@ export function registerPushNotificationEndpoints(app: Hono) {
         deviceId: truncatedDeviceId,
       }));
 
-      if (platform !== 'unknown') {
-        await capActiveDeviceTokens({ userId, userType, platform }).catch((err) => {
-          console.warn('[push] device token cap failed (non-fatal):', err?.message || err);
-        });
-      }
+      await applyRegisterDeviceTokenHygiene({ userId, userType, platform }).catch((err) => {
+        console.warn('[push] device token hygiene failed (non-fatal):', err?.message || err);
+      });
 
       // Subscribe to relevant topics
       const topics = [
@@ -170,21 +168,17 @@ export function registerPushNotificationEndpoints(app: Hono) {
         return c.json({ error: 'userId, userType, title, and body are required' }, 400);
       }
 
-      // Get user's active FCM tokens
-      const tokens = await query(
-        `SELECT fcm_token FROM device_tokens 
-         WHERE user_id = $1 AND user_type = $2 AND is_active = true`,
-        [userId, userType]
-      );
+      // Get user's fresh active FCM tokens (stale ghosts deactivated inline)
+      const { loadFreshActiveFcmTokens } = await import('../utils/device-token-hygiene');
+      const fcmTokens = await loadFreshActiveFcmTokens(userId, userType);
 
-      if (tokens.rows.length === 0) {
+      if (fcmTokens.length === 0) {
         return c.json({
           success: false,
           message: 'No active devices found for this user',
         });
       }
 
-      const fcmTokens = tokens.rows.map((t: any) => t.fcm_token);
       const result = await sendPushToMultipleDevices(fcmTokens, {
         title,
         body,
@@ -230,21 +224,17 @@ export function registerPushNotificationEndpoints(app: Hono) {
 
       const payload = templateFn(templateData || {});
 
-      // Get user's active FCM tokens
-      const tokens = await query(
-        `SELECT fcm_token FROM device_tokens 
-         WHERE user_id = $1 AND user_type = $2 AND is_active = true`,
-        [userId, userType]
-      );
+      // Get user's fresh active FCM tokens (stale ghosts deactivated inline)
+      const { loadFreshActiveFcmTokens } = await import('../utils/device-token-hygiene');
+      const fcmTokens = await loadFreshActiveFcmTokens(userId, userType);
 
-      if (tokens.rows.length === 0) {
+      if (fcmTokens.length === 0) {
         return c.json({
           success: false,
           message: 'No active devices found for this user',
         });
       }
 
-      const fcmTokens = tokens.rows.map((t: any) => t.fcm_token);
       const result = await sendPushToMultipleDevices(fcmTokens, payload);
 
       // Log notification

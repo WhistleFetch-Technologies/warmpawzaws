@@ -880,24 +880,25 @@ export function registerEcommerceEndpoints(app: Hono) {
         return raw === 'admin' || raw === 'vendor' ? raw : null;
       })();
 
+      const { resolveOrderPromoLineCategory } = await import(
+        '../../../utils/fill-product-category-if-missing'
+      );
       const rawCartLines: CartLineItem[] = orderItems.map((oi) => {
         const raw = items.find(
           (it: Record<string, unknown>) =>
             String(it.productId || it.product_id || '') === String(oi.product_id)
         );
         const ownershipRaw = raw?.listingOwnership ?? raw?.listing_ownership;
+        const categoryId = resolveOrderPromoLineCategory(
+          raw?.categoryId || raw?.category,
+          oi.category_id
+        );
         return {
           productId: String(oi.product_id),
           quantity: oi.quantity,
           price: oi.unit_price,
-          category:
-            raw?.categoryId || raw?.category
-              ? String(raw.categoryId || raw.category)
-              : undefined,
-          categoryId:
-            raw?.categoryId || raw?.category
-              ? String(raw.categoryId || raw.category)
-              : undefined,
+          category: categoryId,
+          categoryId,
           listingOwnership:
             ownershipRaw === 'own_brand' || ownershipRaw === 'third_party'
               ? String(ownershipRaw)
