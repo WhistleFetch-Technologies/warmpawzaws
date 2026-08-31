@@ -884,10 +884,11 @@ export function UniversalPaymentPage({
           .map((item: { taxRate?: number }) => Number(item.taxRate))
           .filter((rate: number) => Number.isFinite(rate));
         const uniqueRates = [...new Set(itemRates)];
-        const declaredRate = uniqueRates.length === 1 ? uniqueRates[0] : 0;
+        const declaredRate =
+          uniqueRates.length === 1 ? Number(uniqueRates[0] ?? 0) : 0;
         const taxRate = resolveGstDisplayRatePercent(
           taxableForLabel,
-          totalTax,
+          Number(totalTax),
           declaredRate,
           0
         );

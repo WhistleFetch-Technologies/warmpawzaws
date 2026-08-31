@@ -173,7 +173,7 @@ export function PaymentPage({
     const customerLocation =
       hasState || hasCity
         ? {
-            state: hasState ? String(addr.state).trim() : undefined,
+            state: hasState && addr?.state ? String(addr.state).trim() : undefined,
             city: addr?.city,
             pincode: addr?.pincode,
           }

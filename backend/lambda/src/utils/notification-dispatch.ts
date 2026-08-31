@@ -145,18 +145,8 @@ async function loadActiveFcmTokens(
   userId: string,
   userType: string
 ): Promise<string[]> {
-  const tokensResult = await query(
-    `SELECT DISTINCT fcm_token FROM device_tokens
-     WHERE user_id = $1::uuid AND user_type = $2 AND is_active = true AND fcm_token IS NOT NULL`,
-    [userId, userType]
-  );
-  return [
-    ...new Set(
-      (tokensResult.rows || [])
-        .map((r: { fcm_token: string }) => r.fcm_token)
-        .filter(Boolean)
-    ),
-  ];
+  const { loadFreshActiveFcmTokens } = await import('./device-token-hygiene');
+  return loadFreshActiveFcmTokens(userId, userType);
 }
 
 async function sendPushWithHygiene(

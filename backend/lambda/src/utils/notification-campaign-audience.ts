@@ -3,6 +3,7 @@
  */
 
 import { query } from '../database/rds-connection';
+import { FCM_TOKEN_FRESH_EXISTS_SQL } from './device-token-hygiene';
 
 export type TargetApp = 'CUSTOMER' | 'VENDOR';
 
@@ -114,12 +115,12 @@ function appendPushTokenFilter(
     platformClause = ` AND dt.platform = $${params.length}`;
   }
   params.push(userType);
+  // Fresh tokens only — ghosts stay is_active until register-device refreshes them.
   conditions.push(`EXISTS (
     SELECT 1 FROM device_tokens dt
     WHERE dt.user_id = ${idColumn}
       AND dt.user_type = $${params.length}
-      AND dt.is_active = true
-      AND dt.fcm_token IS NOT NULL
+      AND ${FCM_TOKEN_FRESH_EXISTS_SQL}
       ${platformClause}
   )`);
 }
