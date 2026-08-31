@@ -3,6 +3,7 @@
 import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
 import {
   shouldUseWapptVendorCancel,
   vendorWapptCancelPath,
@@ -147,7 +148,7 @@ interface Booking {
   communicationType: 'call' | 'video' | 'clinic' | 'at_home'; // ✅ UPDATE
   serviceType?: 'at_center' | 'at_home' | 'tele'; // ✅ ADD
   service_type?: string; // snake_case from API
-  status: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'in_progress';
+  status: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'in_progress' | 'active';
   phone: string;
   date: string;
   price: number;
@@ -1484,7 +1485,7 @@ export function VendorBookingManagement({
                               {!isPackageSessionBooking && declineBtn}
                               {(booking.status === 'confirmed' ||
                                 (isVendorTeleConsultationBooking(booking) &&
-                                  (booking.status === 'in_progress' || booking.status === 'active'))) && (
+                                  (String(booking.status) === 'in_progress' || String(booking.status) === 'active'))) && (
                                 <>
                                   <button
                                     type="button"

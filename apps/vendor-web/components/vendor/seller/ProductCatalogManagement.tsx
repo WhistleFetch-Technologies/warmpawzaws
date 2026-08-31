@@ -198,7 +198,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
       const data = await apiClient.get<{ product?: Record<string, unknown> }>(
         `/vendor/${sellerId}/products/${product.id}`,
       );
-      setEditingProduct((data?.product as Product) || product);
+      setEditingProduct((data?.product as unknown as Product) || product);
     } catch (error) {
       console.error('Error loading product for edit:', error);
       toast.error('Could not load full product details');

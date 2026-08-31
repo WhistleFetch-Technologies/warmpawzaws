@@ -106,7 +106,7 @@ export function usePublishCatalogueEntry() {
   return useMutation({
     mutationFn: (catalogueId: string) => publishCatalogueEntry(catalogueId),
     onSuccess: (data) => {
-      invalidateCatalogueQueries(queryClient, data.catalogueId);
+      invalidateCatalogueQueries(queryClient, data.catalogueId ?? undefined);
       toast.success(`${data.businessName} published.`);
     },
     onError: (error: Error) => {
@@ -121,7 +121,7 @@ export function useUnpublishCatalogueEntry() {
   return useMutation({
     mutationFn: (catalogueId: string) => unpublishCatalogueEntry(catalogueId),
     onSuccess: (data) => {
-      invalidateCatalogueQueries(queryClient, data.catalogueId);
+      invalidateCatalogueQueries(queryClient, data.catalogueId ?? undefined);
       toast.success(`${data.businessName} unpublished.`);
     },
     onError: (error: Error) => {

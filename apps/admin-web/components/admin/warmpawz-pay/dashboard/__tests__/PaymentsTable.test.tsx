@@ -23,6 +23,7 @@ const sampleItem: WpayAdminPaymentItem = {
   paymentId: 'pay-1',
   customer: { name: 'Sonu M', phone: '+917204349568' },
   vendor: { name: 'Bindu Vet Clinic', category: 'Vet' },
+  commercialModel: 'withhold',
   originalAmount: 1570,
   discountPercent: 10,
   discountAmount: 157,

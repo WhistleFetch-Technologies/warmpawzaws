@@ -117,7 +117,7 @@ export default function VendorMealDeliveryDetailClient() {
             </div>
             <Badge>{status}</Badge>
           </div>
-          {row.customer_phone && (
+          {!!row.customer_phone && (
             <a href={`tel:${row.customer_phone}`}>
               <Button type="button" variant="outline" size="sm" className="w-full">
                 <Phone className="w-4 h-4 mr-2" /> Call customer

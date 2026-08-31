@@ -94,7 +94,11 @@ interface Settlement {
   commissionRate: number;
   commission_amount?: number;
   bookingCount?: number;
+  bookingId?: string;
   bookingIds?: string[];
+  grossAmount?: number;
+  commissionAmount?: number;
+  netAmount?: number;
   processedAt?: string;
   created_at?: string;
   period_start?: string;
@@ -306,7 +310,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
           canUpgrade: typeof t.canUpgrade === 'boolean' ? t.canUpgrade : 
                      (typeof t.eligible === 'boolean' ? t.eligible : 
                      (typeof t.can_upgrade === 'boolean' ? t.can_upgrade : defaultTierInfo.canUpgrade)),
-          nextTier: safeString(t.nextTier ?? t.next_tier ?? t.upgradeTo, defaultTierInfo.nextTier),
+          nextTier: safeString(t.nextTier ?? t.next_tier ?? t.upgradeTo, defaultTierInfo.nextTier ?? ''),
           upgradeRequirements: (t.upgradeRequirements || t.requirements || t.upgrade_requirements) && 
                               typeof (t.upgradeRequirements || t.requirements || t.upgrade_requirements) === 'object'
             ? {

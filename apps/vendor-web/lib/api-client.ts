@@ -437,7 +437,7 @@ export class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' });
   }
 
-  async post<T>(endpoint: string, data?: any): Promise<T> {
+  async post<T>(endpoint: string, data?: any, _config?: unknown): Promise<T> {
     // Handle FormData - don't stringify or set Content-Type header
     if (data instanceof FormData) {
       // Re-resolve base URL at call time so deploy-time runtime config (and prod vs dev

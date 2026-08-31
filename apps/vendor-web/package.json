@@ -21,6 +21,7 @@
   "dependencies": {
     "@capacitor-firebase/messaging": "^8.3.0",
     "@capacitor/android": "^8.3.1",
+    "@capacitor/app": "^8.1.1",
     "@capacitor/camera": "^8.1.0",
     "@capacitor/core": "^8.3.1",
     "@capacitor/filesystem": "^8.1.2",
@@ -73,6 +74,7 @@
     "@capacitor/cli": "^8.3.1",
     "@testing-library/jest-dom": "^6.1.0",
     "@testing-library/react": "^14.1.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

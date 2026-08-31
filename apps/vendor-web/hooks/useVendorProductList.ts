@@ -24,7 +24,12 @@ export interface VendorProductListItem {
   emoji?: string;
   is_active?: boolean;
   has_variants?: boolean;
-  skus?: unknown[];
+  skus?: Array<{
+    id?: string;
+    sku?: string;
+    stock?: number;
+    option_values?: Record<string, string>;
+  }>;
   [key: string]: unknown;
 }
 

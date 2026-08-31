@@ -189,19 +189,31 @@ export function PolicySimulatorSection({ draft }: { draft: DiscountPolicyBundle 
             </CardHeader>
             <CardContent className="space-y-2">
               {(
-                (localResult as { appliedOffers?: Array<{ name: string; discountAmount: number; offerType?: string }> })
-                  .appliedOffers ??
+                (localResult as unknown as { appliedOffers?: Array<{
+                  name?: string;
+                  label?: string;
+                  offerType?: string;
+                  discountAmount?: number;
+                }> }).appliedOffers ??
                 localResult.eligibleOffers ??
                 []
-              ).map((o) => (
-                <div key={o.offerType ?? o.name} className="flex items-center gap-2 text-sm">
+              ).map((o) => {
+                const offer = o as {
+                  name?: string;
+                  label?: string;
+                  offerType?: string;
+                  discountAmount?: number;
+                };
+                return (
+                <div key={offer.offerType ?? offer.name} className="flex items-center gap-2 text-sm">
                   <Check className="h-4 w-4 text-emerald-600" aria-hidden />
-                  <span>{o.label ?? o.name ?? o.offerType}</span>
+                  <span>{offer.label ?? offer.name ?? offer.offerType}</span>
                   <Badge variant="outline" className="ml-auto">
-                    {formatCurrency(o.discountAmount ?? 0)} off
+                    {formatCurrency(offer.discountAmount ?? 0)} off
                   </Badge>
                 </div>
-              ))}
+                );
+              })}
               {!((localResult as { appliedOffers?: unknown[] }).appliedOffers?.length ||
                 localResult.eligibleOffers?.length) ? (
                 <p className="text-sm text-slate-500">No offers applied for this scenario.</p>
@@ -215,21 +227,35 @@ export function PolicySimulatorSection({ draft }: { draft: DiscountPolicyBundle 
             </CardHeader>
             <CardContent className="space-y-3">
               {(
-                (localResult as { rejectedOffers?: Array<{ name?: string; reason: string; id: string }> })
-                  .rejectedOffers ??
+                (localResult as unknown as { rejectedOffers?: Array<{
+                  name?: string;
+                  label?: string;
+                  reason?: string;
+                  id?: string;
+                  offerType?: string;
+                }> }).rejectedOffers ??
                 localResult.ignoredOffers ??
                 []
-              ).map((o) => (
-                <div key={o.id ?? o.offerType} className="text-sm text-slate-600">
+              ).map((o) => {
+                const offer = o as {
+                  name?: string;
+                  label?: string;
+                  reason?: string;
+                  id?: string;
+                  offerType?: string;
+                };
+                return (
+                <div key={offer.id ?? offer.offerType} className="text-sm text-slate-600">
                   <div className="flex items-center gap-2">
                     <X className="h-3.5 w-3.5" aria-hidden />
-                    {o.label ?? o.name ?? o.id}
+                    {offer.label ?? offer.name ?? offer.id}
                   </div>
-                  {'reason' in o && o.reason ? (
-                    <p className="ml-5 text-xs text-slate-500">{o.reason}</p>
+                  {offer.reason ? (
+                    <p className="ml-5 text-xs text-slate-500">{offer.reason}</p>
                   ) : null}
                 </div>
-              ))}
+                );
+              })}
               {!((localResult as { rejectedOffers?: unknown[] }).rejectedOffers?.length ||
                 localResult.ignoredOffers?.length) ? (
                 <p className="text-sm text-slate-500">No rejected offers.</p>

@@ -1,6 +1,6 @@
 'use client';
 
-import type { RefObject } from 'react';
+import type { Ref, RefObject } from 'react';
 import Image from 'next/image';
 import {
   LayoutDashboard,
@@ -243,8 +243,8 @@ interface SellerHubMainPanelsProps {
   activeTab: SellerHubTab;
   onTabChange: (tab: SellerHubTab) => void;
   vendorData: any;
-  settingsRef?: RefObject<SellerSettingsHandle | null>;
-  inventoryRef?: RefObject<InventoryManagementHandle | null>;
+  settingsRef?: Ref<SellerSettingsHandle>;
+  inventoryRef?: Ref<InventoryManagementHandle>;
   onSettingsSavingChange?: (saving: boolean) => void;
 }
 
@@ -276,7 +276,7 @@ export function SellerHubMainPanels({
       )}
       {activeTab === 'products' && <ProductCatalogManagement sellerId={sellerId} />}
       {activeTab === 'inventory' && (
-        <InventoryManagement ref={inventoryRef} sellerId={sellerId} />
+        <InventoryManagement ref={inventoryRef as Ref<InventoryManagementHandle>} sellerId={sellerId} />
       )}
       {activeTab === 'orders' && <SellerOrderManagement sellerId={sellerId} />}
       {activeTab === 'invoices' && (
@@ -290,7 +290,7 @@ export function SellerHubMainPanels({
       {activeTab === 'analytics' && <SellerAnalytics sellerId={sellerId} />}
       {activeTab === 'settings' && (
         <SellerSettings
-          ref={settingsRef}
+          ref={settingsRef as Ref<SellerSettingsHandle>}
           sellerId={sellerId}
           sellerData={vendorData}
           onSavingChange={onSettingsSavingChange}

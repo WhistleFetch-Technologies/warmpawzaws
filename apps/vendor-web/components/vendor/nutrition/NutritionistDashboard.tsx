@@ -209,11 +209,11 @@ function coerceVendorMealListingAmount(raw: Record<string, unknown>): number {
 
 /** Vendor-facing meal listing amount only (meal line; excludes delivery, platform, convenience, GST). */
 function vendorMealListingRupee(o: MealOrder): number {
-  return coerceVendorMealListingAmount(o as Record<string, unknown>);
+  return coerceVendorMealListingAmount(o as unknown as Record<string, unknown>);
 }
 
 function subscriptionParentPlanTitle(o: MealOrder): string {
-  const raw = o as Record<string, unknown>;
+  const raw = o as unknown as Record<string, unknown>;
   const kind = String(raw.subscription_booking_plan_kind || '').toLowerCase();
   if (kind === 'weekly') return 'Weekly subscription';
   if (kind === 'monthly') return 'Monthly subscription';
@@ -231,7 +231,7 @@ function monthlyCadenceShort(freq: string): string {
 
 /** Vendor-facing session progress, e.g. weekly meal session · 3/7. */
 function subscriptionSessionLabel(o: MealOrder): string {
-  const raw = o as Record<string, unknown>;
+  const raw = o as unknown as Record<string, unknown>;
   const n = Number(raw.subscription_session_number);
   const total = Number(raw.subscription_booking_session_count);
   const idx = Number.isFinite(n) && n > 0 ? Math.floor(n) : '?';
@@ -273,7 +273,7 @@ function ymdLocal(d: Date): string {
 }
 
 function scheduledYmdForOrder(o: MealOrder): string | null {
-  const raw = (o as Record<string, unknown>).scheduled_delivery_date as string | Date | undefined | null;
+  const raw = (o as unknown as Record<string, unknown>).scheduled_delivery_date as string | Date | undefined | null;
   if (raw == null || raw === '') return null;
   if (raw instanceof Date) return ymdLocal(raw);
   const s = String(raw);
@@ -400,12 +400,15 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         setOrdersFetchError(body.error || 'Could not load meal orders');
         return;
       }
-      if (response && body.success !== false) {
+      if (response && String(body.success) !== 'false') {
         const rawList = body.orders || [];
-        const fetchedOrders = rawList.map((raw: Record<string, unknown>) => ({
-          ...raw,
-          vendor_meal_total: coerceVendorMealListingAmount(raw),
-        })) as MealOrder[];
+        const fetchedOrders = rawList.map((raw: unknown) => {
+          const rec = (raw ?? {}) as Record<string, unknown>;
+          return {
+            ...rec,
+            vendor_meal_total: coerceVendorMealListingAmount(rec),
+          };
+        }) as MealOrder[];
         setOrders(fetchedOrders);
         
         // ✅ Initialize acceptedOrderIds: Merge stored accepted IDs with orders that have progressed
@@ -595,7 +598,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       toast.error('Start preparing is only available for today’s orders.');
       return;
     }
-    const scheduling = vendorMealPrepSchedulingFromOrder(order as Record<string, unknown>);
+    const scheduling = vendorMealPrepSchedulingFromOrder(order as unknown as Record<string, unknown>);
     if (!confirmVendorEarlyMealPrep(scheduling)) return;
     void handleUpdateOrderStatus(order.id, 'preparing');
   };
@@ -685,7 +688,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
 
   const renderMealOrderCard = (order: MealOrder) => {
     const badgeCanon: MealDeliveryEffective = vendorMealEffectiveStatus(order);
-    const prepScheduling = vendorMealPrepSchedulingFromOrder(order as Record<string, unknown>);
+    const prepScheduling = vendorMealPrepSchedulingFromOrder(order as unknown as Record<string, unknown>);
     const isParentSub = Boolean(order.subscription_vendor_parent_booking);
     const isSessionSub = isSubscriptionSessionRow(order);
     const isPidgeLogistics = String(order.logistics_type || '').toLowerCase() === 'pidge';
@@ -705,7 +708,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       : 'flex-1 py-2 rounded-lg flex items-center justify-center gap-1 bg-slate-200 text-slate-500 cursor-not-allowed';
 
     const deliveryLocationLine = formatVendorMealDeliveryLocationLine(
-      order as Record<string, unknown>,
+      order as unknown as Record<string, unknown>,
     );
 
     return (
@@ -754,7 +757,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-500">
               <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
               <span className="flex items-center gap-1" title="Customer delivery commitment">
-                {Icons.clock} {formatMealOrderCustomerDelivery(order as Record<string, unknown>)}
+                {Icons.clock} {formatMealOrderCustomerDelivery(order as unknown as Record<string, unknown>)}
               </span>
             </div>
             <div className="text-right">
@@ -790,7 +793,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
           ) : null}
 
           <VendorMealPrepScheduleInfo
-            order={order as Record<string, unknown>}
+            order={order as unknown as Record<string, unknown>}
             showAfterPrep={Boolean(order.prep_started_at) || order.status === 'preparing'}
             className="mb-4"
           />

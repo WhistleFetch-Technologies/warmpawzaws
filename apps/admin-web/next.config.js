@@ -45,7 +45,7 @@ const nextConfig = {
   swcMinify: true,
   compress: true,
   images: { unoptimized: true },
-  typescript: { ignoreBuildErrors: true },
+  typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: false },
   experimental: {
     outputFileTracingExcludes: process.argv[2] === 'build' ? { '*': ['**/*'] } : undefined,

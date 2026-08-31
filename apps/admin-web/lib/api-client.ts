@@ -694,7 +694,7 @@ export class ApiClient {
     message: string;
     pathname?: string;
     conversationId?: string;
-    context?: Record<string, unknown>;
+    context?: Record<string, unknown> | object;
   }): Promise<{
     success: boolean;
     conversationId?: string;

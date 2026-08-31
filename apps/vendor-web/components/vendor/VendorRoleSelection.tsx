@@ -169,8 +169,6 @@ const ROLE_ICONS: Record<string, any> = {
   'diagnostic_center': FlaskConical,
   'groomer_center': Scissors,
   'groomer_solo': Scissors,
-  'trainer_center': GraduationCap,
-  'trainer_solo': GraduationCap,
   'nutritionist_center': Apple,
   'pet_adoption_center': HeartHandshake,
   'pet_boarding_daycare': Hotel,

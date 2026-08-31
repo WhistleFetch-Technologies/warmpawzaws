@@ -44,7 +44,6 @@ export function MetricCard({
 
   return (
     <Card
-      variant="outlined"
       className={
         isUnavailable
           ? `opacity-60 bg-gray-50${className ? ` ${className}` : ''}`

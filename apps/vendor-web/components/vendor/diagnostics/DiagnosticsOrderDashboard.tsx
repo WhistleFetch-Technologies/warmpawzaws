@@ -55,7 +55,7 @@ interface DiagnosticsBooking {
   scheduledTime: string;
   collectionType: 'home' | 'center';
   address?: string;
-  status: 'scheduled' | 'sample_collected' | 'sample_received_at_lab' | 'processing' | 'reports_ready' | 'completed';
+  status: 'scheduled' | 'pending' | 'confirmed' | 'sample_collected' | 'sample_received_at_lab' | 'processing' | 'reports_ready' | 'completed';
   tests: {
     id: string;
     name: string;

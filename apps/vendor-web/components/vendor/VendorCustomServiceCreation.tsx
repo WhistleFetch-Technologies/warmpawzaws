@@ -70,6 +70,7 @@ interface CustomService {
   rejectionReason?: string;
   createdAt?: string;
   updatedAt?: string;
+  specializationIds?: string[];
 }
 
 interface VendorCustomServiceCreationProps {

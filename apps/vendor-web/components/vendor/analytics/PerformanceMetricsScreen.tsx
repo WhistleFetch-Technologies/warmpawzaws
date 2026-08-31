@@ -11,7 +11,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface PerformanceMetricsScreenProps {
-  vendorId: string;
+  vendorId?: string;
   onBack?: () => void;
 }
 

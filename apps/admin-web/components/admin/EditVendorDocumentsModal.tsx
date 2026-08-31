@@ -291,7 +291,9 @@ export function EditVendorDocumentsModal({
 
                         <div className="flex items-center gap-2">
                           <input
-                            ref={(el) => (fileInputRefs.current[docType] = el)}
+                            ref={(el) => {
+                              fileInputRefs.current[docType] = el;
+                            }}
                             type="file"
                             accept=".pdf,.jpg,.jpeg,.png"
                             onChange={(e) => handleFileSelect(docType, e.target.files?.[0] || null)}

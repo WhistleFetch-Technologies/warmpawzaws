@@ -8,7 +8,7 @@ import {
 	RefreshCw,
 	User,
 	AlertTriangle,
-	Ticket,
+	Ticket as TicketIcon,
 	IndianRupee,
 	BarChart3,
 	UserPlus,
@@ -480,7 +480,7 @@ export default function SupportCRM() {
 					toast.info(res.message || "No eligible agent available for this ticket");
 				}
 				await loadTickets();
-				if (selectedTicket?.id) await loadTicketDetail(selectedTicket.id);
+				if (selectedTicket?.id) await loadTicketDetails(selectedTicket.id);
 				await loadAgentMetrics();
 			}
 		} catch (error) {

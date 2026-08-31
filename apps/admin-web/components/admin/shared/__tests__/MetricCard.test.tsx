@@ -3,6 +3,7 @@
  */
 
 import type { SVGProps } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { render, screen } from '@testing-library/react';
 import { MetricCard } from '../MetricCard';
 
@@ -39,7 +40,7 @@ describe('MetricCard', () => {
         title="Revenue"
         value="₹1,25,000.00"
         subtitle="Total Warmpawz Pay revenue"
-        icon={MockIcon}
+        icon={MockIcon as unknown as LucideIcon}
         iconClassName="text-green-500"
         valueClassName="text-green-600"
       />,
@@ -56,7 +57,7 @@ describe('MetricCard', () => {
       <MetricCard
         title="Orders"
         subtitle="Warmpawz Pay orders"
-        icon={MockIcon}
+        icon={MockIcon as unknown as LucideIcon}
         availability="unavailable"
       />,
     );
@@ -70,7 +71,7 @@ describe('MetricCard', () => {
       <MetricCard
         title="Settlements"
         subtitle="Pending settlements"
-        icon={MockIcon}
+        icon={MockIcon as unknown as LucideIcon}
         availability="unavailable"
         unavailableLabel="Not available yet"
       />,
@@ -85,7 +86,7 @@ describe('MetricCard', () => {
       <MetricCard
         title="Orders"
         subtitle="Warmpawz Pay orders"
-        icon={MockIcon}
+        icon={MockIcon as unknown as LucideIcon}
         availability="loading"
       />,
     );

@@ -20,6 +20,14 @@ interface Service {
   service_style: 'at_vendor' | 'at_home' | 'online';
   is_enabled: boolean;
   publish_status: 'draft' | 'published' | 'archived';
+  serviceName?: string;
+  name?: string;
+  sub_category?: string;
+  custom_price?: number;
+  custom_duration?: number;
+  serviceStyle?: string;
+  isEnabled?: boolean;
+  publishStatus?: string;
 }
 
 function ServiceManagementContent() {

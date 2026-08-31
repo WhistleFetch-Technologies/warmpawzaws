@@ -117,7 +117,7 @@ interface IncomingOrder {
   expiresIn: number;
   prescription_id?: string;
   prescription_url?: string;
-  items: Array<{ id?: string; product_name?: string; medicine_name?: string; name?: string; quantity: number }>;
+  items: Array<{ id?: string; product_name?: string; medicine_name?: string; name?: string; quantity: number; unit_price?: number; price?: number }>;
   prescription?: {
     medication_name: string;
     dosage: string;

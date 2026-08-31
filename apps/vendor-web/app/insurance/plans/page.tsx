@@ -80,7 +80,7 @@ function normalizeInsurancePlanRow(row: Record<string, unknown>): InsurancePlan 
   if (['comprehensive', 'accident_only', 'illness_only', 'wellness', 'custom'].includes(rawType)) {
     plan_type = rawType as InsurancePlan['plan_type'];
   } else if (rawType === 'lifetime' || rawType === 'maximum_benefit' || rawType === 'time_limited') {
-    plan_type = rawType === 'accident_only' ? 'accident_only' : 'comprehensive';
+    plan_type = String(rawType) === 'accident_only' ? 'accident_only' : 'comprehensive';
   }
 
   return {

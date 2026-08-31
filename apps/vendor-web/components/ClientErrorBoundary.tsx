@@ -24,7 +24,7 @@ export class ClientErrorBoundary extends Component<Props, State> {
       code: 'react_render',
       message: error.message || 'React error',
       stack: error.stack,
-      componentStack: info.componentStack,
+      componentStack: info.componentStack ?? undefined,
     });
   }
 

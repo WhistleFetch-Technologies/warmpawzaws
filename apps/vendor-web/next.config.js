@@ -31,7 +31,7 @@ const nextConfig = {
   swcMinify: true,
   compress: true,
   images: { unoptimized: true },
-  typescript: { ignoreBuildErrors: true },
+  typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: true },
   // ✅ FIX: Add rewrites to proxy API requests to API Gateway in development
   async rewrites() {

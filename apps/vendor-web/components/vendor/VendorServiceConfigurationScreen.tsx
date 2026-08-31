@@ -68,6 +68,7 @@ interface Service {
   isPlatformService?: boolean;
   isVendorEnabled?: boolean;
   serviceId?: string;
+  vendorServiceId?: string;
   catalogServiceId?: string;
   /** Stable index from last full load — stable sort tie-break; do not reorder on toggle (pre-publish). */
   _listOrder?: number;

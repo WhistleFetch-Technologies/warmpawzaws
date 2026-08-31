@@ -30,6 +30,11 @@ interface VendorProfile {
   role_id?: string;
   roleName?: string;
   role_name?: string;
+  role?: { id?: string; name?: string };
+  vendorType?: string;
+  vendor_type?: 'solo' | 'business' | string;
+  vendorConfiguration?: 'solo' | 'business' | string;
+  vendor_configuration?: 'solo' | 'business' | string;
 }
 
 /**
@@ -91,7 +96,14 @@ export default function ProfilePage() {
         business_name?: string;
         profileType?: 'professional' | 'center';
         vendorConfiguration?: 'solo' | 'business';
+        vendor_configuration?: 'solo' | 'business';
         vendor_type?: 'solo' | 'business';
+        vendorType?: string;
+        role?: { id?: string; name?: string };
+        roleName?: string;
+        role_name?: string;
+        roleId?: string;
+        role_id?: string;
       }>(`/vendor/${storedVendorId}/profile`);
       
       if (response.success && response.vendor) {

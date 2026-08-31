@@ -39,6 +39,7 @@ interface FormField {
   documentLabel?: string;
   acceptedFileTypes?: string[];
   order: number;
+  displayOrder?: number;
   isActive: boolean;
   // KYC-specific fields
   requiresVerification?: boolean;
@@ -1165,6 +1166,13 @@ export function DynamicVendorOnboardingForm({
           ...formData,
           coordinates,
           location: coordinates, // ✅ Ensure backend receives location in formData
+          pincode: formData.pincode,
+          pin: formData.pin,
+        } as Record<string, any> & {
+          coordinates: { lat: number; lng: number } | null;
+          location: { lat: number; lng: number } | null;
+          pincode?: string;
+          pin?: string;
         },
         documents: uploadedDocuments, // Send the object with URLs
         serviceStyles,

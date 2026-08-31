@@ -101,9 +101,13 @@ interface Booking {
   location: string;
   consultationType: 'instant' | 'scheduled';
   communicationType: 'call' | 'video' | 'clinic' | 'at_home';
-  serviceType?: 'at_center' | 'at_home' | 'tele';
+  serviceType?: 'at_center' | 'at_home' | 'tele' | 'video_consultation';
+  service_type?: string;
   status: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'in_progress';
   phone: string;
+  customerPhone?: string;
+  meetingId?: string;
+  meeting_id?: string;
   date: string;
   price: number;
   serviceName: string;

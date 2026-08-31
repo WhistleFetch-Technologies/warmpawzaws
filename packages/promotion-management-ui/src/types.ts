@@ -185,6 +185,7 @@ export type NormalizedCouponItem = {
   startDate: string;
   endDate: string;
   isActive: boolean;
+  owner?: 'platform' | 'vendor' | string;
   targetSummary?: string;
   raw?: Record<string, unknown>;
   createdAt?: string;

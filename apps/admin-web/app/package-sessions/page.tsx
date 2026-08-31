@@ -43,7 +43,7 @@ export default function AdminPackageSessionsPage() {
 
   return (
     <AdminRouteGuard>
-      <AdminLayout title="Package sessions" description="Read-only session-wise progress for a purchase">
+      <AdminLayout>
         <Card className="max-w-3xl">
           <CardHeader>
             <CardTitle>Lookup</CardTitle>

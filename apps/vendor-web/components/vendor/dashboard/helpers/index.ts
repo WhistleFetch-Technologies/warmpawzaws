@@ -327,11 +327,16 @@ export function vendorNotificationUnreadCount(res: {
   success?: boolean;
   unreadCount?: unknown;
   notifications?: any[];
-} | null | undefined): number {
-  if (!res || res.success === false) return 0;
-  const fromApi = res.unreadCount;
+} | null | undefined | unknown): number {
+  const payload = res as {
+    success?: boolean;
+    unreadCount?: unknown;
+    notifications?: any[];
+  } | null | undefined;
+  if (!payload || payload.success === false) return 0;
+  const fromApi = payload.unreadCount;
   if (typeof fromApi === 'number' && !Number.isNaN(fromApi)) return fromApi;
-  const rows = res.notifications || [];
+  const rows = payload.notifications || [];
   return rows.filter((row: any) => row.is_read === false).length;
 }
 

@@ -41,16 +41,14 @@ const Button = React.forwardRef<
 			asChild?: boolean;
 		}
 >(({ className, variant, size, asChild = false, ...props }, ref) => {
-	const Comp = asChild ? Slot : "button";
+	const Comp = (asChild ? Slot : "button") as React.ElementType;
 
-	return (
-		<Comp
-			data-slot="button"
-			className={cn(buttonVariants({ variant, size, className }))}
-			ref={ref}
-			{...props}
-		/>
-	);
+	return React.createElement(Comp, {
+		"data-slot": "button",
+		className: cn(buttonVariants({ variant, size, className })),
+		ref,
+		...props,
+	} as React.ComponentProps<React.ElementType>);
 });
 
 Button.displayName = "Button";

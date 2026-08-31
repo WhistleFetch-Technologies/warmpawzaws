@@ -36,7 +36,7 @@ interface DiagnosticsReportUploadProps {
     petName: string;
     petId: string;
     customerId: string;
-    serviceName: string;
+    serviceName?: string;
     prescribingVetId?: string;
     prescribingVetName?: string;
     prescribingVetBookingId?: string;

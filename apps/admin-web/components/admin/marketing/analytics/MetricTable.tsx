@@ -14,7 +14,7 @@ import {
 import { Download } from 'lucide-react';
 import { downloadCsv } from '@/lib/marketing-analytics/format';
 
-export function MetricTable<T extends Record<string, unknown>>({
+export function MetricTable<T extends object>({
   rows,
   columns,
   searchKeys,
@@ -30,12 +30,13 @@ export function MetricTable<T extends Record<string, unknown>>({
   emptyLabel?: string;
 }) {
   const [query, setQuery] = useState('');
+  const asRecord = (row: T) => row as Record<string, unknown>;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((row) =>
-      searchKeys.some((k) => String(row[k] ?? '').toLowerCase().includes(q))
+      searchKeys.some((k) => String(asRecord(row)[k] ?? '').toLowerCase().includes(q))
     );
   }, [rows, query, searchKeys]);
 
@@ -45,7 +46,7 @@ export function MetricTable<T extends Record<string, unknown>>({
       columns.map((c) => c.label),
       filtered.map((row) =>
         columns.map((c) => {
-          const val = c.render ? String(c.render(row) ?? '') : String(row[c.key] ?? '');
+          const val = c.render ? String(c.render(row) ?? '') : String(asRecord(row)[c.key] ?? '');
           return val;
         })
       )
@@ -92,7 +93,7 @@ export function MetricTable<T extends Record<string, unknown>>({
                 >
                   {columns.map((c) => (
                     <TableCell key={String(c.key)}>
-                      {c.render ? c.render(row) : String(row[c.key] ?? '—')}
+                      {c.render ? c.render(row) : String(asRecord(row)[c.key] ?? '—')}
                     </TableCell>
                   ))}
                 </TableRow>

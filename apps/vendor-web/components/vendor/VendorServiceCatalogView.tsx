@@ -32,6 +32,8 @@ interface VendorServiceCatalogViewProps {
 
 interface ServiceCatalogItem {
   catalogId?: string;
+  id?: string;
+  serviceId?: string;
   categoryId: string;
   categoryName: string;
   subCategoryId?: string;
@@ -64,7 +66,6 @@ interface ServiceCatalogItem {
   sub_category_name?: string;
   category_id?: string;
   sub_category_id?: string;
-  id?: string;
 }
 
 interface CategoryGroup {

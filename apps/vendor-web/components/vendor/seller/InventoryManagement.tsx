@@ -401,8 +401,8 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                   </td>
                   <td className="p-4 text-center">
                     <span className={`text-2xl font-bold ${
-                      product.stock === 0 ? 'text-red-600' :
-                      product.stock <= LOW_STOCK_THRESHOLD ? 'text-amber-600' :
+                      (product.stock ?? 0) === 0 ? 'text-red-600' :
+                      (product.stock ?? 0) <= LOW_STOCK_THRESHOLD ? 'text-amber-600' :
                       'text-emerald-600'
                     }`}>
                       {product.stock}
@@ -410,12 +410,12 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                   </td>
                   <td className="p-4 text-center">
                     <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${
-                      product.stock === 0 ? 'bg-red-100 text-red-700' :
-                      product.stock <= LOW_STOCK_THRESHOLD ? 'bg-amber-100 text-amber-700' :
+                      (product.stock ?? 0) === 0 ? 'bg-red-100 text-red-700' :
+                      (product.stock ?? 0) <= LOW_STOCK_THRESHOLD ? 'bg-amber-100 text-amber-700' :
                       'bg-emerald-100 text-emerald-700'
                     }`}>
-                      {product.stock === 0 ? '⚠️ Out of Stock' :
-                       product.stock <= LOW_STOCK_THRESHOLD ? '⚡ Low Stock' :
+                      {(product.stock ?? 0) === 0 ? '⚠️ Out of Stock' :
+                       (product.stock ?? 0) <= LOW_STOCK_THRESHOLD ? '⚡ Low Stock' :
                        '✓ In Stock'}
                     </span>
                   </td>

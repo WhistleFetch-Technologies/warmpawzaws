@@ -162,9 +162,7 @@ export function LoyaltyActionRulesManagement() {
       if (q?.trim()) params.set('search', q.trim());
       params.set('limit', '100');
 
-      const res = await apiClient.get<any>(`/admin/loyalty/actions?${params.toString()}`, {
-        signal: ac.signal,
-      } as any);
+      const res = await apiClient.get<any>(`/admin/loyalty/actions?${params.toString()}`);
       const items = Array.isArray(res?.actions) ? res.actions : [];
       setActionOptions(items.filter((v: any) => typeof v === 'string' && v.length > 0));
     } catch (e) {

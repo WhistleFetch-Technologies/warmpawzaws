@@ -44,6 +44,7 @@ interface Event {
   rejection_reason?: string;
   vendor_id?: string;
   vendor_name?: string;
+  image_url?: string;
 }
 
 export default function EventManagementPage() {

@@ -36,6 +36,7 @@ import { SubcategoryRulesPanel } from './SubcategoryRulesPanel';
 interface Category extends EcommerceCategoryForm {
   createdAt?: string;
   updatedAt?: string;
+  is_active?: boolean;
 }
 
 export function CategoryManagement() {

@@ -246,7 +246,7 @@ export function ECommerceDashboard({
           <p className="text-slate-500 mt-1">Multi-vendor marketplace analytics and management</p>
         </div>
         <button 
-          onClick={loadDashboardData}
+          onClick={() => void loadDashboardData()}
           className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-white transition-colors"
         >
           <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />

@@ -635,7 +635,7 @@ async function importCapacitorPushModule(): Promise<{
     addListener: (
       event: string,
       handler: (payload: { value?: string } | unknown) => void
-    ) => Promise<{ remove: () => void }>;
+    ) => Promise<{ remove: () => void | Promise<void> }>;
     removeAllListeners: () => Promise<void>;
   };
 } | null> {
@@ -648,7 +648,16 @@ async function importCapacitorPushModule(): Promise<{
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       const mod = await import(/* webpackIgnore: true */ '@capacitor/push-notifications');
-      if (mod?.PushNotifications) return mod;
+      if (mod?.PushNotifications) return mod as unknown as { PushNotifications: {
+        checkPermissions: () => Promise<{ receive: string }>;
+        requestPermissions: () => Promise<{ receive: string }>;
+        register: () => Promise<void>;
+        addListener: (
+          event: string,
+          handler: (payload: { value?: string } | unknown) => void
+        ) => Promise<{ remove: () => void | Promise<void> }>;
+        removeAllListeners: () => Promise<void>;
+      } };
     } catch (err) {
       console.warn('[push-bootstrap] push-notifications import attempt failed:', attempt + 1, err);
     }
@@ -768,8 +777,14 @@ export async function openAppNotificationSettings(): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
     const platform = (window as any).Capacitor?.getPlatform?.() as string | undefined;
+    type CapacitorAppWithOpenUrl = {
+      getInfo: () => Promise<{ id: string }>;
+      openUrl: (opts: { url: string }) => Promise<void>;
+    };
     if (platform === 'android') {
-      const { App } = await import(/* webpackIgnore: true */ '@capacitor/app');
+      const { App } = (await import(/* webpackIgnore: true */ '@capacitor/app')) as unknown as {
+        App: CapacitorAppWithOpenUrl;
+      };
       const info = await App.getInfo();
       const pkg = info.id;
       await App.openUrl({
@@ -778,7 +793,9 @@ export async function openAppNotificationSettings(): Promise<void> {
       return;
     }
     if (platform === 'ios') {
-      const { App } = await import(/* webpackIgnore: true */ '@capacitor/app');
+      const { App } = (await import(/* webpackIgnore: true */ '@capacitor/app')) as unknown as {
+        App: CapacitorAppWithOpenUrl;
+      };
       await App.openUrl({ url: 'app-settings:' });
     }
   } catch (err) {
@@ -850,8 +867,8 @@ async function getTokenFromCapacitor(
         });
       }, 30_000);
 
-      let regListener: { remove: () => Promise<void> } | undefined;
-      let errListener: { remove: () => Promise<void> } | undefined;
+      let regListener: { remove: () => void | Promise<void> } | undefined;
+      let errListener: { remove: () => void | Promise<void> } | undefined;
       let settled = false;
 
       const finish = (value: string | null) => {
@@ -862,8 +879,8 @@ async function getTokenFromCapacitor(
 
       const cleanup = async () => {
         clearTimeout(timeout);
-        await regListener?.remove().catch(() => undefined);
-        await errListener?.remove().catch(() => undefined);
+        try { await regListener?.remove(); } catch { /* ignore */ }
+        try { await errListener?.remove(); } catch { /* ignore */ }
       };
 
       void (async () => {

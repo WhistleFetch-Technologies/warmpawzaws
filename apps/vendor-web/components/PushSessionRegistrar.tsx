@@ -32,7 +32,7 @@ const RETRY_DELAYS_MS = [2_000, 5_000, 10_000, 20_000];
 export function PushSessionRegistrar() {
   useEffect(() => {
     let cancelled = false;
-    let pollTimer: ReturnType<typeof setInterval> | undefined;
+    let pollTimer: ReturnType<typeof setTimeout> | number | undefined;
 
     const registerSession = async (attempt = 0, force = false): Promise<void> => {
       if (cancelled) return;
@@ -90,7 +90,7 @@ export function PushSessionRegistrar() {
           .Capacitor;
         if (!cap?.isNativePlatform?.()) return;
         const { App } = await import(/* webpackIgnore: true */ '@capacitor/app');
-        appListener = await App.addListener('appStateChange', ({ isActive }) => {
+        appListener = await App.addListener('appStateChange', ({ isActive }: { isActive: boolean }) => {
           if (isActive) void registerSession(0, true);
         });
       } catch {

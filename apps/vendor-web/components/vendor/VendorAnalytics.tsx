@@ -79,7 +79,7 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose, suppres
   const [staffPerformance, setStaffPerformance] = useState<any[]>([]);
   const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'performance' | 'earnings'>('performance');
+  const [activeTab, setActiveTab] = useState<'performance' | 'earnings' | string>('performance');
 
   useEffect(() => {
     loadAnalytics();

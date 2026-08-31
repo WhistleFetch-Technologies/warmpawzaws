@@ -120,10 +120,12 @@ interface CustomService {
     subscriptionBillingCycle?: 'monthly' | 'quarterly' | 'yearly';
     membershipBenefits?: string[];
     discountPercentage?: number;
-    validityDays?: number;
     maxUsageCount?: number; // -1 for unlimited
     usageInterval?: 'per_day' | 'per_week' | 'per_month' | 'total';
+    price?: number;
+    packagePrice?: number;
   };
+  name?: string;
   whatIncluded?: string[];
   whatNotIncluded?: string[];
   petTypes?: string[];

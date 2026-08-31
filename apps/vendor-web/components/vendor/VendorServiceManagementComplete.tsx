@@ -128,7 +128,7 @@ export function VendorServiceManagementComplete({
         // ✅ FIX: Extract allowedServiceStyles and role config from services endpoint response
         // ⚠️ CRITICAL: Do NOT default to all three styles - only use what backend returns
         // If backend returns empty/null, we'll derive from role name as fallback
-        let allowedStyles = data.allowedServiceStyles || data.allowed_service_styles || [];
+        let allowedStyles: ServiceStyle[] = (data.allowedServiceStyles || data.allowed_service_styles || []) as ServiceStyle[];
         
         // ✅ NEW: If no styles from backend, derive from role name as safety fallback
         // Normalize role name: "Training Center" -> "training_center" so lookup works
@@ -176,9 +176,9 @@ export function VendorServiceManagementComplete({
             'insurance': ['tele'],
           };
           
-          allowedStyles = ROLE_SERVICE_STYLES[roleName] || ['at_home'];
+          allowedStyles = (ROLE_SERVICE_STYLES[roleName] || ['at_home']) as ServiceStyle[];
           // Map 'online' -> 'tele' for UI (backend may return either)
-          allowedStyles = allowedStyles.map(s => (s === 'online' ? 'tele' : s)).filter(s => ['at_center', 'at_home', 'tele'].includes(s));
+          allowedStyles = allowedStyles.map((s) => (String(s) === 'online' ? 'tele' : s)).filter((s) => ['at_center', 'at_home', 'tele'].includes(s)) as ServiceStyle[];
         }
         
         const roleConfig = data.role?.config || data.roleConfig || {};
@@ -195,7 +195,7 @@ export function VendorServiceManagementComplete({
             && Array.isArray(allowedStyles)
             && vendorConfiguration !== 'solo') { // ✅ Don't override for solo providers
           // Ensure all three service styles are available for veterinarians (non-solo)
-          const requiredStyles = ['at_home', 'at_center', 'tele'];
+          const requiredStyles: ServiceStyle[] = ['at_home', 'at_center', 'tele'];
           allowedStyles = [...new Set([...allowedStyles, ...requiredStyles])];
         }
         
@@ -252,7 +252,7 @@ export function VendorServiceManagementComplete({
         
         if (Array.isArray(allowedStyles)) {
           // Map 'online' -> 'tele' so UI shows all three options (Center, Home, Tele)
-          const normalizedStyles = allowedStyles.map((s: string) => (s === 'online' ? 'tele' : s)).filter((s: string) => ['at_center', 'at_home', 'tele'].includes(s));
+          const normalizedStyles = allowedStyles.map((s) => (String(s) === 'online' ? 'tele' : s)).filter((s) => ['at_center', 'at_home', 'tele'].includes(s)) as ServiceStyle[];
           if (normalizedStyles.length > 0) allowedStyles = normalizedStyles;
           console.log('✅ [ROLE-CONFIG] Setting allowed styles:', allowedStyles);
           setAllowedServiceStyles(finalizeAllowedStyles(allowedStyles));

@@ -148,7 +148,6 @@ export function useRoleConfig(roleId?: string): UseRoleConfigResult {
         
         console.log('[useRoleConfig] ✅ Loaded from DATABASE (wrapped):', normalized.roleName);
         
-        const rawConfig = response.config || response.data;
         const updatedAt = (rawConfig as any)?.updated_at ?? (response as any).updated_at ?? null;
         configCache[effectiveRoleId] = { config: normalized, timestamp: Date.now(), updatedAt };
         

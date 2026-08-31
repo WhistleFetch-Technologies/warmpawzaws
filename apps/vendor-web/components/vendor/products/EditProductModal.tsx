@@ -128,7 +128,7 @@ export function EditProductModal({
         original_price: mrp != null ? String(mrp) : '',
         stock: String(product.stock ?? product.stock_quantity ?? 0),
         hsn_code: product.hsn_code || '',
-        gst_rate: gstRateForForm(product as Record<string, unknown>),
+        gst_rate: gstRateForForm(product as unknown as Record<string, unknown>),
         is_active: product.is_active !== false,
       });
       setImages(normalizeProductImages(product.images));

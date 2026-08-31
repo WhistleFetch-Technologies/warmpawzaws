@@ -143,7 +143,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
     const innerRef = React.useRef<HTMLInputElement>(null);
     const setInputRef = React.useCallback(
       (node: HTMLInputElement | null) => {
-        innerRef.current = node;
+        (innerRef as { current: HTMLInputElement | null }).current = node;
         mergeRefs(node, [ref]);
       },
       [ref]

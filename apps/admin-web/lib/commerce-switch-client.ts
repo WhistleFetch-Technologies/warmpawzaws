@@ -20,7 +20,7 @@ export const COMMERCE_SWITCH_CACHE_TTL_MS = 300_000;
 let cache: CacheState | null = null;
 let inflight: Promise<PublicCommerceConfiguration | null> | null = null;
 
-function isFresh(entry: CacheState | null): entry is CacheState {
+function isFresh(entry: CacheState | null): boolean {
   if (!entry) return false;
   return Date.now() - entry.fetchedAt < COMMERCE_SWITCH_CACHE_TTL_MS;
 }
@@ -31,7 +31,7 @@ export function clearCommerceSwitchCache(): void {
 }
 
 export async function fetchCommerceSwitchConfiguration(): Promise<PublicCommerceConfiguration> {
-  if (isFresh(cache)) return cache.config;
+  if (cache && isFresh(cache)) return cache.config;
 
   if (!inflight) {
     inflight = (async () => {

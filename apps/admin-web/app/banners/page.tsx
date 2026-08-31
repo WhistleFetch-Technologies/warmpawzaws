@@ -210,7 +210,7 @@ export default function BannersPage() {
     }),
     mapItemToFormData: (banner) => {
       const position = adminBannerPositionFromRow(banner) as BannerFormData['position'];
-      const shopTarget = parseShopBannerTargetFromAdminRow(banner as Record<string, unknown>);
+      const shopTarget = parseShopBannerTargetFromAdminRow(banner as unknown as Record<string, unknown>);
       return {
         title: banner.title,
         subtitle: banner.subtitle || '',
