@@ -172,6 +172,16 @@ resource "aws_iam_role_policy" "lambda_custom" {
       {
         Effect = "Allow"
         Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = [
+          "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:warmpawz-${var.environment}-api-handler",
+          "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:warmpawz-${var.environment}-api-handler:*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "cloudwatch:PutMetricData"
         ]
         Resource = "*"

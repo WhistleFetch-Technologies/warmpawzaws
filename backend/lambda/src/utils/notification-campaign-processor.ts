@@ -1,5 +1,6 @@
 /**
- * Executes notification campaign delivery: inbox + push per recipient.
+ * Notification campaign delivery: enqueue PENDING rows + async worker kick.
+ * Per-recipient FCM/inbox stays in notification-dispatch (unchanged engine).
  */
 
 import { insert, query, update } from '../database/rds-connection';
@@ -8,14 +9,14 @@ import {
   resolveCampaignRecipientIds,
   type AudienceFilters,
 } from './notification-campaign-audience';
-import { loadCampaignTargeting } from './notification-campaign-targeting';
-import { dispatchCampaignNotification } from './notification-dispatch';
+import { invokeCampaignDeliveryWorker } from './notification-campaign-invoke';
 import {
   campaignPipelineDisabledResult,
   isNotificationPipelineEnabled,
 } from './notification-pipeline-kill-switch';
 
 const MAX_RECIPIENTS_PER_SEND = 5000;
+const INSERT_CHUNK = 500;
 
 export interface CampaignRow {
   id: string;
@@ -27,6 +28,7 @@ export interface CampaignRow {
   deep_link?: string | null;
   targeting_type: string;
   audience_filters?: unknown;
+  status?: string;
 }
 
 export interface CampaignTargeting {
@@ -37,7 +39,7 @@ export interface CampaignTargeting {
 }
 
 export interface CampaignDeliveryResult {
-  status: 'SENT' | 'FAILED';
+  status: 'QUEUED' | 'SENT' | 'FAILED';
   estimatedRecipients: number;
   sentRecipients: number;
   failedRecipients: number;
@@ -62,36 +64,35 @@ function buildFiltersFromCampaign(
     user_ids: targeting.user_ids,
     segment_ids: targeting.segment_ids,
     ...audience,
+    // Promotional blast: only recipients with a fresh active FCM token
+    has_push_token: true,
   };
 }
 
-async function isPushEnabledForApp(targetApp: string): Promise<boolean> {
-  const result = await query(
-    `SELECT push_enabled FROM notification_channel_settings WHERE app_type = $1`,
-    [targetApp]
-  ).catch(() => ({ rows: [{ push_enabled: true }] }));
-  return result.rows?.[0]?.push_enabled !== false;
-}
-
-async function deliverToRecipient(
-  campaign: CampaignRow,
-  recipientId: string,
+async function insertPendingDeliveries(
+  campaignId: string,
   recipientType: 'customer' | 'vendor',
-  pushEnabled: boolean
-): Promise<{ inboxOk: boolean; pushSuccess: number; pushFailure: number; error?: string }> {
-  const wantsPush = pushEnabled && campaign.channel === 'PUSH';
-  return dispatchCampaignNotification({
-    recipientId,
-    recipientType,
-    campaignId: campaign.id,
-    title: campaign.title,
-    message: campaign.message,
-    deepLink: campaign.deep_link,
-    imageUrl: campaign.image_url,
-    pushEnabled: wantsPush,
-  });
+  recipientIds: string[]
+): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < recipientIds.length; i += INSERT_CHUNK) {
+    const chunk = recipientIds.slice(i, i + INSERT_CHUNK);
+    const result = await query(
+      `INSERT INTO notification_campaign_deliveries
+         (campaign_id, recipient_id, recipient_type, status, attempt)
+       SELECT $1::uuid, x, $2, 'PENDING', 0
+       FROM unnest($3::uuid[]) AS x`,
+      [campaignId, recipientType, chunk]
+    );
+    inserted += result.rowCount ?? chunk.length;
+  }
+  return inserted;
 }
 
+/**
+ * Resolve audience, insert PENDING deliveries, mark QUEUED, kick self-chaining worker.
+ * Returns immediately after enqueue — does not wait for FCM fan-out.
+ */
 export async function executeCampaignDelivery(
   campaign: CampaignRow,
   targeting: CampaignTargeting,
@@ -105,10 +106,9 @@ export async function executeCampaignDelivery(
         campaignId: campaign.id,
       })
     );
-    return campaignPipelineDisabledResult();
+    return campaignPipelineDisabledResult() as CampaignDeliveryResult;
   }
 
-  const errors: string[] = [];
   const filters = buildFiltersFromCampaign(campaign, targeting);
   const recipientIds = await resolveCampaignRecipientIds(filters, MAX_RECIPIENTS_PER_SEND);
 
@@ -120,94 +120,68 @@ export async function executeCampaignDelivery(
       failedRecipients: 0,
       pushSuccessCount: 0,
       pushFailureCount: 0,
-      errors: ['No recipients match selected filters'],
+      errors: ['No recipients with fresh active FCM tokens match selected filters'],
     };
   }
 
   const recipientType = campaign.target_app === 'VENDOR' ? 'vendor' : 'customer';
-  const pushEnabled = await isPushEnabledForApp(campaign.target_app);
+
+  await update('notification_campaigns', { id: campaign.id }, {
+    status: 'QUEUED',
+    estimated_recipients: recipientIds.length,
+    updated_at: new Date().toISOString(),
+  });
+  await insert('notification_campaign_events', {
+    campaign_id: campaign.id,
+    event_type: 'QUEUED',
+    performed_by: performedBy,
+    metadata: { recipientCount: recipientIds.length, asyncEnqueue: true },
+  }).catch(() => undefined);
+
+  await insertPendingDeliveries(campaign.id, recipientType, recipientIds);
 
   await update('notification_campaigns', { id: campaign.id }, {
     status: 'SENDING',
-    estimated_recipients: recipientIds.length,
     updated_at: new Date().toISOString(),
   });
   await insert('notification_campaign_events', {
     campaign_id: campaign.id,
     event_type: 'SENDING',
     performed_by: performedBy,
-    metadata: { recipientCount: recipientIds.length },
+    metadata: { recipientCount: recipientIds.length, asyncWorker: true },
   }).catch(() => undefined);
 
-  let sentRecipients = 0;
-  let failedRecipients = 0;
-  let pushSuccessCount = 0;
-  let pushFailureCount = 0;
-
-  for (const recipientId of recipientIds) {
-    const deliveryRow = await insert('notification_campaign_deliveries', {
-      campaign_id: campaign.id,
-      recipient_id: recipientId,
-      recipient_type: recipientType,
-      status: 'PENDING',
-    }).catch(() => null);
-
-    const deliveryId = deliveryRow?.[0]?.id as string | undefined;
-    const result = await deliverToRecipient(campaign, recipientId, recipientType, pushEnabled);
-
-    pushSuccessCount += result.pushSuccess;
-    pushFailureCount += result.pushFailure;
-
-    if (result.inboxOk) {
-      sentRecipients += 1;
-      if (deliveryId) {
-        await update('notification_campaign_deliveries', { id: deliveryId }, {
-          status: 'SENT',
-          processed_at: new Date().toISOString(),
-        }).catch(() => undefined);
-      }
-    } else {
-      failedRecipients += 1;
-      if (result.error) errors.push(`${recipientId}: ${result.error}`);
-      if (deliveryId) {
-        await update('notification_campaign_deliveries', { id: deliveryId }, {
-          status: 'FAILED',
-          failure_reason: result.error || 'Delivery failed',
-          processed_at: new Date().toISOString(),
-        }).catch(() => undefined);
-      }
-    }
+  try {
+    await invokeCampaignDeliveryWorker(campaign.id, 1);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[campaign-enqueue] worker invoke failed:', msg);
+    return {
+      status: 'QUEUED',
+      estimatedRecipients: recipientIds.length,
+      sentRecipients: 0,
+      failedRecipients: 0,
+      pushSuccessCount: 0,
+      pushFailureCount: 0,
+      errors: [`Worker invoke failed (deliveries queued): ${msg}`],
+    };
   }
 
-  const finalStatus = sentRecipients > 0 ? 'SENT' : 'FAILED';
-  await update('notification_campaigns', { id: campaign.id }, {
-    status: finalStatus,
-    sent_recipients: sentRecipients,
-    sent_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  });
-
-  await insert('notification_campaign_events', {
-    campaign_id: campaign.id,
-    event_type: finalStatus === 'SENT' ? 'SENT' : 'FAILED',
-    performed_by: performedBy,
-    metadata: {
-      sentRecipients,
-      failedRecipients,
-      pushSuccessCount,
-      pushFailureCount,
-      errorSample: errors.slice(0, 5),
-    },
-  }).catch(() => undefined);
+  console.log(
+    JSON.stringify({
+      metric: 'notification_campaign_enqueue',
+      campaignId: campaign.id,
+      recipientCount: recipientIds.length,
+    })
+  );
 
   return {
-    status: finalStatus,
+    status: 'QUEUED',
     estimatedRecipients: recipientIds.length,
-    sentRecipients,
-    failedRecipients,
-    pushSuccessCount,
-    pushFailureCount,
-    errors: errors.slice(0, 10),
+    sentRecipients: 0,
+    failedRecipients: 0,
+    pushSuccessCount: 0,
+    pushFailureCount: 0,
+    errors: [],
   };
 }
-
