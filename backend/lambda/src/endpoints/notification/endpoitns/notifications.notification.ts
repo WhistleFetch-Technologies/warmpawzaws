@@ -38,6 +38,10 @@ import {
   markNotificationsOpenedByIds,
   resolveChannelsFromRequest,
 } from '../../../utils/notification-delivery';
+import {
+  scheduleRecipientAppIconBadgeSync,
+  syncRecipientAppIconBadge,
+} from '../../../utils/app-icon-badge-sync';
 
 async function markAllNotificationsOpenedForRecipient(recipientId: string, recipientType: string): Promise<void> {
   const result = await query(
@@ -48,6 +52,7 @@ async function markAllNotificationsOpenedForRecipient(recipientId: string, recip
 
   const ids = (result.rows || []).map((row: { id: string }) => row.id);
   await markNotificationsOpenedByIds(ids);
+  scheduleRecipientAppIconBadgeSync(recipientId, recipientType);
 }
 
 async function resolveCustomerIdForNotificationPhone(phone: string): Promise<string | null> {
@@ -339,12 +344,19 @@ export function registerNotificationEndpoints(app: Hono) {
     try {
       const { notificationId } = c.req.param();
 
-      const existing = await query('SELECT id FROM notifications WHERE id = $1', [notificationId]);
+      const existing = await query(
+        'SELECT id, recipient_id, recipient_type FROM notifications WHERE id = $1',
+        [notificationId]
+      );
       if ((existing.rows || []).length === 0) {
         return c.json({ error: 'Notification not found' }, 404);
       }
 
       await markNotificationsOpenedByIds([notificationId]);
+      const row = existing.rows[0] as { recipient_id?: string; recipient_type?: string };
+      if (row.recipient_id && row.recipient_type) {
+        scheduleRecipientAppIconBadgeSync(String(row.recipient_id), String(row.recipient_type));
+      }
 
       const updated = await query('SELECT * FROM notifications WHERE id = $1', [notificationId]);
       return c.json({
@@ -515,12 +527,19 @@ export function registerNotificationEndpoints(app: Hono) {
         return c.json({ error: 'notificationId is required' }, 400);
       }
 
-      const existing = await query('SELECT id FROM notifications WHERE id = $1', [notificationId]);
+      const existing = await query(
+        'SELECT id, recipient_id, recipient_type FROM notifications WHERE id = $1',
+        [notificationId]
+      );
       if ((existing.rows || []).length === 0) {
         return c.json({ error: 'Notification not found' }, 404);
       }
 
       await markNotificationsOpenedByIds([notificationId]);
+      const row = existing.rows[0] as { recipient_id?: string; recipient_type?: string };
+      if (row.recipient_id && row.recipient_type) {
+        scheduleRecipientAppIconBadgeSync(String(row.recipient_id), String(row.recipient_type));
+      }
 
       const updated = await query('SELECT * FROM notifications WHERE id = $1', [notificationId]);
       return c.json({
@@ -545,13 +564,10 @@ export function registerNotificationEndpoints(app: Hono) {
         return c.json({ error: 'phone is required' }, 400);
       }
 
-      // Find customer by phone
-      const customers = await select('customers', { phone: phone.replace(/[^0-9]/g, '') });
-      if (customers.length === 0) {
+      const customerId = await resolveCustomerIdForNotificationPhone(phone);
+      if (!customerId) {
         return c.json({ success: true, message: 'No notifications to mark' });
       }
-
-      const customerId = customers[0].id;
 
       await markAllNotificationsOpenedForRecipient(customerId, 'customer');
 
@@ -562,6 +578,39 @@ export function registerNotificationEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error marking all notifications as read:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /notifications/sync-app-badge
+   * Sync OS home-screen icon badge to current unread count (0 clears stuck iOS badges).
+   * Deployable without native rebuild — uses a silent FCM/APNs badge-only push.
+   */
+  app.post("/notifications/sync-app-badge", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      let userId = typeof body?.userId === 'string' ? body.userId.trim() : '';
+      let userType = typeof body?.userType === 'string' ? body.userType.trim() : 'customer';
+      const phone = typeof body?.phone === 'string' ? body.phone : '';
+
+      if (!userId && phone) {
+        userId = (await resolveCustomerIdForNotificationPhone(phone)) || '';
+        userType = 'customer';
+      }
+      if (!userId) {
+        return c.json({ error: 'userId or phone is required' }, 400);
+      }
+
+      const result = await syncRecipientAppIconBadge(userId, userType || 'customer');
+      return c.json({
+        success: true,
+        unreadCount: result.unread,
+        pushSuccessCount: result.successCount,
+        pushFailureCount: result.failureCount,
+      });
+    } catch (error: any) {
+      console.error('Error syncing app icon badge:', error);
+      return c.json({ error: error?.message || 'Badge sync failed' }, 500);
     }
   });
 

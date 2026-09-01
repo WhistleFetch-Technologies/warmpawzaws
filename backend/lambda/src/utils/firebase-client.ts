@@ -162,6 +162,8 @@ export interface PushNotificationPayload {
   body: string;
   imageUrl?: string;
   data?: Record<string, string>;
+  /** iOS home-screen icon badge. Defaults to 1 for alert pushes. */
+  badge?: number;
 }
 
 export interface PushNotificationResult {
@@ -251,6 +253,12 @@ function buildAndroidPushConfig() {
   };
 }
 
+function normalizeBadgeCount(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(99, Math.floor(n));
+}
+
 function buildApnsPushConfig(payload: PushNotificationPayload) {
   return {
     headers: {
@@ -264,12 +272,47 @@ function buildApnsPushConfig(payload: PushNotificationPayload) {
           body: payload.body,
         },
         sound: 'default',
-        badge: 1,
+        badge: payload.badge != null ? normalizeBadgeCount(payload.badge) : 1,
         'interruption-level': 'active',
       },
       ...(payload.data || {}),
     },
   };
+}
+
+/**
+ * Badge-only APNs (no alert/sound) so iOS home-screen icon can clear or sync
+ * without a tray notification. Used after inbox mark-read — no native rebuild.
+ */
+export function buildAppIconBadgeOnlyMessage(
+  badgeCount: number,
+  target: 'token' | 'tokens',
+  address: string | string[]
+): Record<string, unknown> {
+  const badge = normalizeBadgeCount(badgeCount);
+  const base: Record<string, unknown> = {
+    data: {
+      type: 'app_icon_badge_sync',
+      badge: String(badge),
+    },
+    apns: {
+      headers: {
+        'apns-priority': '10',
+        'apns-push-type': 'alert',
+      },
+      payload: {
+        aps: {
+          badge,
+        },
+      },
+    },
+  };
+  if (target === 'token') {
+    base.token = address;
+  } else {
+    base.tokens = address;
+  }
+  return base;
 }
 
 function buildFcmMessage(payload: PushNotificationPayload, target: 'token' | 'tokens' | 'topic', address: string | string[]) {
@@ -384,6 +427,40 @@ export async function sendPushToMultipleDevices(
       failureCount: fcmTokens.length,
       results: fcmTokens.map(() => ({ success: false, error: error.message })),
     };
+  }
+}
+
+/**
+ * Sync iOS app-icon badge without showing a notification tray item.
+ */
+export async function sendAppIconBadgeSync(
+  fcmTokens: string[],
+  badgeCount: number
+): Promise<{ successCount: number; failureCount: number }> {
+  const tokens = [...new Set(fcmTokens.map((t) => String(t || '').trim()).filter(Boolean))];
+  if (tokens.length === 0) {
+    return { successCount: 0, failureCount: 0 };
+  }
+
+  try {
+    const messaging = await getFirebaseMessaging();
+    const message = buildAppIconBadgeOnlyMessage(badgeCount, 'tokens', tokens);
+    const response = await messaging.sendEachForMulticast(message);
+    console.log(
+      JSON.stringify({
+        metric: 'app_icon_badge_sync',
+        badge: normalizeBadgeCount(badgeCount),
+        successCount: response.successCount,
+        failureCount: response.failureCount,
+      })
+    );
+    return {
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+    };
+  } catch (error: any) {
+    console.error('[Firebase] App icon badge sync error:', error?.message || error);
+    return { successCount: 0, failureCount: tokens.length };
   }
 }
 

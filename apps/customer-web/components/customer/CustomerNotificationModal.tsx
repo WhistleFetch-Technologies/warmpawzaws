@@ -118,6 +118,8 @@ export function CustomerNotificationModal({
         prev.map((n) => (n.notificationId === notificationId ? { ...n, isRead: true } : n))
       );
       onNotificationsRead?.();
+      const { requestAppIconBadgeSync } = await import('@/lib/app-icon-badge-sync');
+      void requestAppIconBadgeSync({ phone });
     } catch (error) {
       console.error('Error marking notification as read:', error);
       toast.error('Could not mark as read');
@@ -132,6 +134,8 @@ export function CustomerNotificationModal({
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       toast.success('All notifications marked as read');
       onNotificationsRead?.();
+      const { requestAppIconBadgeSync } = await import('@/lib/app-icon-badge-sync');
+      void requestAppIconBadgeSync({ phone: cleanPhone });
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
       toast.error('Could not mark all as read');

@@ -457,10 +457,19 @@ export function useHomePageData({
           if (cancelled) return;
           if (typeof data.unreadCount === 'number') {
             setNotificationUnreadCount(data.unreadCount);
+            const { requestAppIconBadgeSyncOnceWhenClear } = await import('@/lib/app-icon-badge-sync');
+            requestAppIconBadgeSyncOnceWhenClear({
+              unreadCount: data.unreadCount,
+              userId,
+              phone: clean,
+            });
             return;
           }
           const list = data.notifications ?? [];
-          setNotificationUnreadCount(list.filter((n) => !(n.is_read ?? n.read)).length);
+          const unread = list.filter((n) => !(n.is_read ?? n.read)).length;
+          setNotificationUnreadCount(unread);
+          const { requestAppIconBadgeSyncOnceWhenClear } = await import('@/lib/app-icon-badge-sync');
+          requestAppIconBadgeSyncOnceWhenClear({ unreadCount: unread, userId, phone: clean });
           return;
         }
         const data = await apiClient.get<{ notifications?: { is_read?: boolean; read?: boolean }[] }>(
@@ -468,7 +477,10 @@ export function useHomePageData({
         );
         if (cancelled) return;
         const list = data.notifications ?? [];
-        setNotificationUnreadCount(list.filter((n) => !(n.is_read ?? n.read)).length);
+        const unread = list.filter((n) => !(n.is_read ?? n.read)).length;
+        setNotificationUnreadCount(unread);
+        const { requestAppIconBadgeSyncOnceWhenClear } = await import('@/lib/app-icon-badge-sync');
+        requestAppIconBadgeSyncOnceWhenClear({ unreadCount: unread, phone: clean });
       } catch {
         if (!cancelled) setNotificationUnreadCount(0);
       }
