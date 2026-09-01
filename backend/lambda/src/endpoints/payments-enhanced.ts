@@ -38,6 +38,10 @@ import {
   computeWalletBookingSplit,
   resolveLockedBookingGrossFromNotes,
 } from '../utils/booking-financial-gross';
+import {
+  creditNetWalletDebitForAbandonedBooking,
+  shouldDebitWalletImmediately,
+} from '../utils/booking-wallet-capture';
 import { calculateAuthoritativeServiceGst } from '../utils/calculate-authoritative-service-gst';
 import { isGstConfigurationError } from '../lib/services/gst-catalog-role-resolution';
 import { isGstPlaceOfSupplyError } from '../lib/gst-place-of-supply';
@@ -519,20 +523,27 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           fullyWallet = split.fullyWallet;
 
           if (targetDebit > 0) {
-            const idem =
-              idempotencyKey != null && String(idempotencyKey).trim() !== ''
-                ? String(idempotencyKey).trim()
-                : `legacy-${bookingId}`;
-            const d = await debitCustomerWalletForBookingInTransaction(client, {
-              customerId: effectiveCustomerId,
-              bookingId,
-              amount: Math.round(targetDebit * 100) / 100,
-              idempotencyKey: idem,
-            });
-            walletApplied = d.debited;
-            roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
-            fullyWallet =
-              walletApplied > 0 && roundedRemain < 0.01 && gstAmount < 0.01;
+            // Split-pay: record intent only. Debit on Razorpay verify/webhook so
+            // abandon / pending_payment does not keep the customer's wallet.
+            if (shouldDebitWalletImmediately(fullyWallet)) {
+              const idem =
+                idempotencyKey != null && String(idempotencyKey).trim() !== ''
+                  ? String(idempotencyKey).trim()
+                  : `legacy-${bookingId}`;
+              const d = await debitCustomerWalletForBookingInTransaction(client, {
+                customerId: effectiveCustomerId,
+                bookingId,
+                amount: Math.round(targetDebit * 100) / 100,
+                idempotencyKey: idem,
+              });
+              walletApplied = d.debited;
+              roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
+              fullyWallet =
+                walletApplied > 0 && roundedRemain < 0.01 && gstAmount < 0.01;
+            } else {
+              walletApplied = Math.round(targetDebit * 100) / 100;
+              roundedRemain = split.cashRemainder;
+            }
           }
         }
 
@@ -615,14 +626,20 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         );
 
         const row = result.rows[0];
-        return { row, walletApplied, remainingAfterWallet: roundedRemain };
+        return {
+          row,
+          walletApplied,
+          remainingAfterWallet: roundedRemain,
+          walletActuallyDebited: shouldDebitWalletImmediately(fullyWallet) ? walletApplied : 0,
+        };
       });
       } catch (txErr: any) {
         (txErr as Error & { step?: string }).step = 'payment_insert';
         throw txErr;
       }
 
-      walletDebitedAmount = (payment as any).walletApplied ?? 0;
+      const intendedWalletAmount = (payment as any).walletApplied ?? 0;
+      walletDebitedAmount = (payment as any).walletActuallyDebited ?? 0;
       remainingAmount = (payment as any).remainingAfterWallet ?? totalAmount;
       walletDebited = walletDebitedAmount > 0;
       payment = (payment as any).row;
@@ -662,7 +679,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           platformFee,
           convenienceFee,
           deliveryFee,
-          walletAmount: walletDebitedAmount,
+          walletAmount: intendedWalletAmount,
           finalPaid: totalAmount,
         });
       } catch (snapshotErr: any) {
@@ -1182,6 +1199,74 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
     }
   });
   
+  /**
+   * POST /payments/release-unpaid-wallet
+   * Credit back a split-pay wallet debit when Razorpay never captured
+   * (dismiss / failed / abandon). Booking stays pending_payment so the
+   * customer can resume from My Bookings.
+   */
+  app.post('/payments/release-unpaid-wallet', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const bookingId = String(body?.bookingId || '').trim();
+      if (!bookingId) {
+        return c.json({ success: false, error: 'bookingId is required' }, 400);
+      }
+
+      const bookingRes = await query(
+        `SELECT id, customer_id, status, payment_status
+         FROM bookings WHERE id = $1::uuid`,
+        [bookingId]
+      );
+      const booking = bookingRes.rows[0];
+      if (!booking) {
+        return c.json({ success: false, error: 'Booking not found' }, 404);
+      }
+
+      const st = String(booking.status || '').toLowerCase();
+      const ps = String(booking.payment_status || '').toLowerCase();
+      if (st !== 'pending_payment' && !(st === 'pending' && ps !== 'paid' && ps !== 'completed')) {
+        return c.json({
+          success: true,
+          credited: 0,
+          skipped: true,
+          reason: 'booking_not_awaiting_payment',
+        });
+      }
+
+      const captured = await query(
+        `SELECT id FROM payments
+         WHERE booking_id = $1::uuid
+           AND LOWER(COALESCE(payment_status, '')) IN ('completed', 'paid')
+           AND razorpay_payment_id IS NOT NULL
+         LIMIT 1`,
+        [bookingId]
+      );
+      if (captured.rows.length > 0) {
+        return c.json({
+          success: true,
+          credited: 0,
+          skipped: true,
+          reason: 'razorpay_already_captured',
+        });
+      }
+
+      if (!booking.customer_id) {
+        return c.json({ success: true, credited: 0, skipped: true, reason: 'no_customer' });
+      }
+
+      const result = await creditNetWalletDebitForAbandonedBooking({
+        customerId: String(booking.customer_id),
+        bookingId,
+        label: 'booking',
+      });
+      return c.json({ success: true, credited: result.credited, alreadyCredited: result.alreadyCredited });
+    } catch (error: any) {
+      console.error('[PAYMENTS] release-unpaid-wallet failed:', error?.message || error);
+      return c.json({ success: false, error: error?.message || 'Failed to release wallet' }, 500);
+    }
+  });
+
   // Alias for frontend compatibility
   app.post('/payments/create-order', async (c) => {
     // ✅ FIX: Parse body from Hono context FIRST

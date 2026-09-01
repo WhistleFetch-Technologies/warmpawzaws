@@ -3629,6 +3629,13 @@ export function UniversalPaymentPage({
         if (!bid || razorpayGatewaySuccessHandled || razorpayPaymentFailed) return;
 
         toast.info('Payment not completed. Complete payment from My Bookings within 5 minutes to keep your slot.');
+        if (useWallet && (walletAmount || 0) > 0.009) {
+          try {
+            await apiClient.post('/payments/release-unpaid-wallet', { bookingId: bid });
+          } catch (walletReleaseErr) {
+            console.warn('[PAYMENT] release-unpaid-wallet failed:', walletReleaseErr);
+          }
+        }
         try {
           onPaymentAbandoned?.();
         } catch (cbErr) {
@@ -3738,6 +3745,12 @@ export function UniversalPaymentPage({
             });
             toast.error(`Payment failed: ${resp?.error?.description || 'Unknown error'}. Please try again.`);
             setProcessing(false);
+            const failedBid = bookingIdForSlotReleaseOnDismiss;
+            if (failedBid && useWallet && (walletAmount || 0) > 0.009) {
+              void apiClient.post('/payments/release-unpaid-wallet', { bookingId: failedBid }).catch((walletReleaseErr) => {
+                console.warn('[PAYMENT] release-unpaid-wallet after fail:', walletReleaseErr);
+              });
+            }
           });
           razorpay.open();
           console.log('âœ… [PAYMENT] Razorpay checkout opened successfully');

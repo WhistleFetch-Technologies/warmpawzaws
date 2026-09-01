@@ -2118,7 +2118,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               });
               const chunk = split.walletApplied;
               let debitedActual = 0;
-              if (chunk > 0) {
+              // Split-pay: do not debit until Razorpay verify/webhook. Wallet-only still
+              // debits here because there is no gateway capture to attach to.
+              if (chunk > 0 && split.fullyWallet) {
                 const d = await debitCustomerWalletForBookingInTransaction(client, {
                   customerId,
                   bookingId: String(insertedBooking.id),

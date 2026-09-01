@@ -503,6 +503,11 @@ export function PaymentPage({
           ondismiss: () => {
             setProcessing(false);
             toast.info('Payment cancelled');
+            if (currentBookingId && useWallet && walletAmount > 0.009) {
+              void apiClient.post('/payments/release-unpaid-wallet', { bookingId: currentBookingId }).catch((err) => {
+                console.warn('[PAYMENT] release-unpaid-wallet failed:', err);
+              });
+            }
           },
         },
       });

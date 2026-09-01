@@ -21,6 +21,7 @@ import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, insert, update, withTransaction } from '../../../database/rds-connection';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
+import { debitReservedWalletForBookingInTransaction } from '../../../utils/booking-wallet-capture';
 import {
   computeWalletBookingSplit,
   resolveLockedBookingGrossFromNotes,
@@ -684,14 +685,22 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             });
             const cap = split.walletApplied;
             if (cap <= 0.009) return;
-            const idem = `rz-create-order-wallet-${String(bookingId)}`;
-            const deb = await debitCustomerWalletForBookingInTransaction(client, {
-              customerId: String(customerIdFinal),
-              bookingId: String(bookingId),
-              amount: Math.round(cap * 100) / 100,
-              idempotencyKey: idem,
-            });
-            if (!deb || (deb.debited ?? 0) <= 0.009) return;
+            // Wallet-only (no GST/Razorpay remainder): debit now. Split-pay records
+            // intent on the orphan payment row; debit happens at verify/webhook.
+            let paidW = 0;
+            if (split.fullyWallet) {
+              const idem = `rz-create-order-wallet-${String(bookingId)}`;
+              const deb = await debitCustomerWalletForBookingInTransaction(client, {
+                customerId: String(customerIdFinal),
+                bookingId: String(bookingId),
+                amount: Math.round(cap * 100) / 100,
+                idempotencyKey: idem,
+              });
+              if (!deb || (deb.debited ?? 0) <= 0.009) return;
+              paidW = Math.round((deb.debited ?? 0) * 100) / 100;
+            } else {
+              paidW = 0;
+            }
             const orphan2 = await client.query(
               `SELECT id FROM payments
                WHERE booking_id = $1::uuid AND payment_status = 'pending' AND razorpay_order_id IS NULL
@@ -704,7 +713,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             );
             const ec = new Set(colsRes.rows.map((r) => r.column_name));
             const payAmount =
-              gross > 0 ? gross : Math.round((Number(amount) + (deb.debited ?? 0)) * 100) / 100;
+              gross > 0 ? gross : Math.round((Number(amount) + paidW) * 100) / 100;
             const pdata: Record<string, unknown> = {
               booking_id: bookingId,
               customer_id: customerIdFinal,
@@ -714,12 +723,14 @@ class CreateRazorpayOrderHandler extends BaseHandler {
               payment_method: 'razorpay',
               payment_status: 'pending',
             };
+            if (ec.has('wallet_amount_used') && cap > 0.009) {
+              pdata.wallet_amount_used = Math.round(cap * 100) / 100;
+            }
             const cols = Object.keys(pdata).filter((k) => ec.has(k));
             if (cols.length < 5) return;
             const vals = cols.map((k) => pdata[k]);
             const ph = cols.map((_, i) => `$${i + 1}`).join(', ');
             await client.query(`INSERT INTO payments (${cols.join(', ')}) VALUES (${ph})`, vals);
-            const paidW = Math.round((deb.debited ?? 0) * 100) / 100;
             const razorpayRemainRupee = Math.round((Number(amount) || 0) * 100) / 100;
             // Fully paid via wallet only when GST is zero (GST must go via Razorpay).
             if (gross > 0 && gstForWallet < 0.01 && paidW + 0.02 >= gross) {
@@ -1421,79 +1432,22 @@ class VerifyPaymentHandler extends BaseHandler {
         const bookingRow = bookingRows[0] || {};
         const previousStatus = bookingRow?.status || null;
 
-        // Split-pay gate: if financial meta reserved a wallet slice, debit it before marking paid.
-        // Razorpay amount alone (often GST) must not complete the booking without the wallet leg.
+        // Split-pay gate: debit reserved wallet now that Razorpay captured.
         const lockedAtVerify = resolveLockedBookingGrossFromNotes(bookingRow.notes);
-        const intendedWallet = Math.round((lockedAtVerify?.walletAmount ?? 0) * 100) / 100;
+        const intendedFromPayment =
+          Math.round((parseFloat(String(payment.wallet_amount_used ?? 0)) || 0) * 100) / 100;
         let walletDebitedAtVerify = 0;
-        if (intendedWallet > 0.009 && bookingRow.customer_id) {
-          const grossAtVerify =
-            lockedAtVerify && lockedAtVerify.grossTotal > 0
-              ? lockedAtVerify.grossTotal
-              : Math.round((parseFloat(String(bookingRow.total_amount ?? 0)) || 0) * 100) / 100;
-          const gstAtVerify = lockedAtVerify?.totalTax ?? 0;
-          let alreadyDebited = 0;
-          try {
-            const existingDebits = await client.query(
-              `SELECT COALESCE(SUM(amount), 0)::text AS total
-               FROM wallet_transactions
-               WHERE transaction_type = 'debit'
-                 AND (
-                   (reference_type = 'booking_payment' AND reference_id::text = $1)
-                   OR description ILIKE $2
-                 )`,
-              [String(bookingId), `%${String(bookingId)}%`]
-            );
-            alreadyDebited =
-              Math.round((parseFloat(String(existingDebits.rows[0]?.total ?? '0')) || 0) * 100) / 100;
-          } catch (existingDebitErr: any) {
-            console.warn(
-              '[PAYMENT-VERIFY] existing wallet debit lookup skipped:',
-              existingDebitErr?.message
-            );
-          }
-          const balRes = await client.query(
-            `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
-            [String(bookingRow.customer_id)]
-          );
-          const bal = parseFloat(String(balRes.rows[0]?.b ?? '0')) || 0;
-          const split = computeWalletBookingSplit({
-            grossTotal: grossAtVerify > 0 ? grossAtVerify : intendedWallet + gstAtVerify,
-            walletIntent: intendedWallet,
-            walletBalance: bal + alreadyDebited,
-            gstAmount: gstAtVerify,
+        if (bookingRow.customer_id) {
+          const captured = await debitReservedWalletForBookingInTransaction(client, {
+            bookingId: String(bookingId),
+            customerId: String(bookingRow.customer_id),
+            notes: bookingRow.notes,
+            bookingTotalAmount: bookingRow.total_amount,
+            intendedWalletFallback: intendedFromPayment,
+            razorpayOrderId: razorpay_order_id,
+            idempotencyKey: `rz-verify-wallet-${String(bookingId)}`,
           });
-          const needDebit = Math.max(
-            0,
-            Math.round((split.walletApplied - alreadyDebited) * 100) / 100
-          );
-          if (needDebit > 0.009) {
-            const deb = await debitCustomerWalletForBookingInTransaction(client, {
-              customerId: String(bookingRow.customer_id),
-              bookingId: String(bookingId),
-              amount: needDebit,
-              idempotencyKey: `rz-verify-wallet-${String(bookingId)}`,
-            });
-            walletDebitedAtVerify = Math.round((deb?.debited ?? needDebit) * 100) / 100;
-            if (walletDebitedAtVerify > 0.009) {
-              try {
-                await client.query(
-                  `UPDATE payments
-                   SET wallet_amount_used = GREATEST(COALESCE(wallet_amount_used, 0), $1::numeric),
-                       updated_at = NOW()
-                   WHERE razorpay_order_id = $2`,
-                  [alreadyDebited + walletDebitedAtVerify, razorpay_order_id]
-                );
-              } catch (walletColErr: any) {
-                console.warn(
-                  '[PAYMENT-VERIFY] wallet_amount_used update skipped:',
-                  walletColErr?.message
-                );
-              }
-            }
-          } else {
-            walletDebitedAtVerify = alreadyDebited;
-          }
+          walletDebitedAtVerify = captured.debited;
         }
 
         const cashPaid = Math.round((parseFloat(String(payment.amount ?? 0)) || 0) * 100) / 100;
