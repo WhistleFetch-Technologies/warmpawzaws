@@ -25,6 +25,7 @@ import {
 } from './payment-attempt';
 import { refundCapturedPaymentById } from './refund-captured-payment';
 import { creditCustomerWalletForBookingRefund } from '../credit-customer-wallet';
+import { debitReservedWalletForBookingInTransaction } from '../booking-wallet-capture';
 
 export type FinalizeCapturedPaymentInput = {
   source: PaymentFinalizationSource;
@@ -179,7 +180,7 @@ export async function finalizeCapturedPayment(
       const locked = await client.query(
         `SELECT id, status, payment_status, cancellation_reason, cancelled_at, cancelled_by,
                 vendor_id, customer_id, booking_date, booking_time, staff_id,
-                duration_minutes, total_duration_minutes
+                duration_minutes, total_duration_minutes, notes, total_amount
          FROM bookings WHERE id = $1::uuid FOR UPDATE`,
         [bookingId]
       );
@@ -267,6 +268,34 @@ export async function finalizeCapturedPayment(
         if (!free) {
           refundPaymentId = paymentId;
           refundReason = 'late_capture_slot_unavailable';
+          result = {
+            outcome: 'refunded',
+            entityType: 'booking',
+            entityId: bookingId,
+            paymentId,
+            previousEntityStatus: st,
+          };
+          return;
+        }
+      }
+
+      if (b.customer_id) {
+        try {
+          const intendedFromPayment =
+            Math.round((parseFloat(String(payment.wallet_amount_used ?? 0)) || 0) * 100) / 100;
+          await debitReservedWalletForBookingInTransaction(client, {
+            bookingId,
+            customerId: String(b.customer_id),
+            notes: b.notes,
+            bookingTotalAmount: b.total_amount,
+            intendedWalletFallback: intendedFromPayment,
+            razorpayOrderId: payment.razorpay_order_id ? String(payment.razorpay_order_id) : null,
+            idempotencyKey: `rz-verify-wallet-${bookingId}`,
+          });
+        } catch (walletErr: any) {
+          console.error('[PAYMENT-SAFETY] reserved wallet debit failed at finalize:', walletErr?.message);
+          refundPaymentId = paymentId;
+          refundReason = 'unfulfillable_captured_payment';
           result = {
             outcome: 'refunded',
             entityType: 'booking',

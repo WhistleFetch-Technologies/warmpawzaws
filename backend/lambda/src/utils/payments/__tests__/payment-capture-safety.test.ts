@@ -149,6 +149,7 @@ describe('expiry does not treat 5-minute hold as Razorpay invalidation', () => {
     expect(file).toContain("source: 'expiry'");
     expect(file).toContain('razorpay_order_id IS NOT NULL');
     expect(file).toContain('THEN payment_status');
+    expect(file).toContain('creditNetWalletDebitForAbandonedBooking');
   });
 
   test('payment.failed does not mark a still-payable attempt failed or cancel the booking', () => {
