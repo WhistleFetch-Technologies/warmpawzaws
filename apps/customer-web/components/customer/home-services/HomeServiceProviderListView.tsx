@@ -28,6 +28,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
+import { sanitizeDisplayImageUrl } from '@/lib/resolve-display-image-url';
 import { useDiscoverServicesFeed } from '@/hooks/useDiscoverServicesFeed';
 import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/DiscoveryVendorFeedSentinel';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
@@ -88,10 +89,11 @@ function ProviderListAvatar({
   useEffect(() => {
     setFailed(false);
   }, [photoUrl]);
-  const show = Boolean(photoUrl && !failed);
+  const safe = sanitizeDisplayImageUrl(photoUrl);
+  const show = Boolean(safe && !failed);
   return show ? (
     <img
-      src={photoUrl}
+      src={safe}
       alt={businessName}
       className="h-full w-full object-cover"
       onError={() => setFailed(true)}

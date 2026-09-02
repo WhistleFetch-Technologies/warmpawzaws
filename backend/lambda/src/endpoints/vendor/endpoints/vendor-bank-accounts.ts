@@ -582,6 +582,53 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   });
 
   /**
+   * POST /vendor/:vendorId/upi/validate
+   * Razorpay VPA check only — does not persist.
+   */
+  app.post("/vendor/:vendorId/upi/validate", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const trimmedId = (vendorId || '').trim();
+      if (!trimmedId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const rawUpi = body?.upi_id ?? body?.upiId;
+      const upi_id = typeof rawUpi === 'string' ? rawUpi.trim() : rawUpi != null ? String(rawUpi).trim() : '';
+
+      if (!upi_id || !upi_id.includes('@')) {
+        return c.json({ success: false, valid: false, error: 'Invalid UPI ID format' }, 400);
+      }
+
+      const vendor = await resolveVendorById(trimmedId);
+      if (!vendor?.id) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vpaCheck = await getRazorpayClient().validateVpa(upi_id);
+      if (!vpaCheck.valid) {
+        const msg = vpaCheck.error || 'UPI verification failed';
+        const status = /not configured/i.test(msg) ? 503 : 400;
+        return c.json({ success: false, valid: false, error: msg }, status);
+      }
+
+      return c.json({
+        success: true,
+        valid: true,
+        vpa_holder_name: vpaCheck.customerName?.trim() || null,
+      });
+    } catch (error: any) {
+      console.error('Error validating UPI ID:', error);
+      const msg = error?.message || 'Failed to validate UPI';
+      if (/Razorpay not configured|not configured.*Razorpay/i.test(msg)) {
+        return c.json({ success: false, valid: false, error: msg }, 503);
+      }
+      return c.json({ success: false, valid: false, error: msg }, 500);
+    }
+  });
+
+  /**
    * POST /vendor/:vendorId/upi
    * Save vendor UPI ID
    */

@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
@@ -306,11 +307,13 @@ function InstantVendorList({ vendors, loading, onSelectVendor, onBack }: Instant
                 className="w-full p-4 rounded-2xl text-left transition-all border-2 border-transparent hover:border-[#FF8C42] hover:shadow-md bg-white flex items-center gap-4"
               >
                 <div className="w-14 h-14 rounded-xl bg-gray-200 overflow-hidden flex-shrink-0">
-                  {v.photo ? (
-                    <img src={v.photo} alt={v.vendorName} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-2xl">🐾</div>
-                  )}
+                  <DiscoveryProviderAvatar
+                    name={v.vendorName}
+                    photo={v.photo}
+                    className="w-14 h-14 rounded-xl object-cover"
+                    fallbackClassName="w-14 h-14 rounded-xl flex items-center justify-center text-2xl bg-gray-200"
+                    fallback="🐾"
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-base text-slate-900">{v.vendorName}</h3>

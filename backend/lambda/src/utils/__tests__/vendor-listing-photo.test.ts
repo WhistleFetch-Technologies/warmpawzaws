@@ -52,6 +52,20 @@ describe('getVendorListingPhotoUrl', () => {
   beforeEach(() => {
     resolveImageForContext.mockClear();
     regeneratePresignedUrl.mockClear();
+    resolveImageForContext.mockImplementation(async (raw: string, opts: { context?: string; assetType?: string }) => {
+      const s = String(raw).trim();
+      if (!s) return null;
+      return {
+        displayUrl: `https://resolved.example/${opts.context ?? 'list'}/${opts.assetType ?? 'profile'}/${encodeURIComponent(s)}`,
+        imageKey: s,
+        url: `https://resolved.example/full/${encodeURIComponent(s)}`,
+        thumbUrl: `https://resolved.example/thumb/${encodeURIComponent(s)}`,
+        width: 0,
+        height: 0,
+        thumbWidth: null,
+        thumbHeight: null,
+      };
+    });
   });
 
   it('uses resolveImageForContext list thumbs for center facility photo', async () => {
@@ -127,5 +141,29 @@ describe('getVendorListingPhotoUrl', () => {
 
   it('returns null when no photo sources', async () => {
     expect(await getVendorListingPhotoUrl({ vendor_type: 'solo' })).toBeNull();
+  });
+
+  it('falls back to profile when center facility resolve fails', async () => {
+    resolveImageForContext.mockImplementation(async (raw: string, opts: { assetType?: string }) => {
+      if (opts.assetType === 'facility') return null;
+      return {
+        displayUrl: `https://resolved.example/list/profile/${encodeURIComponent(raw)}`,
+        imageKey: raw,
+        url: `https://resolved.example/full/${encodeURIComponent(raw)}`,
+        thumbUrl: null,
+        width: 0,
+        height: 0,
+        thumbWidth: null,
+        thumbHeight: null,
+      };
+    });
+    const url = await getVendorListingPhotoUrl({
+      id: 'center-dead-gallery',
+      vendor_type: 'center',
+      metadata: { facility_photos: ['vendors/dead/gone.webp'] },
+      profile_photo_url: 'media/vendor/center-dead-gallery/avatar.webp',
+    });
+    expect(url).toContain('list/profile');
+    expect(url).toContain('avatar.webp');
   });
 });
