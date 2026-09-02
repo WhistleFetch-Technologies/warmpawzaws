@@ -15,6 +15,7 @@ interface CafeVendorDashboardProps {
   vendorId: string;
   vendorData?: any;
   onBack?: () => void;
+  onNavigateToEventManagement?: () => void;
 }
 
 interface Table {
@@ -36,7 +37,7 @@ interface MenuItem {
   imageUrl?: string;
 }
 
-export function CafeVendorDashboard({ vendorId, vendorData, onBack }: CafeVendorDashboardProps) {
+export function CafeVendorDashboard({ vendorId, vendorData, onBack, onNavigateToEventManagement }: CafeVendorDashboardProps) {
   const [tables, setTables] = useState<Table[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [reservations, setReservations] = useState<any[]>([]);
@@ -250,6 +251,11 @@ export function CafeVendorDashboard({ vendorId, vendorData, onBack }: CafeVendor
             <p className="text-gray-600 mt-1">Manage tables, menu, and reservations</p>
           </div>
           <div className="flex gap-3">
+            {onNavigateToEventManagement && (
+              <Button variant="outline" onClick={onNavigateToEventManagement}>
+                Events
+              </Button>
+            )}
             {onBack && (
               <Button variant="outline" onClick={onBack}>
                 ← Back

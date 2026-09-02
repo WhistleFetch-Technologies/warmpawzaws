@@ -76,6 +76,26 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
       router.push(CUSTOMER_ROUTES.wishlist.path);
     },
 
+    goToEvents(opts?: { replace?: boolean }) {
+      if (opts?.replace) {
+        router.replace(CUSTOMER_ROUTES.events.path);
+        return;
+      }
+      router.push(CUSTOMER_ROUTES.events.path);
+    },
+
+    goToEventDetail(eventId: string) {
+      router.push(CUSTOMER_ROUTES.eventDetail(eventId).path);
+    },
+
+    goToEventBook(eventId: string) {
+      router.push(CUSTOMER_ROUTES.eventBook(eventId).path);
+    },
+
+    goToEventRegistration(registrationId: string) {
+      router.replace(CUSTOMER_ROUTES.eventRegistration(registrationId).path);
+    },
+
     goToAuth(returnPath?: string) {
       const path =
         returnPath ||

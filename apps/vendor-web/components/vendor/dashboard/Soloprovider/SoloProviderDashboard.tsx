@@ -98,6 +98,7 @@ import { DashboardStats } from '@/components/shared/DashboardStats';
 export function SoloProviderDashboard({
   session,
   vendorData,
+  onNavigateToEventManagement,
 }: SoloProviderDashboardProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
@@ -902,6 +903,15 @@ export function SoloProviderDashboard({
               >
                 <Package className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Manage Services</span>
+              </button>
+            )}
+            {onNavigateToEventManagement && capabilities.events && (
+              <button
+                onClick={onNavigateToEventManagement}
+                className="flex-1 min-w-[140px] bg-white border-2 border-sky-500 text-sky-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-sky-500 hover:text-white transition-colors group text-center"
+              >
+                <Calendar className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Events</span>
               </button>
             )}
           </div>

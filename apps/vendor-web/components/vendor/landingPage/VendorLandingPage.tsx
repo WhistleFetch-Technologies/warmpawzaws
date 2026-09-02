@@ -1512,6 +1512,7 @@ export function VendorLandingPage({
         return (
           <CafeVendorDashboard
             vendorId={vendorId}
+            onNavigateToEventManagement={() => setShowEventManagement(true)}
           />
         );
       }

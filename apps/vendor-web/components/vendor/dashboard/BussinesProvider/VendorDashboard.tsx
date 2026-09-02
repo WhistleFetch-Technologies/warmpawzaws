@@ -368,6 +368,7 @@ export function VendorDashboard({
         <SoloProviderDashboard
           session={soloSession}
           vendorData={vendorData}
+          onNavigateToEventManagement={onNavigateToEventManagement}
         />
       </Suspense>
     );

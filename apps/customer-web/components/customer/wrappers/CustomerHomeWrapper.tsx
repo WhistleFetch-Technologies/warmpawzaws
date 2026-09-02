@@ -945,6 +945,12 @@ export function CustomerHomeWrapper({
       router.replace(intent.returnPath || '/checkout');
       return;
     }
+    if (intent?.kind === 'event') {
+      finishGuestJourneyRestore();
+      emitGuestAuthAnalytics('booking_resumed', { kind: 'event' });
+      router.replace(intent.returnPath || '/events');
+      return;
+    }
     if (intent) {
       emitGuestAuthAnalytics('booking_resumed', { kind: intent.kind || 'booking' });
       if (isGuestAppointmentJourney(intent) && (intent.vendorId || intent.date || intent.time || intent.serviceId)) {

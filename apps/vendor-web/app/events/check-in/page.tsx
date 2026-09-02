@@ -85,19 +85,28 @@ function CheckInContent() {
   const handleCheckIn = async (registrationId: string) => {
     try {
       setProcessingId(registrationId);
-      const vendorId = localStorage.getItem('vendorId');
-      
-      await apiClient.post(`/events/registrations/${registrationId}/check-in`, {
-        checkedInBy: vendorId,
-      });
-      
-      // Refresh the list
+      await apiClient.post(`/events/registrations/${registrationId}/check-in`, {});
       loadEventData();
     } catch (error: any) {
       console.error('Error checking in:', error);
       alert(error.message || 'Failed to check in attendee');
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  const handleTokenCheckIn = async () => {
+    const token = searchQuery.trim();
+    if (!token) return;
+    try {
+      const verified = await apiClient.get<any>(`/events/verify/${encodeURIComponent(token)}`);
+      const ticketId = verified.ticket?.id;
+      if (!ticketId) throw new Error('Ticket not found');
+      const result = await apiClient.post<any>(`/events/tickets/${ticketId}/check-in`, {});
+      alert(result.already_checked_in ? 'already_checked_in' : 'Checked in');
+      loadEventData();
+    } catch (error: any) {
+      alert(error.message || 'Check-in failed');
     }
   };
 
@@ -172,11 +181,18 @@ function CheckInContent() {
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
         <input
           type="text"
-          placeholder="Search by name, phone, or booking ref..."
+          placeholder="Paste opaque QR token or search attendees"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        <button
+          type="button"
+          onClick={handleTokenCheckIn}
+          className="mt-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white"
+        >
+          Check in token
+        </button>
       </div>
 
       {/* Registrations List */}

@@ -110,5 +110,13 @@ export function resolveGuestPublicApiPath(path: string): string {
     return `/public${pathname}${q}`;
   }
 
+  if (pathname === '/events/discover') {
+    return `/public/events/discover${q}`;
+  }
+
+  if (/^\/events\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pathname)) {
+    return `/public${pathname}${q}`;
+  }
+
   return path;
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { memo, useCallback, useMemo } from 'react';
+import { Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { COMING_SOON_HOME_SERVICE_SCREENS, type QuickServiceTile } from '../types';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
@@ -81,12 +82,19 @@ function HelpGridSectionComponent({
     [onNavigate]
   );
 
-  if (secondaryTiles.length === 0) return null;
-
   return (
     <div className={`mb-6 px-4 ${className}`}>
       <h2 className="mb-3 font-semibold text-gray-900">More ways we can help</h2>
       <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          className="rounded-2xl border border-gray-100 bg-gradient-to-br from-white to-orange-50/80 p-4 text-left transition-all hover:shadow-md active:opacity-90"
+          onClick={() => onNavigate('/events')}
+        >
+          <Calendar className="mb-2 h-8 w-8 text-[#FF8C42]" />
+          <h3 className="mb-1 text-sm font-semibold text-gray-800">Events</h3>
+          <p className="text-xs text-gray-600">Pet meetups, workshops & more</p>
+        </button>
         {secondaryTiles.map((service, index) => {
           const screen = String(service.screen || '').toLowerCase();
           const key = ((service.categoryId || service.screen || '') as string).toLowerCase();

@@ -49,6 +49,19 @@ describe('navigation Phase 3', () => {
   });
 
   describe('navigation-service', () => {
+    it('goToEvents and event book use customer routes', () => {
+      const router = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
+      const nav = createCustomerNavigation(router);
+      nav.goToEvents();
+      expect(router.push).toHaveBeenCalledWith('/events');
+      nav.goToEventDetail('evt-1');
+      expect(router.push).toHaveBeenCalledWith('/events/evt-1');
+      nav.goToEventBook('evt-1');
+      expect(router.push).toHaveBeenCalledWith('/events/evt-1/book');
+      nav.goToEventRegistration('reg-1');
+      expect(router.replace).toHaveBeenCalledWith('/events/registrations/reg-1');
+    });
+
     it('goToProduct skips duplicate URL', () => {
       window.history.pushState({}, '', '/shop/dup');
       const router = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };

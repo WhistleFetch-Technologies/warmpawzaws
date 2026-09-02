@@ -157,6 +157,25 @@ export function requestGuestAuthForServiceResume(opts: {
   });
 }
 
+/** Events Book — restore to /events/{id}/book after login, signup, profile, or pet creation. */
+export function requestGuestAuthForEventBook(opts: {
+  eventId: string;
+  returnPath?: string;
+}): boolean {
+  const eventId = String(opts.eventId || '').trim();
+  const returnPath = opts.returnPath || (eventId ? `/events/${eventId}/book` : '/events');
+  return requestGuestAuthIfNeeded({
+    mode: 'signup',
+    returnPath,
+    resumeScreen: undefined,
+    guestBookingIntent: {
+      kind: 'event',
+      requiresPet: true,
+      funnelStarted: 'booking',
+    },
+  });
+}
+
 /** Instant Tele — not a slot appointment; must not overwrite higher-priority journeys. */
 export function requestGuestAuthForInstantTele(returnPath?: string): boolean {
   return requestGuestAuthIfNeeded({

@@ -141,6 +141,14 @@ describe('resolveGuestPublicApiPath', () => {
     );
   });
 
+  it('rewrites public Event discovery and detail for guests', () => {
+    expect(resolveGuestPublicApiPath('/events/discover')).toBe('/public/events/discover');
+    expect(resolveGuestPublicApiPath('/events/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')).toBe(
+      '/public/events/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    );
+    expect(resolveGuestPublicApiPath('/events/my-registrations')).toBe('/events/my-registrations');
+  });
+
   it('does not rewrite customer-owned write paths', () => {
     expect(resolveGuestPublicApiPath('/customer/pets')).toBe('/customer/pets');
     expect(resolveGuestPublicApiPath('/customer/pets/9876543210')).toBe('/customer/pets/9876543210');

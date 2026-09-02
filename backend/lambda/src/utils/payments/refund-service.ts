@@ -244,6 +244,61 @@ export async function processRefund(request: RefundRequest): Promise<RefundResul
     });
   }
 
+  if (!resolvedBookingId && resolvedCustomerId && payment.razorpay_payment_id) {
+    const { getRazorpayClient } = await import('./razorpay-client');
+    const existing = await checkExistingRefund(paymentId);
+    if (existing.exists) {
+      return {
+        refundId: existing.refundId || '',
+        status: (existing.status as RefundResult['status']) || 'processing',
+        amount,
+        paymentStatus: payment.payment_status,
+        message: 'Refund already exists for this Event payment',
+      };
+    }
+
+    const razorpay = getRazorpayClient();
+    const rzRefund = await razorpay.payments.refund({
+      payment_id: String(payment.razorpay_payment_id),
+      amount: Math.round(amount * 100),
+      idempotencyKey: `event-refund-${paymentId}`.slice(0, 36),
+    });
+
+    const inserted = await withTransaction(async (client) => {
+      const ins = await client.query(
+        `INSERT INTO refunds (
+          payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason,
+          refund_status, refund_method, razorpay_refund_id, requested_at, processed_at
+        ) VALUES ($1, NULL, $2, $3, $4, $5, 'processing', 'original', $6, NOW(), NOW())
+        RETURNING id::text`,
+        [paymentId, resolvedCustomerId, vendorId || null, amount, reason, rzRefund.id]
+      );
+      await client.query(
+        `UPDATE payments SET payment_status = 'refunded', updated_at = NOW() WHERE id = $1::uuid`,
+        [paymentId]
+      );
+      return ins.rows[0].id as string;
+    });
+
+    if (!skipNotification) {
+      await sendRefundNotification({
+        customerId: resolvedCustomerId,
+        amount,
+        reason,
+        refundId: inserted,
+      });
+    }
+
+    return {
+      refundId: inserted,
+      razorpayRefundId: rzRefund.id,
+      status: 'processing',
+      amount,
+      paymentStatus: 'refunded',
+      message: 'Event refund initiated via existing Razorpay refund infrastructure',
+    };
+  }
+
   if (resolvedBookingId && resolvedCustomerId) {
     const result = await processBookingOriginalPaymentRefund({
       bookingId: String(resolvedBookingId),

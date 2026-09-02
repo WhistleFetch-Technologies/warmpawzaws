@@ -39,7 +39,7 @@ export type FinalizeCapturedPaymentInput = {
 
 export type FinalizeCapturedPaymentResult = {
   outcome: 'fulfilled' | 'refunded' | 'duplicate_refunded' | 'already_final' | 'not_found';
-  entityType?: 'booking' | 'shop_order';
+  entityType?: 'booking' | 'shop_order' | 'event_registration';
   entityId?: string;
   paymentId?: string;
   previousEntityStatus?: string | null;
@@ -423,6 +423,23 @@ export async function finalizeCapturedPayment(
       return;
     }
 
+    const eventRegistrationId = payment.event_registration_id
+      ? String(payment.event_registration_id)
+      : String(payment.payment_source || '') === 'event'
+        ? String((payment.metadata as { event_registration_id?: string } | null)?.event_registration_id || '')
+        : '';
+    if (eventRegistrationId) {
+      result = {
+        outcome: 'fulfilled',
+        entityType: 'event_registration' as FinalizeCapturedPaymentResult['entityType'],
+        entityId: eventRegistrationId,
+        paymentId,
+        previousEntityStatus: String(payment.payment_status || ''),
+        newEntityStatus: 'paid',
+      };
+      return;
+    }
+
     result = { outcome: 'already_final', paymentId };
   });
 
@@ -483,6 +500,15 @@ export async function finalizeCapturedPayment(
       console.error('[PAYMENT-SAFETY] booking notify (already_final) failed:', e)
     );
   }
+  if (result.outcome === 'fulfilled' && result.entityType === 'event_registration' && result.paymentId) {
+    const { fulfillEventRegistrationPayment } = await import(
+      '../../endpoints/events/services/event-payment.service'
+    );
+    await fulfillEventRegistrationPayment(result.paymentId).catch((e) =>
+      console.error('[PAYMENT-SAFETY] event registration fulfill failed:', e)
+    );
+  }
+
   if (notifyShopOrderId) {
     triggerAutoShipment(notifyShopOrderId, 'ecommerce').catch((e) =>
       console.error('[PAYMENT-SAFETY] shop auto-shipment failed:', e)
@@ -519,7 +545,7 @@ export async function finalizeCapturedPayment(
 
 async function restoreWalletAfterUnfulfillableCapture(params: {
   reason: string;
-  entityType?: 'booking' | 'shop_order';
+  entityType?: 'booking' | 'shop_order' | 'event_registration';
   entityId?: string;
 }): Promise<void> {
   if (params.reason === 'duplicate_capture') return;

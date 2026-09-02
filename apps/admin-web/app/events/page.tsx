@@ -1131,6 +1131,25 @@ function ViewEventModal({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const [bookings, setBookings] = useState<{
+    registrations: any[];
+    tickets: any[];
+    refunds: Record<string, any[]>;
+  }>({ registrations: [], tickets: [], refunds: {} });
+
+  useEffect(() => {
+    if (!isOpen || !event?.id) return;
+    apiClient
+      .get<any>(`/admin/events/${event.id}/registrations`)
+      .then((res) =>
+        setBookings({
+          registrations: res.registrations || [],
+          tickets: res.tickets || [],
+          refunds: res.refunds || {},
+        })
+      )
+      .catch(() => setBookings({ registrations: [], tickets: [], refunds: {} }));
+  }, [isOpen, event?.id]);
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     try {
@@ -1238,6 +1257,40 @@ function ViewEventModal({
         <div>
           <h4 className="text-sm font-medium text-gray-700 mb-2">Created At</h4>
           <p className="text-gray-600">{formatDate(event.created_at)}</p>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Registrations</h4>
+          {bookings.registrations.length === 0 ? (
+            <p className="text-sm text-gray-500">No registrations yet</p>
+          ) : (
+            <div className="space-y-3">
+              {bookings.registrations.map((reg) => {
+                const eventTickets = bookings.tickets.filter((t) => String(t.registration_id) === String(reg.id));
+                const refunds = bookings.refunds[String(reg.id)] || [];
+                return (
+                  <div key={reg.id} className="rounded-lg border p-3 text-sm">
+                    <p className="font-medium">{reg.customer_name || reg.attendee_name}</p>
+                    <p className="text-gray-500">
+                      {reg.number_of_people} tickets · payment {reg.payment_status} · {reg.status}
+                    </p>
+                    {refunds.length > 0 ? (
+                      <p className="text-xs text-amber-700">Refund: {refunds[0].refund_status}</p>
+                    ) : null}
+                    {eventTickets.map((ticket) => (
+                      <p key={ticket.id} className="mt-1 text-xs text-gray-600">
+                        Ticket {ticket.ticket_index}: {ticket.pet_snapshot?.name || 'pet'} ·{' '}
+                        vaccinated {String(ticket.declarations?.vaccinated)} · social{' '}
+                        {String(ticket.declarations?.social)} · trained {String(ticket.declarations?.trained)} ·{' '}
+                        check-in {ticket.check_in_status}
+                        {ticket.qr_token ? ' · QR issued' : ' · QR withheld'}
+                      </p>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </EnhancedModal>

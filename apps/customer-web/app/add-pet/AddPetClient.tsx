@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { EnhancedAddPetModal } from '@/components/customer/EnhancedAddPetModal';
 import { requestGuestAuth } from '@/lib/guest-auth-gate';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { readGuestBookingIntent } from '@/lib/guest-booking-intent';
 
 function readPhoneFromStorage(): string {
   if (typeof window === 'undefined') return '';
@@ -72,6 +73,11 @@ export default function AddPetClient() {
       onBack={() => goBackOrHome(router)}
       onClose={() => goBackOrHome(router)}
       onSuccess={() => {
+        const intent = readGuestBookingIntent();
+        if (intent?.kind === 'event' && intent.returnPath?.startsWith('/events/')) {
+          router.replace(intent.returnPath);
+          return;
+        }
         router.replace('/');
       }}
     />

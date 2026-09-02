@@ -25,6 +25,7 @@ export type GuestJourneyKind =
   | 'pay_bill'
   | 'instant_tele'
   | 'profile_continue'
+  | 'event'
   | 'other';
 
 /**
@@ -41,6 +42,7 @@ export function guestJourneyPriority(
   if (kind === 'instant_tele') return 25;
   if (kind === 'other' || kind === 'vendor') return 15;
   if (kind === 'cart') return 30;
+  if (kind === 'event') return 36;
   if (kind === 'pay_bill') return 40;
   if (kind === 'profile_continue') return 45;
   if (kind === 'booking') {
@@ -268,6 +270,7 @@ export function transactionRequiresPet(intent: GuestBookingIntentV1 | null | und
   if (intent.kind === 'cart' || intent.kind === 'search' || intent.kind === 'vendor' || intent.kind === 'instant_tele') {
     return false;
   }
+  if (intent.kind === 'event') return true;
   if (intent.kind === 'add_pet' || intent.openAddPet === true) return true;
   if (intent.requiresPet === false) return false;
   if (intent.requiresPet === true) return true;
@@ -304,6 +307,7 @@ export function isGuestAppointmentJourney(intent: GuestBookingIntentV1 | null | 
     intent.kind === 'vendor' ||
     intent.kind === 'pay_bill' ||
     intent.kind === 'instant_tele' ||
+    intent.kind === 'event' ||
     intent.kind === 'other'
   ) {
     return false;

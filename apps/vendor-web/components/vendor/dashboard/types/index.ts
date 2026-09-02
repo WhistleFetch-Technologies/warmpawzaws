@@ -133,4 +133,5 @@ export interface VendorDashboardScreenProps {
       defaultMode?: 'CENTER' | 'STAFF';
     };
     vendorData: any;
+    onNavigateToEventManagement?: () => void;
   }

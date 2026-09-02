@@ -38,6 +38,25 @@ export const CUSTOMER_ROUTES = {
   orders: { path: '/orders', shell: 'order_history', policy: 'replace' } satisfies CustomerRouteDef,
   auth: { path: '/auth', policy: 'replace' } satisfies CustomerRouteDef,
   wishlist: { path: '/wishlist', policy: 'push' } satisfies CustomerRouteDef,
+  events: { path: '/events', policy: 'push' } satisfies CustomerRouteDef,
+
+  eventDetail: (eventId: string): CustomerRouteDef => ({
+    path: `/events/${encodeURIComponent(String(eventId).trim())}`,
+    policy: 'push',
+    key: `event:${String(eventId).trim()}`,
+  }),
+
+  eventBook: (eventId: string): CustomerRouteDef => ({
+    path: `/events/${encodeURIComponent(String(eventId).trim())}/book`,
+    policy: 'push',
+    key: `event-book:${String(eventId).trim()}`,
+  }),
+
+  eventRegistration: (registrationId: string): CustomerRouteDef => ({
+    path: `/events/registrations/${encodeURIComponent(String(registrationId).trim())}`,
+    policy: 'replace',
+    key: `event-reg:${String(registrationId).trim()}`,
+  }),
 
   product: (productId: string): CustomerRouteDef => ({
     path: `/shop/${encodeURIComponent(String(productId).trim())}`,
