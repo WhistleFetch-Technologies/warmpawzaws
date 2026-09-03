@@ -98,6 +98,8 @@ export type VendorPackageIntent = {
   sessionsPerDay?: number;
   /** Days between day-blocks (default 7 = same weekday next week). */
   sessionIntervalDays?: number;
+  /** When set to warmpawz_pay, purchase uses Pay publication-tier commission. */
+  commerceMode?: 'marketplace' | 'warmpawz_pay';
 };
 
 interface PackageItem {
@@ -962,6 +964,9 @@ export function PackageBookingPage({
           useWallet,
           walletAmount: walletToUse,
           idempotencyKey: purchaseIdempotencyKey,
+          ...(vendorPackageIntent?.commerceMode
+            ? { commerceMode: vendorPackageIntent.commerceMode }
+            : {}),
         };
 
         const res = (await apiClient.post('/packages/purchase-from-vendor-service', basePayload)) as any;

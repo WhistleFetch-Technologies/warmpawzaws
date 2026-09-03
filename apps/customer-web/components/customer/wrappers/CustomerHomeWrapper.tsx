@@ -6088,7 +6088,13 @@ export function CustomerHomeWrapper({
                 serviceType: wPkg.serviceType || 'walking',
                 serviceStyle: wPkg.serviceStyle || 'at_home',
                 description: wPkg.description,
+                ...(String(wPkg.commerceMode || '').toLowerCase() === 'warmpawz_pay'
+                  ? { commerceMode: 'warmpawz_pay' as const }
+                  : {}),
               }
+            : {}),
+          ...(String(wPkg.commerceMode || '').toLowerCase() === 'warmpawz_pay'
+            ? { commerceMode: 'warmpawz_pay' as const }
             : {}),
         }
       : null;

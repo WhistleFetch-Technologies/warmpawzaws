@@ -33,6 +33,7 @@ import {
   stripVendorServicePriceFields,
 } from '../shared/vendor-service-pricing-lock';
 import { buildVendorServiceUpdateData } from '../../../utils/vendor-service-publish-sync';
+import { isVendorServicePackageRow } from '../../../utils/vendor-service-is-package';
 
 // ----------------------------------------------------------------------------
 // Category normalization helpers
@@ -937,10 +938,18 @@ export function registerVendorServicesEndpoints(app: Hono) {
       const pricingLocked = await isWarmpawzPayPricingLocked(serviceStyle);
       const pricingMeta = await pricingLockMetaForStyle(serviceStyle);
       const mappedServices = pricingLocked
-        ? services.rows.map((row: any) => stripVendorServicePriceFields(row))
+        ? services.rows.map((row: any) =>
+            isVendorServicePackageRow(row as Record<string, unknown>)
+              ? row
+              : stripVendorServicePriceFields(row),
+          )
         : services.rows;
       const mappedCatalog = pricingLocked
-        ? availableCatalogServices.map((row: any) => stripVendorServicePriceFields(row))
+        ? availableCatalogServices.map((row: any) =>
+            isVendorServicePackageRow(row as Record<string, unknown>)
+              ? row
+              : stripVendorServicePriceFields(row),
+          )
         : availableCatalogServices;
 
       return c.json({
@@ -1272,6 +1281,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
           const stylePriceReject = await rejectVendorServicePriceChangeIfLocked(
             service.service_style,
             serviceData as Record<string, unknown>,
+            service as Record<string, unknown>,
           );
           if (stylePriceReject) {
             return c.json({ success: false, ...stylePriceReject }, 409);

@@ -148,6 +148,7 @@ export async function createPackageBookingsAfterPayment(
       catalogPackageId,
       packagePurchaseId: purchaseRowId,
       unlimited: comp.unlimitedPurchase,
+      commerceMode: comp.commerceMode || 'marketplace',
     });
     const notes = `Package purchased — ${sessionsLabel}. See linked session bookings for individual visits.`;
 
@@ -159,7 +160,7 @@ export async function createPackageBookingsAfterPayment(
          base_price, discount_amount, tax_amount, total_amount,
          is_package, package_id, package_details, package_purchase_id,
          is_package_session, parent_booking_id,
-         notes, payment_id
+         notes, payment_id, commerce_mode
        ) VALUES (
          $1::uuid, $2::uuid, $3::uuid, $4::uuid,
          $5::date, $6::time, $7,
@@ -167,7 +168,7 @@ export async function createPackageBookingsAfterPayment(
          $8::numeric, 0, 0, $8::numeric,
          true, $9::uuid, $10::jsonb, $11::uuid,
          false, NULL,
-         $12, $13::uuid
+         $12, $13::uuid, $14
        )
        RETURNING id`,
       [
@@ -184,6 +185,7 @@ export async function createPackageBookingsAfterPayment(
         purchaseRowId,
         notes,
         payUuid,
+        comp.commerceMode || 'marketplace',
       ]
     );
     parentBookingId = ins.rows?.[0]?.id != null ? String(ins.rows[0].id) : '';

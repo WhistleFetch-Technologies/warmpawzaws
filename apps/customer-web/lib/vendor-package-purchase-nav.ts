@@ -137,6 +137,7 @@ export function buildWalkerServiceDataForVendorPackagePurchase(opts: {
   serviceRow: VendorServiceLike;
   serviceTypeCategory: string;
   serviceStyle?: string;
+  commerceMode?: 'marketplace' | 'warmpawz_pay';
 }): Record<string, unknown> | null {
   const { vendorId, vendorName, serviceRow, serviceTypeCategory, serviceStyle: styleOpt } = opts;
   const vid = String(vendorId || '').trim();
@@ -230,6 +231,7 @@ export function buildWalkerServiceDataForVendorPackagePurchase(opts: {
     serviceStyle,
     description: String(normalized.description ?? ''),
   };
+  if (opts.commerceMode) out.commerceMode = opts.commerceMode;
   if (vendorName) out.walker = { name: vendorName };
   return out;
 }

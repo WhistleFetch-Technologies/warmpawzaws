@@ -97,7 +97,7 @@ export function toServiceCardDTO(
     categoryLabel:
       String(row.categoryLabel ?? row.categoryName ?? row.category ?? row.categorySlug ?? "") ||
       null,
-    price: omitPricing ? null : rawPrice,
+    price: omitPricing && !isPackage ? null : rawPrice,
     isPackage,
     serviceStyle: (row.serviceStyle as string) ?? (row.service_style as string) ?? null,
     packageDetails: isPackage ? packageDetails : null,

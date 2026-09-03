@@ -13,6 +13,31 @@ import {
 } from './service-package-sessions';
 import { resolveVendorId } from './vendor-resolve';
 import { resolvePackageCustomerSellingPrice } from './resolve-booking-list-price';
+import { isVendorWarmpawzPayPublished } from '../finance/commission/resolve-wpay-publication-commission';
+import {
+  normalizePackageCommerceMode,
+  WARMPAWZ_PAY_PACKAGE_COMMERCE_MODE,
+} from './vendor-service-is-package';
+
+let packagePurchasesCommerceModeColumn: boolean | null = null;
+
+async function packagePurchasesHasCommerceModeColumn(): Promise<boolean> {
+  if (packagePurchasesCommerceModeColumn != null) return packagePurchasesCommerceModeColumn;
+  try {
+    const res = await query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'package_purchases'
+         AND column_name = 'commerce_mode'
+       LIMIT 1`
+    );
+    packagePurchasesCommerceModeColumn = (res.rows?.length ?? 0) > 0;
+  } catch {
+    packagePurchasesCommerceModeColumn = false;
+  }
+  return packagePurchasesCommerceModeColumn;
+}
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
   if (!raw) return null;
@@ -178,12 +203,14 @@ export type VendorPackageComputation = {
   sessionsPerDay: number;
   /** Days between visits when sessionsPerDay === 1 (default 7 = weekly). Ignored for multi-slot-per-day expansion (consecutive days). */
   sessionIntervalDays: number;
+  commerceMode?: 'marketplace' | 'warmpawz_pay';
 };
 
 export async function computeVendorPackagePurchase(params: {
   customerId: string;
   vendorIdRaw: string;
   vendorServiceId: string;
+  commerceMode?: string;
 }): Promise<{ ok: true; comp: VendorPackageComputation } | { ok: false; status: number; error: string }> {
   const { customerId, vendorServiceId } = params;
   const vendorId = await resolveVendorId(String(params.vendorIdRaw));
@@ -201,6 +228,18 @@ export async function computeVendorPackagePurchase(params: {
   const vs = vsRows.rows[0] as Record<string, unknown>;
   if (String(vs.vendor_id).toLowerCase() !== String(vendorId).toLowerCase()) {
     return { ok: false, status: 403, error: 'Vendor service does not belong to this vendor' };
+  }
+
+  const commerceMode = normalizePackageCommerceMode(params.commerceMode);
+  if (commerceMode === WARMPAWZ_PAY_PACKAGE_COMMERCE_MODE) {
+    const payPublished = await isVendorWarmpawzPayPublished(vendorId);
+    if (!payPublished) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Vendor is not published to Warmpawz Pay',
+      };
+    }
   }
 
   const meta = parseJsonObject(vs.metadata) || {};
@@ -314,6 +353,7 @@ export async function computeVendorPackagePurchase(params: {
       expiresAt,
       sessionsPerDay,
       sessionIntervalDays,
+      commerceMode,
     },
   };
 }
@@ -457,6 +497,17 @@ export async function insertPackagePurchaseRows(
     if (paymentId && isValidUuid(paymentId)) {
       cols.push('payment_id');
       vals.push(paymentId);
+    }
+
+    if (comp.commerceMode && (await packagePurchasesHasCommerceModeColumn())) {
+      cols.push('commerce_mode');
+      vals.push(comp.commerceMode);
+      cols.push('commission_source');
+      vals.push(
+        comp.commerceMode === WARMPAWZ_PAY_PACKAGE_COMMERCE_MODE
+          ? 'wpay_publication_tier'
+          : 'marketplace_tier',
+      );
     }
 
     if (policy) {

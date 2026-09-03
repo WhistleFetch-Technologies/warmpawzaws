@@ -56,6 +56,13 @@ describe('is-warmpawz-pay-pricing-locked', () => {
     await expect(isWarmpawzPayPricingLocked('at_home')).resolves.toBe(false);
   });
 
+  it('does not lock package rows under Warmpawz Pay', async () => {
+    mockActiveModel('warmpawz_pay');
+    await expect(isWarmpawzPayPricingLocked('at_home', { isPackage: true })).resolves.toBe(false);
+    await expect(isWarmpawzPayPricingLocked('at_center', { isPackage: true })).resolves.toBe(false);
+    await expect(isWarmpawzPayPricingLocked('at_home', { isPackage: false })).resolves.toBe(true);
+  });
+
   it('stripVendorServicePriceFields nulls price keys', () => {
     const row = stripVendorServicePriceFields({
       id: '1',
