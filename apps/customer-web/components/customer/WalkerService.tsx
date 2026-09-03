@@ -576,7 +576,8 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
       toast.error('Profile unavailable for this walker.');
       return;
     }
-    onNavigate?.('walker-provider-profile', {
+    onNavigate?.('walker_home', {
+      embedVendorId: vid,
       vendorId: vid,
       walker: buildWalkerPayload(walker),
       serviceType: 'walking',

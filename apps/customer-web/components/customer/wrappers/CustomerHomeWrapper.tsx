@@ -592,6 +592,8 @@ export function CustomerHomeWrapper({
   const [groomingHomeProfileVendorId, setGroomingHomeProfileVendorId] = useState<string | null>(null);
   const [trainingCenterProfileVendorId, setTrainingCenterProfileVendorId] = useState<string | null>(null);
   const [trainingHomeProfileVendorId, setTrainingHomeProfileVendorId] = useState<string | null>(null);
+  /** Walker style list: chevron opens embedded vendor profile (same UI as grooming/training). */
+  const [walkerHomeProfileVendorId, setWalkerHomeProfileVendorId] = useState<string | null>(null);
   /** Problem-grid discovery chevron → full behaviourist profile (HomeServiceProviderProfile). */
   const [behavioristProfileVendorId, setBehavioristProfileVendorId] = useState<string | null>(null);
   /**
@@ -600,6 +602,7 @@ export function CustomerHomeWrapper({
    */
   const trainingCenterOpenedWithEmbedRef = useRef(false);
   const trainingHomeOpenedWithEmbedRef = useRef(false);
+  const walkerHomeOpenedWithEmbedRef = useRef(false);
   /** My Profile from account sidebar: back reopens menu instead of generic handleBack. */
   const profileFromAccountMenuRef = useRef(false);
   /** My Bookings from bottom tab: back pops stack (e.g. to home). From account menu: back reopens sidebar. */
@@ -1371,8 +1374,10 @@ export function CustomerHomeWrapper({
     const featuredVendorId = pickCustomerVendorAccountId(vendorRow);
     const vid = featuredVendorId.trim() !== '' ? featuredVendorId.trim() : undefined;
 
-    /** Home / promos pass `{ vendorId, vendorName?, … }` — open profile hub, not only the service landing. */
+    /** Home / promos pass `{ vendorId, vendorName?, … }` — open walker embed profile (same as grooming/training). */
     if (vid && service === 'walker') {
+      walkerHomeOpenedWithEmbedRef.current = true;
+      setWalkerHomeProfileVendorId(vid);
       setWalkerServiceData({
         vendorId: vid,
         walker: { name: String(data?.vendorName || data?.walker?.name || 'Walker') },
@@ -1380,7 +1385,7 @@ export function CustomerHomeWrapper({
         serviceType: 'walking',
         serviceStyle: 'at_home',
       });
-      navigateToScreen('walker-provider-profile');
+      navigateToScreen('walker_home');
       return;
     }
     if (vid && (service === 'vet' || service === 'veterinarian')) {
@@ -1997,12 +2002,17 @@ export function CustomerHomeWrapper({
     }
 
     if (anySlugMatches(walkerRoles) || walkerRoles.has(role)) {
+      setReturnToProblemGridFromStyleHub(true);
+      walkerHomeOpenedWithEmbedRef.current = true;
+      setWalkerHomeProfileVendorId(vendorId);
       setWalkerServiceData({
         vendorId,
         walker: { name: vendorName },
         walkerProfileBackScreen: 'problem_grid_flow',
+        serviceType: 'walking',
+        serviceStyle: 'at_home',
       });
-      navigateToScreen('walker-provider-profile');
+      navigateToScreen('walker_home');
       return;
     }
 
@@ -2037,6 +2047,29 @@ export function CustomerHomeWrapper({
       openPurchasePackageScreen(normalized);
       return;
     }
+    if (screen === 'walker_embed_vendor_profile' && data?.vendorId) {
+      setWalkerHomeProfileVendorId(String(data.vendorId).trim());
+      return;
+    }
+    if (screen === 'walker-provider-profile' && data?.vendorId) {
+      const vid = String(data.vendorId).trim();
+      walkerHomeOpenedWithEmbedRef.current = true;
+      if (data?.walkerProfileBackScreen === 'problem_grid_flow') {
+        setReturnToProblemGridFromStyleHub(true);
+      }
+      setWalkerHomeProfileVendorId(vid);
+      setWalkerServiceData(data);
+      navigateToScreen('walker_home');
+      return;
+    }
+    if (screen === 'walker_home') {
+      const embed = String(data?.embedVendorId ?? '').trim();
+      walkerHomeOpenedWithEmbedRef.current = Boolean(embed);
+      setWalkerHomeProfileVendorId(embed || null);
+      if (data) setWalkerServiceData(data);
+      navigateToScreen('walker_home');
+      return;
+    }
     setWalkerServiceData(data);
     if (screen === 'walker-booking') {
       navigateToScreen('walker-booking');
@@ -2051,10 +2084,6 @@ export function CustomerHomeWrapper({
     } else if (screen === 'schedule-walk') {
       setWalkerServiceData({ packageId: data?.packageId });
       navigateToScreen('schedule-walk');
-    } else if (screen === 'walker-provider-profile') {
-      navigateToScreen('walker-provider-profile');
-    } else if (screen === 'walker_home') {
-      navigateToScreen('walker_home');
     }
   };
 
@@ -2954,91 +2983,39 @@ export function CustomerHomeWrapper({
     );
   }
   if (currentScreen === 'walker-provider-profile' && walkerServiceData?.vendorId) {
-    const vid = walkerServiceData.vendorId as string;
+    const vid = String(walkerServiceData.vendorId);
     return (
-      <HomeServiceProviderProfile
-        phone={phone}
-        vendorId={vid}
-        serviceType="walker"
-        config={SERVICE_CONFIGS.walker}
-        onBack={() => backFromBannerOr(handleBack, walkerServiceData)}
-        onSelectService={(service, rawRow) => {
-          const sid = String(service.id || '').trim();
-          if (vid && sid) clearSkipPackageAutoRedirect(vid, sid);
-          const rowLooksPackage =
-            (rawRow && isVendorServicePackageRow(rawRow)) ||
-            (rawRow && Boolean(rawRow.isPackage)) ||
-            /\b(package|bundle|pack)\b/i.test(String(service.name || '')) ||
-            (/\b(monthly|weekly)\b/i.test(String(service.name || '')) &&
-              /\b(walk|walking)\b/i.test(String(service.name || '')));
-          if (rowLooksPackage) {
-            const walkerName =
-              String(
-                walkerServiceData?.walker?.name ??
-                  walkerServiceData?.walker?.businessName ??
-                  ''
-              ).trim() || undefined;
-            const serviceRow = (rawRow && typeof rawRow === 'object'
-              ? { ...rawRow, isPackage: true, name: rawRow.name ?? service.name, id: rawRow.id ?? sid }
-              : {
-                  id: sid,
-                  isPackage: true,
-                  name: service.name,
-                  price: service.price,
-                  duration: service.duration,
-                }) as Record<string, unknown>;
-            const pkgNav =
-              buildWalkerServiceDataForVendorPackagePurchase({
-                vendorId: vid,
-                vendorName: walkerName,
-                serviceRow,
-                serviceTypeCategory: 'walking',
-                serviceStyle: 'at_home',
-              }) ||
-              (sid
-                ? ({
-                    vendorId: vid,
-                    vendorServiceId: sid,
-                    serviceName: service.name || 'Package',
-                    totalSessions: Number(
-                      (serviceRow as { totalSessions?: number }).totalSessions ??
-                        (serviceRow.packageDetails as { totalSessions?: number } | undefined)
-                          ?.totalSessions ??
-                        1
-                    ) || 1,
-                    price: service.price,
-                    duration: service.duration,
-                    serviceType: 'walking',
-                    serviceStyle: 'at_home',
-                    ...(walkerName ? { walker: { name: walkerName } } : {}),
-                  } as Record<string, unknown>)
-                : null);
-            if (pkgNav && String(pkgNav.vendorServiceId || '').trim()) {
-              openPurchasePackageScreen(pkgNav, { mergeWalkerData: true });
-              return;
+      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
+          <UniversalServicesByStyle
+            phone={phone}
+            roleId="walker"
+            serviceStyle={String(walkerServiceData?.serviceStyle || 'at_home')}
+            serviceTypeName="Dog Walker"
+            category="walker"
+            bookingScreen="walker-booking"
+            vendorId={vid}
+            specialization={
+              typeof walkerServiceData?.specialization === 'string'
+                ? walkerServiceData.specialization
+                : undefined
             }
-          }
-          setWalkerServiceData((prev: any) => ({
-            ...(prev || {}),
-            vendorId: vid,
-            walker: prev?.walker ?? walkerServiceData?.walker,
-            serviceType: 'walking',
-            serviceStyle: 'at_home',
-            serviceId: service.id,
-            serviceName: service.name,
-            price: service.price,
-            duration: service.duration,
-          }));
-          navigateToScreen('walker-booking');
-        }}
-        onNavigate={(screen, data) => {
-          if (screen === 'chat') {
-            handleVendorProfileChat(data);
-            return;
-          }
-          handleWalkerNavigate(screen, data);
-        }}
-      />
+            profileBackScreen={
+              typeof walkerServiceData?.walkerProfileBackScreen === 'string'
+                ? walkerServiceData.walkerProfileBackScreen
+                : undefined
+            }
+            onBack={() => backFromBannerOr(handleBack, walkerServiceData)}
+            onNavigate={(screen, data) => {
+              if (screen === 'chat') {
+                handleVendorProfileChat(data);
+                return;
+              }
+              handleWalkerNavigate(screen, data);
+            }}
+          />
+        </div>
+      </CustomerScreenWrapper>
     );
   }
   if (currentScreen === 'behaviorist-provider-profile' && resolvedBehavioristProfileVendorId) {
@@ -5028,8 +5005,8 @@ export function CustomerHomeWrapper({
       });
       return;
     }
-    if (screen === 'walker-provider-profile') {
-      handleWalkerNavigate('walker-provider-profile', data);
+    if (screen === 'walker_embed_vendor_profile' || screen === 'walker-provider-profile') {
+      handleWalkerNavigate(screen, data);
       return;
     }
     if (screen === 'purchase-package') {
@@ -5049,8 +5026,19 @@ export function CustomerHomeWrapper({
             serviceTypeName="All Dog Walkers"
             category="walker"
             bookingScreen="walker-booking"
+            vendorId={walkerHomeProfileVendorId ?? undefined}
+            specialization={problemGridSpecialization}
             onBack={() => {
               backFromBannerOr(() => {
+                if (walkerHomeProfileVendorId) {
+                  const openedAsEmbedOnly = walkerHomeOpenedWithEmbedRef.current;
+                  setWalkerHomeProfileVendorId(null);
+                  walkerHomeOpenedWithEmbedRef.current = false;
+                  if (openedAsEmbedOnly) {
+                    handleBack();
+                  }
+                  return;
+                }
                 if (returnToProblemGridFromStyleHub) {
                   setReturnToProblemGridFromStyleHub(false);
                   navigateToScreen('problem_grid_flow');
@@ -5850,12 +5838,18 @@ export function CustomerHomeWrapper({
       return;
     }
 
-    if (screen === 'walker-provider-profile' && data?.vendorId) {
+    if (
+      (screen === 'walker-provider-profile' || screen === 'walker_embed_vendor_profile') &&
+      data?.vendorId
+    ) {
       const vid = String(data.vendorId).trim();
       const payload =
         typeof data === 'object' && data != null && !Array.isArray(data)
           ? { ...(data as Record<string, unknown>) }
           : {};
+      setReturnToProblemGridFromStyleHub(true);
+      walkerHomeOpenedWithEmbedRef.current = true;
+      setWalkerHomeProfileVendorId(vid);
       setWalkerServiceData({
         ...payload,
         vendorId: vid,
@@ -5863,7 +5857,7 @@ export function CustomerHomeWrapper({
           (payload.walkerProfileBackScreen as string | undefined) ?? gridBack,
         serviceType: (payload.serviceType as string | undefined) ?? 'walking',
       });
-      navigateToScreen('walker-provider-profile');
+      navigateToScreen('walker_home');
       return;
     }
 

@@ -23,7 +23,6 @@ import {
   getWebGroomingTrainingEmbedVendorId,
   getWebVetDiscoveryChevronNavTarget,
   getWebWalkerDiscoveryChevronNavTarget,
-  buildWalkerProviderProfileNavPayload,
 } from '@/lib/customer-vendor-profile-navigation';
 import { toast } from 'sonner';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
@@ -191,7 +190,6 @@ export function UniversalServicesByStyle({
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
   const providersRef = useRef(providers);
   providersRef.current = providers;
-  const walkerProfileRedirectIssuedRef = useRef(false);
   const launchGate = useServiceStyleLaunchGate(phone, finalCategory, serviceStyle);
 
   const feedEnabled = launchGate.ready && !launchGate.blocked;
@@ -283,31 +281,6 @@ export function UniversalServicesByStyle({
     if (!feedEnabled || !vendorId) return;
     void loadVendorProfile();
   }, [feedEnabled, vendorId, serviceStyle]);
-
-  /** Walkers use HomeServiceProviderProfile — never the vet-style embed profile UI. */
-  useEffect(() => {
-    if (roleId !== 'walker' || !vendorId) return;
-    const vid = String(vendorId).trim();
-    if (!vid || walkerProfileRedirectIssuedRef.current) return;
-    walkerProfileRedirectIssuedRef.current = true;
-    const providerRow = providersRef.current[0];
-    const displayName =
-      vendor?.business_name ||
-      vendor?.businessName ||
-      vendor?.name ||
-      providerRow?.name ||
-      'Walker';
-    const { screen, data } = buildWalkerProviderProfileNavPayload({
-      vendorId: vid,
-      displayName,
-      serviceStyle: String(serviceStyle),
-      profileBackScreen,
-      walkerSeed: providerRow
-        ? { id: providerRow.providerId, name: providerRow.name }
-        : undefined,
-    });
-    onNavigate(screen, data);
-  }, [roleId, vendorId, serviceStyle, profileBackScreen, onNavigate, vendor]);
 
   const isProfileView = vendorId && providers.length === 1;
   const profileProvider = isProfileView ? providers[0] : null;
@@ -465,6 +438,13 @@ export function UniversalServicesByStyle({
   };
 
   const getProviderTypeLabel = (provider: Provider) => {
+    if (roleId === 'walker') {
+      if (provider.providerType === 'individual') return 'Independent Walker';
+      if (provider.providerType === 'staff') {
+        return provider.vendorName ? `From ${provider.vendorName}` : 'Walker';
+      }
+      return provider.role || 'Dog Walker';
+    }
     if (provider.providerType === 'individual') {
       return 'Independent Provider';
     }
@@ -604,6 +584,14 @@ export function UniversalServicesByStyle({
       bookingData.doctorId = provider.staffId || provider.providerId; // For compatibility
     }
 
+    if (roleId === 'walker') {
+      bookingData.serviceType = bookingData.serviceType || 'walking';
+      bookingData.walker = {
+        name: bookingData.vendorName || provider.name,
+        vendorId: bookingData.vendorId,
+      };
+    }
+
     console.log(`✅ [${config.roleName}] Navigating to booking with data:`, bookingData);
     onNavigate(bookingScreen, bookingData);
   };
@@ -725,6 +713,13 @@ export function UniversalServicesByStyle({
         bookingData.vendorId = profileProvider!.vendorId;
         bookingData.vendorName = profileProvider!.vendorName;
       }
+      if (roleId === 'walker') {
+        bookingData.serviceType = bookingData.serviceType || 'walking';
+        bookingData.walker = {
+          name: bookingData.vendorName || profileProvider!.name,
+          vendorId: bookingData.vendorId,
+        };
+      }
       onNavigate(bookingScreen, bookingData);
     }
   };
@@ -770,18 +765,7 @@ export function UniversalServicesByStyle({
     );
   }
 
-  if (roleId === 'walker' && vendorId) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
-          <p className="text-gray-600">Opening walker profile...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Profile View Mode - Zomato-style for vet provider (tele/at_home/at_center)
+  // Profile View Mode - Zomato-style for vet / grooming / training / walker embed
   if (isProfileView && profileProvider) {
     const providerName = vendor?.business_name || vendor?.name || profileProvider.name;
     const photos = resolveVendorProfileHeroGallery({ facility, vendor, profileProvider });
