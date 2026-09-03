@@ -9,6 +9,21 @@ import type { PoolClient } from 'pg';
 import { query, select, insert, update, withTransaction } from '../../../database/rds-connection';
 import { loyaltySegmentationService } from '../loyalty-segmentation-service';
 
+/**
+ * Pause customer loyalty earn + redeem-to-wallet. Flip to false to restore.
+ * Vendor-only awards (vendorId set, no customerId) are unchanged.
+ */
+export const CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED = true;
+
+export function isCustomerLoyaltyPaused(params?: {
+  customerId?: string;
+  vendorId?: string;
+}): boolean {
+  if (!CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED) return false;
+  const isVendorOnly = !!(params?.vendorId && !params?.customerId);
+  return !isVendorOnly;
+}
+
 export interface AwardPointsParams {
   customerId?: string;
   vendorId?: string;
@@ -126,6 +141,12 @@ export class LoyaltyPointsService {
   async preparePointsAward(
     params: AwardPointsParams
   ): Promise<{ pointsAfterRuleMultipliers: number; walletPolicy: LoyaltyWalletPolicy } | null> {
+    if (isCustomerLoyaltyPaused(params)) {
+      console.info(
+        `[LOYALTY] Customer earn paused (CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED). action=${params.actionName}`
+      );
+      return null;
+    }
     const rule = await this.getApplicableRule(params);
     if (!rule) {
       console.log(`No rule found for action: ${params.actionName}`);
@@ -162,6 +183,12 @@ export class LoyaltyPointsService {
       throw new Error('customerId or vendorId is required');
     }
     const isVendor = !!(params.vendorId && !params.customerId);
+    if (isCustomerLoyaltyPaused(params)) {
+      console.info(
+        `[LOYALTY] Customer earn paused (CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED). action=${params.actionName}`
+      );
+      return { points: 0, walletCredited: 0 };
+    }
 
     await client.query(
       `INSERT INTO loyalty_transactions
@@ -300,6 +327,12 @@ export class LoyaltyPointsService {
    */
   async awardPoints(params: AwardPointsParams): Promise<{ points: number; walletCredited: number }> {
     try {
+      if (isCustomerLoyaltyPaused(params)) {
+        console.info(
+          `[LOYALTY] Customer earn paused (CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED). action=${params.actionName}`
+        );
+        return { points: 0, walletCredited: 0 };
+      }
       // Get applicable rule
       const rule = await this.getApplicableRule(params);
       if (!rule) {

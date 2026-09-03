@@ -110,15 +110,6 @@ interface PointsHistory {
   source?: string;
 }
 
-/** Active admin basic rules for converting points → wallet money. */
-interface WalletRedeemPolicy {
-  minRedemptionPoints: number;
-  redemptionRatePointsPerRupee: number;
-  rupeesPerPoint: number;
-  labelPointsToRupee: string;
-  labelMinPoints: string;
-}
-
 export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
   const phone =
     props.customerPhone?.trim() ||
@@ -140,9 +131,6 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
     return p && isCustomerDatabaseUuid(p) ? p : null;
   });
   const [redeeming, setRedeeming] = useState<string | null>(null);
-  const [walletPolicy, setWalletPolicy] = useState<WalletRedeemPolicy | null>(null);
-  const [walletPointsInput, setWalletPointsInput] = useState('');
-  const [walletRedeeming, setWalletRedeeming] = useState(false);
 
   const resolveCustomerUuid = useCallback(async (): Promise<string | null> => {
     const fromProp = props.customerId?.trim();
@@ -182,11 +170,10 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
 
       // apiClient rejects non-UUID first path segment for /customer/*/rewards/* (see customerUuidSegmentInPath).
       // Using a phone here fails synchronously — no network entry and empty UI; UUID is required.
-      const [balanceRes, rewardsRes, historyRes, policyRes, redeemedRes] = await Promise.all([
+      const [balanceRes, rewardsRes, historyRes, redeemedRes] = await Promise.all([
         apiClient.get<any>(`/customer/${id}/rewards/points`).catch(() => null),
         apiClient.get<any>(`/customer/${id}/rewards/available`).catch(() => null),
         apiClient.get<any>(`/customer/${id}/rewards/history`).catch(() => null),
-        apiClient.get<any>(`/customer/${id}/loyalty/wallet-redeem-policy`).catch(() => null),
         apiClient.get<any>(`/customer/${id}/rewards/redeemed`).catch(() => null),
       ]);
 
@@ -208,22 +195,6 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
               0
           ),
         });
-      }
-
-      const policyBody = unwrapApiBody(policyRes);
-      if (policyBody?.success) {
-        setWalletPolicy({
-          minRedemptionPoints: Number(policyBody.minRedemptionPoints),
-          redemptionRatePointsPerRupee: Number(policyBody.redemptionRatePointsPerRupee ?? 0),
-          rupeesPerPoint: Number(policyBody.rupeesPerPoint ?? 0),
-          labelPointsToRupee: String(policyBody.labelPointsToRupee ?? ''),
-          labelMinPoints: String(policyBody.labelMinPoints ?? ''),
-        });
-        const minP = Number(policyBody.minRedemptionPoints);
-        setWalletPointsInput(loadedPoints >= minP ? String(loadedPoints) : '');
-      } else {
-        setWalletPolicy(null);
-        setWalletPointsInput('');
       }
 
       const rewardsBody = unwrapApiBody(rewardsRes);
@@ -346,55 +317,6 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
       setError(err.message || 'Failed to redeem reward');
     } finally {
       setRedeeming(null);
-    }
-  };
-
-  const handleRedeemPointsToWallet = async () => {
-    if (!customerId || !walletPolicy) {
-      setError('Wallet redemption is not available.');
-      return;
-    }
-    const pts = parseInt(String(walletPointsInput).replace(/\D/g, ''), 10);
-    if (Number.isNaN(pts) || pts < 1) {
-      setError('Enter a valid number of points to redeem.');
-      return;
-    }
-    if (pts < walletPolicy.minRedemptionPoints) {
-      setError(`You need at least ${walletPolicy.minRedemptionPoints} points to redeem to wallet.`);
-      return;
-    }
-    const avail = balance?.points ?? 0;
-    if (pts > avail) {
-      setError('You do not have enough points for this amount.');
-      return;
-    }
-
-    const est = Math.round((pts / walletPolicy.redemptionRatePointsPerRupee) * 100) / 100;
-    if (!confirm(`Redeem ${pts} points to your wallet as ₹${est.toFixed(2)}?`)) return;
-
-    try {
-      setWalletRedeeming(true);
-      setError(null);
-      const response = await apiClient.post<any>(`/customer/${customerId}/loyalty/redeem-to-wallet`, {
-        points: pts,
-      });
-      const body = unwrapApiBody(response) ?? response;
-      if (body?.success) {
-        const credited = Number(body.walletCredited ?? body.cashValue ?? 0);
-        setSuccess(
-          credited > 0
-            ? `₹${credited.toFixed(2)} added to your wallet. You have ${Number(body.remainingPoints ?? 0)} points left.`
-            : 'Points redeemed successfully.'
-        );
-        await loadData();
-      } else {
-        setError((body as any)?.error || (body as any)?.message || 'Could not redeem points to wallet.');
-      }
-    } catch (err: any) {
-      console.error('redeem-to-wallet:', err);
-      setError(err.message || 'Could not redeem points to wallet.');
-    } finally {
-      setWalletRedeeming(false);
     }
   };
 
@@ -536,51 +458,6 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
               {/* Rewards Tab */}
               {activeTab === 'rewards' && (
                 <div className="space-y-6">
-                  {walletPolicy && (
-                    <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200/80">
-                      <h3 className="font-semibold text-gray-900">Redeem the points to wallet</h3>
-                      <p className="text-sm text-gray-600 mt-2">{walletPolicy.labelPointsToRupee}</p>
-                      <p className="text-sm text-gray-600 mt-1">{walletPolicy.labelMinPoints}</p>
-                      <label htmlFor="wallet-points-redeem" className="mt-4 block text-xs font-medium text-gray-500">
-                        Points to convert
-                      </label>
-                      <input
-                        id="wallet-points-redeem"
-                        type="number"
-                        inputMode="numeric"
-                        min={walletPolicy.minRedemptionPoints}
-                        max={balance?.points ?? undefined}
-                        value={walletPointsInput}
-                        onChange={e => setWalletPointsInput(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
-                      />
-                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-stone-100">
-                        <p className="text-xs text-gray-500">
-                          Available:{' '}
-                          <span className="font-semibold text-orange-600">{balance?.points ?? 0}</span> points
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => void handleRedeemPointsToWallet()}
-                          disabled={
-                            walletRedeeming ||
-                            !walletPolicy ||
-                            (balance?.points ?? 0) < walletPolicy.minRedemptionPoints
-                          }
-                          className={`px-6 py-2 rounded-lg font-medium transition ${
-                            !walletRedeeming &&
-                            walletPolicy &&
-                            (balance?.points ?? 0) >= walletPolicy.minRedemptionPoints
-                              ? 'bg-orange-500 text-white hover:bg-orange-600'
-                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          }`}
-                        >
-                          {walletRedeeming ? 'Processing…' : 'Redeem to Wallet'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
                   {rewards.length === 0 ? (
                     <div className="bg-white rounded-2xl p-8 py-10 text-center shadow-sm border border-stone-200/80">
                       <div className="text-5xl mb-3" aria-hidden>
