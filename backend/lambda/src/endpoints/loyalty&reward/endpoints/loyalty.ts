@@ -22,6 +22,7 @@ import { select, insert, update, query, upsert, deleteRows, withTransaction } fr
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { resolveMinRedemptionPointsFromRuleRow } from '../../../utils/loyalty-rule-fields';
+import { CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED } from '../../../lib/services/loyalty&reward/loyalty-points-service';
 
 async function walletTransactionsColumnSet(client: PoolClient): Promise<Set<string>> {
   const r = await client.query<{ column_name: string }>(
@@ -87,6 +88,13 @@ export async function executeLoyaltyRedeemPointsToWallet(params: {
   | { ok: false; error: string; status: number }
 > {
   const { customerId, points } = params;
+  if (CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED) {
+    return {
+      ok: false,
+      error: 'Redeem to wallet is temporarily disabled',
+      status: 410,
+    };
+  }
   if (!customerId || points === undefined || points === null) {
     return { ok: false, error: 'customerId and points are required', status: 400 };
   }
@@ -470,7 +478,13 @@ export function registerLoyaltyEndpoints(app: Hono) {
         description,
       });
       if (!result.ok) {
-        return c.json({ error: result.error }, result.status as ContentfulStatusCode);
+        return c.json(
+          {
+            error: result.error,
+            ...(result.status === 410 ? { code: 'LOYALTY_REDEEM_DISABLED' } : {}),
+          },
+          result.status as ContentfulStatusCode
+        );
       }
       return c.json({
         success: true,
@@ -546,7 +560,14 @@ export function registerLoyaltyEndpoints(app: Hono) {
         description: body.description,
       });
       if (!result.ok) {
-        return c.json({ success: false, error: result.error }, result.status as ContentfulStatusCode);
+        return c.json(
+          {
+            success: false,
+            error: result.error,
+            ...(result.status === 410 ? { code: 'LOYALTY_REDEEM_DISABLED' } : {}),
+          },
+          result.status as ContentfulStatusCode
+        );
       }
       return c.json({
         success: true,

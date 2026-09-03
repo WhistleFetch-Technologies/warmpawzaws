@@ -4,9 +4,14 @@
  */
 import { randomUUID } from 'crypto';
 import { query } from '../../database/rds-connection';
+import { CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED } from './loyalty&reward/loyalty-points-service';
 
 export async function publishVendorReferralBookingConfirmedAction(bookingId: string): Promise<void> {
   if (!bookingId) return;
+  if (CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED) {
+    console.info('[LOYALTY-ACTION] skip vendor_refer_friend_who_joins: customer loyalty paused', { bookingId });
+    return;
+  }
 
   const res = await query(`SELECT customer_id FROM bookings WHERE id = $1 LIMIT 1`, [bookingId]);
   const customerId = res.rows?.[0]?.customer_id as string | undefined;

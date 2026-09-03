@@ -11,7 +11,10 @@
  */
 
 import { query, withTransaction } from '../database/rds-connection';
-import { loyaltyPointsService } from '../lib/services/loyalty&reward/loyalty-points-service';
+import {
+  CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED,
+  loyaltyPointsService,
+} from '../lib/services/loyalty&reward/loyalty-points-service';
 
 const ECOMMERCE_LOYALTY_ACTION = 'buy_product';
 
@@ -26,6 +29,10 @@ export async function insertPendingLoyaltyAward(params: {
   windowDays: number;
 }): Promise<void> {
   const { orderId, customerId, amount, windowDays } = params;
+  if (CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED) {
+    console.info('[ECOMMERCE-LOYALTY] insertPendingLoyaltyAward skipped (customer loyalty paused)');
+    return;
+  }
   try {
     await query(
       `INSERT INTO ecommerce_loyalty_pending_awards
@@ -74,6 +81,10 @@ export async function cancelPendingLoyaltyAward(
  *   - Marks row as 'awarded'
  */
 export async function processCustomerDuePendingAwards(customerId: string): Promise<void> {
+  if (CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED) {
+    console.info('[ECOMMERCE-LOYALTY] processCustomerDuePendingAwards skipped (customer loyalty paused)');
+    return;
+  }
   try {
     const dueRows = await query(
       `SELECT id, order_id::text AS order_id, amount, action_name

@@ -55,8 +55,9 @@ describe('LoyaltyPointsService update_health_record lifetime cap', () => {
       description: 'Action update_health_record',
     });
 
-    expect(result.points).toBe(50);
+    expect(result.points).toBe(0);
     expect(result.walletCredited).toBe(0);
+    expect(withTransaction).not.toHaveBeenCalled();
   });
 
   it('blocks award after 3 lifetime earns', async () => {

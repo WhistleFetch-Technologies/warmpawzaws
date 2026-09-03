@@ -18,6 +18,16 @@ describe('loyalty lifetime_limit cap', () => {
     (loyaltyPointsService as any).walletPolicyCache = undefined;
   });
 
+  it('skips customer awards while loyalty pause is enabled', async () => {
+    const result = await loyaltyPointsService.awardPoints({
+      customerId: 'customer-1',
+      actionName: 'signup',
+    });
+    expect(result).toEqual({ points: 0, walletCredited: 0 });
+    expect(query).not.toHaveBeenCalled();
+    expect(withTransaction).not.toHaveBeenCalled();
+  });
+
   it('blocks 4th complete_pet_profile award when count >= 3 since cap_effective_from', async () => {
     const capFrom = '2026-08-11T00:00:00.000Z';
     const mockRule = {
@@ -46,11 +56,7 @@ describe('loyalty lifetime_limit cap', () => {
     });
 
     expect(result.points).toBe(0);
-    expect(query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('created_at >='),
-      expect.arrayContaining(['customer-1', '% complete_pet_profile', capFrom])
-    );
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('allows award when lifetime count is below cap', async () => {
@@ -89,6 +95,7 @@ describe('loyalty lifetime_limit cap', () => {
       referenceId: 'pet-10',
     });
 
-    expect(result.points).toBe(50);
+    expect(result.points).toBe(0);
+    expect(withTransaction).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { fixRewardCatalogTextFields } from '../utils/fix-rupee-mojibake';
 import { isValidUUID } from '../types/entities';
 import { isHiddenLegacyCatalogReward } from '../lib/hidden-rewards-catalog';
+import { CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED } from '../lib/services/loyalty&reward/loyalty-points-service';
 import {
   isValidIndianMobile,
   loadCustomerContact,
@@ -701,6 +702,17 @@ export function registerRewardsEndpoints(app: Hono) {
       const cashValue = isExternalLink
         ? 0
         : Math.round((parseFloat(String(reward.cash_value ?? 0)) || 0) * 100) / 100;
+
+      if (CUSTOMER_LOYALTY_EARN_AND_REDEEM_DISABLED && cashValue > 0.009) {
+        return c.json(
+          {
+            success: false,
+            error: 'Redeem to wallet is temporarily disabled',
+            code: 'LOYALTY_REDEEM_DISABLED',
+          },
+          410
+        );
+      }
 
       const { remainingPoints, walletCredited, assignedLink, redemptionId } = await withTransaction(async (client) => {
         const cwCol = await client.query<{ column_name: string }>(
