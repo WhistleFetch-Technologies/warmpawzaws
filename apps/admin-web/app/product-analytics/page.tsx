@@ -272,7 +272,7 @@ export default function ProductAnalyticsPage() {
                 <SelectItem value="90d">Last 90 days</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={app} onValueChange={(v) => setApp(v as typeof app)}>
+            <Select value={app} onValueChange={(v: string) => setApp(v as typeof app)}>
               <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder="App" />
               </SelectTrigger>
@@ -402,7 +402,7 @@ export default function ProductAnalyticsPage() {
                   <label className="text-xs text-gray-500 block mb-1">Status</label>
                   <Select
                     value={ecStatus || '_any'}
-                    onValueChange={(v) => setEcStatus(v === '_any' ? '' : v)}
+                    onValueChange={(v: string) => setEcStatus(v === '_any' ? '' : v)}
                   >
                     <SelectTrigger className="w-[160px]">
                       <SelectValue placeholder="Any" />
@@ -420,7 +420,7 @@ export default function ProductAnalyticsPage() {
                   <label className="text-xs text-gray-500 block mb-1">Priority</label>
                   <Select
                     value={ecPriority || '_any'}
-                    onValueChange={(v) => setEcPriority(v === '_any' ? '' : v)}
+                    onValueChange={(v: string) => setEcPriority(v === '_any' ? '' : v)}
                   >
                     <SelectTrigger className="w-[120px]">
                       <SelectValue placeholder="Any" />
@@ -438,7 +438,7 @@ export default function ProductAnalyticsPage() {
                   <label className="text-xs text-gray-500 block mb-1">Assignee</label>
                   <Select
                     value={ecAssigned || '_any'}
-                    onValueChange={(v) => setEcAssigned(v === '_any' ? '' : v)}
+                    onValueChange={(v: string) => setEcAssigned(v === '_any' ? '' : v)}
                   >
                     <SelectTrigger className="w-[200px]">
                       <SelectValue placeholder="Any" />
@@ -547,7 +547,7 @@ export default function ProductAnalyticsPage() {
                         <label className="text-xs text-gray-500">Status</label>
                         <Select
                           value={patchDraft.status}
-                          onValueChange={(v) => setPatchDraft((d) => (d ? { ...d, status: v } : d))}
+                          onValueChange={(v: string) => setPatchDraft((d) => (d ? { ...d, status: v } : d))}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -564,7 +564,7 @@ export default function ProductAnalyticsPage() {
                         <label className="text-xs text-gray-500">Priority</label>
                         <Select
                           value={patchDraft.priority}
-                          onValueChange={(v) => setPatchDraft((d) => (d ? { ...d, priority: v } : d))}
+                          onValueChange={(v: string) => setPatchDraft((d) => (d ? { ...d, priority: v } : d))}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -581,7 +581,7 @@ export default function ProductAnalyticsPage() {
                         <label className="text-xs text-gray-500">Assignee</label>
                         <Select
                           value={patchDraft.assigned_admin_id || '_none'}
-                          onValueChange={(v) =>
+                          onValueChange={(v: string) =>
                             setPatchDraft((d) =>
                               d ? { ...d, assigned_admin_id: v === '_none' ? '' : v } : d
                             )

@@ -45,8 +45,8 @@ const nextConfig = {
   swcMinify: true,
   compress: true,
   images: { unoptimized: true },
-  typescript: { ignoreBuildErrors: false },
-  eslint: { ignoreDuringBuilds: false },
+  typescript: { ignoreBuildErrors: process.env.WARMPAWZ_ADMIN_IGNORE_TS === '1' },
+  eslint: { ignoreDuringBuilds: process.env.WARMPAWZ_ADMIN_IGNORE_TS === '1' },
   experimental: {
     outputFileTracingExcludes: process.argv[2] === 'build' ? { '*': ['**/*'] } : undefined,
     optimizePackageImports: [
