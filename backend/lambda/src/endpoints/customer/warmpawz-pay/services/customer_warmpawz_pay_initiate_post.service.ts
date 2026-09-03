@@ -2,11 +2,6 @@ import type { Context } from 'hono';
 import { createWpayRazorpayOrder } from '../../../../utils/wpay-razorpay-order';
 import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
 import { dbWpayVendorById } from '../repos/wpay-vendor-detail.repo';
-import {
-  dbIsAppointmentCreditConsumed,
-  dbLoadWapptBookingForPayCredit,
-} from '../repos/wpay-appointment-context.repo';
-import { resolveWapptAppointmentFeeCredit } from '../shared/wpay-appointment-credit';
 import { WpayCommercialValidationError } from '../shared/wpay-discount';
 import { resolveWpayPayQuote } from '../shared/wpay-quote-resolver';
 
@@ -25,7 +20,6 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     const vendorId = String(body.vendorId ?? '').trim();
     const phone = String(body.phone ?? c.req.query('phone') ?? '').trim();
     const originalAmount = Number(body.originalAmount);
-    const bookingId = String(body.bookingId ?? '').trim();
 
     if (!UUID_RE.test(vendorId)) {
       return c.json({ success: false, error: 'Invalid vendor id' }, 400);
@@ -36,9 +30,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
       return c.json({ success: false, error: 'Invalid bill amount' }, 400);
     }
-    if (bookingId && !UUID_RE.test(bookingId)) {
-      return c.json({ success: false, error: 'Invalid booking id' }, 400);
-    }
+    // bookingId intentionally ignored — appointment credit unwired from Pay Bill.
 
     const identity = await resolveWpayAuthenticatedCustomer(c, phone);
     if (!identity.ok) {
@@ -51,40 +43,17 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       return c.json({ success: false, error: 'Vendor not found or not available' }, 404);
     }
 
-    let appointmentFeeCredit = 0;
-    let appointmentFeeBookingId: string | null = null;
-
-    if (bookingId) {
-      const booking = await dbLoadWapptBookingForPayCredit(bookingId, customerId, vendorId);
-      if (!booking) {
-        return c.json({ success: false, error: 'Booking not found for this vendor' }, 404);
-      }
-
-      const consumed = await dbIsAppointmentCreditConsumed(bookingId);
-      const creditResult = await resolveWapptAppointmentFeeCredit({ booking, creditAlreadyConsumed: consumed });
-      if (creditResult.error) {
-        return c.json({ success: false, error: creditResult.error }, creditResult.status ?? 409);
-      }
-
-      appointmentFeeCredit = creditResult.credit;
-      appointmentFeeBookingId = bookingId;
-    }
-
     const resolved = await resolveWpayPayQuote({
       vendorRow,
       quotedAmount: originalAmount,
-      appointmentFeeCredit,
     });
 
     const order = await createWpayRazorpayOrder({
       customerId,
       vendorId,
       payableAmount: resolved.payableAmount,
-      bookingId: appointmentFeeBookingId,
-      quoteMetadata: {
-        ...resolved.metadata,
-        ...(appointmentFeeBookingId ? { appointmentFeeBookingId } : {}),
-      },
+      bookingId: null,
+      quoteMetadata: resolved.metadata,
     });
 
     if (resolved.commercialModel === 'tier_commission') {
@@ -102,11 +71,13 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         discountPercent: q.discountPercent,
         discountAmount: q.discountAmount,
         servicePayableAmount: q.servicePayableAmount,
-        appointmentFeeCredit: q.appointmentFeeCredit,
+        appointmentFeeCredit: 0,
+        platformFee: q.platformFee,
+        platformFeeGstAmount: q.platformFeeGstAmount,
         convenienceFee: q.convenienceFee,
         convenienceGstAmount: q.convenienceGstAmount,
         payableAmount: q.payNowAmount,
-        bookingId: appointmentFeeBookingId,
+        bookingId: null,
       });
     }
 
@@ -121,11 +92,11 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       currency: order.currency,
       commercialModel: 'withhold',
       originalAmount: q.originalAmount,
-      appointmentFeeCredit: q.appointmentFeeCredit,
+      appointmentFeeCredit: 0,
       billBase: q.billBase,
       discountAmount: q.discountAmount,
       payableAmount: q.payableAmount,
-      bookingId: appointmentFeeBookingId,
+      bookingId: null,
     });
   } catch (error: unknown) {
     if (error instanceof WpayCommercialValidationError) {

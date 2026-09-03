@@ -95,7 +95,7 @@ export async function accrueWpaySettlement(
   const discountAmount = round2(
     Number(payment.discount_amount ?? readMetadataNumber(meta, 'quotedDiscountAmount') ?? 0),
   );
-  const appointmentFeeCredit = round2(readMetadataNumber(meta, 'appointmentFeeCredit'));
+  const appointmentFeeCredit = 0;
   const discountPercent = round2(
     readMetadataNumber(meta, 'quotedDiscountPercent') ||
       readMetadataNumber(meta, 'discountPercentSnapshot'),
@@ -117,9 +117,11 @@ export async function accrueWpaySettlement(
         Math.max(0, readMetadataNumber(meta, 'grossCommissionAmount') - discountAmount),
     );
     const platformGstAmount = round2(readMetadataNumber(meta, 'platformGstAmount'));
+    const platformFeeGstAmount = round2(readMetadataNumber(meta, 'platformFeeGstAmount'));
     const convenienceGstAmount = round2(readMetadataNumber(meta, 'convenienceGstAmount'));
     const finalGstAmount = round2(
-      readMetadataNumber(meta, 'finalGstAmount') || platformGstAmount + convenienceGstAmount,
+      readMetadataNumber(meta, 'finalGstAmount') ||
+        platformGstAmount + platformFeeGstAmount + convenienceGstAmount,
     );
 
     const settlementBreakup = {
@@ -140,6 +142,10 @@ export async function accrueWpaySettlement(
       platformGstRateSnapshot: readMetadataNumber(meta, 'platformGstRateSnapshot'),
       platformGstAmount,
       netWpayRevenueAmount: readMetadataNumber(meta, 'netWpayRevenueAmount'),
+      platformFee: readMetadataNumber(meta, 'platformFee'),
+      platformFeeGstRateSnapshot: readMetadataNumber(meta, 'platformFeeGstRateSnapshot'),
+      platformFeeGstAmount,
+      platformFeeGrossAmount: readMetadataNumber(meta, 'platformFeeGrossAmount'),
       convenienceFee: readMetadataNumber(meta, 'convenienceFee'),
       convenienceGstRateSnapshot: readMetadataNumber(meta, 'convenienceGstRateSnapshot'),
       convenienceGstAmount,

@@ -18,8 +18,11 @@ export async function fetchWpayEligibleTiers(): Promise<WpayEligibleTier[]> {
 }
 
 export interface WpayConvenienceSettings {
+  platformFee: number;
+  platformFeeGstRate: number;
   convenienceFee: number;
   convenienceGstRate: number;
+  /** Inclusive GST extract from platform revenue (C − D). */
   platformGstRate: number;
 }
 

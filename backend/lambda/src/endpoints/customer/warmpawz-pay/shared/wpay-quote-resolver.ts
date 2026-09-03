@@ -29,10 +29,10 @@ export type WpayResolvedPayQuote = WpayWithholdQuoteResult | WpayTierQuoteResult
 export async function resolveWpayPayQuote(params: {
   vendorRow: WpayVendorListDbRow;
   quotedAmount: number;
+  /** @deprecated Ignored — appointment credit unwired from Pay Bill. */
   appointmentFeeCredit?: number;
 }): Promise<WpayResolvedPayQuote> {
   const config = resolveWpayVendorCommercialConfig(params.vendorRow);
-  const credit = params.appointmentFeeCredit ?? 0;
 
   if (config.commercialModel === 'tier_commission') {
     const settings = await wpayConvenienceSettingsRepository.getConvenienceSettings();
@@ -40,7 +40,8 @@ export async function resolveWpayPayQuote(params: {
       quotedAmount: params.quotedAmount,
       commissionPercent: config.commissionPercent,
       discountPercent: config.discountPercent,
-      appointmentFeeCredit: credit,
+      platformFee: settings.platformFee,
+      platformFeeGstRate: settings.platformFeeGstRate,
       convenienceFee: settings.convenienceFee,
       convenienceGstRate: settings.convenienceGstRate,
       platformGstRate: settings.platformGstRate,
@@ -57,9 +58,7 @@ export async function resolveWpayPayQuote(params: {
     };
   }
 
-  const quote = computeWpayDiscountQuote(params.quotedAmount, config.discountPercent, {
-    appointmentFeeCredit: credit,
-  });
+  const quote = computeWpayDiscountQuote(params.quotedAmount, config.discountPercent);
 
   return {
     commercialModel: 'withhold',
@@ -71,7 +70,7 @@ export async function resolveWpayPayQuote(params: {
       quotedDiscountAmount: quote.discountAmount,
       quotedDiscountPercent: quote.discountPercent,
       billBase: quote.billBase,
-      appointmentFeeCredit: quote.appointmentFeeCredit,
+      appointmentFeeCredit: 0,
       platformWithholdPercent: config.platformWithholdPercent,
     },
   };

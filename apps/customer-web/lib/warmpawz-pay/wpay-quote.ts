@@ -16,6 +16,9 @@ export type WpayCommercialQuotePreview = {
   servicePayableAmount: number;
   appointmentFeeCredit: number;
   serviceDueAfterCredit: number;
+  platformFee: number;
+  platformFeeGstAmount: number;
+  platformFeeGrossAmount: number;
   convenienceFee: number;
   convenienceGstAmount: number;
   convenienceGrossAmount: number;
@@ -26,7 +29,7 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** Historical withhold model preview (discount on Q − credit). */
+/** Historical withhold model preview (discount on full Q; credit ignored). */
 export function previewWpayQuote(params: {
   originalAmount: number;
   discountPercent: number;
@@ -34,10 +37,8 @@ export function previewWpayQuote(params: {
   maxDiscountAmount?: number | null;
 }): WpayQuotePreview {
   const original = round2(params.originalAmount);
-  const rawCredit = params.appointmentFeeCredit ?? 0;
-  const appointmentFeeCredit =
-    Number.isFinite(rawCredit) && rawCredit > 0 ? round2(Math.min(original, rawCredit)) : 0;
-  const billBase = round2(Math.max(0, original - appointmentFeeCredit));
+  const appointmentFeeCredit = 0;
+  const billBase = original;
 
   let discountRaw = (billBase * params.discountPercent) / 100;
   if (params.maxDiscountAmount != null && discountRaw > params.maxDiscountAmount) {
@@ -56,11 +57,13 @@ export function previewWpayQuote(params: {
   };
 }
 
-/** Tier-commission preview: C/D on full Q; credit after discount; convenience GST exclusive. */
+/** Tier-commission preview: C/D on full Q; no appointment credit; fees + exclusive GST. */
 export function previewWpayCommercialQuote(params: {
   originalAmount: number;
   discountPercent: number;
   appointmentFeeCredit?: number;
+  platformFee?: number;
+  platformFeeGstRate?: number;
   convenienceFee?: number;
   convenienceGstRate?: number;
   maxDiscountAmount?: number | null;
@@ -75,12 +78,16 @@ export function previewWpayCommercialQuote(params: {
   const discountAmount = round2(discountRaw);
   const servicePayableAmount = round2(originalAmount - discountAmount);
 
-  const rawCredit = params.appointmentFeeCredit ?? 0;
-  const appointmentFeeCredit =
-    Number.isFinite(rawCredit) && rawCredit > 0
-      ? round2(Math.min(servicePayableAmount, rawCredit))
+  const appointmentFeeCredit = 0;
+  const serviceDueAfterCredit = servicePayableAmount;
+
+  const platformFee = round2(Math.max(0, Number(params.platformFee ?? 0)));
+  const platformFeeGstRate = round2(Number(params.platformFeeGstRate ?? 18));
+  const platformFeeGstAmount =
+    platformFee > 0 && platformFeeGstRate > 0
+      ? round2((platformFee * platformFeeGstRate) / 100)
       : 0;
-  const serviceDueAfterCredit = round2(Math.max(0, servicePayableAmount - appointmentFeeCredit));
+  const platformFeeGrossAmount = round2(platformFee + platformFeeGstAmount);
 
   const convenienceFee = round2(Math.max(0, Number(params.convenienceFee ?? 0)));
   const convenienceGstRate = round2(Number(params.convenienceGstRate ?? 18));
@@ -89,7 +96,10 @@ export function previewWpayCommercialQuote(params: {
       ? round2((convenienceFee * convenienceGstRate) / 100)
       : 0;
   const convenienceGrossAmount = round2(convenienceFee + convenienceGstAmount);
-  const payableAmount = Math.max(0.01, round2(serviceDueAfterCredit + convenienceGrossAmount));
+  const payableAmount = Math.max(
+    0.01,
+    round2(servicePayableAmount + platformFeeGrossAmount + convenienceGrossAmount),
+  );
 
   return {
     commercialModel: 'tier_commission',
@@ -99,6 +109,9 @@ export function previewWpayCommercialQuote(params: {
     servicePayableAmount,
     appointmentFeeCredit,
     serviceDueAfterCredit,
+    platformFee,
+    platformFeeGstAmount,
+    platformFeeGrossAmount,
     convenienceFee,
     convenienceGstAmount,
     convenienceGrossAmount,

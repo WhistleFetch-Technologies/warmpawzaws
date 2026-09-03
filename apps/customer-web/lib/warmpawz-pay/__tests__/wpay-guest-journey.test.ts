@@ -48,7 +48,6 @@ describe('wpay guest Pay Bill journey', () => {
     const afterLogin = previewWpayQuote({
       originalAmount: 1000,
       discountPercent: 5,
-      appointmentFeeCredit: 100,
     });
     expect(afterLogin.discountAmount).not.toBe(guestPreview.discountAmount);
     expect(afterLogin.payableAmount).not.toBe(guestPreview.payableAmount);

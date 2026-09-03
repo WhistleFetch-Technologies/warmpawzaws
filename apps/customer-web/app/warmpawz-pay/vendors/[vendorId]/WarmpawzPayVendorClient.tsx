@@ -5,10 +5,8 @@ import { useRouter } from 'next/navigation';
 import { QrCode } from 'lucide-react';
 import { useWpayVendorId } from '@/lib/warmpawz-pay/use-wpay-vendor-id';
 import {
-  fetchWpayAppointmentContext,
   fetchWpayVendorDetail,
   readCustomerPhoneFromStorage,
-  type WpayAppointmentContext,
   type WpayVendorDetail,
 } from '@/lib/warmpawz-pay/wpay-api';
 import { previewWpayCommercialQuote, previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
@@ -19,7 +17,6 @@ import {
   isGuestApplicationState,
   requestGuestAuthForWpayPay,
 } from '@/lib/guest-auth-gate';
-import { CUSTOMER_AUTH_COMPLETED_EVENT } from '@/lib/customer-auth-session-event';
 import { VendorProfileDashboardHeader } from '@/components/customer/shared/VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from '@/components/customer/shared/VendorHeroPhotoCarousel';
 import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
@@ -43,7 +40,6 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const [quoteReady, setQuoteReady] = useState(false);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
-  const [appointmentContext, setAppointmentContext] = useState<WpayAppointmentContext | null>(null);
 
   useEffect(() => {
     if (!resolvedVendorId) return;
@@ -60,22 +56,6 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
       .finally(() => setLoading(false));
   }, [resolvedVendorId]);
 
-  const refreshAppointmentContext = useCallback(async () => {
-    if (!resolvedVendorId) return;
-    const phone = readCustomerPhoneFromStorage();
-    if (!phone) return;
-    try {
-      const ctx = await fetchWpayAppointmentContext(resolvedVendorId, phone);
-      if (ctx) setAppointmentContext(ctx);
-    } catch {
-      /* non-fatal */
-    }
-  }, [resolvedVendorId]);
-
-  useEffect(() => {
-    void refreshAppointmentContext();
-  }, [refreshAppointmentContext]);
-
   useEffect(() => {
     if (!resolvedVendorId) return;
     const restored = consumeRestoredWpayPayBillAmount(resolvedVendorId);
@@ -83,17 +63,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     setAmountInput(String(restored));
     setQuoteReady(true);
     emitGuestAuthAnalytics('booking_resumed', { kind: 'pay_bill' });
-    void refreshAppointmentContext();
-  }, [resolvedVendorId, refreshAppointmentContext]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onAuth = () => {
-      void refreshAppointmentContext();
-    };
-    window.addEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuth);
-    return () => window.removeEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuth);
-  }, [refreshAppointmentContext]);
+  }, [resolvedVendorId]);
 
   useEffect(() => {
     if (isGuestApplicationState()) {
@@ -101,25 +71,20 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     }
   }, [resolvedVendorId]);
 
-  const creditEligibleBooking = appointmentContext?.creditEligibleBooking ?? null;
-
   const billAmount = useMemo(() => {
     const n = parseFloat(amountInput.replace(/,/g, ''));
     return Number.isFinite(n) && n > 0 ? n : 0;
   }, [amountInput]);
 
-  const linkedBookingId = creditEligibleBooking?.bookingId ?? null;
-  const appointmentFeeCredit = creditEligibleBooking?.appointmentFee ?? 0;
-
   const quote = useMemo(() => {
     if (!vendor || billAmount <= 0) return null;
-    const credit = linkedBookingId ? appointmentFeeCredit : 0;
     if (vendor.commercialModel === 'tier_commission') {
       return previewWpayCommercialQuote({
         originalAmount: billAmount,
         discountPercent: vendor.discountPercent,
         maxDiscountAmount: vendor.maxDiscountAmount,
-        appointmentFeeCredit: credit,
+        platformFee: vendor.platformFee ?? 0,
+        platformFeeGstRate: vendor.platformFeeGstRate ?? 18,
         convenienceFee: vendor.convenienceFee ?? 0,
         convenienceGstRate: vendor.convenienceGstRate ?? 18,
       });
@@ -128,9 +93,8 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
       originalAmount: billAmount,
       discountPercent: vendor.discountPercent,
       maxDiscountAmount: vendor.maxDiscountAmount,
-      appointmentFeeCredit: credit,
     });
-  }, [billAmount, vendor, linkedBookingId, appointmentFeeCredit]);
+  }, [billAmount, vendor]);
 
   const isTierQuote = quote != null && 'commercialModel' in quote && quote.commercialModel === 'tier_commission';
 
@@ -158,7 +122,6 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         vendorName: vendor.name,
         originalAmount: billAmount,
         customerPhone: phone,
-        bookingId: linkedBookingId,
       });
       const saved = Number(result.savedAmount ?? result.discountAmount ?? quote.discountAmount);
       const qs = new URLSearchParams({
@@ -175,7 +138,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     } finally {
       setPaying(false);
     }
-  }, [billAmount, linkedBookingId, quote, resolvedVendorId, router, vendor]);
+  }, [billAmount, quote, resolvedVendorId, router, vendor]);
 
   if (loading) {
     return <p className="p-8 text-center text-sm text-gray-500">Loading…</p>;
@@ -254,15 +217,6 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
           </div>
 
           <div className="space-y-4">
-            {creditEligibleBooking ? (
-              <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-900">
-                <p className="font-semibold">Appointment found</p>
-                <p className="mt-1 text-xs text-green-800">
-                  {formatInr(creditEligibleBooking.appointmentFee)} appointment fee credit will apply after your discount.
-                </p>
-              </div>
-            ) : null}
-
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">Enter Bill Amount</label>
               <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3 py-3">
@@ -312,17 +266,17 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                     <span>{formatInr(quote.servicePayableAmount)}</span>
                   </div>
                 ) : null}
-                {quote.appointmentFeeCredit > 0 ? (
-                  <div className="flex justify-between text-[#FF6B00]">
-                    <span>Appointment fee credit</span>
-                    <span>- {formatInr(quote.appointmentFeeCredit)}</span>
-                  </div>
-                ) : null}
-                {!isTierQuote && quote.appointmentFeeCredit > 0 && 'billBase' in quote ? (
-                  <div className="flex justify-between text-gray-600">
-                    <span>After credit</span>
-                    <span>{formatInr(quote.billBase)}</span>
-                  </div>
+                {isTierQuote && quote.platformFee > 0 ? (
+                  <>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Platform fee</span>
+                      <span>{formatInr(quote.platformFee)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Platform fee GST ({vendor.platformFeeGstRate ?? 18}%)</span>
+                      <span>{formatInr(quote.platformFeeGstAmount)}</span>
+                    </div>
+                  </>
                 ) : null}
                 {isTierQuote && quote.convenienceFee > 0 ? (
                   <>
@@ -341,7 +295,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                   <span>{formatInr(quote.payableAmount)}</span>
                 </div>
                 <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
-                  You save {formatInr(quote.originalAmount - (isTierQuote ? quote.servicePayableAmount : quote.payableAmount))} with this offer!
+                  You save {formatInr(quote.discountAmount)} with this offer!
                 </p>
               </div>
             ) : null}

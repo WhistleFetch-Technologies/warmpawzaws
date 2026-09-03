@@ -3,15 +3,16 @@ import type { WpayVendorListDbRow } from '../repos/wpay-vendors-list.repo';
 
 export type WpayDiscountQuoteOptions = {
   maxDiscountAmount?: number | null;
+  /** @deprecated Appointment credit is unwired for Pay Bill; ignored. */
   appointmentFeeCredit?: number;
 };
 
 export type WpayDiscountQuote = {
-  /** Vendor-quoted gross bill before appointment fee credit. */
+  /** Vendor-quoted gross bill. */
   originalAmount: number;
-  /** WAPPT appointment fee applied against the quote (0 for walk-in). */
+  /** Always 0 — appointment credit is unwired from Pay Bill. */
   appointmentFeeCredit: number;
-  /** Amount discount % is applied to: originalAmount − appointmentFeeCredit. */
+  /** Same as originalAmount (credit no longer reduces bill base). */
   billBase: number;
   discountPercent: number;
   discountAmount: number;
@@ -33,6 +34,7 @@ export function resolveWpayDiscountPercent(row: WpayVendorListDbRow): number {
   return effective && Number.isFinite(value) ? round2(value) : 0;
 }
 
+/** Historical withhold model: discount on full Q (appointment credit ignored). */
 export function computeWpayDiscountQuote(
   originalAmount: number,
   discountPercent: number,
@@ -43,11 +45,8 @@ export function computeWpayDiscountQuote(
     throw new Error('Invalid bill amount');
   }
 
-  const rawCredit = options?.appointmentFeeCredit ?? 0;
-  const appointmentFeeCredit =
-    Number.isFinite(rawCredit) && rawCredit > 0 ? round2(Math.min(original, rawCredit)) : 0;
-
-  const billBase = round2(Math.max(0, original - appointmentFeeCredit));
+  const appointmentFeeCredit = 0;
+  const billBase = original;
 
   let discountRaw = (billBase * discountPercent) / 100;
   const maxDiscountAmount = options?.maxDiscountAmount ?? null;
@@ -71,9 +70,13 @@ export type WpayCommercialQuoteInput = {
   quotedAmount: number;
   commissionPercent: number;
   discountPercent: number;
+  /** @deprecated Ignored — appointment credit unwired from Pay Bill. */
   appointmentFeeCredit?: number;
+  platformFee?: number;
+  platformFeeGstRate?: number;
   convenienceFee?: number;
   convenienceGstRate?: number;
+  /** Inclusive GST rate for platform revenue (C − D). */
   platformGstRate?: number;
   maxDiscountAmount?: number | null;
 };
@@ -91,8 +94,14 @@ export type WpayCommercialQuote = {
   platformGstRate: number;
   platformGstAmount: number;
   netWpayRevenueAmount: number;
+  /** Always 0 — appointment credit unwired. */
   appointmentFeeCredit: number;
+  /** Alias of servicePayableAmount (credit removed). */
   serviceDueAfterCredit: number;
+  platformFee: number;
+  platformFeeGstRate: number;
+  platformFeeGstAmount: number;
+  platformFeeGrossAmount: number;
   convenienceFee: number;
   convenienceGstRate: number;
   convenienceGstAmount: number;
@@ -120,7 +129,12 @@ export function assertDiscountBelowCommission(
   }
 }
 
-/** Tier-commission Pay Bill quote: C/D on full Q; credit after discount; convenience GST exclusive; platform GST inclusive in revenue. */
+/**
+ * Tier-commission Pay Bill quote:
+ * - C/D on full Q; platform revenue = C − D (GST inclusive extract)
+ * - No appointment credit
+ * - Platform fee + convenience fee each with exclusive GST on top
+ */
 export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): WpayCommercialQuote {
   const quotedAmount = round2(Number(input.quotedAmount));
   if (!Number.isFinite(quotedAmount) || quotedAmount <= 0) {
@@ -151,12 +165,16 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
       : 0;
   const netWpayRevenueAmount = round2(Math.max(0, wpayRevenueAmount - platformGstAmount));
 
-  const rawCredit = input.appointmentFeeCredit ?? 0;
-  const appointmentFeeCredit =
-    Number.isFinite(rawCredit) && rawCredit > 0
-      ? round2(Math.min(servicePayableAmount, rawCredit))
+  const appointmentFeeCredit = 0;
+  const serviceDueAfterCredit = servicePayableAmount;
+
+  const platformFee = round2(Math.max(0, Number(input.platformFee ?? 0)));
+  const platformFeeGstRate = round2(Number(input.platformFeeGstRate ?? 18));
+  const platformFeeGstAmount =
+    platformFee > 0 && platformFeeGstRate > 0
+      ? round2((platformFee * platformFeeGstRate) / 100)
       : 0;
-  const serviceDueAfterCredit = round2(Math.max(0, servicePayableAmount - appointmentFeeCredit));
+  const platformFeeGrossAmount = round2(platformFee + platformFeeGstAmount);
 
   const convenienceFee = round2(Math.max(0, Number(input.convenienceFee ?? 0)));
   const convenienceGstRate = round2(Number(input.convenienceGstRate ?? 18));
@@ -165,8 +183,12 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
       ? round2((convenienceFee * convenienceGstRate) / 100)
       : 0;
   const convenienceGrossAmount = round2(convenienceFee + convenienceGstAmount);
-  const finalGstAmount = round2(platformGstAmount + convenienceGstAmount);
-  const payNowAmount = Math.max(0.01, round2(serviceDueAfterCredit + convenienceGrossAmount));
+
+  const finalGstAmount = round2(platformGstAmount + platformFeeGstAmount + convenienceGstAmount);
+  const payNowAmount = Math.max(
+    0.01,
+    round2(servicePayableAmount + platformFeeGrossAmount + convenienceGrossAmount),
+  );
 
   return {
     commercialModel: 'tier_commission',
@@ -183,6 +205,10 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
     netWpayRevenueAmount,
     appointmentFeeCredit,
     serviceDueAfterCredit,
+    platformFee,
+    platformFeeGstRate,
+    platformFeeGstAmount,
+    platformFeeGrossAmount,
     convenienceFee,
     convenienceGstRate,
     convenienceGstAmount,
@@ -210,8 +236,12 @@ export function buildWpayCommercialSnapshot(quote: WpayCommercialQuote, extras?:
     platformGstRateSnapshot: quote.platformGstRate,
     platformGstAmount: quote.platformGstAmount,
     netWpayRevenueAmount: quote.netWpayRevenueAmount,
-    appointmentFeeCredit: quote.appointmentFeeCredit,
+    appointmentFeeCredit: 0,
     serviceDueAfterCredit: quote.serviceDueAfterCredit,
+    platformFee: quote.platformFee,
+    platformFeeGstRateSnapshot: quote.platformFeeGstRate,
+    platformFeeGstAmount: quote.platformFeeGstAmount,
+    platformFeeGrossAmount: quote.platformFeeGrossAmount,
     convenienceFee: quote.convenienceFee,
     convenienceGstRateSnapshot: quote.convenienceGstRate,
     convenienceGstAmount: quote.convenienceGstAmount,

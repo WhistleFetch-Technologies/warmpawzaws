@@ -1,27 +1,27 @@
 import type { IWpayConvenienceSettingsRepository } from '../../../repositories/interfaces/IWpayConvenienceSettingsRepository';
 import { WpayConvenienceSettingsService } from '../services/wpay-convenience-settings.service';
 
+const sample = {
+  platformFee: 30,
+  platformFeeGstRate: 18,
+  convenienceFee: 20,
+  convenienceGstRate: 18,
+  platformGstRate: 18,
+};
+
 describe('WpayConvenienceSettingsService', () => {
-  it('returns global convenience settings from the wpay category', async () => {
+  it('returns global fee settings from the wpay category', async () => {
     const repository: IWpayConvenienceSettingsRepository = {
-      getConvenienceSettings: jest.fn().mockResolvedValue({
-        convenienceFee: 20,
-        convenienceGstRate: 18,
-        platformGstRate: 18,
-      }),
+      getConvenienceSettings: jest.fn().mockResolvedValue(sample),
       putConvenienceSettings: jest.fn(),
     };
 
     const service = new WpayConvenienceSettingsService(repository);
-    await expect(service.getConvenienceSettings()).resolves.toEqual({
-      convenienceFee: 20,
-      convenienceGstRate: 18,
-      platformGstRate: 18,
-    });
+    await expect(service.getConvenienceSettings()).resolves.toEqual(sample);
   });
 
-  it('writes the same three fields back through the repository', async () => {
-    const input = { convenienceFee: 25, convenienceGstRate: 18, platformGstRate: 18 };
+  it('writes all fee fields back through the repository', async () => {
+    const input = { ...sample, convenienceFee: 25 };
     const repository: IWpayConvenienceSettingsRepository = {
       getConvenienceSettings: jest.fn(),
       putConvenienceSettings: jest.fn().mockResolvedValue(input),

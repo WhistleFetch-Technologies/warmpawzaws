@@ -18,6 +18,8 @@ export type WpayVendorDetail = WpayVendorCard & {
   maxDiscountAmount: number | null;
   offerLabel: string;
   commercialModel?: 'tier_commission' | 'withhold';
+  platformFee?: number;
+  platformFeeGstRate?: number;
   convenienceFee?: number;
   convenienceGstRate?: number;
 };

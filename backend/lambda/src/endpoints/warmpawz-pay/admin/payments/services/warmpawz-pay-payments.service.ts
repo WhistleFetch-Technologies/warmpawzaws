@@ -147,10 +147,7 @@ function mapPaymentRow(
 
     return {
       ...base,
-      appointmentFeeCredit:
-        readBreakupNumber(breakup, 'appointmentFeeCredit') ??
-        toFiniteNumber(meta?.appointmentFeeCredit as number | undefined) ??
-        0,
+      appointmentFeeCredit: 0,
       commissionPercent:
         readBreakupNumber(breakup, 'commissionPercentSnapshot') ??
         toFiniteNumber(meta?.commissionPercentSnapshot as number | undefined) ??
@@ -160,6 +157,14 @@ function mapPaymentRow(
       platformGstAmount:
         readBreakupNumber(breakup, 'platformGstAmount') ??
         toFiniteNumber(meta?.platformGstAmount as number | undefined) ??
+        undefined,
+      platformFee:
+        readBreakupNumber(breakup, 'platformFee') ??
+        toFiniteNumber(meta?.platformFee as number | undefined) ??
+        undefined,
+      platformFeeGstAmount:
+        readBreakupNumber(breakup, 'platformFeeGstAmount') ??
+        toFiniteNumber(meta?.platformFeeGstAmount as number | undefined) ??
         undefined,
       convenienceFee:
         readBreakupNumber(breakup, 'convenienceFee') ??

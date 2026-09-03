@@ -6,7 +6,7 @@ import {
 } from '../wpay-discount';
 
 describe('computeWpayDiscountQuote', () => {
-  it('applies percentage discount on full quoted amount when no appointment credit', () => {
+  it('applies percentage discount on full quoted amount (appointment credit ignored)', () => {
     const quote = computeWpayDiscountQuote(1000, 10, null);
     expect(quote).toEqual({
       originalAmount: 1000,
@@ -18,24 +18,16 @@ describe('computeWpayDiscountQuote', () => {
     });
   });
 
-  it('deducts appointment fee credit before applying discount', () => {
+  it('ignores appointment fee credit when provided', () => {
     const quote = computeWpayDiscountQuote(800, 10, { appointmentFeeCredit: 200 });
     expect(quote).toEqual({
       originalAmount: 800,
-      appointmentFeeCredit: 200,
-      billBase: 600,
+      appointmentFeeCredit: 0,
+      billBase: 800,
       discountPercent: 10,
-      discountAmount: 60,
-      payableAmount: 540,
+      discountAmount: 80,
+      payableAmount: 720,
     });
-  });
-
-  it('caps appointment fee credit at quoted amount', () => {
-    const quote = computeWpayDiscountQuote(500, 10, { appointmentFeeCredit: 900 });
-    expect(quote.appointmentFeeCredit).toBe(500);
-    expect(quote.billBase).toBe(0);
-    expect(quote.discountAmount).toBe(0);
-    expect(quote.payableAmount).toBe(0.01);
   });
 
   it('honors maxDiscountAmount cap on bill base', () => {
@@ -57,8 +49,8 @@ describe('computeWpayCommercialQuote', () => {
     discountPercent: 15,
   };
 
-  it('case 1: walk-in tier math without convenience', () => {
-    const quote = computeWpayCommercialQuote({ ...base, convenienceFee: 0 });
+  it('case 1: walk-in tier math without fees', () => {
+    const quote = computeWpayCommercialQuote({ ...base, convenienceFee: 0, platformFee: 0 });
     expect(quote.grossCommissionAmount).toBe(2000);
     expect(quote.discountAmount).toBe(1500);
     expect(quote.vendorPayableAmount).toBe(8000);
@@ -66,37 +58,44 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.wpayRevenueAmount).toBe(500);
     expect(quote.platformGstAmount).toBe(76.27);
     expect(quote.convenienceGstAmount).toBe(0);
+    expect(quote.platformFeeGstAmount).toBe(0);
     expect(quote.finalGstAmount).toBe(76.27);
     expect(quote.payNowAmount).toBe(8500);
+    expect(quote.appointmentFeeCredit).toBe(0);
   });
 
-  it('case 2: appointment credit applied after discount, before convenience', () => {
+  it('case 2: appointment credit input is ignored', () => {
     const quote = computeWpayCommercialQuote({
       ...base,
       appointmentFeeCredit: 200,
       convenienceFee: 0,
+      platformFee: 0,
     });
     expect(quote.vendorPayableAmount).toBe(8000);
     expect(quote.wpayRevenueAmount).toBe(500);
-    expect(quote.serviceDueAfterCredit).toBe(8300);
-    expect(quote.payNowAmount).toBe(8300);
-    expect(quote.finalGstAmount).toBe(76.27);
+    expect(quote.serviceDueAfterCredit).toBe(8500);
+    expect(quote.payNowAmount).toBe(8500);
+    expect(quote.appointmentFeeCredit).toBe(0);
   });
 
-  it('case 3: appointment + convenience fee with exclusive GST', () => {
+  it('case 3: platform fee + convenience with exclusive GST on top', () => {
     const quote = computeWpayCommercialQuote({
       ...base,
-      appointmentFeeCredit: 200,
+      platformFee: 30,
+      platformFeeGstRate: 18,
       convenienceFee: 20,
       convenienceGstRate: 18,
       platformGstRate: 18,
     });
+    expect(quote.platformFeeGstAmount).toBe(5.4);
+    expect(quote.platformFeeGrossAmount).toBe(35.4);
     expect(quote.convenienceGstAmount).toBe(3.6);
-    expect(quote.finalGstAmount).toBe(79.87);
-    expect(quote.payNowAmount).toBe(8323.6);
+    expect(quote.convenienceGrossAmount).toBe(23.6);
+    expect(quote.finalGstAmount).toBe(85.27);
+    expect(quote.payNowAmount).toBe(8559);
   });
 
-  it('case 4: walk-in with convenience', () => {
+  it('case 4: convenience only', () => {
     const quote = computeWpayCommercialQuote({
       ...base,
       convenienceFee: 20,

@@ -13,6 +13,14 @@ const mockedResolvePermissions = resolveAdminPermissionsFromRequest as jest.Mock
   typeof resolveAdminPermissionsFromRequest
 >;
 
+const sampleSettings = {
+  platformFee: 0,
+  platformFeeGstRate: 18,
+  convenienceFee: 0,
+  convenienceGstRate: 18,
+  platformGstRate: 18,
+};
+
 function setUserId(c: Context, userId: string): void {
   c.set('userId' as never, userId as never);
 }
@@ -21,15 +29,11 @@ function createService(
   overrides: Partial<WpayConvenienceSettingsService> = {},
 ): WpayConvenienceSettingsService {
   return {
-    getConvenienceSettings: jest.fn().mockResolvedValue({
-      convenienceFee: 0,
-      convenienceGstRate: 18,
-      platformGstRate: 18,
-    }),
+    getConvenienceSettings: jest.fn().mockResolvedValue(sampleSettings),
     putConvenienceSettings: jest.fn().mockResolvedValue({
+      ...sampleSettings,
+      platformFee: 30,
       convenienceFee: 20,
-      convenienceGstRate: 18,
-      platformGstRate: 18,
     }),
     ...overrides,
   } as unknown as WpayConvenienceSettingsService;
@@ -71,14 +75,10 @@ describe('Warmpawz Pay convenience settings admin routes', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       success: boolean;
-      data: { convenienceFee: number; convenienceGstRate: number; platformGstRate: number };
+      data: typeof sampleSettings;
     };
     expect(body.success).toBe(true);
-    expect(body.data).toEqual({
-      convenienceFee: 0,
-      convenienceGstRate: 18,
-      platformGstRate: 18,
-    });
+    expect(body.data).toEqual(sampleSettings);
   });
 
   it('PUT /admin/warmpawz-pay/settings/convenience persists with write permission', async () => {
@@ -93,17 +93,21 @@ describe('Warmpawz Pay convenience settings admin routes', () => {
       convenienceSettingsService: service,
     });
 
+    const payload = {
+      platformFee: 30,
+      platformFeeGstRate: 18,
+      convenienceFee: 20,
+      convenienceGstRate: 18,
+      platformGstRate: 18,
+    };
+
     const res = await app.request('http://localhost/admin/warmpawz-pay/settings/convenience', {
       method: 'PUT',
       headers: {
         Authorization: 'Bearer test-token',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        convenienceFee: 20,
-        convenienceGstRate: 18,
-        platformGstRate: 18,
-      }),
+      body: JSON.stringify(payload),
     });
 
     expect(res.status).toBe(200);
@@ -130,6 +134,8 @@ describe('Warmpawz Pay convenience settings admin routes', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        platformFee: 30,
+        platformFeeGstRate: 18,
         convenienceFee: 20,
         convenienceGstRate: 18,
         platformGstRate: 18,

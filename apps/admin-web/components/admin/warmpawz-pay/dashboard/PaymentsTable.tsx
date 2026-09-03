@@ -35,10 +35,11 @@ function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
         <div><span className="text-gray-500">Vendor payable</span><p className="font-medium">{formatWpayInr(item.vendorPayableAmount ?? item.vendorSettlementAmount)}</p></div>
         <div><span className="text-gray-500">Platform revenue</span><p className="font-medium">{formatWpayInr(item.wpayRevenueAmount ?? 0)}</p></div>
         <div><span className="text-gray-500">Platform GST (inclusive)</span><p className="font-medium">{formatWpayInr(item.platformGstAmount ?? 0)}</p></div>
+        <div><span className="text-gray-500">Platform fee</span><p className="font-medium">{formatWpayInr(item.platformFee ?? 0)}</p></div>
+        <div><span className="text-gray-500">Platform fee GST</span><p className="font-medium">{formatWpayInr(item.platformFeeGstAmount ?? 0)}</p></div>
         <div><span className="text-gray-500">Convenience fee</span><p className="font-medium">{formatWpayInr(item.convenienceFee ?? 0)}</p></div>
         <div><span className="text-gray-500">Convenience GST</span><p className="font-medium">{formatWpayInr(item.convenienceGstAmount ?? 0)}</p></div>
         <div><span className="text-gray-500">Final GST</span><p className="font-semibold text-orange-700">{formatWpayInr(item.finalGstAmount ?? 0)}</p></div>
-        <div><span className="text-gray-500">Appointment credit</span><p className="font-medium">{formatWpayInr(item.appointmentFeeCredit ?? 0)}</p></div>
       </div>
     );
   }

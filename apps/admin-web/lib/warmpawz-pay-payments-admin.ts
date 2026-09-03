@@ -32,6 +32,8 @@ export interface WpayAdminPaymentItem {
   readonly vendorPayableAmount?: number;
   readonly wpayRevenueAmount?: number;
   readonly platformGstAmount?: number;
+  readonly platformFee?: number;
+  readonly platformFeeGstAmount?: number;
   readonly convenienceFee?: number;
   readonly convenienceGstAmount?: number;
   readonly finalGstAmount?: number;

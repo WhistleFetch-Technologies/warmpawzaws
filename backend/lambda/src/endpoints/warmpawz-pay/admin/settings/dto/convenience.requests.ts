@@ -1,9 +1,11 @@
 /**
- * Abhi contract — global WPay convenience settings:
+ * Global WPay fee settings:
  *   GET/PUT /admin/warmpawz-pay/settings/convenience
- *   { convenienceFee, convenienceGstRate, platformGstRate }
+ *   { platformFee, platformFeeGstRate, convenienceFee, convenienceGstRate, platformGstRate }
  *
  * Stored in admin_settings category 'wpay' only (never Marketplace 'fees').
+ * platformGstRate = inclusive extract from platform revenue (C − D).
+ * platformFeeGstRate / convenienceGstRate = exclusive (on top of fee).
  */
 import { z } from 'zod';
 
@@ -11,6 +13,8 @@ const nonNegativeNumber = z.coerce.number().min(0);
 
 export const updateConvenienceSettingsRequestSchema = z
   .object({
+    platformFee: nonNegativeNumber,
+    platformFeeGstRate: nonNegativeNumber,
     convenienceFee: nonNegativeNumber,
     convenienceGstRate: nonNegativeNumber,
     platformGstRate: nonNegativeNumber,

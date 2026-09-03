@@ -3,6 +3,8 @@ import {
   WPAY_CONVENIENCE_DEFAULTS,
   WPAY_CONVENIENCE_FEE_KEY,
   WPAY_CONVENIENCE_GST_RATE_KEY,
+  WPAY_PLATFORM_FEE_GST_RATE_KEY,
+  WPAY_PLATFORM_FEE_KEY,
   WPAY_PLATFORM_GST_RATE_KEY,
   WPAY_SETTINGS_CATEGORY,
 } from '../constants/wpay-convenience-settings';
@@ -13,6 +15,8 @@ import type {
 import type { VendorCatalogDbClient } from './vendor-catalog.repository';
 
 const SETTING_KEYS = [
+  WPAY_PLATFORM_FEE_KEY,
+  WPAY_PLATFORM_FEE_GST_RATE_KEY,
   WPAY_CONVENIENCE_FEE_KEY,
   WPAY_CONVENIENCE_GST_RATE_KEY,
   WPAY_PLATFORM_GST_RATE_KEY,
@@ -36,6 +40,11 @@ function mapSettings(
 ): WpayConvenienceSettingsRow {
   const byKey = new Map(rows.map((row) => [row.setting_key, row.setting_value]));
   return {
+    platformFee: parseJsonbNumber(byKey.get(WPAY_PLATFORM_FEE_KEY), WPAY_CONVENIENCE_DEFAULTS.platformFee),
+    platformFeeGstRate: parseJsonbNumber(
+      byKey.get(WPAY_PLATFORM_FEE_GST_RATE_KEY),
+      WPAY_CONVENIENCE_DEFAULTS.platformFeeGstRate,
+    ),
     convenienceFee: parseJsonbNumber(byKey.get(WPAY_CONVENIENCE_FEE_KEY), WPAY_CONVENIENCE_DEFAULTS.convenienceFee),
     convenienceGstRate: parseJsonbNumber(
       byKey.get(WPAY_CONVENIENCE_GST_RATE_KEY),
@@ -64,6 +73,8 @@ export class WpayConvenienceSettingsRepository implements IWpayConvenienceSettin
 
   async putConvenienceSettings(input: WpayConvenienceSettingsRow): Promise<WpayConvenienceSettingsRow> {
     const pairs: ReadonlyArray<{ key: string; value: number }> = [
+      { key: WPAY_PLATFORM_FEE_KEY, value: input.platformFee },
+      { key: WPAY_PLATFORM_FEE_GST_RATE_KEY, value: input.platformFeeGstRate },
       { key: WPAY_CONVENIENCE_FEE_KEY, value: input.convenienceFee },
       { key: WPAY_CONVENIENCE_GST_RATE_KEY, value: input.convenienceGstRate },
       { key: WPAY_PLATFORM_GST_RATE_KEY, value: input.platformGstRate },
