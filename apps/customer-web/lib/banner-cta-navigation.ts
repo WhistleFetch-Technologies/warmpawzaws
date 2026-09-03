@@ -222,9 +222,16 @@ export async function navigateBannerCta(
     }
   }
 
-  if (!dest) return false;
+  if (!dest) {
+    showBannerNavigationUnavailable();
+    return false;
+  }
 
-  return navigateBannerLink(dest, onNavigate, router, returnScreen);
+  const linked = navigateBannerLink(dest, onNavigate, router, returnScreen);
+  if (!linked) {
+    showBannerNavigationUnavailable();
+  }
+  return linked;
 }
 
 /** Deep link page: resolve CTA path (+ optional query metadata) → initial home-wrapper navigation. */
@@ -289,12 +296,18 @@ export async function clickHomeBannerCta(
   opts?: { returnScreen?: string; trackingSource?: string }
 ): Promise<boolean> {
   if (banner.comingSoon || isBannerInformationalNonClickable(banner)) return false;
-  if (!hasActionableBannerDestination(banner)) return false;
+  if (!hasActionableBannerDestination(banner)) {
+    showBannerNavigationUnavailable();
+    return false;
+  }
 
   if (banner.id != null && opts?.trackingSource) {
-    apiClient
-      .post(`/banners/${banner.id}/click`, { source: opts.trackingSource })
-      .catch(() => {});
+    const { isGuestApplicationState } = await import('@/lib/guest-auth-gate');
+    if (!isGuestApplicationState()) {
+      apiClient
+        .post(`/banners/${banner.id}/click`, { source: opts.trackingSource })
+        .catch(() => {});
+    }
   }
 
   return navigateBannerCta(

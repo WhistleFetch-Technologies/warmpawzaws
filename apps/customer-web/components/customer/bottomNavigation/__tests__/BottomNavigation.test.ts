@@ -77,6 +77,22 @@ describe('BottomNavigation commerce switch', () => {
     });
 
     expect(screen.queryByRole('button', { name: 'Pay Bill' })).toBeNull();
+    expect(screen.getByTestId('customer-tabbar-marketplace')).toBeTruthy();
+    expect(screen.queryByTestId('customer-tabbar-wpay')).toBeNull();
+  });
+
+  it('uses 5-column tabbar when warmpawz_pay is active', () => {
+    renderBottomNav({
+      isLoaded: true,
+      isWarmpawzPay: true,
+      isMarketplace: false,
+      activeModelId: 'warmpawz_pay',
+      config: {},
+      isDegraded: false,
+      refresh: async () => undefined,
+    });
+
+    expect(screen.getByTestId('customer-tabbar-wpay')).toBeTruthy();
   });
 
   it('updates paw FAB when commerce context changes on rerender', () => {

@@ -1599,7 +1599,11 @@ export function VetServicesByStyle({
                               className="h-8 shrink-0 rounded-full bg-[#FF8C42] px-5 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleSelectService(provider, service);
+                                if (serviceStyle === 'tele') {
+                                  handleSelectService(provider, service);
+                                  return;
+                                }
+                                openVetProviderProfile(e, provider);
                               }}
                             >
                               Book Now

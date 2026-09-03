@@ -1766,7 +1766,13 @@ export function UniversalServicesByStyle({
                               className="h-8 shrink-0 rounded-full bg-[#FF8C42] px-5 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleSelectService(provider, service);
+                                // Guest marketplace: open profile first (Continue to book shows login).
+                                // Tele vet keeps direct booking URL path.
+                                if (serviceStyle === 'tele' && roleId === 'veterinarian') {
+                                  handleSelectService(provider, service);
+                                  return;
+                                }
+                                openProviderProfileForChevron(e, provider);
                               }}
                             >
                               Book Now

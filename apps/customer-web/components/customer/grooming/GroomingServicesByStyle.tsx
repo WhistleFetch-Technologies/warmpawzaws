@@ -1740,7 +1740,8 @@ export function GroomingServicesByStyle({
                                 className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleSelectService(provider, service);
+                                  // Open profile first; Continue to book owns guest login gate.
+                                  openGroomingProviderProfile(e, provider);
                                 }}
                               >
                                 Book Now
