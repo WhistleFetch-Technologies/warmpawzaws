@@ -40,6 +40,8 @@ import {
   uploadDisplayImage,
   toUploadJsonResponse,
   ImageProcessingError,
+  resolveVendorPhotoForDisplay,
+  overlayVendorDisplayPhotoFields,
 } from '../../../services/image';
 
 // Fields that require re-approval if changed
@@ -61,67 +63,6 @@ const CRITICAL_FIELDS = [
 function normalizePhoneForLookup(phone: string | undefined): string | undefined {
   if (phone == null || String(phone).trim() === '') return undefined;
   return String(phone).replace(/\D/g, '');
-}
-
-/**
- * ✅ FIX: Extract S3 key from pre-signed URL or full S3 URL
- * Handles various URL formats and returns the S3 key for regenerating pre-signed URLs
- */
-function extractS3KeyFromUrl(url: string | null | undefined): string | null {
-  if (!url || typeof url !== 'string') return null;
-  
-  // If it's already just a key (no http/https), return as-is
-  if (!url.startsWith('http')) {
-    return url;
-  }
-  
-  // If it's a pre-signed URL or full S3 URL, extract the key
-  if (url.includes('amazonaws.com')) {
-    try {
-      const urlObj = new URL(url);
-      // Remove leading slash and query params
-      const key = urlObj.pathname.substring(1).split('?')[0];
-      return key || null;
-    } catch (e) {
-      // If URL parsing fails, try regex pattern matching
-      const match = url.match(/vendors\/[^?]+/);
-      if (match) return match[0];
-    }
-  }
-  
-  return null;
-}
-
-/**
- * ✅ FIX: Regenerate pre-signed URL for S3 object
- * Takes an S3 key or existing URL and returns a fresh pre-signed URL
- */
-async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Promise<string | null> {
-  if (!s3KeyOrUrl) return null;
-  
-  try {
-    const s3Key = extractS3KeyFromUrl(s3KeyOrUrl);
-    if (!s3Key) return s3KeyOrUrl; // Return original if we can't extract key
-    
-    const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
-    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-    const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-    const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-    
-    const signedUrl = await getSignedUrl(
-      s3Client,
-      new GetObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-      }),
-      { expiresIn: 604800 } // 7 days
-    );
-    
-    return signedUrl;
-  } catch (error: any) {
-    console.warn(`[PRESIGNED-URL] Could not regenerate URL for ${s3KeyOrUrl}:`, error.message);
-    return s3KeyOrUrl; // Return original URL if regeneration fails
-  }
 }
 
 /**
@@ -798,9 +739,10 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
       console.log(`✅ [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}, roleId: ${finalRoleId}`);
 
-      // ✅ FIX: Regenerate pre-signed URL for profile photo if it's stored as S3 key
-      // This handles both legacy pre-signed URLs (which may be expired) and new S3 keys
-      const profilePhotoUrl = await regeneratePresignedUrl(vendor.profile_photo_url);
+      const profilePhotoUrl = await resolveVendorPhotoForDisplay(
+        vendor.profile_photo_url,
+        vendor.id,
+      );
 
       // ✅ SIMPLE TIER: fallback 'Basic', try to resolve from vendor_tiers, include 'tier' only
       let tierName = 'Basic';
@@ -846,7 +788,8 @@ export function registerVendorProfileEndpoints(app: Hono) {
           applicationId: applicationData?.id,
           applicationStatus: applicationData?.status,
           createdAt: vendor.created_at,
-          profilePhotoUrl: profilePhotoUrl, // ✅ Include regenerated photo URL
+          profile_photo_url: profilePhotoUrl,
+          profilePhotoUrl: profilePhotoUrl,
           availableForInstantTele: vendor.available_for_instant_tele ?? false, // ✅ Include instant tele availability
           tier: tierName,
         }
@@ -1442,8 +1385,10 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }
       }
 
-      // ✅ FIX: Regenerate pre-signed URL for profile photo
-      const profilePhotoUrl = await regeneratePresignedUrl(vendor.profile_photo_url);
+      const profilePhotoUrl = await resolveVendorPhotoForDisplay(
+        vendor.profile_photo_url,
+        vendor.id,
+      );
 
       // ✅ FIX: Load specializations from vendor_specializations table (many-to-many relationship)
       // ✅ CRITICAL: Also check vendors.specializations JSONB column (same schema as query endpoints)
@@ -1662,7 +1607,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       return c.json({
         success: true,
         vendor: {
-          ...vendor,
+          ...(await overlayVendorDisplayPhotoFields(vendor)),
           role: role ? {
             id: role.id,
             name: role.name,
@@ -2446,9 +2391,10 @@ export function registerVendorProfileEndpoints(app: Hono) {
           if (typeof vendor.operating_hours === 'object') return vendor.operating_hours;
           try { return JSON.parse(vendor.operating_hours); } catch { return null; }
         })(),
-        // Include other vendor fields
+        // Include other vendor fields (photo keys overwritten by overlay below)
         ...vendor,
       };
+      Object.assign(vendorResponse, await overlayVendorDisplayPhotoFields(vendorResponse));
 
       // For cafes, also fetch menu
       let menu: any[] = [];

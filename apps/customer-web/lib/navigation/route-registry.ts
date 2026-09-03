@@ -34,6 +34,7 @@ export const CUSTOMER_ROUTES = {
   orders: { path: '/orders', shell: 'order_history', policy: 'replace' } satisfies CustomerRouteDef,
   auth: { path: '/auth', policy: 'replace' } satisfies CustomerRouteDef,
   wishlist: { path: '/wishlist', policy: 'push' } satisfies CustomerRouteDef,
+  pets: { path: '/pets', policy: 'push' } satisfies CustomerRouteDef,
 
   product: (productId: string): CustomerRouteDef => ({
     path: `/shop/${encodeURIComponent(String(productId).trim())}`,

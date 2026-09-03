@@ -545,7 +545,12 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
   const providerName = tracking?.providerName || tracking?.staff_name || 'Service Provider';
   const providerPhone = tracking?.vendorPhone || tracking?.staff_phone;
   const providerPhoto = tracking?.vendorPhoto || tracking?.staff_photo_url;
-  const serviceName = tracking?.serviceName || tracking?.service_name || 'Service';
+  const serviceName =
+    tracking?.serviceName ||
+    tracking?.service_name ||
+    bookingData?.serviceName ||
+    bookingData?.vendorName ||
+    'Service';
   // ✅ FIX: Properly handle null/undefined values for ETA and distance
   const etaMinutes = tracking?.eta ?? tracking?.eta_minutes ?? (tracking as any)?.estimatedEtaMinutes ?? null;
   const distanceKm = tracking?.distance ?? tracking?.distance_km ?? (tracking as any)?.distance_remaining_km ?? null;
@@ -1000,7 +1005,7 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
   return (
     <div className="min-h-screen min-h-[100dvh] bg-gray-100 flex flex-col w-full max-w-md mx-auto">
       {/* Header - Mobile optimized */}
-      <header className="bg-white shadow-sm sticky top-0 z-50 safe-area-top">
+      <header className="bg-white shadow-sm sticky top-0 z-50 cw-header-safe-top">
         <div className="px-4 py-3 flex items-center gap-3">
           <button 
             onClick={() => (onBack ? onBack() : goBackOrHome(router))} 

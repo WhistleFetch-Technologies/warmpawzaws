@@ -25,6 +25,7 @@ import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 
 export interface BoardingVendorExpandableCardProps {
   v: BoardingListVendor;
@@ -114,17 +115,13 @@ export function BoardingVendorExpandableCard({
         }`}
       >
         <div className="flex gap-3">
-          {v.photo ? (
-            <img
-              src={v.photo}
-              alt={v.name}
-              className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
-            />
-          ) : (
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center text-2xl flex-shrink-0 border border-orange-100/50">
-              <Building2 className="w-7 h-7 text-[#FF8C42]" />
-            </div>
-          )}
+          <DiscoveryProviderAvatar
+            name={v.name}
+            photo={v.photo}
+            className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
+            fallbackClassName="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center text-2xl flex-shrink-0 border border-orange-100/50"
+            fallback={<Building2 className="w-7 h-7 text-[#FF8C42]" />}
+          />
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">

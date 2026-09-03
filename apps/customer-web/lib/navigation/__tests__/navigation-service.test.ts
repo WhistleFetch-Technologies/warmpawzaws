@@ -77,9 +77,14 @@ describe('navigation Phase 3', () => {
   describe('tab-policy', () => {
     it('home tab clears shop intent and navigates', () => {
       sessionStorage.setItem('warmpawz_shop_back_intent', '{"kind":"path","path":"/wallet"}');
+      sessionStorage.setItem(
+        'warmpawz_profile_child_back_intent',
+        '{"kind":"spa","screen":"customer-profile"}',
+      );
       const router = { push: jest.fn() };
       navigateCustomerTab(router, 'home');
       expect(sessionStorage.getItem('warmpawz_shop_back_intent')).toBeNull();
+      expect(sessionStorage.getItem('warmpawz_profile_child_back_intent')).toBeNull();
       expect(router.push).toHaveBeenCalledWith('/');
     });
   });

@@ -34,6 +34,13 @@ describe('urlForImageKey', () => {
     expect(url).toBe('https://signed.example/warmpawz-dev-uploads/photo.jpg');
   });
 
+  it('returns null for a bare key that is not in any upload bucket', async () => {
+    resolveBucket.mockResolvedValue(null);
+    const url = await urlForImageKey('vendors/missing/photo.jpg');
+    expect(url).toBeNull();
+    expect(presignForBucket).not.toHaveBeenCalled();
+  });
+
   it('presigns full S3 URL via presignS3GetUrlIfApplicable host bucket', async () => {
     const hosted =
       'https://warmpawz-dev-uploads.s3.ap-south-1.amazonaws.com/vendors/v1/profile/photo.jpg';

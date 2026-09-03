@@ -26,6 +26,12 @@ function firstFacilityPhotoFromMetadata(v: Record<string, unknown>): string | nu
   }
 }
 
+function httpsDisplayUrl(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return /^https?:\/\//i.test(s) ? s : null;
+}
+
 async function listingPhotoDisplayUrl(
   raw: string,
   v: Record<string, unknown>,
@@ -40,11 +46,12 @@ async function listingPhotoDisplayUrl(
       context: 'list',
       migrate: false,
     });
-    if (resolved?.displayUrl) return resolved.displayUrl;
-    const regen = await regeneratePresignedUrl(raw);
-    if (regen) return regen;
+    const fromResolve = httpsDisplayUrl(resolved?.displayUrl);
+    if (fromResolve) return fromResolve;
+    if (resolved == null) return null;
+    return httpsDisplayUrl(await regeneratePresignedUrl(raw));
   }
-  return regeneratePresignedUrl(raw);
+  return httpsDisplayUrl(await regeneratePresignedUrl(raw));
 }
 
 /**
@@ -57,14 +64,17 @@ export async function getVendorListingPhotoUrl(
   if (!v) return null;
 
   const firstFacility = firstFacilityPhotoFromMetadata(v);
+  const profileRaw = v.profile_photo_url || v.profile_image || v.logo_url || null;
+  const profile = profileRaw && String(profileRaw).trim() ? String(profileRaw).trim() : null;
 
   if (firstFacility && vendorGalleryDrivesListingPhoto(v)) {
-    return listingPhotoDisplayUrl(firstFacility, v, 'facility');
+    const fromGallery = await listingPhotoDisplayUrl(firstFacility, v, 'facility');
+    if (fromGallery) return fromGallery;
   }
 
-  const url = v.profile_photo_url || v.profile_image || v.logo_url || null;
-  if (url && String(url).trim()) {
-    return listingPhotoDisplayUrl(String(url).trim(), v, 'profile');
+  if (profile) {
+    const fromProfile = await listingPhotoDisplayUrl(profile, v, 'profile');
+    if (fromProfile) return fromProfile;
   }
   if (firstFacility) {
     return listingPhotoDisplayUrl(firstFacility, v, 'facility');

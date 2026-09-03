@@ -7,6 +7,10 @@ jest.mock('../../../utils/s3-media-presign', () => ({
   stripS3PresignQueryFromUrl: jest.fn((url: string) => url),
 }));
 
+jest.mock('../../../endpoints/constants/helper', () => ({
+  regeneratePresignedUrl: jest.fn(async () => null),
+}));
+
 jest.mock('../image-migrator-persist', () => ({
   persistMigratedImageKey: jest.fn(),
 }));

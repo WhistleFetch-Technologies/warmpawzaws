@@ -4,7 +4,7 @@ import {
 } from '@/lib/customer-vendor-profile-navigation';
 
 describe('getWebWalkerDiscoveryChevronNavTarget', () => {
-  it('returns walker-provider-profile with vendorId from vendorId field', () => {
+  it('returns walker_embed_vendor_profile with vendorId from vendorId field', () => {
     const target = getWebWalkerDiscoveryChevronNavTarget({
       provider: {
         vendorId: 'vendor-abc',
@@ -18,13 +18,11 @@ describe('getWebWalkerDiscoveryChevronNavTarget', () => {
     });
 
     expect(target).not.toBeNull();
-    expect(target!.screen).toBe('walker-provider-profile');
+    expect(target!.screen).toBe('walker_embed_vendor_profile');
     expect(target!.data.vendorId).toBe('vendor-abc');
-    expect(target!.data.serviceType).toBe('walking');
     expect(target!.data.serviceStyle).toBe('at_home');
     expect(target!.data.walkerProfileBackScreen).toBe('problem_grid_flow');
     expect(target!.data.specialization).toBe('puppy_walks');
-    expect(target!.data.walker).toMatchObject({ name: 'Test Dog walker' });
   });
 
   it('prefers vendorId over opaque list id via pickWalkerVendorId', () => {
@@ -50,15 +48,16 @@ describe('getWebWalkerDiscoveryChevronNavTarget', () => {
 });
 
 describe('buildWalkerProviderProfileNavPayload', () => {
-  it('builds walker-provider-profile redirect for UniversalServicesByStyle vendorId embed', () => {
+  it('opens walker_home with embedVendorId for shared UniversalServicesByStyle profile', () => {
     const target = buildWalkerProviderProfileNavPayload({
       vendorId: 'walker-vendor-1',
       displayName: 'Rex Walker',
       serviceStyle: 'at_home',
       profileBackScreen: 'problem_grid_flow',
     });
-    expect(target.screen).toBe('walker-provider-profile');
+    expect(target.screen).toBe('walker_home');
     expect(target.data).toMatchObject({
+      embedVendorId: 'walker-vendor-1',
       vendorId: 'walker-vendor-1',
       serviceType: 'walking',
       serviceStyle: 'at_home',

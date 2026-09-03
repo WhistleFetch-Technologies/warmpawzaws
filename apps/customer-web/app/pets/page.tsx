@@ -7,7 +7,11 @@ import { Button } from '@/components/ui/button';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { getResolvedCustomerId, reconcileCustomerIdStorageOnLoad } from '@/lib/customer-id-storage';
 import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { handleProfileChildPageBack } from '@/lib/go-back-or-replace';
+import {
+  BACK_HANDLER_PRIORITY,
+  registerBackHandler,
+} from '@/lib/navigation/back-handler-registry';
 import { writeCheckoutPetSelectionForPayment } from '@/lib/checkout-pet-selection';
 import { CustomerPetDetails } from '@/components/customer/CustomerPetDetails';
 import { EnhancedAddPetModal } from '@/components/customer/EnhancedAddPetModal';
@@ -98,7 +102,16 @@ function PetsPageContent() {
   }, [router, searchParams]);
 
   const handleBack = useCallback(() => {
-    goBackOrHome(router);
+    handleProfileChildPageBack(router);
+  }, [router]);
+
+  useEffect(() => {
+    return registerBackHandler(() => {
+      if (typeof window === 'undefined') return false;
+      if (window.location.pathname !== '/pets') return false;
+      handleProfileChildPageBack(router);
+      return true;
+    }, BACK_HANDLER_PRIORITY.urlHistory + 5);
   }, [router]);
 
   const openAddPet = () => setShowAddPetModal(true);
@@ -174,7 +187,7 @@ function PetsPageContent() {
                 type="button"
                 onClick={() => {
                   writeCheckoutPetSelectionForPayment(null);
-                  goBackOrHome(router);
+                  handleProfileChildPageBack(router);
                 }}
                 className="w-full rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-4 text-left text-sm font-medium text-gray-600 shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-[transform,box-shadow] active:scale-[0.99]"
               >
@@ -216,7 +229,7 @@ function PetsPageContent() {
                           name: pet.name,
                           breed: pet.breed || undefined,
                         });
-                        goBackOrHome(router);
+                        handleProfileChildPageBack(router);
                         return;
                       }
                       setSelectedPetId(pet.id);

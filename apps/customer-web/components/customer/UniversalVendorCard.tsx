@@ -8,6 +8,7 @@ import { trackClick } from '@/lib/analytics';
 import { StarRating } from '@/components/customer/shared/StarRating';
 import { resolveVendorRatingForCard } from '@/lib/resolve-vendor-rating';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { sanitizeDisplayImageUrl } from '@/lib/resolve-display-image-url';
 
 // ✅ FIX: Add promotion type for vendor discounts display
 interface VendorPromotion {
@@ -107,7 +108,7 @@ export function UniversalVendorCard({
   const location = vendor.vendorLocation || 'Location not specified';
   const profileImage = vendor.vendorProfileImage || vendor.photoUrl;
   const [listingImageFailed, setListingImageFailed] = useState(false);
-  const singlePhotoUrl = profileImage || vendor.photos?.[0];
+  const singlePhotoUrl = sanitizeDisplayImageUrl(profileImage || vendor.photos?.[0]);
   const vendorKey = `${vendor.vendorId || vendor.id}:${singlePhotoUrl || ''}`;
 
   useEffect(() => {
@@ -216,9 +217,13 @@ export function UniversalVendorCard({
         <div className={`w-20 h-20 flex-shrink-0 relative overflow-hidden rounded-xl ${vendor.photos && vendor.photos.length > 1 ? '' : `bg-gradient-to-br ${colorClass}`}`}>
           {vendor.photos && vendor.photos.length > 1 ? (
             <div className="flex gap-1 w-full h-full">
-              {vendor.photos.slice(0, 3).map((url, i) => (
-                <img key={i} src={url} alt="" className="w-1/3 h-full object-cover flex-1" onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />
-              ))}
+              {vendor.photos.slice(0, 3).map((url, i) => {
+                const src = sanitizeDisplayImageUrl(url);
+                if (!src) return null;
+                return (
+                <img key={i} src={src} alt="" className="w-1/3 h-full object-cover flex-1" onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />
+                );
+              })}
             </div>
           ) : (
             <div className={`w-full h-full bg-gradient-to-br ${colorClass} flex items-center justify-center text-3xl`}>

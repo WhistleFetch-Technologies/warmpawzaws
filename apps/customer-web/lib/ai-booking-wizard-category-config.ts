@@ -86,7 +86,8 @@ export function distinctBookingStyleKeysFromServices(services: unknown[]): Booki
     const raw = row.serviceStyle ?? row.service_style;
     set.add(normalizeVendorServiceStyleToBookingKey(raw));
   }
-  const order: BookingServiceStyleKey[] = ['at_center', 'at_home', 'tele'];
+  // In-chat booking does not offer tele / video — clinic and home only.
+  const order: BookingServiceStyleKey[] = ['at_center', 'at_home'];
   return order.filter((k) => set.has(k));
 }
 

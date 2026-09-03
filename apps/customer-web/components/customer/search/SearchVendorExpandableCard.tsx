@@ -18,6 +18,7 @@ import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import type { ClinicServiceRow } from '@/lib/clinic-service-row-mapper';
 import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 
 export interface SearchVendorCardData {
   id: string;
@@ -87,17 +88,13 @@ export function SearchVendorExpandableCard({
         }`}
       >
         <div className="flex gap-3">
-          {(vendor.photo || vendor.photoUrl) ? (
-            <img
-              src={vendor.photo || vendor.photoUrl}
-              alt={vendor.name}
-              className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
-            />
-          ) : (
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center flex-shrink-0 border border-orange-100/50">
-              <Building2 className="w-7 h-7 text-[#FF8C42]" />
-            </div>
-          )}
+          <DiscoveryProviderAvatar
+            name={vendor.name}
+            photo={vendor.photo || vendor.photoUrl}
+            className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
+            fallbackClassName="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center flex-shrink-0 border border-orange-100/50"
+            fallback={<Building2 className="w-7 h-7 text-[#FF8C42]" />}
+          />
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">

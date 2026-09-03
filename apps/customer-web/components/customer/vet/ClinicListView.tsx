@@ -17,6 +17,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { discoveryVendorList, discoveryNextCursor } from '@/lib/discovery-list';
 import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
@@ -760,17 +761,13 @@ export function ClinicListView({
                     }`}
                   >
                     <div className="flex gap-3">
-                      {clinic.photo ? (
-                        <img
-                          src={clinic.photo}
-                          alt={clinic.name}
-                          className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center flex-shrink-0 border border-orange-100/50">
-                          <Building2 className="w-7 h-7 text-[#FF8C42]" />
-                        </div>
-                      )}
+                      <DiscoveryProviderAvatar
+                        name={clinic.name}
+                        photo={clinic.photo}
+                        className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
+                        fallbackClassName="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center flex-shrink-0 border border-orange-100/50"
+                        fallback={<Building2 className="w-7 h-7 text-[#FF8C42]" />}
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
