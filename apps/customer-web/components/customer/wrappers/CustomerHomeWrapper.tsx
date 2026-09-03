@@ -41,6 +41,7 @@ import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-fl
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
+  consumePendingSpaResumeScreen,
   consumeOpenAccountMenuAfterNav,
   rememberMyPackagesBackFromAccountMenu,
   rememberPromotionsBackSpaScreen,
@@ -866,7 +867,8 @@ export function CustomerHomeWrapper({
   /** After `/shop` or `/promotions` back: restore embedded screen (same URL `/` as home). */
   useEffect(() => {
     if (pathname !== '/' || typeof window === 'undefined') return;
-    const raw = sessionStorage.getItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+    const raw =
+      sessionStorage.getItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY) || consumePendingSpaResumeScreen();
     if (!raw) return;
     sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
     if (WARMPAWZ_HOME_RESUME_SCREENS.has(raw)) {

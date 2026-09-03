@@ -4,6 +4,7 @@ import {
 } from '../back-handler-registry';
 import {
   initIosShellHistoryBridge,
+  markIosUrlReturnToShellPending,
   resetIosShellHistoryForTests,
   syncIosShellScreenReplace,
   syncIosShellStackDepth,
@@ -25,6 +26,25 @@ describe('ios-shell-history', () => {
     jest.restoreAllMocks();
     delete (window as Window & { Capacitor?: { isNativePlatform: () => boolean; getPlatform: () => string } })
       .Capacitor;
+  });
+
+  it('initIosShellHistoryBridge popstate on / skips shell back after URL child return', () => {
+    markIosUrlReturnToShellPending();
+
+    let consumed = false;
+    registerBackHandler(() => {
+      consumed = true;
+      return true;
+    }, 100);
+
+    const cleanup = initIosShellHistoryBridge();
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(consumed).toBe(false);
+
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(consumed).toBe(true);
+
+    cleanup();
   });
 
   it('initIosShellHistoryBridge popstate on / runs back handlers', () => {

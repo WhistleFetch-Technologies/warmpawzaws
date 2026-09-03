@@ -1,6 +1,10 @@
 import type { CustomerTabId } from './route-registry';
 import { CUSTOMER_ROUTES } from './route-registry';
-import { clearShopBackIntent, clearWishlistOpenedFromShopMark } from './back-intent-store';
+import {
+  clearProfileNavigationResumeIntents,
+  clearShopBackIntent,
+  clearWishlistOpenedFromShopMark,
+} from './back-intent-store';
 
 export type TabNavigationRouter = {
   push: (href: string) => void;
@@ -31,17 +35,20 @@ export function navigateCustomerTab(
   if (tab === 'home') {
     clearShopBackIntent();
     clearWishlistOpenedFromShopMark();
+    clearProfileNavigationResumeIntents();
     router.push(CUSTOMER_ROUTES.home.path);
     return;
   }
 
   if (tab === 'shop') {
     clearShopBackIntent();
+    clearProfileNavigationResumeIntents();
     router.push(CUSTOMER_ROUTES.shop.path);
     return;
   }
 
   if (tab === 'bookings') {
+    clearProfileNavigationResumeIntents();
     router.push(CUSTOMER_ROUTES.bookings.path);
   }
 }

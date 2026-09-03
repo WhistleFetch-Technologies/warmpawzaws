@@ -1,3 +1,8 @@
+import {
+  clearIosUrlReturnToShellPending,
+  markIosUrlReturnToShellPending,
+} from '@/lib/navigation/ios-shell-history';
+
 type MinimalRouter = { back: () => void; replace: (href: string) => void };
 
 type RouterWithPush = MinimalRouter & { push: (href: string) => void };
@@ -461,6 +466,7 @@ export function rememberOrdersBackToSpaScreen(screen: string): void {
     ORDERS_BACK_INTENT_KEY,
     JSON.stringify({ kind: 'spa', screen: safe } satisfies OrdersBackIntent)
   );
+  markIosUrlReturnToShellPending();
 }
 
 /** Orders page Back — honor remembered path or SPA screen; else browser back / home. */
@@ -469,6 +475,7 @@ export function handleOrdersPageBack(router: RouterWithPush): void {
     router.replace('/');
     return;
   }
+  clearIosUrlReturnToShellPending();
   const raw = sessionStorage.getItem(ORDERS_BACK_INTENT_KEY);
   if (raw) {
     try {
@@ -485,6 +492,103 @@ export function handleOrdersPageBack(router: RouterWithPush): void {
       }
     } catch {
       sessionStorage.removeItem(ORDERS_BACK_INTENT_KEY);
+    }
+  }
+  goBackOrReplace(router, '/');
+}
+
+// --- Profile children (`/pets`, `/wishlist`, `/auth/set-password`): return to shell profile ---
+
+const PROFILE_CHILD_BACK_INTENT_KEY = 'warmpawz_profile_child_back_intent';
+
+type ProfileChildBackIntent =
+  | { kind: 'path'; path: string }
+  | { kind: 'spa'; screen: string };
+
+/** Call before leaving a real profile route (`/profile`) for pets / wishlist / set-password. */
+export function rememberProfileChildBackFromCurrentUrl(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname + window.location.search;
+  if (!isSafeInternalPath(path)) return;
+  if (path === '/' || path === '') return;
+  sessionStorage.setItem(
+    PROFILE_CHILD_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'path', path } satisfies ProfileChildBackIntent)
+  );
+}
+
+/** Call before leaving embedded profile on `/` for pets / wishlist / set-password. */
+export function rememberProfileChildBackToSpaScreen(screen: string): void {
+  if (typeof window === 'undefined') return;
+  const safe = WARMPAWZ_HOME_RESUME_SCREENS.has(screen) ? screen : 'home';
+  sessionStorage.setItem(
+    PROFILE_CHILD_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'spa', screen: safe } satisfies ProfileChildBackIntent)
+  );
+  markIosUrlReturnToShellPending();
+}
+
+export function clearProfileChildBackIntent(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(PROFILE_CHILD_BACK_INTENT_KEY);
+  clearIosUrlReturnToShellPending();
+}
+
+/** Tab change / home — drop profile/orders resume so we do not reopen profile. */
+export function clearProfileNavigationResumeIntents(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(PROFILE_CHILD_BACK_INTENT_KEY);
+  sessionStorage.removeItem(ORDERS_BACK_INTENT_KEY);
+  clearIosUrlReturnToShellPending();
+}
+
+function consumeSpaIntentScreen(storageKey: string): string | null {
+  if (typeof window === 'undefined') return null;
+  const raw = sessionStorage.getItem(storageKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { kind?: string; screen?: string };
+    if (parsed.kind === 'spa' && parsed.screen && WARMPAWZ_HOME_RESUME_SCREENS.has(parsed.screen)) {
+      sessionStorage.removeItem(storageKey);
+      return parsed.screen;
+    }
+  } catch {
+    sessionStorage.removeItem(storageKey);
+  }
+  return null;
+}
+
+/** iOS swipe back to `/` — restore shell profile/orders without a second shell pop. */
+export function consumePendingSpaResumeScreen(): string | null {
+  return (
+    consumeSpaIntentScreen(PROFILE_CHILD_BACK_INTENT_KEY) ||
+    consumeSpaIntentScreen(ORDERS_BACK_INTENT_KEY)
+  );
+}
+
+/** Pets / wishlist / set-password Back — honor remembered path or SPA screen. */
+export function handleProfileChildPageBack(router: RouterWithPush): void {
+  if (typeof window === 'undefined') {
+    router.replace('/');
+    return;
+  }
+  clearIosUrlReturnToShellPending();
+  const raw = sessionStorage.getItem(PROFILE_CHILD_BACK_INTENT_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as ProfileChildBackIntent;
+      sessionStorage.removeItem(PROFILE_CHILD_BACK_INTENT_KEY);
+      if (parsed.kind === 'path' && isSafeInternalPath(parsed.path)) {
+        router.push(parsed.path);
+        return;
+      }
+      if (parsed.kind === 'spa' && WARMPAWZ_HOME_RESUME_SCREENS.has(parsed.screen)) {
+        sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, parsed.screen);
+        router.push('/');
+        return;
+      }
+    } catch {
+      sessionStorage.removeItem(PROFILE_CHILD_BACK_INTENT_KEY);
     }
   }
   goBackOrReplace(router, '/');
@@ -745,7 +849,11 @@ export function getSetPasswordBackFallback(): string {
   return '/';
 }
 
-/** Set-password header / hardware back — prefer history, else `next` or profile/home. */
-export function handleSetPasswordPageBack(router: MinimalRouter): void {
+/** Set-password header / hardware back — prefer profile child intent, else history / `next`. */
+export function handleSetPasswordPageBack(router: RouterWithPush): void {
+  if (typeof window !== 'undefined' && sessionStorage.getItem(PROFILE_CHILD_BACK_INTENT_KEY)) {
+    handleProfileChildPageBack(router);
+    return;
+  }
   goBackOrReplace(router, getSetPasswordBackFallback());
 }

@@ -67,6 +67,10 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
       router.push(CUSTOMER_ROUTES.wishlist.path);
     },
 
+    goToPets() {
+      router.push(CUSTOMER_ROUTES.pets.path);
+    },
+
     goToAuth() {
       router.replace(CUSTOMER_ROUTES.auth.path);
     },

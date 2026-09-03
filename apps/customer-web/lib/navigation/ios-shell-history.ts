@@ -1,6 +1,37 @@
 import { runBackHandlers } from './back-handler-registry';
 
 const SHELL_STATE_KEY = 'warmpawzShell';
+const IOS_URL_RETURN_TO_SHELL_KEY = 'warmpawz_ios_url_return_to_shell';
+
+/** Set when leaving `/` for a URL child (orders/pets/wishlist/password) so swipe-back does not pop the shell. */
+export function markIosUrlReturnToShellPending(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(IOS_URL_RETURN_TO_SHELL_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearIosUrlReturnToShellPending(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem(IOS_URL_RETURN_TO_SHELL_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function consumeIosUrlReturnToShellPending(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const pending = sessionStorage.getItem(IOS_URL_RETURN_TO_SHELL_KEY) === '1';
+    if (pending) sessionStorage.removeItem(IOS_URL_RETURN_TO_SHELL_KEY);
+    return pending;
+  } catch {
+    return false;
+  }
+}
 
 /** True when running in Capacitor iOS WebView. */
 export function isCapacitorIosPlatform(): boolean {
@@ -20,6 +51,7 @@ export function resetIosShellHistoryForTests(): void {
   popstateFromGesture = false;
   programmaticPopstatesToSuppress = 0;
   installed = false;
+  clearIosUrlReturnToShellPending();
 }
 
 function replaceIosShellHistoryState(screen: string): void {
@@ -108,6 +140,11 @@ export function initIosShellHistoryBridge(): () => void {
     if (path !== '/' && path !== '') return;
     if (programmaticPopstatesToSuppress > 0) {
       programmaticPopstatesToSuppress -= 1;
+      return;
+    }
+    // Swipe from /pets|/wishlist|/orders|/auth/... already restored this `/` entry.
+    // Do not run shell back — that would pop profile → home.
+    if (consumeIosUrlReturnToShellPending()) {
       return;
     }
     popstateFromGesture = true;

@@ -38,7 +38,10 @@ import {
 import {
   rememberOrdersBackFromCurrentUrl,
   rememberOrdersBackToSpaScreen,
+  rememberProfileChildBackFromCurrentUrl,
+  rememberProfileChildBackToSpaScreen,
 } from '@/lib/go-back-or-replace';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccountHero';
 import { ProfileStatCards, type ProfileStatCounts } from '@/components/customer/profile/ProfileStatCards';
 import { ProfileQuickActions } from '@/components/customer/profile/ProfileQuickActions';
@@ -113,6 +116,7 @@ async function resolveCustomerIdForProfileStats(phone: string): Promise<string |
 
 export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSpaScreen }: CustomerProfileViewProps) {
   const router = useRouter();
+  const nav = useCustomerNavigation();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [savedProfile, setSavedProfile] = useState<UserProfile | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -128,6 +132,17 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
 
   const handleCloseToHome = onCloseToHome ?? onBack;
 
+  const rememberProfileChildReturn = useCallback(() => {
+    if (ordersBackSpaScreen) {
+      rememberProfileChildBackToSpaScreen(ordersBackSpaScreen);
+    } else if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path !== '/' && path !== '') {
+        rememberProfileChildBackFromCurrentUrl();
+      }
+    }
+  }, [ordersBackSpaScreen]);
+
   const openShopOrders = useCallback(() => {
     if (ordersBackSpaScreen) {
       rememberOrdersBackToSpaScreen(ordersBackSpaScreen);
@@ -139,6 +154,22 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
     }
     router.push('/orders');
   }, [ordersBackSpaScreen, router]);
+
+  const openMyPets = useCallback(() => {
+    rememberProfileChildReturn();
+    nav.goToPets();
+  }, [nav, rememberProfileChildReturn]);
+
+  const openSaved = useCallback(() => {
+    rememberProfileChildReturn();
+    nav.goToWishlist();
+  }, [nav, rememberProfileChildReturn]);
+
+  const openChangePassword = useCallback(() => {
+    rememberProfileChildReturn();
+    const next = ordersBackSpaScreen ? '/' : '/profile';
+    router.push(`/auth/set-password?next=${encodeURIComponent(next)}&change=1`);
+  }, [ordersBackSpaScreen, rememberProfileChildReturn, router]);
 
   useEffect(() => {
     loadProfile();
@@ -652,18 +683,16 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
             <ProfileStatCards
               counts={statCounts}
               onViewOrders={openShopOrders}
-              onViewPets={() => router.push('/pets')}
-              onViewSaved={() => router.push('/wishlist')}
+              onViewPets={openMyPets}
+              onViewSaved={openSaved}
             />
 
             <div className="mt-3 space-y-5 pb-4 sm:mt-4">
               <ProfileQuickActions
                 onEditProfile={() => enterEditMode()}
-                onChangePassword={() =>
-                  router.push('/auth/set-password?next=/profile&change=1')
-                }
+                onChangePassword={openChangePassword}
                 onManageAddress={() => enterEditMode(true)}
-                onFavouritePets={() => router.push('/wishlist')}
+                onFavouritePets={openSaved}
                 onLogout={handleLogout}
               />
 
