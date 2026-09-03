@@ -3280,7 +3280,7 @@ export default function MarketingPromotionsTab() {
 										<Label>Article</Label>
 										<Select
 											value={bannerCtaArticleSlug || BANNER_SELECT_EMPTY}
-											onValueChange={(value) => {
+											onValueChange={(value: string) => {
 												if (value === BANNER_SELECT_EMPTY) {
 													setBannerCtaArticleSlug("");
 													setBannerCtaArticlePageId("");
