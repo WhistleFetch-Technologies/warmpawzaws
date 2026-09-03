@@ -7,6 +7,7 @@ const sample = {
   convenienceFee: 20,
   convenienceGstRate: 18,
   platformGstRate: 18,
+  burnMode: false,
 };
 
 describe('WpayConvenienceSettingsService', () => {
@@ -20,8 +21,8 @@ describe('WpayConvenienceSettingsService', () => {
     await expect(service.getConvenienceSettings()).resolves.toEqual(sample);
   });
 
-  it('writes all fee fields back through the repository', async () => {
-    const input = { ...sample, convenienceFee: 25 };
+  it('writes all fee fields including burnMode back through the repository', async () => {
+    const input = { ...sample, convenienceFee: 25, burnMode: true };
     const repository: IWpayConvenienceSettingsRepository = {
       getConvenienceSettings: jest.fn(),
       putConvenienceSettings: jest.fn().mockResolvedValue(input),

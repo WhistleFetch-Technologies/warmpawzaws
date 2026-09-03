@@ -35,6 +35,8 @@ function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
         <div><span className="text-gray-500">Vendor payable</span><p className="font-medium">{formatWpayInr(item.vendorPayableAmount ?? item.vendorSettlementAmount)}</p></div>
         <div><span className="text-gray-500">Platform revenue</span><p className="font-medium">{formatWpayInr(item.wpayRevenueAmount ?? 0)}</p></div>
         <div><span className="text-gray-500">Platform GST (inclusive)</span><p className="font-medium">{formatWpayInr(item.platformGstAmount ?? 0)}</p></div>
+        <div><span className="text-gray-500">Burn / Test</span><p className="font-medium">{item.burnMode ? 'On' : 'Off'}</p></div>
+        <div><span className="text-gray-500">Burn amount</span><p className="font-medium">{formatWpayInr(item.burnAmount ?? 0)}</p></div>
         <div><span className="text-gray-500">Platform fee</span><p className="font-medium">{formatWpayInr(item.platformFee ?? 0)}</p></div>
         <div><span className="text-gray-500">Platform fee GST</span><p className="font-medium">{formatWpayInr(item.platformFeeGstAmount ?? 0)}</p></div>
         <div><span className="text-gray-500">Convenience fee</span><p className="font-medium">{formatWpayInr(item.convenienceFee ?? 0)}</p></div>

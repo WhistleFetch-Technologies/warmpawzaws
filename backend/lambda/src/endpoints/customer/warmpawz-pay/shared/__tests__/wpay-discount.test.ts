@@ -123,6 +123,36 @@ describe('computeWpayCommercialQuote', () => {
     ).not.toThrow();
   });
 
+  it('case 8: burn mode — same payNow, vendor gets full Q, platform revenue 0', () => {
+    const normal = computeWpayCommercialQuote({
+      ...base,
+      platformFee: 30,
+      platformFeeGstRate: 18,
+      convenienceFee: 20,
+      convenienceGstRate: 18,
+      burnMode: false,
+    });
+    const burned = computeWpayCommercialQuote({
+      ...base,
+      platformFee: 30,
+      platformFeeGstRate: 18,
+      convenienceFee: 20,
+      convenienceGstRate: 18,
+      burnMode: true,
+    });
+    expect(burned.payNowAmount).toBe(normal.payNowAmount);
+    expect(burned.servicePayableAmount).toBe(8500);
+    expect(burned.discountAmount).toBe(1500);
+    expect(burned.vendorPayableAmount).toBe(10_000);
+    expect(burned.wpayRevenueAmount).toBe(0);
+    expect(burned.platformGstAmount).toBe(0);
+    expect(burned.burnMode).toBe(true);
+    expect(burned.burnAmount).toBe(1500);
+    expect(normal.vendorPayableAmount).toBe(8000);
+    expect(normal.burnMode).toBe(false);
+    expect(normal.burnAmount).toBe(0);
+  });
+
   it('assertDiscountBelowCommission enforces D < C', () => {
     expect(() => assertDiscountBelowCommission(20, 15)).not.toThrow();
     expect(() => assertDiscountBelowCommission(20, 20)).toThrow(WpayCommercialValidationError);

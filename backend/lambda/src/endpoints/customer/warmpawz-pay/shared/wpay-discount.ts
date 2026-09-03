@@ -78,6 +78,11 @@ export type WpayCommercialQuoteInput = {
   convenienceGstRate?: number;
   /** Inclusive GST rate for platform revenue (C − D). */
   platformGstRate?: number;
+  /**
+   * Burn/test mode: vendor receives full Q; platform funds discount.
+   * Customer pay_now and fees unchanged. Publish still requires D < C.
+   */
+  burnMode?: boolean;
   maxDiscountAmount?: number | null;
 };
 
@@ -108,6 +113,10 @@ export type WpayCommercialQuote = {
   convenienceGrossAmount: number;
   finalGstAmount: number;
   payNowAmount: number;
+  /** Snapshot: burn/test mode active for this quote. */
+  burnMode: boolean;
+  /** Amount platform funds when burnMode (equals discountAmount). */
+  burnAmount: number;
 };
 
 export class WpayCommercialValidationError extends Error {
@@ -131,7 +140,8 @@ export function assertDiscountBelowCommission(
 
 /**
  * Tier-commission Pay Bill quote:
- * - C/D on full Q; platform revenue = C − D (GST inclusive extract)
+ * - C/D on full Q; platform revenue = C − D (GST inclusive extract) unless burnMode
+ * - burnMode: vendor paid full Q; platform funds discount; fees unchanged
  * - No appointment credit
  * - Platform fee + convenience fee each with exclusive GST on top
  */
@@ -145,6 +155,7 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
   const discountPercent = round2(Number(input.discountPercent));
   assertDiscountBelowCommission(commissionPercent, discountPercent);
 
+  const burnMode = Boolean(input.burnMode);
   const grossCommissionAmount = round2((quotedAmount * commissionPercent) / 100);
 
   let discountRaw = (quotedAmount * discountPercent) / 100;
@@ -154,9 +165,13 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
   }
   const discountAmount = round2(discountRaw);
 
-  const vendorPayableAmount = round2(quotedAmount - grossCommissionAmount);
   const servicePayableAmount = round2(quotedAmount - discountAmount);
-  const wpayRevenueAmount = round2(grossCommissionAmount - discountAmount);
+  // Burn: vendor gets full Q; platform funds discount (no C−D margin).
+  const vendorPayableAmount = burnMode
+    ? quotedAmount
+    : round2(quotedAmount - grossCommissionAmount);
+  const wpayRevenueAmount = burnMode ? 0 : round2(grossCommissionAmount - discountAmount);
+  const burnAmount = burnMode ? discountAmount : 0;
 
   const platformGstRate = round2(Number(input.platformGstRate ?? 18));
   const platformGstAmount =
@@ -215,6 +230,8 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
     convenienceGrossAmount,
     finalGstAmount,
     payNowAmount,
+    burnMode,
+    burnAmount,
   };
 }
 
@@ -248,6 +265,8 @@ export function buildWpayCommercialSnapshot(quote: WpayCommercialQuote, extras?:
     convenienceGrossAmount: quote.convenienceGrossAmount,
     finalGstAmount: quote.finalGstAmount,
     payNowAmount: quote.payNowAmount,
+    burnMode: quote.burnMode,
+    burnAmount: quote.burnAmount,
     ...(extras?.tierId ? { tierId: extras.tierId, tierIdSnapshot: extras.tierId } : {}),
     ...(extras?.tierName ? { tierNameSnapshot: extras.tierName } : {}),
   };

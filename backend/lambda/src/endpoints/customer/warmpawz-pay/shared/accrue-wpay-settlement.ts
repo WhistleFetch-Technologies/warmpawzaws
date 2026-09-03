@@ -151,6 +151,8 @@ export async function accrueWpaySettlement(
       convenienceGstAmount,
       finalGstAmount,
       payNowAmount: readMetadataNumber(meta, 'payNowAmount') || payableAmount,
+      burnMode: Boolean(meta.burnMode),
+      burnAmount: readMetadataNumber(meta, 'burnAmount'),
     };
 
     const insertResult = await query(

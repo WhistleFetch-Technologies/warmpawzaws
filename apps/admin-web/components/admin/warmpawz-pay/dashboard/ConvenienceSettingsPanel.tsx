@@ -15,6 +15,7 @@ const EMPTY: WpayConvenienceSettings = {
   convenienceFee: 0,
   convenienceGstRate: 18,
   platformGstRate: 18,
+  burnMode: false,
 };
 
 export function ConvenienceSettingsPanel() {
@@ -55,6 +56,37 @@ export function ConvenienceSettingsPanel() {
           inclusive in margin (commission − discount).
         </p>
       </div>
+
+      <div
+        className={`mb-4 rounded-lg border p-3 ${
+          settings.burnMode
+            ? 'border-amber-300 bg-amber-50'
+            : 'border-gray-200 bg-gray-50'
+        }`}
+      >
+        <label htmlFor="wpay-burn-mode" className="flex cursor-pointer items-start gap-3">
+          <input
+            id="wpay-burn-mode"
+            type="checkbox"
+            className="mt-1 h-4 w-4 rounded border-gray-300 text-[#FF8C42] focus:ring-[#FF8C42]"
+            checked={settings.burnMode}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              setSettings((s) => ({ ...s, burnMode: e.target.checked }))
+            }
+          />
+          <span>
+            <span className="block text-sm font-semibold text-gray-900">
+              Burn / Test mode{settings.burnMode ? ' — ACTIVE' : ''}
+            </span>
+            <span className="mt-0.5 block text-xs text-gray-600">
+              When on: customer still sees the published discount and pays the same (plus fees).
+              Vendor is paid the full quoted bill; platform funds the discount. Turn off to restore
+              normal tier commission immediately on new payments.
+            </span>
+          </span>
+        </label>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="space-y-2">
           <Label htmlFor="wpay-platform-fee">Platform Fee (₹)</Label>

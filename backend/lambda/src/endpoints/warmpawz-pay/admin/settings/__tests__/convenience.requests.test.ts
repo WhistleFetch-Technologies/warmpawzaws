@@ -1,7 +1,7 @@
 import { parseUpdateConvenienceSettingsRequest } from '../dto/convenience.requests';
 
 describe('parseUpdateConvenienceSettingsRequest', () => {
-  it('accepts non-negative fee and GST rates', () => {
+  it('accepts non-negative fee and GST rates plus burnMode', () => {
     expect(
       parseUpdateConvenienceSettingsRequest({
         platformFee: 30,
@@ -9,6 +9,7 @@ describe('parseUpdateConvenienceSettingsRequest', () => {
         convenienceFee: 20,
         convenienceGstRate: 18,
         platformGstRate: 18,
+        burnMode: true,
       }),
     ).toEqual({
       platformFee: 30,
@@ -16,6 +17,7 @@ describe('parseUpdateConvenienceSettingsRequest', () => {
       convenienceFee: 20,
       convenienceGstRate: 18,
       platformGstRate: 18,
+      burnMode: true,
     });
   });
 
@@ -27,6 +29,7 @@ describe('parseUpdateConvenienceSettingsRequest', () => {
         convenienceFee: -1,
         convenienceGstRate: 18,
         platformGstRate: 18,
+        burnMode: false,
       }),
     ).toThrow();
   });

@@ -24,6 +24,8 @@ export interface WpayConvenienceSettings {
   convenienceGstRate: number;
   /** Inclusive GST extract from platform revenue (C − D). */
   platformGstRate: number;
+  /** Burn/test: vendor paid full Q; platform funds discount. */
+  burnMode: boolean;
 }
 
 export async function fetchWpayConvenienceSettings(): Promise<WpayConvenienceSettings> {

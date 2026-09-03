@@ -45,6 +45,7 @@ export async function resolveWpayPayQuote(params: {
       convenienceFee: settings.convenienceFee,
       convenienceGstRate: settings.convenienceGstRate,
       platformGstRate: settings.platformGstRate,
+      burnMode: settings.burnMode,
     });
 
     return {

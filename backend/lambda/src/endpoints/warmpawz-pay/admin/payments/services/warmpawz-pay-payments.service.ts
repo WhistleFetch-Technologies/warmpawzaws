@@ -178,6 +178,13 @@ function mapPaymentRow(
         readBreakupNumber(breakup, 'finalGstAmount') ??
         toFiniteNumber(meta?.finalGstAmount as number | undefined) ??
         undefined,
+      burnMode: Boolean(
+        breakup?.burnMode ?? meta?.burnMode ?? false,
+      ),
+      burnAmount:
+        readBreakupNumber(breakup, 'burnAmount') ??
+        toFiniteNumber(meta?.burnAmount as number | undefined) ??
+        0,
       vendorSettlementAmount: vendorPayableAmount,
       settlementSource: row.vendor_settlement_amount != null ? 'persisted' : 'computed',
     };

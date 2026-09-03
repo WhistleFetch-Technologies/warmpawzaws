@@ -1,5 +1,6 @@
 import { query } from '../../../database/rds-connection';
 import {
+  WPAY_BURN_MODE_KEY,
   WPAY_CONVENIENCE_DEFAULTS,
   WPAY_CONVENIENCE_FEE_KEY,
   WPAY_CONVENIENCE_GST_RATE_KEY,
@@ -20,6 +21,7 @@ const SETTING_KEYS = [
   WPAY_CONVENIENCE_FEE_KEY,
   WPAY_CONVENIENCE_GST_RATE_KEY,
   WPAY_PLATFORM_GST_RATE_KEY,
+  WPAY_BURN_MODE_KEY,
 ] as const;
 
 function parseJsonbNumber(value: unknown, fallback: number): number {
@@ -31,6 +33,21 @@ function parseJsonbNumber(value: unknown, fallback: number): number {
     if (Number.isFinite(parsed)) {
       return parsed;
     }
+  }
+  return fallback;
+}
+
+function parseJsonbBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
   }
   return fallback;
 }
@@ -54,6 +71,7 @@ function mapSettings(
       byKey.get(WPAY_PLATFORM_GST_RATE_KEY),
       WPAY_CONVENIENCE_DEFAULTS.platformGstRate,
     ),
+    burnMode: parseJsonbBoolean(byKey.get(WPAY_BURN_MODE_KEY), WPAY_CONVENIENCE_DEFAULTS.burnMode),
   };
 }
 
@@ -72,12 +90,13 @@ export class WpayConvenienceSettingsRepository implements IWpayConvenienceSettin
   }
 
   async putConvenienceSettings(input: WpayConvenienceSettingsRow): Promise<WpayConvenienceSettingsRow> {
-    const pairs: ReadonlyArray<{ key: string; value: number }> = [
+    const pairs: ReadonlyArray<{ key: string; value: number | boolean }> = [
       { key: WPAY_PLATFORM_FEE_KEY, value: input.platformFee },
       { key: WPAY_PLATFORM_FEE_GST_RATE_KEY, value: input.platformFeeGstRate },
       { key: WPAY_CONVENIENCE_FEE_KEY, value: input.convenienceFee },
       { key: WPAY_CONVENIENCE_GST_RATE_KEY, value: input.convenienceGstRate },
       { key: WPAY_PLATFORM_GST_RATE_KEY, value: input.platformGstRate },
+      { key: WPAY_BURN_MODE_KEY, value: input.burnMode },
     ];
 
     for (const pair of pairs) {

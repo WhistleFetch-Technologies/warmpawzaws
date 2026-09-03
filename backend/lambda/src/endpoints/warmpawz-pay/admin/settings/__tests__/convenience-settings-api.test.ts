@@ -19,6 +19,7 @@ const sampleSettings = {
   convenienceFee: 0,
   convenienceGstRate: 18,
   platformGstRate: 18,
+  burnMode: false,
 };
 
 function setUserId(c: Context, userId: string): void {
@@ -99,6 +100,7 @@ describe('Warmpawz Pay convenience settings admin routes', () => {
       convenienceFee: 20,
       convenienceGstRate: 18,
       platformGstRate: 18,
+      burnMode: true,
     };
 
     const res = await app.request('http://localhost/admin/warmpawz-pay/settings/convenience', {
@@ -139,6 +141,7 @@ describe('Warmpawz Pay convenience settings admin routes', () => {
         convenienceFee: 20,
         convenienceGstRate: 18,
         platformGstRate: 18,
+        burnMode: false,
       }),
     });
 
