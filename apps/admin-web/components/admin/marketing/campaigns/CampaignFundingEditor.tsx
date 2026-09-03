@@ -1,5 +1,7 @@
 'use client';
 
+import React from 'react';
+
 import {
   Card,
   CardContent,
@@ -47,7 +49,7 @@ export function CampaignFundingEditor({
           <Select
             value={funding.type}
             disabled={readOnly}
-            onValueChange={(v) =>
+            onValueChange={(v: string) =>
               onChange({ ...funding, type: v as CampaignFundingPolicy['type'] })
             }
           >
@@ -91,7 +93,7 @@ export function CampaignFundingEditor({
                   min={0}
                   max={100}
                   value={split.platformPercent}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     onChange({
                       ...funding,
                       split: { platformPercent: Number(e.target.value), vendorPercent: split.vendorPercent },
@@ -106,7 +108,7 @@ export function CampaignFundingEditor({
                   min={0}
                   max={100}
                   value={split.vendorPercent}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     onChange({
                       ...funding,
                       split: { platformPercent: split.platformPercent, vendorPercent: Number(e.target.value) },

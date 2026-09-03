@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, FileText, Search } from "lucide-react";
 import { Button, Input } from "@warmpawz/ui";
 import { apiClient } from "@/lib/api-client";
@@ -84,7 +84,7 @@ export function SavedReplyTemplatePicker({ onInsert }: SavedReplyTemplatePickerP
 							<Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
 							<Input
 								value={search}
-								onChange={(e) => setSearch(e.target.value)}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
 								placeholder="Search templates…"
 								className="h-8 pl-7 text-xs"
 								autoFocus

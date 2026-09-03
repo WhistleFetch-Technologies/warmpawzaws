@@ -181,7 +181,7 @@ export function StackConfigSection({
                       <Switch
                         id={key}
                         checked={stack[key]}
-                        onCheckedChange={(checked) => patchStack({ [key]: checked })}
+                        onCheckedChange={(checked: boolean) => patchStack({ [key]: checked })}
                       />
                     </div>
                   ))}
@@ -191,7 +191,7 @@ export function StackConfigSection({
                   <Label htmlFor="application-mode">Application mode default</Label>
                   <Select
                     value={stack.applicationModeDefault}
-                    onValueChange={(v) =>
+                    onValueChange={(v: string) =>
                       patchStack({ applicationModeDefault: v as 'SEQUENTIAL' | 'PARALLEL' })
                     }
                   >

@@ -27,7 +27,7 @@ export function DomainScopeSelector({
       </Label>
       <Select
         value={scope}
-        onValueChange={(v) => onScopeChange(v as PolicyScope)}
+        onValueChange={(v: string) => onScopeChange(v as PolicyScope)}
       >
         <SelectTrigger id={id} className="w-full sm:w-64 bg-white" aria-label="Configuration scope">
           <SelectValue placeholder="Select scope" />

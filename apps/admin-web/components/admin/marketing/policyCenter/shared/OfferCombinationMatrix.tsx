@@ -48,7 +48,7 @@ export function OfferCombinationMatrix({
                       <Switch
                         id={`matrix-${rule.id}`}
                         checked={rule.allowed}
-                        onCheckedChange={(checked) => toggle(rule.id, checked)}
+                        onCheckedChange={(checked: boolean) => toggle(rule.id, checked)}
                       />
                       <Label htmlFor={`matrix-${rule.id}`} className="text-xs text-slate-600">
                         {rule.allowed ? 'Enabled' : 'Disabled'}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -235,7 +235,7 @@ export function CampaignBuilderDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
+    <Dialog open={open} onOpenChange={(v: boolean) => !v && handleClose()}>
       <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col overflow-hidden p-0">
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>Campaign builder</DialogTitle>
@@ -256,11 +256,11 @@ export function CampaignBuilderDialog({
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Campaign name</Label>
-                <Input value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
+                <Input value={draft.name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ name: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label>Campaign type</Label>
-                <Select value={draft.campaignType} onValueChange={(v) => patch({ campaignType: v })}>
+                <Select value={draft.campaignType} onValueChange={(v: string) => patch({ campaignType: v })}>
                   <SelectTrigger className="bg-white">
                     <SelectValue />
                   </SelectTrigger>

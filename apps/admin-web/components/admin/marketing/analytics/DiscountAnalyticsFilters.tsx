@@ -1,5 +1,7 @@
 'use client';
 
+import React from 'react';
+
 import {
   Select,
   SelectContent,
@@ -51,7 +53,7 @@ export function DiscountAnalyticsFilters({
     <div className="flex flex-col gap-4 rounded-xl border bg-white p-4 sm:flex-row sm:flex-wrap sm:items-end">
       <div className="space-y-2">
         <Label htmlFor="analytics-preset">Date range</Label>
-        <Select value={preset} onValueChange={(v) => onPresetChange(v as AnalyticsPreset)}>
+        <Select value={preset} onValueChange={(v: string) => onPresetChange(v as AnalyticsPreset)}>
           <SelectTrigger id="analytics-preset" className="w-full sm:w-40 bg-white">
             <SelectValue />
           </SelectTrigger>
@@ -69,7 +71,7 @@ export function DiscountAnalyticsFilters({
         <Select
           value={domain}
           disabled={domainLocked}
-          onValueChange={(v) => onDomainChange(v as AnalyticsDomainFilter)}
+          onValueChange={(v: string) => onDomainChange(v as AnalyticsDomainFilter)}
         >
           <SelectTrigger id="analytics-domain" className="w-full sm:w-44 bg-white">
             <SelectValue />
@@ -90,7 +92,7 @@ export function DiscountAnalyticsFilters({
           id="analytics-vendor"
           placeholder="Filter by vendor UUID"
           value={vendorId}
-          onChange={(e) => onVendorIdChange(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onVendorIdChange(e.target.value)}
         />
       </div>
 

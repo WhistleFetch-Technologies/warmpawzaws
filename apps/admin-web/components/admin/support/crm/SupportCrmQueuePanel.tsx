@@ -1,5 +1,7 @@
 "use client";
 
+import React from 'react';
+
 import {
 	Search,
 	Ticket,
@@ -66,7 +68,7 @@ export function SupportCrmQueuePanel({
 					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
 					<Input
 						value={searchQuery}
-						onChange={(e) => onSearchChange(e.target.value)}
+						onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearchChange(e.target.value)}
 						placeholder="Search tickets…"
 						className="pl-8 h-9 text-sm border-gray-200"
 					/>

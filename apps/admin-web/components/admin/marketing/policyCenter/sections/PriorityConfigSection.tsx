@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -171,7 +171,7 @@ export function PriorityConfigSection({
                 max={10}
                 value={autoMax}
                 disabled={bestOfferOnly}
-                onChange={(e) => setPhaseMax('AUTO_PROMOTIONS', Number(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhaseMax('AUTO_PROMOTIONS', Number(e.target.value))}
               />
               {bestOfferOnly ? (
                 <p className="text-xs text-slate-500">Locked to 1 when Best Offer Only is active.</p>
@@ -186,7 +186,7 @@ export function PriorityConfigSection({
                 max={5}
                 value={couponMax}
                 disabled={bestOfferOnly}
-                onChange={(e) => setPhaseMax('COUPONS', Number(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhaseMax('COUPONS', Number(e.target.value))}
               />
               {bestOfferOnly ? (
                 <p className="text-xs text-slate-500">Locked to 1 when Best Offer Only is active.</p>

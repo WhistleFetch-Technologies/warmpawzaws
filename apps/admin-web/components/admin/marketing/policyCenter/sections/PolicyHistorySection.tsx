@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, Input, Badge, Button } from '@warmpawz/ui';
 import { Search, Undo2 } from 'lucide-react';
 import { fetchPolicyHistory, rollbackPolicy } from '@/lib/discount-policy/discount-policy-api';
@@ -51,7 +51,7 @@ export function PolicyHistorySection() {
             className="pl-9"
             placeholder="Search version, fingerprint, publisher…"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
             aria-label="Search policy history"
           />
         </div>

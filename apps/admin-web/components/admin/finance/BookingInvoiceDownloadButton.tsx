@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@warmpawz/ui';
 import { FileText, Loader2 } from 'lucide-react';
@@ -39,7 +39,7 @@ export function BookingInvoiceDownloadButton({
       size="sm"
       className={className ?? 'h-8 text-xs'}
       disabled={!bookingId || loading}
-      onClick={(e) => void onClick(e)}
+      onClick={(e: React.MouseEvent) => void onClick(e)}
     >
       {loading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <FileText className="mr-1 h-3.5 w-3.5" />}
       {label}

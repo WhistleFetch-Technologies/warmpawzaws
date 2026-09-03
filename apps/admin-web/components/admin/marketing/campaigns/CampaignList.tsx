@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Button,
   Checkbox,
@@ -106,7 +106,7 @@ export function CampaignList({
           <Input
             placeholder="Search campaigns…"
             value={query}
-            onChange={(e) => {
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
               setQuery(e.target.value);
               setPage(0);
             }}
@@ -115,7 +115,7 @@ export function CampaignList({
           />
           <Select
             value={statusFilter}
-            onValueChange={(v) => {
+            onValueChange={(v: string) => {
               setStatusFilter(v);
               setPage(0);
             }}
@@ -132,7 +132,7 @@ export function CampaignList({
               ))}
             </SelectContent>
           </Select>
-          <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
+          <Select value={sortKey} onValueChange={(v: string) => setSortKey(v as SortKey)}>
             <SelectTrigger className="w-40 bg-white">
               <SelectValue placeholder="Sort" />
             </SelectTrigger>
@@ -194,7 +194,7 @@ export function CampaignList({
                   <TableCell>
                     <Checkbox
                       checked={selected.has(c.id)}
-                      onCheckedChange={(checked) => {
+                      onCheckedChange={(checked: boolean) => {
                         const next = new Set(selected);
                         if (checked) next.add(c.id);
                         else next.delete(c.id);

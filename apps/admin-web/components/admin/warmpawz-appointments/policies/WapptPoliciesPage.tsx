@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Input, Label } from '@warmpawz/ui';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -144,7 +144,7 @@ export function WapptPoliciesPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <Label>Name</Label>
-                    <Input value={tier.name} onChange={(e) => updateTier(idx, { name: e.target.value })} />
+                    <Input value={tier.name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateTier(idx, { name: e.target.value })} />
                   </div>
                   <div>
                     <Label>Cancelled by</Label>
@@ -171,7 +171,7 @@ export function WapptPoliciesPage() {
                       min={0}
                       max={100}
                       value={tier.refundPercentage ?? 0}
-                      onChange={(e) => updateTier(idx, { refundPercentage: Number(e.target.value) })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateTier(idx, { refundPercentage: Number(e.target.value) })}
                     />
                   </div>
                   <div>
@@ -180,7 +180,7 @@ export function WapptPoliciesPage() {
                       type="number"
                       min={0}
                       value={tier.cancellationFee ?? 0}
-                      onChange={(e) => updateTier(idx, { cancellationFee: Number(e.target.value) })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateTier(idx, { cancellationFee: Number(e.target.value) })}
                     />
                   </div>
                   {(tier.cancelledBy ?? 'pet_parent') === 'pet_parent' && (
@@ -190,7 +190,7 @@ export function WapptPoliciesPage() {
                         type="number"
                         min={0}
                         value={tier.hoursBeforeService ?? 24}
-                        onChange={(e) =>
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                           updateTier(idx, {
                             hoursBeforeService: Number(e.target.value),
                             cancellationWindow: undefined,

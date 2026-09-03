@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Input,
@@ -326,7 +326,7 @@ export function CatalogueTable({
                                   disabled={rowDisabled || !tierId}
                                   placeholder="15"
                                   className="bg-white pr-8"
-                                  onChange={(event) =>
+                                  onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                                     updateDiscount(item.vendorId, event.target.value)
                                   }
                                 />

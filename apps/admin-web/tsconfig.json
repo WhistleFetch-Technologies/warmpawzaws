@@ -17,6 +17,7 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "baseUrl": ".",
     "plugins": [
       {
         "name": "next"
@@ -40,6 +41,33 @@
       ],
       "@/hooks/*": [
         "./hooks/*"
+      ],
+      "react": [
+        "./node_modules/@types/react/index.d.ts"
+      ],
+      "react-dom": [
+        "./node_modules/@types/react-dom/index.d.ts"
+      ],
+      "react/jsx-runtime": [
+        "./node_modules/@types/react/jsx-runtime.d.ts"
+      ],
+      "lucide-react": [
+        "./node_modules/lucide-react"
+      ],
+      "sonner": [
+        "./node_modules/sonner"
+      ],
+      "@radix-ui/*": [
+        "./node_modules/@radix-ui/*"
+      ],
+      "class-variance-authority": [
+        "./node_modules/class-variance-authority"
+      ],
+      "clsx": [
+        "./node_modules/clsx"
+      ],
+      "tailwind-merge": [
+        "./node_modules/tailwind-merge"
       ]
     }
   },
@@ -48,11 +76,14 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "dist/types/**/*.ts",
-    "../../../../AppData/Local/warmpawz/admin-web-next/types/**/*.ts",
-    "..\\..\\..\\..\\AppData\\Local\\warmpawz\\admin-web-next/types/**/*.ts"
+    "dist/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
   ]
 }

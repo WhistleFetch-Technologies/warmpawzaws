@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, Fragment } from 'react';
+import React, { useCallback, useEffect, useState, Fragment } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiClient, getApiBaseUrl, isUatMode } from '@/lib/api-client';
 import { Button } from '@warmpawz/ui';
@@ -681,7 +681,7 @@ export function VendorBookingEarningsReport() {
                                             variant="outline"
                                             size="sm"
                                             className="h-8 text-xs"
-                                            onClick={(e) => {
+                                            onClick={(e: React.MouseEvent) => {
                                               e.stopPropagation();
                                               openSettlementDrawer(b);
                                             }}
@@ -770,7 +770,7 @@ export function VendorBookingEarningsReport() {
                                                   type="button"
                                                   variant="outline"
                                                   size="sm"
-                                                  onClick={(e) => {
+                                                  onClick={(e: React.MouseEvent) => {
                                                     e.stopPropagation();
                                                     openSettlementDrawer(b);
                                                   }}

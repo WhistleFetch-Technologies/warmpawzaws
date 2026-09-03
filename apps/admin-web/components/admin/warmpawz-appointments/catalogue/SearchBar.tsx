@@ -1,5 +1,7 @@
 'use client';
 
+import React from 'react';
+
 import { Input } from '@warmpawz/ui';
 import { Search } from 'lucide-react';
 
@@ -23,7 +25,7 @@ export function SearchBar({
       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
       <Input
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
         placeholder={placeholder}
         disabled={disabled}
         className="pl-9 bg-white"

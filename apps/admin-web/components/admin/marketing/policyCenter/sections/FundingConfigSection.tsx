@@ -1,5 +1,7 @@
 'use client';
 
+import React from 'react';
+
 import {
   Card,
   CardContent,
@@ -75,7 +77,7 @@ export function FundingConfigSection({
                 min={0}
                 max={100}
                 value={split.platformPercent}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   applyPreset(Number(e.target.value), split.vendorPercent)
                 }
               />
@@ -88,7 +90,7 @@ export function FundingConfigSection({
                 min={0}
                 max={100}
                 value={split.vendorPercent}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   applyPreset(split.platformPercent, Number(e.target.value))
                 }
               />
@@ -103,7 +105,7 @@ export function FundingConfigSection({
               <Switch
                 id="block-vendor-platform"
                 checked={Boolean(funding.blockVendorFundedWithPlatformCoupon)}
-                onCheckedChange={(v) => patchFunding({ blockVendorFundedWithPlatformCoupon: v })}
+                onCheckedChange={(v: boolean) => patchFunding({ blockVendorFundedWithPlatformCoupon: v })}
               />
             </div>
             <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
@@ -113,7 +115,7 @@ export function FundingConfigSection({
               <Switch
                 id="block-shared-platform"
                 checked={Boolean(funding.blockSharedWithPlatformCoupon)}
-                onCheckedChange={(v) => patchFunding({ blockSharedWithPlatformCoupon: v })}
+                onCheckedChange={(v: boolean) => patchFunding({ blockSharedWithPlatformCoupon: v })}
               />
             </div>
           </div>

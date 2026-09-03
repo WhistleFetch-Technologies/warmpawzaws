@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Input, Label } from '@warmpawz/ui';
 import { toast } from 'sonner';
 import {
@@ -64,7 +64,7 @@ export function ConvenienceSettingsPanel() {
             min={0}
             step={1}
             value={settings.platformFee}
-            onChange={(e) =>
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setSettings((s) => ({ ...s, platformFee: Number(e.target.value) || 0 }))
             }
           />
@@ -78,7 +78,7 @@ export function ConvenienceSettingsPanel() {
             max={100}
             step={0.01}
             value={settings.platformFeeGstRate}
-            onChange={(e) =>
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setSettings((s) => ({ ...s, platformFeeGstRate: Number(e.target.value) || 0 }))
             }
           />
@@ -91,7 +91,7 @@ export function ConvenienceSettingsPanel() {
             min={0}
             step={1}
             value={settings.convenienceFee}
-            onChange={(e) =>
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setSettings((s) => ({ ...s, convenienceFee: Number(e.target.value) || 0 }))
             }
           />
@@ -105,7 +105,7 @@ export function ConvenienceSettingsPanel() {
             max={100}
             step={0.01}
             value={settings.convenienceGstRate}
-            onChange={(e) =>
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setSettings((s) => ({ ...s, convenienceGstRate: Number(e.target.value) || 0 }))
             }
           />
@@ -119,7 +119,7 @@ export function ConvenienceSettingsPanel() {
             max={100}
             step={0.01}
             value={settings.platformGstRate}
-            onChange={(e) =>
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setSettings((s) => ({ ...s, platformGstRate: Number(e.target.value) || 0 }))
             }
           />

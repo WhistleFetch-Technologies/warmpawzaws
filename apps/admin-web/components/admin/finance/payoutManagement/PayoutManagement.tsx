@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   IndianRupee,
@@ -725,7 +725,7 @@ export function PayoutManagement() {
                 <Input
                   type="number"
                   value={editFormData.amount}
-                  onChange={(e) => {
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const amount = Number(e.target.value) || 0;
                     setEditFormData({
                       ...editFormData,
@@ -741,7 +741,7 @@ export function PayoutManagement() {
                 <Input
                   type="number"
                   value={editFormData.commission}
-                  onChange={(e) => {
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const commission = Number(e.target.value) || 0;
                     setEditFormData({
                       ...editFormData,
@@ -757,7 +757,7 @@ export function PayoutManagement() {
                 <Input
                   type="number"
                   value={editFormData.tds}
-                  onChange={(e) => {
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const tds = Number(e.target.value) || 0;
                     setEditFormData({
                       ...editFormData,

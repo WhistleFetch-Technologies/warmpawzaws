@@ -1,5 +1,7 @@
 'use client';
 
+import React from 'react';
+
 import { Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Input } from '@warmpawz/ui';
 import { AUDIENCE_OPTIONS, type CampaignAudience } from '@/lib/commercial-campaign/types';
 
@@ -23,7 +25,7 @@ export function CampaignAudienceEditor({
         <Select
           value={audience.kind}
           disabled={readOnly}
-          onValueChange={(v) => onChange({ ...audience, kind: v as CampaignAudience['kind'] })}
+          onValueChange={(v: string) => onChange({ ...audience, kind: v as CampaignAudience['kind'] })}
         >
           <SelectTrigger className="bg-white sm:w-72">
             <SelectValue />
@@ -43,10 +45,10 @@ export function CampaignAudienceEditor({
           <Label>Segment IDs (comma-separated)</Label>
           <Input
             value={(audience.segmentIds ?? []).join(', ')}
-            onChange={(e) =>
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               onChange({
                 ...audience,
-                segmentIds: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+                segmentIds: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean),
               })
             }
             placeholder="seg_1, seg_2"
@@ -59,7 +61,7 @@ export function CampaignAudienceEditor({
           <Label>Vendor ID</Label>
           <Input
             value={audience.vendorId ?? ''}
-            onChange={(e) => onChange({ ...audience, vendorId: e.target.value || undefined })}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...audience, vendorId: e.target.value || undefined })}
           />
         </div>
       ) : null}

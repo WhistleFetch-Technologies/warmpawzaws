@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
+import React, { Fragment, useEffect, useState } from 'react';
 import {
   Button,
   Checkbox,
@@ -124,7 +124,7 @@ export function CatalogueTable({
                 checked={allSelected ? true : someSelected ? 'indeterminate' : false}
                 disabled={disabled || selectableItems.length === 0}
                 aria-label="Select all catalogue entries on this page"
-                onCheckedChange={(checked) => toggleSelectAll(checked === true)}
+                onCheckedChange={(checked: boolean) => toggleSelectAll(checked === true)}
               />
             </TableHead>
             <TableHead className="w-10" />
@@ -159,7 +159,7 @@ export function CatalogueTable({
                         checked={isSelected}
                         disabled={rowDisabled}
                         aria-label={`Select ${item.businessName}`}
-                        onCheckedChange={(checked) =>
+                        onCheckedChange={(checked: boolean) =>
                           toggleRowSelection(item.catalogueId!, checked === true)
                         }
                       />
@@ -248,7 +248,7 @@ export function CatalogueTable({
                                 disabled={rowDisabled}
                                 placeholder="499"
                                 className="bg-white pl-8"
-                                onChange={(event) =>
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                                   updateFee(item.vendorId, event.target.value)
                                 }
                               />

@@ -166,7 +166,7 @@ export function BannerImageField({
 
       <Tabs
         value={mode}
-        onValueChange={(next) => setMode(next as 'upload' | 'url')}
+        onValueChange={(next: string) => setMode(next as 'upload' | 'url')}
       >
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="upload" disabled={disabled}>

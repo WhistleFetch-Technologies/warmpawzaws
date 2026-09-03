@@ -39,7 +39,7 @@ export function PolicyCenterDomainView({
             <Label htmlFor="policy-view-domain" className="sr-only">
               Domain view
             </Label>
-            <Select value={value} onValueChange={(v) => onChange(v as PolicyViewDomain)}>
+            <Select value={value} onValueChange={(v: string) => onChange(v as PolicyViewDomain)}>
               <SelectTrigger id="policy-view-domain" className="w-full sm:w-56 bg-white">
                 <SelectValue />
               </SelectTrigger>

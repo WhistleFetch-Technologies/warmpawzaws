@@ -39,7 +39,7 @@ export function CampaignNotificationEditor({
         <Select
           value={mode}
           disabled={readOnly}
-          onValueChange={(v) => onChange({ notificationMode: v as CampaignNotificationMode })}
+          onValueChange={(v: string) => onChange({ notificationMode: v as CampaignNotificationMode })}
         >
           <SelectTrigger className="bg-white sm:w-72">
             <SelectValue />
@@ -67,7 +67,7 @@ export function CampaignNotificationEditor({
           <Label>Notification campaign</Label>
           <Select
             value={notificationCampaignId ?? ''}
-            onValueChange={(v) => onChange({ notificationCampaignId: v || null })}
+            onValueChange={(v: string) => onChange({ notificationCampaignId: v || null })}
           >
             <SelectTrigger className="bg-white">
               <SelectValue placeholder={loading ? 'Loading…' : 'Select campaign'} />

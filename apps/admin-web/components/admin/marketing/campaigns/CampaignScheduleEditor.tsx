@@ -1,5 +1,7 @@
 'use client';
 
+import React from 'react';
+
 import { Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Input } from '@warmpawz/ui';
 import type { CampaignScheduleType, CampaignRecurringRule } from '@/lib/commercial-campaign/types';
 
@@ -37,7 +39,7 @@ export function CampaignScheduleEditor({
         <Select
           value={scheduleType}
           disabled={readOnly}
-          onValueChange={(v) => onChange({ scheduleType: v as CampaignScheduleType })}
+          onValueChange={(v: string) => onChange({ scheduleType: v as CampaignScheduleType })}
         >
           <SelectTrigger className="bg-white sm:w-64">
             <SelectValue />
@@ -57,7 +59,7 @@ export function CampaignScheduleEditor({
             <Input
               type="datetime-local"
               value={toLocal(startAt)}
-              onChange={(e) => onChange({ startAt: fromLocal(e.target.value) })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange({ startAt: fromLocal(e.target.value) })}
             />
           </div>
           <div className="space-y-2">
@@ -65,7 +67,7 @@ export function CampaignScheduleEditor({
             <Input
               type="datetime-local"
               value={toLocal(endAt)}
-              onChange={(e) => onChange({ endAt: fromLocal(e.target.value) })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange({ endAt: fromLocal(e.target.value) })}
             />
           </div>
         </div>
@@ -76,7 +78,7 @@ export function CampaignScheduleEditor({
           <Label>Frequency</Label>
           <Select
             value={recurringRule?.frequency ?? 'weekly'}
-            onValueChange={(v) =>
+            onValueChange={(v: string) =>
               onChange({
                 recurringRule: {
                   ...(recurringRule ?? { frequency: 'weekly' }),

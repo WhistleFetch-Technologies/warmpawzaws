@@ -1,5 +1,7 @@
 'use client';
 
+import React from 'react';
+
 import { Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@warmpawz/ui';
 import type {
   CatalogueEligibilityFilter,
@@ -98,7 +100,7 @@ export function CatalogueFilterBar({
       {showPublishStatus && onPublishStatusFilterChange ? (
         <Select
           value={publishStatusFilter}
-          onValueChange={(value) =>
+          onValueChange={(value: string) =>
             onPublishStatusFilterChange(value as CataloguePublishStatusFilter)
           }
           disabled={disabled}
@@ -117,7 +119,7 @@ export function CatalogueFilterBar({
       ) : null}
       <Select
         value={eligibilityFilter}
-        onValueChange={(value) =>
+        onValueChange={(value: string) =>
           onEligibilityFilterChange(value as CatalogueEligibilityFilter)
         }
         disabled={disabled}
@@ -133,7 +135,7 @@ export function CatalogueFilterBar({
       </Select>
       <Input
         value={vendorIdFilter}
-        onChange={(event) => onVendorIdFilterChange(event.target.value)}
+        onChange={(event: React.ChangeEvent<HTMLInputElement>) => onVendorIdFilterChange(event.target.value)}
         placeholder="Filter by vendor ID"
         className="max-w-xs bg-white"
         disabled={disabled}

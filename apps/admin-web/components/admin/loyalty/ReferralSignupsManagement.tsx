@@ -256,7 +256,7 @@ export function ReferralSignupsManagement() {
             <Switch
               id="referral-enabled"
               checked={settings.is_enabled}
-              onCheckedChange={(checked) =>
+              onCheckedChange={(checked: boolean) =>
                 setSettings((s) => ({ ...s, is_enabled: checked }))
               }
             />
@@ -269,7 +269,7 @@ export function ReferralSignupsManagement() {
                 type="number"
                 min={1}
                 value={settings.max_redemptions_per_code ?? ''}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setSettings((s) => ({
                     ...s,
                     max_redemptions_per_code: e.target.value ? Number(e.target.value) : null,
@@ -285,7 +285,7 @@ export function ReferralSignupsManagement() {
                 min={0}
                 step="0.01"
                 value={settings.minimum_booking_amount ?? ''}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setSettings((s) => ({
                     ...s,
                     minimum_booking_amount: e.target.value ? Number(e.target.value) : null,
@@ -299,7 +299,7 @@ export function ReferralSignupsManagement() {
               <Label>Referrer action name</Label>
               <Select
                 value={settings.referrer_action_name}
-                onValueChange={(v) =>
+                onValueChange={(v: string) =>
                   setSettings((s) => ({ ...s, referrer_action_name: v }))
                 }
               >
@@ -319,7 +319,7 @@ export function ReferralSignupsManagement() {
               <Label>Referee action name</Label>
               <Select
                 value={settings.referee_action_name}
-                onValueChange={(v) =>
+                onValueChange={(v: string) =>
                   setSettings((s) => ({ ...s, referee_action_name: v }))
                 }
               >

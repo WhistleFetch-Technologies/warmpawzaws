@@ -1,7 +1,7 @@
 'use client';
 
 import { X, Loader2, CheckCircle, AlertCircle, Edit } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Input } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 
@@ -248,7 +248,7 @@ export function EditVendorDetailsModal({
                   <Input
                     type="text"
                     value={formData.business_name}
-                    onChange={(e) => handleFieldChange('business_name', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('business_name', e.target.value)}
                     placeholder="Enter business name"
                     className={errors.business_name ? 'border-red-300' : ''}
                     disabled={saving}
@@ -266,7 +266,7 @@ export function EditVendorDetailsModal({
                   <Input
                     type="text"
                     value={formData.owner_name}
-                    onChange={(e) => handleFieldChange('owner_name', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('owner_name', e.target.value)}
                     placeholder="Enter owner name"
                     className={errors.owner_name ? 'border-red-300' : ''}
                     disabled={saving}
@@ -284,7 +284,7 @@ export function EditVendorDetailsModal({
                   <Input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => handleFieldChange('email', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('email', e.target.value)}
                     placeholder="Enter email address"
                     className={errors.email ? 'border-red-300' : ''}
                     disabled={saving}
@@ -302,7 +302,7 @@ export function EditVendorDetailsModal({
                   <Input
                     type="tel"
                     value={formData.phone}
-                    onChange={(e) => handleFieldChange('phone', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('phone', e.target.value)}
                     placeholder="Enter phone number"
                     className={errors.phone ? 'border-red-300' : ''}
                     disabled={saving}

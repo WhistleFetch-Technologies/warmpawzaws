@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -81,7 +81,7 @@ export function LimitsConfigSection({
                   min={0}
                   max={max}
                   value={limits[key] as number}
-                  onChange={(e) => patchLimit(key, Number(e.target.value))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => patchLimit(key, Number(e.target.value))}
                 />
               </div>
             ))}
@@ -91,7 +91,7 @@ export function LimitsConfigSection({
             <Label htmlFor="cap-overflow">Cap overflow strategy</Label>
             <Select
               value={limits.capOverflowStrategy}
-              onValueChange={(v) => patchLimit('capOverflowStrategy', v as CapOverflowStrategy)}
+              onValueChange={(v: string) => patchLimit('capOverflowStrategy', v as CapOverflowStrategy)}
             >
               <SelectTrigger id="cap-overflow" className="bg-white">
                 <SelectValue />

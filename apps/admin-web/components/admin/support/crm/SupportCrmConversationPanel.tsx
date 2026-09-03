@@ -1,5 +1,7 @@
 "use client";
 
+import React from 'react';
+
 import {
 	MessageSquare,
 	Headphones,
@@ -240,10 +242,10 @@ export function SupportCrmConversationPanel({
 					<div className="flex gap-2 items-end">
 						<Textarea
 							value={replyText}
-							onChange={(e) => onReplyTextChange(e.target.value)}
+							onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onReplyTextChange(e.target.value)}
 							placeholder="Type your reply… (Ctrl+Enter to send)"
 							className="flex-1 min-h-[72px] max-h-[120px] resize-none text-sm border-gray-200 focus:border-[#FF8C42]"
-							onKeyDown={(e) => {
+							onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
 								if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
 									e.preventDefault();
 									onReply();

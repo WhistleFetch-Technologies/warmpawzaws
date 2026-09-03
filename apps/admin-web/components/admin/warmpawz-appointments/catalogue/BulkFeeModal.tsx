@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Button,
   Dialog,
@@ -64,7 +64,7 @@ export function BulkFeeModal({
               disabled={loading}
               placeholder="499"
               className="bg-white pl-8"
-              onChange={(event) => setFeeInput(event.target.value)}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFeeInput(event.target.value)}
             />
           </div>
           <p className="text-xs text-gray-500">Enter a non-negative amount with up to 2 decimal places.</p>

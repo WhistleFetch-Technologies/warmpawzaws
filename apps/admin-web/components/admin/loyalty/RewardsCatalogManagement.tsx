@@ -346,7 +346,7 @@ export function RewardsCatalogManagement() {
               <Input
                 id="catalog-name"
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, name: e.target.value })}
                 placeholder="Amazon Gift Voucher"
               />
             </div>
@@ -356,7 +356,7 @@ export function RewardsCatalogManagement() {
               <Textarea
                 id="catalog-description"
                 value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setForm({ ...form, description: e.target.value })}
                 placeholder="Redeem 5000 Pawints for a unique Amazon coupon link"
                 rows={2}
               />
@@ -370,7 +370,7 @@ export function RewardsCatalogManagement() {
                   type="number"
                   min={1}
                   value={form.points_cost}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setForm({ ...form, points_cost: parseInt(e.target.value, 10) || 0 })
                   }
                 />
@@ -381,7 +381,7 @@ export function RewardsCatalogManagement() {
                   id="catalog-order"
                   type="number"
                   value={form.display_order}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setForm({ ...form, display_order: parseInt(e.target.value, 10) || 0 })
                   }
                 />
@@ -391,7 +391,7 @@ export function RewardsCatalogManagement() {
             <div className="flex items-center gap-2">
               <Switch
                 checked={form.is_active}
-                onCheckedChange={(checked) => setForm({ ...form, is_active: checked })}
+                onCheckedChange={(checked: boolean) => setForm({ ...form, is_active: checked })}
               />
               <Label>Active — visible when links are in stock</Label>
             </div>
@@ -408,7 +408,7 @@ export function RewardsCatalogManagement() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(poolReward)} onOpenChange={(open) => !open && setPoolReward(null)}>
+      <Dialog open={Boolean(poolReward)} onOpenChange={(open: boolean) => !open && setPoolReward(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -435,7 +435,7 @@ export function RewardsCatalogManagement() {
                 <Textarea
                   id="bulk-links"
                   value={linksText}
-                  onChange={(e) => setLinksText(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setLinksText(e.target.value)}
                   placeholder={'https://www.amazon.in/gp/voucher/...\nhttps://www.amazon.in/gp/voucher/...'}
                   rows={6}
                   className="font-mono text-xs mt-1"

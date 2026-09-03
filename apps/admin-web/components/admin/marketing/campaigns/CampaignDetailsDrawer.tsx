@@ -120,7 +120,7 @@ export function CampaignDetailsDrawer({
     | undefined;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v: boolean) => !v && onClose()}>
       <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden p-0">
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>{campaign?.name ?? 'Campaign details'}</DialogTitle>

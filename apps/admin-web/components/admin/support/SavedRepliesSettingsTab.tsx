@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Edit, FileText, Plus, Save, Trash2 } from "lucide-react";
 import {
 	Badge,
@@ -256,7 +256,7 @@ export function SavedRepliesSettingsTab() {
 							<label className="text-sm font-medium text-gray-700 mb-1.5 block">Name *</label>
 							<Input
 								value={editing?.name || ""}
-								onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditing({ ...editing, name: e.target.value })}
 								placeholder="e.g. Refund Under Review"
 							/>
 						</div>
@@ -282,7 +282,7 @@ export function SavedRepliesSettingsTab() {
 							<label className="text-sm font-medium text-gray-700 mb-1.5 block">Content *</label>
 							<Textarea
 								value={editing?.content || ""}
-								onChange={(e) => setEditing({ ...editing, content: e.target.value })}
+								onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditing({ ...editing, content: e.target.value })}
 								placeholder="Template body…"
 								rows={8}
 								className="resize-none font-mono text-sm"

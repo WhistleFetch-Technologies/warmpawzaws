@@ -33,7 +33,7 @@ function DialogClose({
 const DialogOverlay = React.forwardRef<
 	React.ElementRef<typeof DialogPrimitive.Overlay>,
 	React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, ...props }, ref) => {
+>(({ className, ...props }, ref: React.Ref<React.ElementRef<typeof DialogPrimitive.Overlay>>) => {
 	return (
 		<DialogPrimitive.Overlay
 			ref={ref}

@@ -132,7 +132,7 @@ export function PolicyCenter({
           locked={domainLocked}
         />
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as PolicyCenterTabId)}>
+        <Tabs value={activeTab} onValueChange={(v: string) => setActiveTab(v as PolicyCenterTabId)}>
           <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-white p-1">
             {[...configTabs, ...lifecycleTabs, ...diagnosticTabs].map((tab) => (
               <TabsTrigger key={tab.id} value={tab.id} className="text-xs sm:text-sm">

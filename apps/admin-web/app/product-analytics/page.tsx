@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Tabs,
   TabsContent,
@@ -616,7 +616,7 @@ export default function ProductAnalyticsPage() {
                         <Textarea
                           rows={3}
                           value={patchDraft.notes}
-                          onChange={(e) =>
+                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                             setPatchDraft((d) => (d ? { ...d, notes: e.target.value } : d))
                           }
                         />

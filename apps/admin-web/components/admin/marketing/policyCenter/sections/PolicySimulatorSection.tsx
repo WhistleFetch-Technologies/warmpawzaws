@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -103,7 +103,7 @@ export function PolicySimulatorSection({ draft }: { draft: DiscountPolicyBundle 
                 type="number"
                 min={0}
                 value={servicePrice}
-                onChange={(e) => setServicePrice(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setServicePrice(e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -134,7 +134,7 @@ export function PolicySimulatorSection({ draft }: { draft: DiscountPolicyBundle 
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={offer.enabled}
-                      onCheckedChange={(enabled) => patchOffer(index, { enabled })}
+                      onCheckedChange={(enabled: boolean) => patchOffer(index, { enabled })}
                     />
                     <span className="text-sm font-medium">
                       {OFFER_LABELS[offer.offerType] ?? offer.offerType}
@@ -142,7 +142,7 @@ export function PolicySimulatorSection({ draft }: { draft: DiscountPolicyBundle 
                   </div>
                   <Select
                     value={offer.discountType}
-                    onValueChange={(v) =>
+                    onValueChange={(v: string) =>
                       patchOffer(index, { discountType: v as 'PERCENT' | 'FIXED' })
                     }
                   >
@@ -159,7 +159,7 @@ export function PolicySimulatorSection({ draft }: { draft: DiscountPolicyBundle 
                     min={0}
                     className="w-24"
                     value={offer.value}
-                    onChange={(e) => patchOffer(index, { value: Number(e.target.value) })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => patchOffer(index, { value: Number(e.target.value) })}
                   />
                 </div>
               ))}
