@@ -16,7 +16,6 @@ import { ChevronDown, ChevronRight, Info } from 'lucide-react';
 import type { CatalogueListItem } from '@/lib/warmpawz-pay-catalogue-admin';
 import type { WarmpawzPayPricingFormValues } from '@/lib/warmpawz-pay-pricing-admin';
 import {
-  fetchWpayConvenienceSettings,
   fetchWpayEligibleTiers,
   type WpayEligibleTier,
 } from '@/lib/warmpawz-pay-settings-admin';
@@ -71,15 +70,13 @@ function buildPricingFormValues(
   tierId: string,
   discountValue: string,
   commissionRate: number,
-  burnMode = false,
 ): WarmpawzPayPricingFormValues | null {
   if (!tierId) return null;
-  const maxDiscount = burnMode ? 100 : 99.99;
-  if (!isValidPercentValue(discountValue, 0, maxDiscount)) {
+  if (!isValidPercentValue(discountValue, 0, 99.99)) {
     return null;
   }
   const discount = Number(discountValue);
-  if (!burnMode && discount >= commissionRate) {
+  if (discount >= commissionRate) {
     return null;
   }
   return {
@@ -102,15 +99,11 @@ export function CatalogueTable({
   const [discountByVendor, setDiscountByVendor] = useState<Record<string, string>>({});
   const [tierByVendor, setTierByVendor] = useState<Record<string, string>>({});
   const [wpayTiers, setWpayTiers] = useState<readonly WpayEligibleTier[]>([]);
-  const [burnMode, setBurnMode] = useState(false);
 
   useEffect(() => {
     void fetchWpayEligibleTiers()
       .then(setWpayTiers)
       .catch(() => setWpayTiers([]));
-    void fetchWpayConvenienceSettings()
-      .then((settings) => setBurnMode(Boolean(settings.burnMode)))
-      .catch(() => setBurnMode(false));
   }, []);
 
   const tierCommissionById = useMemo(() => {
@@ -185,16 +178,10 @@ export function CatalogueTable({
             const discountValue = discountByVendor[item.vendorId] ?? '';
             const tierId = tierByVendor[item.vendorId] ?? '';
             const commissionRate = tierCommissionById.get(tierId) ?? item.pricing.commissionRate ?? 0;
-            const pricingValues = buildPricingFormValues(
-              tierId,
-              discountValue,
-              commissionRate,
-              burnMode,
-            );
+            const pricingValues = buildPricingFormValues(tierId, discountValue, commissionRate);
             const pricingValid = pricingValues !== null;
             const discountTooHigh =
-              !burnMode &&
-              Boolean(tierId) &&
+              tierId &&
               discountValue !== '' &&
               Number.isFinite(Number(discountValue)) &&
               Number(discountValue) >= commissionRate;
@@ -317,7 +304,7 @@ export function CatalogueTable({
                             <div className="max-w-xs space-y-2">
                               <Label>Tier Commission</Label>
                               <div className="rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-sm font-medium text-gray-800">
-                                {tierId ? `${commissionRate}%` : '—'}
+                                {commissionRate > 0 ? `${commissionRate}%` : '—'}
                               </div>
                               <p className="text-xs text-gray-500">Auto-applied from selected tier.</p>
                             </div>
@@ -333,7 +320,7 @@ export function CatalogueTable({
                                   id={`discount-${item.vendorId}`}
                                   type="number"
                                   min={0}
-                                  max={burnMode ? 100 : Math.max(0, commissionRate - 0.01)}
+                                  max={Math.max(0, commissionRate - 0.01)}
                                   step={0.5}
                                   value={discountValue}
                                   disabled={rowDisabled || !tierId}
@@ -351,28 +338,13 @@ export function CatalogueTable({
                                 <p className="text-xs text-red-600">
                                   Discount must be less than tier commission ({commissionRate}%).
                                 </p>
-                              ) : pricingValid && burnMode ? (
-                                <p className="text-xs text-amber-700">
-                                  Burn / Test is on. Platform funds this discount. Vendor receives
-                                  100% of the quoted amount.
-                                </p>
                               ) : pricingValid ? (
                                 <p className="text-xs text-green-700">
                                   Valid: Discount is less than commission.
                                 </p>
                               ) : null}
                             </div>
-                            {burnMode && pricingValid ? (
-                              <div className="max-w-xs space-y-2">
-                                <Label>Platform funds discount</Label>
-                                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
-                                  Vendor payable = 100% of quoted amount
-                                </div>
-                                <p className="text-xs text-gray-500">
-                                  Platform revenue stays ₹0. Marketing cost is burn amount.
-                                </p>
-                              </div>
-                            ) : commissionRate > 0 && pricingValid ? (
+                            {commissionRate > 0 && pricingValid ? (
                               <div className="max-w-xs space-y-2">
                                 <Label>Platform Margin (Commission − Discount)</Label>
                                 <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-semibold text-green-800">
@@ -413,9 +385,7 @@ export function CatalogueTable({
                                 {rowBusy ? 'Publishing…' : 'Publish to WPay'}
                               </Button>
                               <p className="text-xs text-gray-500">
-                                {burnMode
-                                  ? 'Burn / Test is on — any discount 0–100% is allowed.'
-                                  : `Discount cannot be greater than tier commission (${commissionRate}%).`}
+                                Discount cannot be greater than tier commission ({commissionRate}%).
                               </p>
                             </div>
                             {canUnpublish ? (

@@ -1,6 +1,5 @@
 import {
   assertDiscountBelowCommission,
-  assertWpayDiscountAllowed,
   computeWpayCommercialQuote,
   computeWpayDiscountQuote,
   WpayCommercialValidationError,
@@ -157,63 +156,5 @@ describe('computeWpayCommercialQuote', () => {
   it('assertDiscountBelowCommission enforces D < C', () => {
     expect(() => assertDiscountBelowCommission(20, 15)).not.toThrow();
     expect(() => assertDiscountBelowCommission(20, 20)).toThrow(WpayCommercialValidationError);
-  });
-
-  it('burn + 0% commission + 25% discount: vendor gets Q, revenue 0, burn is D', () => {
-    const quote = computeWpayCommercialQuote({
-      quotedAmount: 10_000,
-      commissionPercent: 0,
-      discountPercent: 25,
-      burnMode: true,
-      convenienceFee: 0,
-      platformFee: 0,
-    });
-    expect(quote.vendorPayableAmount).toBe(10_000);
-    expect(quote.servicePayableAmount).toBe(7500);
-    expect(quote.wpayRevenueAmount).toBe(0);
-    expect(quote.burnMode).toBe(true);
-    expect(quote.burnAmount).toBe(2500);
-    expect(quote.payNowAmount).toBe(7500);
-  });
-
-  it('burn allows discount greater than commission', () => {
-    const quote = computeWpayCommercialQuote({
-      quotedAmount: 10_000,
-      commissionPercent: 20,
-      discountPercent: 25,
-      burnMode: true,
-      convenienceFee: 0,
-      platformFee: 0,
-    });
-    expect(quote.vendorPayableAmount).toBe(10_000);
-    expect(quote.wpayRevenueAmount).toBe(0);
-    expect(quote.burnAmount).toBe(2500);
-  });
-
-  it('burn off still rejects discount at or above commission', () => {
-    expect(() =>
-      computeWpayCommercialQuote({ ...base, discountPercent: 20, burnMode: false }),
-    ).toThrow(WpayCommercialValidationError);
-    expect(() =>
-      computeWpayCommercialQuote({ ...base, discountPercent: 21, burnMode: false }),
-    ).toThrow(WpayCommercialValidationError);
-  });
-
-  it('burn off rejects 0% commission tier', () => {
-    expect(() =>
-      computeWpayCommercialQuote({
-        quotedAmount: 10_000,
-        commissionPercent: 0,
-        discountPercent: 25,
-        burnMode: false,
-      }),
-    ).toThrow(/Burn \/ Test mode/);
-  });
-
-  it('assertWpayDiscountAllowed lifts D < C only when burn is on', () => {
-    expect(() => assertWpayDiscountAllowed(0, 25, true)).not.toThrow();
-    expect(() => assertWpayDiscountAllowed(20, 25, true)).not.toThrow();
-    expect(() => assertWpayDiscountAllowed(0, 25, false)).toThrow(WpayCommercialValidationError);
-    expect(() => assertWpayDiscountAllowed(20, 20, false)).toThrow(WpayCommercialValidationError);
   });
 });

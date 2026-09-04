@@ -5,7 +5,6 @@ import type {
   PricingRowWithMerchant,
   WpayPublishTierRow,
 } from '../../../repositories/interfaces/IMerchantPricingRepository';
-import type { IWpayConvenienceSettingsRepository } from '../../../repositories/interfaces/IWpayConvenienceSettingsRepository';
 import type { CreatePricingRequest } from '../dto/pricing.requests';
 import { PricingErrorCode } from '../dto/pricing.errors';
 import {
@@ -46,31 +45,6 @@ const inactiveTier: WpayPublishTierRow = {
   warmpawzPayEnabled: true,
 };
 
-const TIER_ZERO = '55555555-5555-4555-8555-555555555555';
-
-const zeroCommissionTier: WpayPublishTierRow = {
-  id: TIER_ZERO,
-  tierName: 'marketing-zero',
-  displayName: 'Marketing 0%',
-  commissionRate: 0,
-  isActive: true,
-  warmpawzPayEnabled: true,
-};
-
-function settingsRepo(burnMode = false): IWpayConvenienceSettingsRepository {
-  return {
-    getConvenienceSettings: jest.fn().mockResolvedValue({
-      platformFee: 0,
-      platformFeeGstRate: 18,
-      convenienceFee: 0,
-      convenienceGstRate: 18,
-      platformGstRate: 18,
-      burnMode,
-    }),
-    putConvenienceSettings: jest.fn(),
-  };
-}
-
 describe('assertDiscountBelowCommission', () => {
   it('rejects discount equal to commission (Case 5)', () => {
     expect(() => assertDiscountBelowCommission(20, 20)).toThrow(PricingAdminError);
@@ -82,11 +56,6 @@ describe('assertDiscountBelowCommission', () => {
 
   it('accepts discount strictly below commission (Case 7)', () => {
     expect(() => assertDiscountBelowCommission(15, 20)).not.toThrow();
-  });
-
-  it('allows discount above commission when burn mode is on', () => {
-    expect(() => assertDiscountBelowCommission(25, 0, true)).not.toThrow();
-    expect(() => assertDiscountBelowCommission(25, 20, true)).not.toThrow();
   });
 });
 
@@ -176,7 +145,7 @@ describe('WarmpawzPayPricingService', () => {
       findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
     } as unknown as IMerchantPricingRepository;
 
-    const service = new WarmpawzPayPricingService(repository, auditService, settingsRepo());
+    const service = new WarmpawzPayPricingService(repository, auditService);
 
     await expect(
       service.createPricing(
@@ -196,7 +165,7 @@ describe('WarmpawzPayPricingService', () => {
       findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
     } as unknown as IMerchantPricingRepository;
 
-    const service = new WarmpawzPayPricingService(repository, auditService, settingsRepo());
+    const service = new WarmpawzPayPricingService(repository, auditService);
 
     await expect(service.createPricing(createInput({ discountValue: 20 }), 'admin-1')).rejects.toMatchObject({
       code: PricingErrorCode.VALIDATION_ERROR,
@@ -210,7 +179,7 @@ describe('WarmpawzPayPricingService', () => {
       findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
     } as unknown as IMerchantPricingRepository;
 
-    const service = new WarmpawzPayPricingService(repository, auditService, settingsRepo());
+    const service = new WarmpawzPayPricingService(repository, auditService);
 
     await expect(service.createPricing(createInput({ discountValue: 21 }), 'admin-1')).rejects.toMatchObject({
       code: PricingErrorCode.VALIDATION_ERROR,
@@ -232,7 +201,7 @@ describe('WarmpawzPayPricingService', () => {
       findByVendorId: jest.fn().mockResolvedValue({ ...sampleRow, discountValue: 15, platformWithholdPercent: 0 }),
     } as unknown as IMerchantPricingRepository;
 
-    const service = new WarmpawzPayPricingService(repository, auditService, settingsRepo());
+    const service = new WarmpawzPayPricingService(repository, auditService);
     const result = await service.createPricing(createInput({ discountValue: 15 }), 'admin-1');
 
     expect(result.commissionRate).toBe(20);
@@ -278,64 +247,5 @@ describe('WarmpawzPayPricingService', () => {
     ).rejects.toMatchObject({
       code: PricingErrorCode.VALIDATION_ERROR,
     });
-  });
-
-  it('rejects 0% tier when burn mode is off', async () => {
-    const repository: IMerchantPricingRepository = {
-      assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
-      findRowByVendorId: jest.fn().mockResolvedValue(null),
-      findWpayPublishTier: jest.fn().mockResolvedValue(zeroCommissionTier),
-    } as unknown as IMerchantPricingRepository;
-
-    const service = new WarmpawzPayPricingService(repository, auditService, settingsRepo(false));
-
-    await expect(
-      service.createPricing(createInput({ tierId: TIER_ZERO, discountValue: 25 }), 'admin-1'),
-    ).rejects.toMatchObject({
-      code: PricingErrorCode.VALIDATION_ERROR,
-    });
-  });
-
-  it('accepts 0% tier and discount above commission when burn mode is on', async () => {
-    const inserted: PricingRow = {
-      ...sampleRow,
-      tierId: TIER_ZERO,
-      tierName: 'marketing-zero',
-      discountValue: 25,
-      platformWithholdPercent: 0,
-    };
-    const repository: IMerchantPricingRepository = {
-      assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
-      findRowByVendorId: jest.fn().mockResolvedValue(null),
-      findWpayPublishTier: jest.fn().mockResolvedValue(zeroCommissionTier),
-      hasActiveConfiguredPricing: jest.fn().mockResolvedValue(false),
-      insert: jest.fn().mockResolvedValue(inserted),
-      findByVendorId: jest.fn().mockResolvedValue({
-        ...sampleRow,
-        tierId: TIER_ZERO,
-        tierName: 'marketing-zero',
-        tierDisplayName: 'Marketing 0%',
-        commissionRate: 0,
-        discountValue: 25,
-        platformWithholdPercent: 0,
-      }),
-    } as unknown as IMerchantPricingRepository;
-
-    const service = new WarmpawzPayPricingService(repository, auditService, settingsRepo(true));
-    const result = await service.createPricing(
-      createInput({ tierId: TIER_ZERO, discountValue: 25 }),
-      'admin-1',
-    );
-
-    expect(result.commissionRate).toBe(0);
-    expect(result.discountValue).toBe(25);
-    expect(repository.insert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tierId: TIER_ZERO,
-        discountValue: 25,
-        platformWithholdPercent: 0,
-      }),
-      'cat-1',
-    );
   });
 });

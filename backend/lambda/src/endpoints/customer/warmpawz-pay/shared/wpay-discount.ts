@@ -80,7 +80,7 @@ export type WpayCommercialQuoteInput = {
   platformGstRate?: number;
   /**
    * Burn/test mode: vendor receives full Q; platform funds discount.
-   * Customer pay_now and fees unchanged. When on, D may exceed C (including C = 0).
+   * Customer pay_now and fees unchanged. Publish still requires D < C.
    */
   burnMode?: boolean;
   maxDiscountAmount?: number | null;
@@ -138,27 +138,6 @@ export function assertDiscountBelowCommission(
   }
 }
 
-/** Burn ON: 0–100 C and D. Burn OFF: existing D < C and C > 0. */
-export function assertWpayDiscountAllowed(
-  commissionPercent: number,
-  discountPercent: number,
-  burnMode = false,
-): void {
-  if (burnMode) {
-    if (!Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) {
-      throw new WpayCommercialValidationError('Invalid commission percent');
-    }
-    if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
-      throw new WpayCommercialValidationError('Invalid discount percent');
-    }
-    return;
-  }
-  if (Number.isFinite(commissionPercent) && commissionPercent === 0) {
-    throw new WpayCommercialValidationError('0% commission tier requires Burn / Test mode');
-  }
-  assertDiscountBelowCommission(commissionPercent, discountPercent);
-}
-
 /**
  * Tier-commission Pay Bill quote:
  * - C/D on full Q; platform revenue = C − D (GST inclusive extract) unless burnMode
@@ -174,8 +153,9 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
 
   const commissionPercent = round2(Number(input.commissionPercent));
   const discountPercent = round2(Number(input.discountPercent));
+  assertDiscountBelowCommission(commissionPercent, discountPercent);
+
   const burnMode = Boolean(input.burnMode);
-  assertWpayDiscountAllowed(commissionPercent, discountPercent, burnMode);
   const grossCommissionAmount = round2((quotedAmount * commissionPercent) / 100);
 
   let discountRaw = (quotedAmount * discountPercent) / 100;
