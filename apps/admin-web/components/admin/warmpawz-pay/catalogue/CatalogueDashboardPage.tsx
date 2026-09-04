@@ -299,6 +299,13 @@ export function CatalogueDashboardPage() {
         open={pendingAction !== null}
         title={confirmCopy.title}
         description={confirmCopy.description}
+        confirmLabel={
+          pendingAction?.type === 'delete'
+            ? 'Delete'
+            : pendingAction?.type === 'unpublish'
+              ? 'Save as draft'
+              : 'Confirm'
+        }
         destructive={'destructive' in confirmCopy && confirmCopy.destructive === true}
         loading={anyMutationPending}
         onOpenChange={(open) => {

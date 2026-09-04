@@ -52,6 +52,12 @@ export function ConfirmDialog({
           <Button
             type="button"
             variant={destructive ? 'destructive' : 'default'}
+            // Preset has `error`/`red`, not `destructive` — variant alone can render white-on-white.
+            className={
+              destructive
+                ? 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600/30'
+                : undefined
+            }
             disabled={loading}
             onClick={onConfirm}
           >
