@@ -67,6 +67,7 @@ interface Product {
   images?: string[];
   emoji?: string;
   is_active: boolean;
+  image_ingest_status?: string | null;
 }
 
 function toServerStatus(selectedStatus: string): VendorProductServerStatus | undefined {
@@ -768,11 +769,23 @@ function ProductCard({
           </div>
         )}
         {product.images?.[0] ? (
-          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
+          <img
+            src={product.images[0]}
+            alt=""
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
         ) : (
           <span>{product.emoji || DEFAULT_PRODUCT_EMOJI}</span>
         )}
         <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
+          {product.image_ingest_status === 'processing' && (
+            <span className="px-2 py-0.5 rounded-md bg-slate-700 text-white text-[10px] font-bold">
+              Photos processing
+            </span>
+          )}
           {pricing.discountPercent > 0 && (
             <span className="px-2 py-0.5 rounded-md bg-emerald-500 text-white text-[10px] font-bold">
               Save {pricing.discountPercent}%

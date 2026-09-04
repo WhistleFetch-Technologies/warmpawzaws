@@ -1300,6 +1300,42 @@ export const handler = async (
     if (
       event &&
       typeof event === 'object' &&
+      ((event as { job?: string }).job === 'drive-image-ingest' ||
+        (event as { job?: string }).job === 'drive-image-ingest-backfill')
+    ) {
+      try {
+        const {
+          isDriveImageIngestJobEvent,
+          isDriveImageIngestBackfillEvent,
+        } = await import('../utils/drive-image-ingest-invoke');
+        const {
+          processDriveImageIngestJob,
+          processDriveImageIngestBackfillJob,
+        } = await import('../utils/drive-image-ingest-worker');
+        if (isDriveImageIngestBackfillEvent(event)) {
+          const result = await processDriveImageIngestBackfillJob(event);
+          return { statusCode: 200, body: JSON.stringify({ ok: true, job: 'drive-image-ingest-backfill', ...result }) };
+        }
+        if (isDriveImageIngestJobEvent(event)) {
+          await processDriveImageIngestJob(event);
+          return { statusCode: 200, body: JSON.stringify({ ok: true, job: 'drive-image-ingest' }) };
+        }
+        return { statusCode: 400, body: JSON.stringify({ ok: false, error: 'invalid drive ingest event' }) };
+      } catch (jobErr) {
+        console.error('[HANDLER] drive image ingest job failed:', jobErr);
+        return {
+          statusCode: 500,
+          body: JSON.stringify({
+            ok: false,
+            error: jobErr instanceof Error ? jobErr.message : 'drive ingest job failed',
+          }),
+        };
+      }
+    }
+
+    if (
+      event &&
+      typeof event === 'object' &&
       (event as { job?: string }).job === 'notification-campaign-delivery' &&
       typeof (event as { campaignId?: string }).campaignId === 'string'
     ) {
