@@ -31,7 +31,15 @@ export type WpayTransactionCard = {
   originalAmount: number;
   discountPercent: number;
   discountAmount: number;
+  servicePayableAmount?: number;
+  platformFee?: number;
+  platformFeeGstAmount?: number;
+  platformFeeGstRate?: number;
+  convenienceFee?: number;
+  convenienceGstAmount?: number;
+  convenienceGstRate?: number;
   payableAmount: number;
+  commercialModel?: string | null;
   paidAt: string;
 };
 

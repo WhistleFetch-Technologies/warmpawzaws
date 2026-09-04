@@ -82,6 +82,7 @@ export type WpayTransactionDbRow = {
   payable_amount: string | number;
   discount_percent: string | number | null;
   paid_at: string;
+  metadata: Record<string, unknown> | null;
 };
 export async function dbWpayTransactionsPage(params: {
   customerId: string;
@@ -112,7 +113,8 @@ export async function dbWpayTransactionsPage(params: {
        p.discount_amount,
        p.amount AS payable_amount,
        (p.metadata->>'quotedDiscountPercent')::numeric AS discount_percent,
-       p.completed_at AS paid_at
+       p.completed_at AS paid_at,
+       p.metadata
      FROM payments p
      INNER JOIN vendors v ON v.id = p.vendor_id     WHERE p.customer_id = $1::uuid
        AND p.payment_source = 'warmpawz_pay'

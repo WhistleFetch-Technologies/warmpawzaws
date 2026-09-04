@@ -29,17 +29,17 @@ export function BookingListCardPricing({
     hasServiceDiscount,
   } = view;
 
-  if (!hasServiceDiscount) {
-    return (
-      <span className="text-base font-bold text-gray-900">{formatInr(totalPayable)}</span>
-    );
-  }
-
   const feeLines: { label: string; amount: number }[] = [];
   if (totalTax > 0.009) feeLines.push({ label: 'GST', amount: totalTax });
   if (platformFee > 0.009) feeLines.push({ label: 'Platform fee', amount: platformFee });
   if (convenienceFee > 0.009) feeLines.push({ label: 'Convenience fee', amount: convenienceFee });
   if (deliveryFee > 0.009) feeLines.push({ label: 'Delivery fee', amount: deliveryFee });
+
+  if (!hasServiceDiscount && feeLines.length === 0) {
+    return (
+      <span className="text-base font-bold text-gray-900">{formatInr(totalPayable)}</span>
+    );
+  }
 
   return (
     <div className="space-y-1">
@@ -47,11 +47,13 @@ export function BookingListCardPricing({
         <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">
           Service
         </span>
-        <span className="text-xs text-slate-400 cw-price-strike">{formatInr(servicePrice)}</span>
+        {hasServiceDiscount ? (
+          <span className="text-xs text-slate-400 cw-price-strike">{formatInr(servicePrice)}</span>
+        ) : null}
         <span className="text-sm font-semibold text-[#FF8C42]">
-          {formatInr(serviceAfterDiscount)}
+          {formatInr(hasServiceDiscount ? serviceAfterDiscount : servicePrice)}
         </span>
-        {serviceDiscountPercent != null && serviceDiscountPercent > 0 && (
+        {hasServiceDiscount && serviceDiscountPercent != null && serviceDiscountPercent > 0 && (
           <PromotionOfferBadge variant="percent" value={serviceDiscountPercent} size="sm" />
         )}
       </div>
@@ -70,20 +72,22 @@ export function BookingListCardPricing({
         <span className="text-sm font-bold text-[#FF8C42]">{formatInr(totalPayable)}</span>
       </div>
 
-      {serviceSavings > 0.009 && (
+      {hasServiceDiscount && serviceSavings > 0.009 && (
         <p className="text-[10px] text-emerald-600">
           You save {formatInr(serviceSavings)} on service
         </p>
       )}
 
-      <div className="flex flex-wrap gap-1">
-        <SavingsBadge variant="save_amount" amount={serviceSavings} />
-        {couponCode ? (
-          <SavingsBadge variant="coupon_applied" label={`Coupon: ${couponCode}`} />
-        ) : (
-          <SavingsBadge variant="auto_applied" />
-        )}
-      </div>
+      {hasServiceDiscount ? (
+        <div className="flex flex-wrap gap-1">
+          <SavingsBadge variant="save_amount" amount={serviceSavings} />
+          {couponCode ? (
+            <SavingsBadge variant="coupon_applied" label={`Coupon: ${couponCode}`} />
+          ) : (
+            <SavingsBadge variant="auto_applied" />
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

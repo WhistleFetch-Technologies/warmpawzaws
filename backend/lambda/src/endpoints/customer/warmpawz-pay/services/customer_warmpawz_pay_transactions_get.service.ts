@@ -1,9 +1,55 @@
 import type { Context } from 'hono';
 import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { resolveMerchantDisplayName } from '../../../warmpawz-pay/shared/merchant/merchant-display-name.resolver';
-import { dbWpayTransactionsPage } from '../repos/wpay-payment.repo';
+import { dbWpayTransactionsPage, type WpayTransactionDbRow } from '../repos/wpay-payment.repo';
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 20;
+
+function asMeta(raw: unknown): Record<string, unknown> | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+  return typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
+}
+
+function metaNumber(meta: Record<string, unknown> | null, key: string): number {
+  const n = Number(meta?.[key]);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Pass through stored checkout snapshot — do not recompute fees. */
+export function mapWpayCustomerHistoryCard(row: WpayTransactionDbRow) {
+  const meta = asMeta(row.metadata);
+  return {
+    paymentId: row.payment_id,
+    vendorId: row.vendor_id,
+    vendorName: resolveMerchantDisplayName({
+      businessName: row.business_name,
+      ownerName: row.owner_name,
+      vendorType: row.vendor_type,
+      isSoloProvider: String(row.vendor_type ?? '').toLowerCase() === 'solo',
+    }),
+    originalAmount: Number(row.original_amount ?? 0),
+    discountPercent: Number(row.discount_percent ?? 0),
+    discountAmount: Number(row.discount_amount ?? 0),
+    servicePayableAmount: metaNumber(meta, 'servicePayableAmount'),
+    platformFee: metaNumber(meta, 'platformFee'),
+    platformFeeGstAmount: metaNumber(meta, 'platformFeeGstAmount'),
+    platformFeeGstRate: metaNumber(meta, 'platformFeeGstRateSnapshot'),
+    convenienceFee: metaNumber(meta, 'convenienceFee'),
+    convenienceGstAmount: metaNumber(meta, 'convenienceGstAmount'),
+    convenienceGstRate: metaNumber(meta, 'convenienceGstRateSnapshot'),
+    payableAmount: Number(row.payable_amount ?? 0),
+    commercialModel: String(meta?.commercialModel ?? '').trim() || null,
+    paidAt: row.paid_at,
+  };
+}
 
 function parseLimit(raw: string | undefined): number {
   const n = parseInt(String(raw ?? ''), 10);
@@ -27,21 +73,7 @@ export async function executeCustomerWarmpawzPayTransactionsGet(c: Context) {
     const cursor = c.req.query('cursor')?.trim() || null;
     const page = await dbWpayTransactionsPage({ customerId, limit, cursor });
 
-    const transactions = page.rows.map((row) => ({
-      paymentId: row.payment_id,
-      vendorId: row.vendor_id,
-      vendorName: resolveMerchantDisplayName({
-        businessName: row.business_name,
-        ownerName: row.owner_name,
-        vendorType: row.vendor_type,
-        isSoloProvider: String(row.vendor_type ?? '').toLowerCase() === 'solo',
-      }),
-      originalAmount: Number(row.original_amount ?? 0),
-      discountPercent: Number(row.discount_percent ?? 0),
-      discountAmount: Number(row.discount_amount ?? 0),
-      payableAmount: Number(row.payable_amount ?? 0),
-      paidAt: row.paid_at,
-    }));
+    const transactions = page.rows.map(mapWpayCustomerHistoryCard);
     return c.json({
       success: true,
       transactions,
