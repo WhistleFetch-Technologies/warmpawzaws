@@ -30,6 +30,18 @@ export type WpayVerifyResponse = {
   error?: string;
 };
 
+function newWpayClientRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // RFC4122 v4 fallback for older WebViews / test envs without crypto.randomUUID.
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const n = (Math.random() * 16) | 0;
+    const v = ch === 'x' ? n : (n & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export async function runWpayRazorpayCheckout(params: {
   vendorId: string;
   vendorName: string;
@@ -37,11 +49,14 @@ export async function runWpayRazorpayCheckout(params: {
   customerPhone: string;
 }): Promise<WpayVerifyResponse> {
   const { vendorId, vendorName, originalAmount, customerPhone } = params;
+  // Stable for this checkout attempt so initiate retries reuse the same pending order.
+  const clientRequestId = newWpayClientRequestId();
 
   const initiate = (await apiClient.post('/customer/warmpawz-pay/initiate', {
     vendorId,
     originalAmount,
     phone: customerPhone,
+    clientRequestId,
   })) as WpayInitiateResponse;
 
   if (!initiate?.success || !initiate.razorpayOrderId || !initiate.razorpayKeyId || !initiate.paymentId) {

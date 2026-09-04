@@ -34,6 +34,7 @@ describe('runWpayRazorpayCheckout', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../wpay-razorpay-checkout.ts'), 'utf8');
     expect(source).toContain("'/customer/warmpawz-pay/initiate'");
     expect(source).toContain("'/customer/warmpawz-pay/verify'");
+    expect(source).toContain('clientRequestId');
     expect(source).toContain('openStandardRazorpayCheckout');
     expect(source).not.toContain('includeInstrumentBlocks');
     expect(source).not.toMatch(/\bgst\b/i);
@@ -91,15 +92,22 @@ describe('runWpayRazorpayCheckout', () => {
       vendorName: "Harley's Corner",
       originalAmount: 23029.2,
       customerPhone: '9820009456',
-      bookingId: 'booking-1',
     });
 
-    expect(post).toHaveBeenNthCalledWith(1, '/customer/warmpawz-pay/initiate', {
-      vendorId: 'vendor-1',
-      originalAmount: 23029.2,
-      phone: '9820009456',
-      bookingId: 'booking-1',
-    });
+    expect(post).toHaveBeenNthCalledWith(
+      1,
+      '/customer/warmpawz-pay/initiate',
+      expect.objectContaining({
+        vendorId: 'vendor-1',
+        originalAmount: 23029.2,
+        phone: '9820009456',
+        clientRequestId: expect.any(String),
+      }),
+    );
+    const initiateBody = post.mock.calls[0][1] as { clientRequestId?: string };
+    expect(initiateBody.clientRequestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
 
     expect(openStandardRazorpayCheckout).toHaveBeenCalledTimes(1);
     const checkoutArg = openStandardRazorpayCheckout.mock.calls[0][0];

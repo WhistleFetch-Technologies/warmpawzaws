@@ -1,5 +1,8 @@
 import type { Context } from 'hono';
-import { createWpayRazorpayOrder } from '../../../../utils/wpay-razorpay-order';
+import {
+  createWpayRazorpayOrder,
+  WpayPaymentAlreadyCompletedError,
+} from '../../../../utils/wpay-razorpay-order';
 import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
 import { dbWpayVendorById } from '../repos/wpay-vendor-detail.repo';
 import { WpayCommercialValidationError } from '../shared/wpay-discount';
@@ -15,11 +18,13 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       originalAmount?: number;
       phone?: string;
       bookingId?: string;
+      clientRequestId?: string;
     };
 
     const vendorId = String(body.vendorId ?? '').trim();
     const phone = String(body.phone ?? c.req.query('phone') ?? '').trim();
     const originalAmount = Number(body.originalAmount);
+    const clientRequestId = String(body.clientRequestId ?? '').trim();
 
     if (!UUID_RE.test(vendorId)) {
       return c.json({ success: false, error: 'Invalid vendor id' }, 400);
@@ -53,6 +58,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       vendorId,
       payableAmount: resolved.payableAmount,
       bookingId: null,
+      clientRequestId: clientRequestId || null,
       quoteMetadata: resolved.metadata,
     });
 
@@ -101,6 +107,17 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
   } catch (error: unknown) {
     if (error instanceof WpayCommercialValidationError) {
       return c.json({ success: false, error: error.message }, 400);
+    }
+    if (error instanceof WpayPaymentAlreadyCompletedError) {
+      return c.json(
+        {
+          success: false,
+          error: error.message,
+          paymentId: error.paymentId,
+          code: 'WPAY_PAYMENT_ALREADY_COMPLETED',
+        },
+        409,
+      );
     }
     const message = error instanceof Error ? error.message : 'Failed to initiate payment';
     console.error('[customer/warmpawz-pay/initiate]', error);
