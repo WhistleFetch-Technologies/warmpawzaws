@@ -3,6 +3,7 @@ import {
   extractOtpAuthState,
   markOnboardingCompleteAfterProfile,
   markProfileCreationRequired,
+  profileIndicatesExistingCustomer,
   readProfileCompleted,
   resolvePostAuthRedirectPath,
   resolvePostProfileRedirectPath,
@@ -12,6 +13,35 @@ import {
   clearGuestBookingIntent,
   saveGuestBookingIntent,
 } from '../guest-booking-intent';
+
+describe('profileIndicatesExistingCustomer', () => {
+  it('treats a named customer with stale onboarding flags as existing', () => {
+    expect(
+      profileIndicatesExistingCustomer(
+        {
+          id: 'cust-1',
+          name: 'Priya',
+          onboarding_status: 'PHONE_VERIFIED',
+          profile_completed: false,
+        },
+        '9876543210'
+      )
+    ).toBe(true);
+  });
+
+  it('does not treat placeholder Customer XXXX as existing', () => {
+    expect(
+      profileIndicatesExistingCustomer(
+        {
+          id: 'cust-1',
+          name: 'Customer 3210',
+          onboarding_status: 'PHONE_VERIFIED',
+        },
+        '9876543210'
+      )
+    ).toBe(false);
+  });
+});
 
 describe('OTP new vs existing profile flags', () => {
   beforeEach(() => {
@@ -50,6 +80,40 @@ describe('OTP new vs existing profile flags', () => {
     ).toBe('home');
     expect(readProfileCompleted()).toBe(true);
     expect(resolvePostAuthRedirectPath('/')).toBe('/');
+  });
+
+  it('OTP state new still skips profile when unified profile is a returning customer', () => {
+    expect(
+      applyOtpVerifyProfileFlags({
+        authState: 'new',
+        phoneDigits10: '9876543210',
+        profile: {
+          id: 'cust-1',
+          name: 'Priya',
+          onboarding_status: 'PHONE_VERIFIED',
+          profile_completed: false,
+        },
+      })
+    ).toBe('home');
+    expect(readProfileCompleted()).toBe(true);
+    expect(resolvePostAuthRedirectPath('/')).toBe('/');
+  });
+
+  it('OTP state new still creates a profile for placeholder signup names', () => {
+    expect(
+      applyOtpVerifyProfileFlags({
+        authState: 'new',
+        phoneDigits10: '9876543210',
+        profile: {
+          id: 'cust-2',
+          name: 'Customer 3210',
+          onboarding_status: 'PHONE_VERIFIED',
+          profile_completed: false,
+        },
+      })
+    ).toBe('create-profile');
+    expect(readProfileCompleted()).toBe(false);
+    expect(resolvePostAuthRedirectPath('/')).toBe('/profile');
   });
 
   it('keeps profile creation required until the form is submitted', () => {

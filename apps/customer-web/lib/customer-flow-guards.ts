@@ -27,6 +27,39 @@ function readNeedsProfileCreate(): boolean {
   }
 }
 
+function placeholderCustomerName(phoneDigits10: string): string {
+  const last4 = phoneDigits10.replace(/\D/g, '').slice(-4);
+  return last4 ? `Customer ${last4}` : '';
+}
+
+/** True when unified/OTP profile already belongs to a returning customer. */
+export function profileIndicatesExistingCustomer(
+  profile: Record<string, unknown> | null | undefined,
+  phoneDigits10: string
+): boolean {
+  if (!profile) return false;
+
+  const onboardingStatus = String(profile.onboarding_status || profile.onboardingStatus || 'INIT');
+  const profileCompletedFlag =
+    profile.profile_completed === true || profile.onboardingComplete === true;
+  if (onboardingStatus === 'COMPLETED' || profileCompletedFlag) return true;
+
+  const nameVal = String(profile.name || profile.full_name || '').trim();
+  const hasName = !!nameVal && nameVal !== placeholderCustomerName(phoneDigits10);
+  const bookings = profile.bookings;
+  const hasBookings = Array.isArray(bookings) && bookings.length > 0;
+  const orders = profile.orders;
+  const orderList = Array.isArray(orders)
+    ? orders
+    : orders && typeof orders === 'object' && Array.isArray((orders as { all?: unknown[] }).all)
+      ? ((orders as { all?: unknown[] }).all as unknown[])
+      : [];
+  const hasOrders = orderList.length > 0;
+  const hasProfileId = !!profile.id;
+
+  return hasProfileId && (hasName || hasBookings || hasOrders);
+}
+
 /**
  * Align localStorage flow flags with unified profile API (same rules as OTP verify in auth).
  * Call after password login or whenever unified profile is loaded so / gates match the backend.
@@ -37,23 +70,7 @@ export function applyUnifiedProfileToCustomerLocalStorage(
 ): void {
   if (typeof window === 'undefined' || !profile) return;
 
-  const onboardingStatus = String(profile.onboarding_status || profile.onboardingStatus || 'INIT');
-  const profileCompletedFlag =
-    profile.profile_completed === true || profile.onboardingComplete === true;
-  const nameVal = String(profile.name || profile.full_name || '').trim();
-  const digits = phoneDigits10.replace(/\D/g, '').slice(-10);
-  const hasName =
-    !!nameVal &&
-    nameVal !== `Customer ${digits.slice(-4)}`;
-  const bookings = profile.bookings;
-  const hasBookings = Array.isArray(bookings) && bookings.length > 0;
-  const hasProfileId = !!profile.id;
-
-  const backendFullyOnboarded =
-    onboardingStatus === 'COMPLETED' || profileCompletedFlag === true;
-  const hasMeaningfulProfile = (hasProfileId && hasName) || (hasProfileId && hasBookings);
-
-  if (backendFullyOnboarded || hasMeaningfulProfile) {
+  if (profileIndicatesExistingCustomer(profile, phoneDigits10)) {
     if (readNeedsProfileCreate()) return;
     markOnboardingCompleteAfterProfile();
   } else {
@@ -84,7 +101,7 @@ export function extractOtpAuthState(payload: unknown): 'new' | 'existing' | null
   return walk(payload);
 }
 
-/** After OTP: new users always create a profile; existing complete users go home. */
+/** After OTP: brand-new users create a profile; returning customers go home. */
 export function applyOtpVerifyProfileFlags(opts: {
   authState?: 'new' | 'existing' | null;
   profile?: Record<string, unknown> | null;
@@ -92,7 +109,12 @@ export function applyOtpVerifyProfileFlags(opts: {
 }): 'create-profile' | 'home' {
   if (typeof window === 'undefined') return 'create-profile';
 
+  // OTP `state: new` means onboarding flags are incomplete, not "no account".
   if (opts.authState === 'new') {
+    if (profileIndicatesExistingCustomer(opts.profile, opts.phoneDigits10)) {
+      markOnboardingCompleteAfterProfile();
+      return 'home';
+    }
     markProfileCreationRequired();
     return 'create-profile';
   }

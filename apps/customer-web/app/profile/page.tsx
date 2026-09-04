@@ -8,6 +8,7 @@ import { CustomerUserProfile } from '@/components/customer/CustomerUserProfile';
 import { CustomerProfileView } from '@/components/customer/CustomerProfileView';
 import {
   markOnboardingCompleteAfterProfile,
+  profileIndicatesExistingCustomer,
   readProfileCompleted,
   resolvePostProfileRedirectPath,
 } from '@/lib/customer-flow-guards';
@@ -27,16 +28,63 @@ export default function ProfilePage() {
   const [showCreateFlow, setShowCreateFlow] = useState(false);
 
   useEffect(() => {
-    const storedPhone = localStorage.getItem('customerPhone');
-    const token = getStoredCustomerJwtForSession();
-    if (!storedPhone || !token) {
-      redirectWithHardFallback(router, '/auth', { method: 'push' });
-      return;
-    }
-    setPhone(storedPhone);
-    const createFirst = !readProfileCompleted();
-    setShowCreateFlow(createFirst);
-    setFlowReady(true);
+    let cancelled = false;
+
+    const run = async () => {
+      const storedPhone = localStorage.getItem('customerPhone');
+      const token = getStoredCustomerJwtForSession();
+      if (!storedPhone || !token) {
+        redirectWithHardFallback(router, '/auth', { method: 'push' });
+        return;
+      }
+      setPhone(storedPhone);
+
+      const cached = (() => {
+        try {
+          const raw = localStorage.getItem('customerData');
+          return raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      if (readProfileCompleted() || profileIndicatesExistingCustomer(cached, storedPhone)) {
+        markOnboardingCompleteAfterProfile();
+        if (!cancelled) {
+          setShowCreateFlow(false);
+          setFlowReady(true);
+        }
+        return;
+      }
+
+      try {
+        const res = await apiClient.getOrUndefinedIfNotFound<{ profile?: Record<string, unknown> }>(
+          `/customer/profile/unified/${encodeURIComponent(storedPhone)}`
+        );
+        if (cancelled) return;
+        if (res?.profile && profileIndicatesExistingCustomer(res.profile, storedPhone)) {
+          localStorage.setItem('customerData', JSON.stringify(res.profile));
+          localStorage.setItem('customerProfile', JSON.stringify(res.profile));
+          persistCustomerDatabaseId(res.profile);
+          markOnboardingCompleteAfterProfile();
+          setShowCreateFlow(false);
+          setFlowReady(true);
+          return;
+        }
+      } catch {
+        /* fall through to create form for brand-new accounts */
+      }
+
+      if (!cancelled) {
+        setShowCreateFlow(!readProfileCompleted());
+        setFlowReady(true);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const handleCreateProfileComplete = useCallback(async () => {

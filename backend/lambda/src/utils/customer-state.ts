@@ -16,6 +16,8 @@ export interface CustomerState {
   onboarding_status: 'INIT' | 'PHONE_VERIFIED' | 'PROFILE_PENDING' | 'PET_PENDING' | 'PREFERENCES_PENDING' | 'COMPLETED';
   profile_completed: boolean;
   current_step?: string;
+  full_name?: string | null;
+  phone?: string | null;
 }
 
 /**
@@ -42,6 +44,8 @@ export async function getCustomerState(customerId: string): Promise<CustomerStat
       onboarding_status: customer.onboarding_status || identity?.onboarding_status || 'INIT',
       profile_completed: customer.profile_completed || false,
       current_step: identity?.current_step || null,
+      full_name: customer.full_name ?? null,
+      phone: customer.phone ?? null,
     };
   } catch (error: any) {
     console.error('Error getting customer state:', error);
@@ -244,15 +248,36 @@ export async function updateProfileCompletion(
 }
 
 /**
+ * Classify OTP/password login state. Matches unified-profile existing-user heuristic:
+ * a real name or completed flags beat stale PHONE_VERIFIED / status=new rows.
+ */
+export function resolveCustomerAuthStateFromRecord(input: {
+  onboarding_status?: string | null;
+  profile_completed?: boolean | null;
+  status?: string | null;
+  full_name?: string | null;
+  phone?: string | null;
+}): 'new' | 'existing' {
+  const onboarding = String(input.onboarding_status || 'INIT');
+  if (onboarding === 'COMPLETED' || input.profile_completed === true) {
+    return 'existing';
+  }
+
+  const name = String(input.full_name || '').trim();
+  const last4 = String(input.phone || '').replace(/\D/g, '').slice(-4);
+  const placeholder = last4 ? `Customer ${last4}` : '';
+  if (name && name !== placeholder) {
+    return 'existing';
+  }
+
+  return 'new';
+}
+
+/**
  * Determine customer state for auth response
  */
 export async function getCustomerStateForAuth(customerId: string): Promise<'new' | 'existing'> {
   const state = await getCustomerState(customerId);
   if (!state) return 'new';
-  
-  if (state.onboarding_status === 'COMPLETED' && state.status === 'active') {
-    return 'existing';
-  }
-  
-  return 'new';
+  return resolveCustomerAuthStateFromRecord(state);
 }
