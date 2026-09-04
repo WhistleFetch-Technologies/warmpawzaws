@@ -193,4 +193,44 @@ describe('accrue-wpay-settlement', () => {
     expect(breakup.commercialModel).toBe('tier_commission');
     expect(breakup.finalGstAmount).toBe(79.87);
   });
+
+  it('uses burn snapshot: vendor payable is Q and platform revenue is 0', async () => {
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [] } as never)
+      .mockResolvedValueOnce({ rows: [{ id: 'settlement-burn' }] } as never);
+
+    const result = await accrueWpaySettlement({
+      ...basePayment,
+      amount: 7500,
+      original_amount: 10_000,
+      discount_amount: 2500,
+      metadata: {
+        commercialModel: 'tier_commission',
+        tierId: 'tier-zero',
+        quotedOriginalAmount: 10_000,
+        quotedDiscountAmount: 2500,
+        quotedDiscountPercent: 25,
+        commissionPercentSnapshot: 0,
+        grossCommissionAmount: 0,
+        vendorPayableAmount: 10_000,
+        servicePayableAmount: 7500,
+        wpayRevenueAmount: 0,
+        burnMode: true,
+        burnAmount: 2500,
+        payNowAmount: 7500,
+        appointmentFeeCredit: 0,
+      },
+    });
+
+    expect(result.inserted).toBe(true);
+    const insertArgs = mockedQuery.mock.calls[1]?.[1];
+    expect(insertArgs?.[4]).toBe(0);
+    expect(insertArgs?.[5]).toBe(10_000);
+    const breakup = JSON.parse(String(insertArgs?.[7]));
+    expect(breakup.commercialModel).toBe('tier_commission');
+    expect(breakup.burnMode).toBe(true);
+    expect(breakup.burnAmount).toBe(2500);
+    expect(breakup.vendorPayableAmount).toBe(10_000);
+    expect(breakup.wpayRevenueAmount).toBe(0);
+  });
 });

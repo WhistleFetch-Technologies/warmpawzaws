@@ -1,3 +1,4 @@
+import { assertWpayDiscountAllowed } from '../../../../customer/warmpawz-pay/shared/wpay-discount';
 import { PRICING_STATUS } from '../../../constants/merchant-pricing';
 import type {
   CreatePricingInput,
@@ -7,7 +8,9 @@ import type {
   UpdatePricingInput,
   WpayPublishTierRow,
 } from '../../../repositories/interfaces/IMerchantPricingRepository';
+import type { IWpayConvenienceSettingsRepository } from '../../../repositories/interfaces/IWpayConvenienceSettingsRepository';
 import { merchantPricingRepository } from '../../../repositories/merchant-pricing.repository';
+import { wpayConvenienceSettingsRepository } from '../../../repositories/wpay-convenience-settings.repository';
 import {
   resolveMerchantCategory,
   serviceCategoryFromRoleConfig,
@@ -37,11 +40,19 @@ export class PricingAdminError extends Error {
   }
 }
 
-export function assertDiscountBelowCommission(discountValue: number, commissionRate: number): void {
-  if (!(discountValue < commissionRate)) {
+export function assertDiscountBelowCommission(
+  discountValue: number,
+  commissionRate: number,
+  burnMode = false,
+): void {
+  try {
+    assertWpayDiscountAllowed(commissionRate, discountValue, burnMode);
+  } catch (error) {
     throw new PricingAdminError(
       PricingErrorCode.VALIDATION_ERROR,
-      `Discount must be strictly less than the selected tier commission (${commissionRate}%).`,
+      error instanceof Error
+        ? error.message
+        : `Discount must be strictly less than the selected tier commission (${commissionRate}%).`,
     );
   }
 }
@@ -72,7 +83,13 @@ export class WarmpawzPayPricingService {
   constructor(
     private readonly pricingRepository: IMerchantPricingRepository = merchantPricingRepository,
     private readonly auditService: PricingAuditService = new PricingAuditService(),
+    private readonly settingsRepository: IWpayConvenienceSettingsRepository = wpayConvenienceSettingsRepository,
   ) {}
+
+  private async assertPublishDiscount(discountValue: number, commissionRate: number): Promise<void> {
+    const settings = await this.settingsRepository.getConvenienceSettings();
+    assertDiscountBelowCommission(discountValue, commissionRate, settings.burnMode);
+  }
 
   async getPricingByMerchantId(merchantId: string): Promise<PricingDetailDTO | null> {
     const row = await this.pricingRepository.findByVendorId(merchantId);
@@ -100,7 +117,7 @@ export class WarmpawzPayPricingService {
     }
 
     const tier = assertWpayPublishTier(await this.pricingRepository.findWpayPublishTier(input.tierId));
-    assertDiscountBelowCommission(input.discountValue, tier.commissionRate);
+    await this.assertPublishDiscount(input.discountValue, tier.commissionRate);
 
     const effectiveFrom = new Date(input.effectiveFrom);
     const effectiveUntil = input.effectiveUntil ? new Date(input.effectiveUntil) : null;
@@ -182,7 +199,7 @@ export class WarmpawzPayPricingService {
     }
     const tier = assertWpayPublishTier(await this.pricingRepository.findWpayPublishTier(nextTierId));
     const nextDiscount = input.discountValue ?? existing.discountValue;
-    assertDiscountBelowCommission(nextDiscount, tier.commissionRate);
+    await this.assertPublishDiscount(nextDiscount, tier.commissionRate);
 
     const updateInput: UpdatePricingInput = {
       tierId: nextTierId,

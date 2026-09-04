@@ -36,7 +36,7 @@ export function resolveWpayVendorCommercialConfig(row: WpayVendorListDbRow): Wpa
   const commissionPercent = readPercent(row.pricing_commission_rate);
   const platformWithholdPercent = readPercent(row.pricing_platform_withhold_percent);
 
-  if (tierId && commissionPercent > 0) {
+  if (tierId) {
     return {
       commercialModel: 'tier_commission',
       discountPercent,
