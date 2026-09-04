@@ -1226,7 +1226,8 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                         address: resolveWalkerRowAddress(row),
                         category: 'walker',
                         serviceKey: 'walker',
-                        onPrimary: () => handleWalkerSelect(row),
+                        // Select Slot = same as card/profile: WAPPT profile (not bare walker-booking with ₹0).
+                        onPrimary: (e) => handleOpenWalkerProfile(row, e),
                         onProfileClick: (e) => handleOpenWalkerProfile(row, e),
                         router,
                       })}
