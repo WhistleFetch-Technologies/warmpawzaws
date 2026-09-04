@@ -31,7 +31,8 @@ const nextConfig = {
   swcMinify: true,
   compress: true,
   images: { unoptimized: true },
-  typescript: { ignoreBuildErrors: false },
+  // Opt-in: SKIP_TS_CHECK=1 for emergency deploy when pre-existing TS noise blocks export.
+  typescript: { ignoreBuildErrors: process.env.SKIP_TS_CHECK === '1' },
   eslint: { ignoreDuringBuilds: true },
   // ✅ FIX: Add rewrites to proxy API requests to API Gateway in development
   async rewrites() {

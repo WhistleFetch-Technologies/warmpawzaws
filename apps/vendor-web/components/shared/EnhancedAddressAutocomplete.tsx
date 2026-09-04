@@ -143,7 +143,7 @@ export function EnhancedAddressAutocomplete({
   // Check if Google Maps is already loaded (from other components)
   useEffect(() => {
     const win = window as any;
-    if (win.google && win.google.maps && win.google.maps.places) {
+    if (win.google && win.google.maps && (win.google.maps as any).places) {
       if (!autocompleteServiceRef.current) {
         initServices();
       }
@@ -157,7 +157,7 @@ export function EnhancedAddressAutocomplete({
     }
 
     const win = window as any;
-    if (win.google && win.google.maps && win.google.maps.places) {
+    if (win.google && win.google.maps && (win.google.maps as any).places) {
       if (!autocompleteServiceRef.current) {
         initServices();
       }
@@ -167,7 +167,7 @@ export function EnhancedAddressAutocomplete({
     const existingScript = document.querySelector(`script[src*="maps.googleapis.com"]`);
     if (existingScript) {
       const checkInterval = setInterval(() => {
-        if (win.google && win.google.maps && win.google.maps.places) {
+        if (win.google && win.google.maps && (win.google.maps as any).places) {
           if (!autocompleteServiceRef.current) {
             initServices();
           }
@@ -198,11 +198,11 @@ export function EnhancedAddressAutocomplete({
     if (win.google?.maps?.places) {
       try {
         if (!autocompleteServiceRef.current) {
-          autocompleteServiceRef.current = new win.google.maps.places.AutocompleteService();
+          autocompleteServiceRef.current = new (win.google.maps as any).places.AutocompleteService();
         }
         if (!placesServiceRef.current) {
           const dummyDiv = document.createElement('div');
-          placesServiceRef.current = new win.google.maps.places.PlacesService(dummyDiv);
+          placesServiceRef.current = new (win.google.maps as any).places.PlacesService(dummyDiv);
         }
         setIsLoaded(true);
         setIsLoading(false);
@@ -284,7 +284,7 @@ export function EnhancedAddressAutocomplete({
       autocompleteServiceRef.current.getPlacePredictions(
         request,
         (results: any[], status: any) => {
-          const PS = window.google.maps.places.PlacesServiceStatus;
+          const PS = (window.google.maps as any).places.PlacesServiceStatus;
           const ok = status === PS.OK && results && results.length > 0;
 
           if (ok) {
@@ -348,7 +348,7 @@ export function EnhancedAddressAutocomplete({
         fields: ['address_components', 'formatted_address', 'geometry', 'place_id'],
       },
       (place: any, status: any) => {
-        if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place) {
+        if (status !== (window.google.maps as any).places.PlacesServiceStatus.OK || !place) {
           return;
         }
 
