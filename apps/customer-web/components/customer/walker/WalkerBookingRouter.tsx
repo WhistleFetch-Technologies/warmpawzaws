@@ -145,8 +145,13 @@ export function WalkerBookingRouter({
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
   const packageRedirectRef = useRef(false);
-  /** When entered with a preselected service, hide Date/Time until package redirect is decided. */
-  const [packageGateResolved, setPackageGateResolved] = useState(!hasServiceContext);
+  /**
+   * When entered with a preselected service, hide Date/Time until package redirect is decided.
+   * WAPPT appointment slots skip catalog package detection (catalog is not loaded in appointmentsMode).
+   */
+  const [packageGateResolved, setPackageGateResolved] = useState(
+    () => !hasServiceContext || appointmentsMode,
+  );
   
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
@@ -423,6 +428,11 @@ export function WalkerBookingRouter({
   /** Profile/deep link: preselected walk package must go to purchase-package, not one-off booking. */
   useEffect(() => {
     if (packageRedirectRef.current) return;
+    if (appointmentsMode) {
+      packageRedirectRef.current = true;
+      setPackageGateResolved(true);
+      return;
+    }
     if (!hasServiceContext) {
       setPackageGateResolved(true);
       return;
@@ -506,6 +516,7 @@ export function WalkerBookingRouter({
     onNavigate('purchase-package', nav);
     // Keep gate closed — screen is being replaced; avoids Date/Time flash.
   }, [
+    appointmentsMode,
     hasServiceContext,
     vendorId,
     vendorCatalog,

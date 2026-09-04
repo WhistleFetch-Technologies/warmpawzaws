@@ -29,14 +29,29 @@ export interface PaymentsTableProps {
 
 function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
   if (item.commercialModel === 'tier_commission') {
+    const burnOn = item.burnMode === true;
     return (
       <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <div><span className="text-gray-500">Tier commission</span><p className="font-medium">{formatWpayPercent(item.commissionPercent ?? 0)}</p></div>
+        <div>
+          <span className="text-gray-500">Tier commission</span>
+          <p className="font-medium">
+            {burnOn ? 'N/A' : formatWpayPercent(item.commissionPercent ?? 0)}
+          </p>
+        </div>
         <div><span className="text-gray-500">Vendor payable</span><p className="font-medium">{formatWpayInr(item.vendorPayableAmount ?? item.vendorSettlementAmount)}</p></div>
-        <div><span className="text-gray-500">Platform revenue</span><p className="font-medium">{formatWpayInr(item.wpayRevenueAmount ?? 0)}</p></div>
-        <div><span className="text-gray-500">Platform GST (inclusive)</span><p className="font-medium">{formatWpayInr(item.platformGstAmount ?? 0)}</p></div>
-        <div><span className="text-gray-500">Burn / Test</span><p className="font-medium">{item.burnMode ? 'On' : 'Off'}</p></div>
-        <div><span className="text-gray-500">Burn amount</span><p className="font-medium">{formatWpayInr(item.burnAmount ?? 0)}</p></div>
+        <div>
+          <span className="text-gray-500">Platform revenue</span>
+          <p className="font-medium">{burnOn ? 'N/A' : formatWpayInr(item.wpayRevenueAmount ?? 0)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Platform GST (inclusive)</span>
+          <p className="font-medium">{burnOn ? 'N/A' : formatWpayInr(item.platformGstAmount ?? 0)}</p>
+        </div>
+        <div><span className="text-gray-500">Burn / Test</span><p className="font-medium">{burnOn ? 'On' : 'Off'}</p></div>
+        <div>
+          <span className="text-gray-500">Burn amount</span>
+          <p className="font-medium">{formatWpayInr(item.burnAmount ?? 0)}</p>
+        </div>
         <div><span className="text-gray-500">Platform fee</span><p className="font-medium">{formatWpayInr(item.platformFee ?? 0)}</p></div>
         <div><span className="text-gray-500">Platform fee GST</span><p className="font-medium">{formatWpayInr(item.platformFeeGstAmount ?? 0)}</p></div>
         <div><span className="text-gray-500">Convenience fee</span><p className="font-medium">{formatWpayInr(item.convenienceFee ?? 0)}</p></div>
@@ -99,6 +114,7 @@ export function PaymentsTable({
             {items.map((item) => {
               const expanded = expandedPaymentId === item.paymentId;
               const isTier = item.commercialModel === 'tier_commission';
+              const burnOn = isTier && item.burnMode === true;
               return (
                 <Fragment key={item.paymentId}>
                   <TableRow>
@@ -127,7 +143,11 @@ export function PaymentsTable({
                     <TableCell>
                       <p className="font-medium text-gray-900">{item.vendor.name}</p>
                       <p className="text-xs text-gray-500">{item.vendor.category}</p>
-                      {item.vendor.tierName ? (
+                      {burnOn ? (
+                        <span className="mt-1 inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                          N/A
+                        </span>
+                      ) : item.vendor.tierName ? (
                         <span className="mt-1 inline-flex rounded-full bg-orange-50 px-2 py-0.5 text-xs text-orange-700">
                           {item.vendor.tierName}
                         </span>
@@ -138,7 +158,7 @@ export function PaymentsTable({
                       {isTier ? (
                         <div className="space-y-1">
                           <span className="block text-xs text-gray-500">
-                            C {formatWpayPercent(item.commissionPercent ?? 0)}
+                            C {burnOn ? 'N/A' : formatWpayPercent(item.commissionPercent ?? 0)}
                           </span>
                           <span className="inline-flex rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
                             D {item.discountPercent}%
@@ -154,7 +174,11 @@ export function PaymentsTable({
                       {formatWpayInr(item.payableAmount)}
                     </TableCell>
                     <TableCell className="text-right text-gray-800">
-                      {isTier ? formatWpayInr(item.wpayRevenueAmount ?? 0) : '—'}
+                      {isTier
+                        ? burnOn
+                          ? 'N/A'
+                          : formatWpayInr(item.wpayRevenueAmount ?? 0)
+                        : '—'}
                     </TableCell>
                     <TableCell className="text-right font-medium text-orange-700">
                       {isTier ? formatWpayInr(item.finalGstAmount ?? 0) : '—'}

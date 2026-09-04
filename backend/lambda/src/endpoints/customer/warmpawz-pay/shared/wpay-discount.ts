@@ -171,7 +171,6 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
     ? quotedAmount
     : round2(quotedAmount - grossCommissionAmount);
   const wpayRevenueAmount = burnMode ? 0 : round2(grossCommissionAmount - discountAmount);
-  const burnAmount = burnMode ? discountAmount : 0;
 
   const platformGstRate = round2(Number(input.platformGstRate ?? 18));
   const platformGstAmount =
@@ -204,6 +203,10 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
     0.01,
     round2(servicePayableAmount + platformFeeGrossAmount + convenienceGrossAmount),
   );
+  // Burn amount = vendor payable − customer paid (payNow).
+  const burnAmount = burnMode
+    ? round2(Math.max(0, vendorPayableAmount - payNowAmount))
+    : 0;
 
   return {
     commercialModel: 'tier_commission',

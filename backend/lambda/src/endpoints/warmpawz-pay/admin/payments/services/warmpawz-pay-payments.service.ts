@@ -144,6 +144,13 @@ function mapPaymentRow(
       readBreakupNumber(breakup, 'wpayRevenueAmount') ??
       toFiniteNumber(row.platform_withhold_amount) ??
       0;
+    const burnMode = Boolean(breakup?.burnMode ?? meta?.burnMode ?? false);
+    // Prefer live formula for admin: burn = vendor payable − customer paid.
+    const burnAmount = burnMode
+      ? Math.round(Math.max(0, vendorPayableAmount - payableAmount) * 100) / 100
+      : readBreakupNumber(breakup, 'burnAmount') ??
+        toFiniteNumber(meta?.burnAmount as number | undefined) ??
+        0;
 
     return {
       ...base,
@@ -178,13 +185,8 @@ function mapPaymentRow(
         readBreakupNumber(breakup, 'finalGstAmount') ??
         toFiniteNumber(meta?.finalGstAmount as number | undefined) ??
         undefined,
-      burnMode: Boolean(
-        breakup?.burnMode ?? meta?.burnMode ?? false,
-      ),
-      burnAmount:
-        readBreakupNumber(breakup, 'burnAmount') ??
-        toFiniteNumber(meta?.burnAmount as number | undefined) ??
-        0,
+      burnMode,
+      burnAmount,
       vendorSettlementAmount: vendorPayableAmount,
       settlementSource: row.vendor_settlement_amount != null ? 'persisted' : 'computed',
     };

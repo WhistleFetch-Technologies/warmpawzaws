@@ -147,7 +147,7 @@ describe('computeWpayCommercialQuote', () => {
     expect(burned.wpayRevenueAmount).toBe(0);
     expect(burned.platformGstAmount).toBe(0);
     expect(burned.burnMode).toBe(true);
-    expect(burned.burnAmount).toBe(1500);
+    expect(burned.burnAmount).toBe(1441);
     expect(normal.vendorPayableAmount).toBe(8000);
     expect(normal.burnMode).toBe(false);
     expect(normal.burnAmount).toBe(0);
