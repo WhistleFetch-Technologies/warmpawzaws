@@ -49,6 +49,16 @@ describe('image-asset-cache keys', () => {
     expect(isManagedVendorMediaKey('https://cdn.example.com/x.jpg')).toBe(false);
   });
 
+  it('does not treat static /images paths as S3 keys to sign', () => {
+    expect(extractS3ImageKey('/images/home/trending now/general-health.webp')).toBeNull();
+    expect(extractS3ImageKey('/images/shop/categories/pet-food.jpeg')).toBeNull();
+    expect(isManagedVendorMediaKey('/images/home/vet.webp')).toBe(false);
+    expect(isRefreshableManagedImageSrc('/images/shop/categories/pet-food.jpeg')).toBe(false);
+    expect(cacheKeyForImageSrc('/images/home/trending now/general-health.webp')).toBe(
+      'static:/images/home/trending now/general-health.webp',
+    );
+  });
+
   it('marks amazonaws urls and bare keys as refreshable', () => {
     expect(
       isRefreshableManagedImageSrc(

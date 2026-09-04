@@ -32,6 +32,7 @@ export function isStaticLocalImageSrc(src: string | null | undefined): boolean {
 export function extractS3ImageKey(src: string): string | null {
   const trimmed = src.trim();
   if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return null;
+  if (isStaticLocalImageSrc(trimmed)) return null;
 
   const looksManagedHost =
     trimmed.includes('amazonaws.com') ||
@@ -43,7 +44,11 @@ export function extractS3ImageKey(src: string): string | null {
     if (bare.startsWith('vendors/') || bare.startsWith('media/')) {
       return bare;
     }
-    if (/\.(webp|jpe?g|png|gif)(\?|$)/i.test(trimmed) && !trimmed.startsWith('http')) {
+    if (
+      !trimmed.startsWith('/') &&
+      /\.(webp|jpe?g|png|gif)(\?|$)/i.test(trimmed) &&
+      !trimmed.startsWith('http')
+    ) {
       return bare;
     }
     return null;
@@ -83,7 +88,15 @@ export function isIndexedDbCacheableImageSrc(src: string | null | undefined): bo
 /** Bare object key that GET /storage/refresh-url can sign. */
 export function isManagedVendorMediaKey(src: string | null | undefined): boolean {
   const t = String(src ?? '').trim();
-  if (!t || /^https?:\/\//i.test(t) || t.startsWith('//') || t.startsWith('data:') || t.startsWith('blob:')) {
+  if (
+    !t ||
+    /^https?:\/\//i.test(t) ||
+    t.startsWith('//') ||
+    t.startsWith('/') ||
+    t.startsWith('data:') ||
+    t.startsWith('blob:') ||
+    isStaticLocalImageSrc(t)
+  ) {
     return false;
   }
   return Boolean(extractS3ImageKey(t));

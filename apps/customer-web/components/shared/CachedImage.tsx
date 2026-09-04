@@ -8,6 +8,7 @@ import {
   isIndexedDbCacheableImageSrc,
   isManagedVendorMediaKey,
   isRefreshableManagedImageSrc,
+  isStaticLocalImageSrc,
 } from '@/lib/image-asset-cache';
 import { fullImageUrlFromThumbSrc, isDerivedThumbImageSrc } from '@/lib/full-image-url-from-thumb';
 
@@ -116,7 +117,7 @@ export function CachedImage({
 
     let cancelled = false;
 
-    if (isManagedVendorMediaKey(raw)) {
+    if (!isStaticLocalImageSrc(raw) && isManagedVendorMediaKey(raw)) {
       setDisplaySrc('');
       void (async () => {
         const signed = await refreshSignedUrlIfNeeded(raw);
