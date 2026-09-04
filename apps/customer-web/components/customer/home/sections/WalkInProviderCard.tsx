@@ -74,6 +74,9 @@ export const CARD_IMAGE_SLOT_ASPECT =
 /** @deprecated Use walkInCardContentMinHeightPx(layout). */
 export const CARD_CONTENT_MIN_HEIGHT_PX = walkInCardContentMinHeightPx('carousel');
 
+/** Fill the photo band and crop; used for home carousel and /walk-in stack. */
+export const WALK_IN_CARD_IMAGE_CLASS = 'object-cover object-center';
+
 const CARD_WIDTH_CLASS = 'w-[128px]';
 const CARD_BUTTON_RADIUS = 'rounded-[14px]';
 const CARD_RADIUS = 'rounded-[14px]';
@@ -233,7 +236,7 @@ function WalkInProviderCardComponent({
             alt={provider.displayName}
             fill
             loading="eager"
-            className="object-contain object-center"
+            className={WALK_IN_CARD_IMAGE_CLASS}
             onUnavailable={handleImageUnavailable}
           />
         ) : (

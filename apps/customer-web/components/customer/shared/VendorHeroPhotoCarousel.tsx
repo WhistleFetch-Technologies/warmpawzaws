@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { dedupeHeroPhotoUrls } from '@/lib/vendor-display-media';
 
 type VendorHeroPhotoCarouselProps = {
@@ -11,9 +12,19 @@ type VendorHeroPhotoCarouselProps = {
   frameClassName: string;
 };
 
+function HeroEmptyFrame({ frameClassName }: { frameClassName: string }) {
+  return (
+    <div className={frameClassName} data-testid="vendor-hero-empty">
+      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF7029]">
+        <p className="text-sm text-white/80">No photos available</p>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Hero gallery: horizontal swipe (scroll-snap) with dot indicators.
- * Single photo renders as a static image.
+ * Always occupies the frame so the profile card cannot jump up when photos fail.
  */
 export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: VendorHeroPhotoCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -68,16 +79,19 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
     setActiveIndex(i);
   };
 
-  if (uniquePhotos.length === 0) return null;
+  if (uniquePhotos.length === 0) {
+    return <HeroEmptyFrame frameClassName={frameClassName} />;
+  }
 
   if (uniquePhotos.length === 1) {
     return (
       <div className={frameClassName}>
-        <img
+        <CachedImage
           src={uniquePhotos[0]}
           alt={name}
-          className="h-full w-full object-cover"
-          onError={() => markFailed(uniquePhotos[0])}
+          fill
+          className="object-cover"
+          onUnavailable={() => markFailed(uniquePhotos[0])}
         />
         <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/40 via-transparent to-transparent" />
       </div>
@@ -93,13 +107,13 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {uniquePhotos.map((src, i) => (
-          <div key={`${i}-${src}`} className="h-full w-full min-w-full flex-shrink-0 snap-center snap-always">
-            <img
+          <div key={`${i}-${src}`} className="relative h-full w-full min-w-full flex-shrink-0 snap-center snap-always">
+            <CachedImage
               src={src}
               alt={`${name} — photo ${i + 1}`}
-              className="h-full w-full object-cover"
-              draggable={false}
-              onError={() => markFailed(src)}
+              fill
+              className="object-cover"
+              onUnavailable={() => markFailed(src)}
             />
           </div>
         ))}

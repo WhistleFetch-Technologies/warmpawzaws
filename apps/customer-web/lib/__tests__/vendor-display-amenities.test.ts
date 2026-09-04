@@ -46,14 +46,17 @@ describe('shouldShowVendorAmenities', () => {
 });
 
 describe('vendor photo URL sanitization', () => {
-  it('drops bare S3 keys from profile photo', () => {
-    expect(resolveVendorProfilePhotoUrl({ profile_photo_url: 'vendors/foo/profile.jpg' })).toBeUndefined();
-    expect(
-      resolveVendorProfilePhotoUrl({ photoUrl: 'https://cdn.example/ok.webp' })
-    ).toBe('https://cdn.example/ok.webp');
+  it('keeps managed S3 keys for CachedImage to sign, and https urls', () => {
+    expect(resolveVendorProfilePhotoUrl({ profile_photo_url: 'vendors/foo/profile.jpg' })).toBe(
+      'vendors/foo/profile.jpg',
+    );
+    expect(resolveVendorProfilePhotoUrl({ photoUrl: 'https://cdn.example/ok.webp' })).toBe(
+      'https://cdn.example/ok.webp',
+    );
+    expect(resolveVendorProfilePhotoUrl({ photoUrl: 'not-a-photo' })).toBeUndefined();
   });
 
-  it('hero gallery ignores empty photos arrays and bare keys, uses facilityPhotos', () => {
+  it('hero gallery keeps facilityPhotos and managed keys, ignores empty arrays and junk', () => {
     const urls = resolveVendorProfileHeroGallery({
       facility: { photos: [] },
       vendor: {
@@ -63,6 +66,6 @@ describe('vendor photo URL sanitization', () => {
         photoUrl: 'vendors/x/legacy.jpg',
       },
     });
-    expect(urls).toEqual(['https://signed.example/clinic.webp']);
+    expect(urls).toEqual(['https://signed.example/clinic.webp', 'vendors/x/legacy.jpg']);
   });
 });

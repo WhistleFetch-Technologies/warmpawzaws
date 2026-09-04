@@ -39,8 +39,12 @@ export function extractS3ImageKey(src: string): string | null {
     /\/\/media\.warmpawz\.com\//i.test(trimmed);
 
   if (!looksManagedHost) {
+    const bare = trimmed.replace(/^\/+/, '');
+    if (bare.startsWith('vendors/') || bare.startsWith('media/')) {
+      return bare;
+    }
     if (/\.(webp|jpe?g|png|gif)(\?|$)/i.test(trimmed) && !trimmed.startsWith('http')) {
-      return trimmed.replace(/^\/+/, '');
+      return bare;
     }
     return null;
   }
@@ -74,6 +78,25 @@ export function cacheKeyForImageSrc(src: string | null | undefined): string | nu
 export function isIndexedDbCacheableImageSrc(src: string | null | undefined): boolean {
   const key = cacheKeyForImageSrc(src);
   return Boolean(key && (key.startsWith('static:') || key.startsWith('s3:')));
+}
+
+/** Bare object key that GET /storage/refresh-url can sign. */
+export function isManagedVendorMediaKey(src: string | null | undefined): boolean {
+  const t = String(src ?? '').trim();
+  if (!t || /^https?:\/\//i.test(t) || t.startsWith('//') || t.startsWith('data:') || t.startsWith('blob:')) {
+    return false;
+  }
+  return Boolean(extractS3ImageKey(t));
+}
+
+/** Expired S3/CDN URL or bare managed key — refresh-url can mint a signed src. */
+export function isRefreshableManagedImageSrc(src: string | null | undefined): boolean {
+  const t = String(src ?? '').trim();
+  if (!t) return false;
+  if (t.includes('amazonaws.com') || /\.cloudfront\.net\//i.test(t) || /media\.warmpawz\.com\//i.test(t)) {
+    return true;
+  }
+  return isManagedVendorMediaKey(t);
 }
 
 function openDb(): Promise<IDBDatabase | null> {

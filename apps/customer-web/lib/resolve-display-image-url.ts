@@ -1,6 +1,7 @@
 /**
- * Returns a URL safe to use in <img src>. Filters out plain text / keys stored by mistake in DB.
+ * Returns a URL or managed S3 key safe for CachedImage (signs keys before <img src>).
  */
+import { extractS3ImageKey } from './image-asset-cache';
 import { resolveVendorProfilePhotoUrl } from './vendor-display-media';
 
 export function sanitizeDisplayImageUrl(raw: unknown): string | undefined {
@@ -10,6 +11,8 @@ export function sanitizeDisplayImageUrl(raw: unknown): string | undefined {
   if (/^https?:\/\//i.test(s)) return s;
   if (/^\/\//.test(s)) return `https:${s}`;
   if (s.startsWith('data:') || s.startsWith('blob:')) return s;
+  if (s.startsWith('/') && !s.startsWith('//')) return s;
+  if (extractS3ImageKey(s)) return s;
   return undefined;
 }
 

@@ -2,6 +2,8 @@ import {
   cacheKeyForImageSrc,
   extractS3ImageKey,
   isIndexedDbCacheableImageSrc,
+  isManagedVendorMediaKey,
+  isRefreshableManagedImageSrc,
   isStaticLocalImageSrc,
 } from '../image-asset-cache';
 
@@ -38,6 +40,24 @@ describe('image-asset-cache keys', () => {
   it('returns null for empty src', () => {
     expect(cacheKeyForImageSrc('')).toBeNull();
     expect(cacheKeyForImageSrc(null)).toBeNull();
+  });
+
+  it('extracts bare vendor and media keys', () => {
+    expect(extractS3ImageKey('vendors/foo/profile.jpg')).toBe('vendors/foo/profile.jpg');
+    expect(extractS3ImageKey('media/vendor/abc/x.webp')).toBe('media/vendor/abc/x.webp');
+    expect(isManagedVendorMediaKey('vendors/foo/profile.jpg')).toBe(true);
+    expect(isManagedVendorMediaKey('https://cdn.example.com/x.jpg')).toBe(false);
+  });
+
+  it('marks amazonaws urls and bare keys as refreshable', () => {
+    expect(
+      isRefreshableManagedImageSrc(
+        'https://warmpawz-prod-user-uploads.s3.ap-south-1.amazonaws.com/vendors/a.jpg?X-Amz-Signature=x',
+      ),
+    ).toBe(true);
+    expect(isRefreshableManagedImageSrc('vendors/foo/profile.jpg')).toBe(true);
+    expect(isRefreshableManagedImageSrc('https://cdn.example.com/photo.jpg')).toBe(false);
+    expect(isRefreshableManagedImageSrc('not-a-photo')).toBe(false);
   });
 });
 

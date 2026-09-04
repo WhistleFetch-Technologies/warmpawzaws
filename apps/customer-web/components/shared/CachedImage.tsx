@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import {
   fetchAndCacheImageSrc,
   getCachedImageBlobUrl,
   isIndexedDbCacheableImageSrc,
+  isManagedVendorMediaKey,
+  isRefreshableManagedImageSrc,
 } from '@/lib/image-asset-cache';
 import { fullImageUrlFromThumbSrc, isDerivedThumbImageSrc } from '@/lib/full-image-url-from-thumb';
 
@@ -24,7 +26,7 @@ type CachedImageProps = {
 };
 
 async function refreshSignedUrlIfNeeded(url: string): Promise<string | null> {
-  if (!url.includes('amazonaws.com')) return null;
+  if (!isRefreshableManagedImageSrc(url)) return null;
   try {
     const data = await apiClient.get<{ success?: boolean; signedUrl?: string }>(
       `/storage/refresh-url?url=${encodeURIComponent(url)}`
@@ -34,6 +36,20 @@ async function refreshSignedUrlIfNeeded(url: string): Promise<string | null> {
     /* fall through */
   }
   return null;
+}
+
+export function fillImageStyle(
+  fill: boolean,
+  style?: React.CSSProperties,
+): React.CSSProperties | undefined {
+  if (!fill) return style;
+  return {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    ...style,
+  };
 }
 
 /** Match next/image fill default (cover) without overriding explicit Tailwind object-* classes. */
@@ -85,6 +101,8 @@ export function CachedImage({
 
   const cacheable = isIndexedDbCacheableImageSrc(src);
   const resolvedClassName = classNameForFill(fill, className);
+  const onUnavailableRef = useRef(onUnavailable);
+  onUnavailableRef.current = onUnavailable;
 
   useEffect(() => {
     const raw = src?.trim() || '';
@@ -96,14 +114,31 @@ export function CachedImage({
       return;
     }
 
+    let cancelled = false;
+
+    if (isManagedVendorMediaKey(raw)) {
+      setDisplaySrc('');
+      void (async () => {
+        const signed = await refreshSignedUrlIfNeeded(raw);
+        if (cancelled) return;
+        if (signed) {
+          setDisplaySrc(signed);
+          return;
+        }
+        setFailed(true);
+        onUnavailableRef.current?.();
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
     // Always paint the normal URL first (parity with previous next/image / <img>).
     setDisplaySrc(raw);
 
     if (!isIndexedDbCacheableImageSrc(raw)) {
       return;
     }
-
-    let cancelled = false;
 
     (async () => {
       const cached = await getCachedImageBlobUrl(raw);
@@ -143,7 +178,7 @@ export function CachedImage({
       }
     }
 
-    if (!triedRefresh && raw.includes('amazonaws.com')) {
+    if (!triedRefresh && isRefreshableManagedImageSrc(raw)) {
       setTriedRefresh(true);
       const refreshed = await refreshSignedUrlIfNeeded(raw);
       if (refreshed) {
@@ -164,37 +199,32 @@ export function CachedImage({
 
   if (!src?.trim() || failed) return null;
 
+  const imgStyle = fillImageStyle(fill, style);
+
+  if (!displaySrc && isManagedVendorMediaKey(src)) {
+    return fill ? <div className="absolute inset-0" aria-hidden /> : null;
+  }
+
   if (!cacheable) {
-    const external = (src || '').trim();
+    const external = (displaySrc || src || '').trim();
+    if (!external) return null;
     return (
       <img
         src={external}
         alt={alt}
         className={resolvedClassName}
-        style={style}
-        width={width}
-        height={height}
+        style={imgStyle}
+        width={fill ? undefined : width}
+        height={fill ? undefined : height}
         loading={loading}
         decoding="async"
         onLoad={onLoad}
         onError={() => {
-          setFailed(true);
-          onUnavailable?.();
+          void handleError();
         }}
       />
     );
   }
-
-  // Absolute fill layout only — object-fit comes from className / style (see classNameForFill).
-  const imgStyle: React.CSSProperties = fill
-    ? {
-        position: 'absolute',
-        inset: 0,
-        width: '100%',
-        height: '100%',
-        ...style,
-      }
-    : style ?? {};
 
   return (
     <img

@@ -1,3 +1,5 @@
+import { extractS3ImageKey } from './image-asset-cache';
+
 /**
  * Resolve vendor photo / cover URLs from heterogeneous API shapes
  * (GET /customer/facility/:id, GET /vendor/:id, discovery payloads).
@@ -9,13 +11,15 @@ function pickNonEmptyString(v: unknown): string | undefined {
   return s.length > 0 ? s : undefined;
 }
 
-/** Only values safe for <img src> — never bare S3 keys. */
+/** https / data / blob, or a managed S3 key CachedImage can sign. */
 function asDisplayImageUrl(raw: unknown): string | undefined {
   const s = pickNonEmptyString(raw);
   if (!s) return undefined;
   if (/^https?:\/\//i.test(s)) return s;
   if (/^\/\//.test(s)) return `https:${s}`;
   if (s.startsWith('data:') || s.startsWith('blob:')) return s;
+  if (s.startsWith('/') && !s.startsWith('//')) return s;
+  if (extractS3ImageKey(s)) return s;
   return undefined;
 }
 
