@@ -10,6 +10,10 @@ import {
   type StorefrontDimensions,
 } from '@warmpawz/shared-types';
 import { stripStorefrontListPriceFields } from './product-ecommerce-pricing';
+import {
+  filterDisplayableProductImages,
+  readImageIngestStatus,
+} from './bulk-drive-image-plan';
 
 export function parseSpecificationsObject(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
@@ -112,6 +116,18 @@ export function flattenProductForApiResponse(
 
   out.pet_type_display = formatPetTypeForCustomer(out.pet_type, out.pet_type_other);
 
+  if (out.images !== undefined) {
+    out.images = filterDisplayableProductImages(out.images);
+  }
+  if (Array.isArray(out.skus)) {
+    out.skus = (out.skus as Record<string, unknown>[]).map((sku) => ({
+      ...sku,
+      images: filterDisplayableProductImages(sku.images),
+    }));
+  }
+  const ingestStatus = readImageIngestStatus(out.metadata);
+  if (ingestStatus) out.image_ingest_status = ingestStatus;
+
   return out;
 }
 
@@ -148,6 +164,15 @@ export function sanitizeStorefrontProductForCustomer(
     out.pet_type_display = formatPetTypeForCustomer(out.pet_type, out.pet_type_other);
   }
   delete out.pet_type_other;
+  if (out.images !== undefined) {
+    out.images = filterDisplayableProductImages(out.images);
+  }
+  if (Array.isArray(out.skus)) {
+    out.skus = (out.skus as Record<string, unknown>[]).map((sku) => ({
+      ...sku,
+      images: filterDisplayableProductImages(sku.images),
+    }));
+  }
 
   const specs = parseSpecificationsObject(out.specifications);
   out.specifications = customerSpecificationsFromRow(specs);

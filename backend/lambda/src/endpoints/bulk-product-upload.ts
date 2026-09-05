@@ -66,6 +66,14 @@ import {
 import { validateAndApplyVendorDeclaredOwnership } from '../utils/compute-listing-ownership';
 import { cleanupRemovedProductS3Images, collectImageUrlsFromJsonb } from '../utils/product-s3-image';
 import { expandBulkRowImages } from '../utils/expand-bulk-row-images';
+import {
+  buildImageIngestMetadata,
+  groupDriveIngestEnqueueJobs,
+  isDriveHostedProductImageUrl,
+  planBulkDriveImages,
+} from '../utils/bulk-drive-image-plan';
+import { invokeDriveImageIngestBackfill, invokeDriveImageIngestWorker } from '../utils/drive-image-ingest-invoke';
+import { normalizeImagesArray } from '../utils/product-sku-resolve';
 
 /**
  * Represents one row from the bulk product upload spreadsheet.
@@ -421,6 +429,11 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       );
 
       const groups = groupBulkRows(rowsForUpload, vendorId);
+      const pendingDriveIngest: Array<{
+        productId: string;
+        fileIds: string[];
+        folderId?: string | null;
+      }> = [];
 
       for (const group of groups) {
         const primaryRowNum = group.rowNums[0] ?? 1;
@@ -495,9 +508,10 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           const rawParentImages = hasVariants
             ? pickGroupParentImages(group)
             : parseProductImageList(firstRow.images ?? firstRow.image_urls);
-          // Bulk upload stores vendor image URLs as-is; customer app loads them directly.
-          const parentImages = rawParentImages;
           const prevParentImages = existingProduct ? collectImageUrlsFromJsonb(existingProduct.images) : [];
+          const imagePlan = planBulkDriveImages(rawParentImages, prevParentImages, vendorId);
+          // HTTP URLs persist as-is. Drive file URLs are ingested async — keep prior S3 until swap.
+          const parentImages = imagePlan.persistImages;
 
           const productData: Record<string, unknown> = {
             vendor_id: vendorId,
@@ -554,6 +568,10 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             }
           }
           if (typeof productData.metadata === 'object' && productData.metadata !== null) {
+            productData.metadata = buildImageIngestMetadata(
+              productData.metadata as Record<string, unknown>,
+              imagePlan,
+            );
             productData.metadata = JSON.stringify(productData.metadata);
           }
           if (productData.specifications && typeof productData.specifications === 'object') {
@@ -591,9 +609,21 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           }
 
           if (savedProductId && hasVariants) {
-            const skuInputs = buildSkuInputsFromGroup(group);
+            const skuInputs = buildSkuInputsFromGroup(group).map((sku) => ({
+              ...sku,
+              images: imagePlan.needsIngest
+                ? []
+                : normalizeImagesArray(sku.images).filter((u) => !isDriveHostedProductImageUrl(u)),
+            }));
             await syncProductSkus(vendorId, savedProductId, skuInputs, undefined, {
               skipImageIngest: true,
+            });
+          }
+
+          if (savedProductId && imagePlan.needsIngest) {
+            pendingDriveIngest.push({
+              productId: savedProductId,
+              fileIds: imagePlan.driveFileIds,
             });
           }
 
@@ -617,10 +647,22 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         }
       }
 
+      const ingestJobs = groupDriveIngestEnqueueJobs(vendorId, pendingDriveIngest);
+      for (const job of ingestJobs) {
+        await invokeDriveImageIngestWorker({
+          vendorId: job.vendorId,
+          productIds: job.productIds,
+          folderId: job.folderId,
+          remainingFileIds: job.remainingFileIds,
+          hop: 1,
+        });
+      }
+
       return c.json({
         success: true,
         message: `Bulk upload completed: ${results.created} created, ${results.updated} updated, ${results.failed} failed`,
         results,
+        driveIngestQueued: ingestJobs.length,
       });
     } catch (error: any) {
       console.error('Error processing bulk upload:', error);
@@ -878,6 +920,23 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error exporting products:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.post('/vendor/:vendorId/products/bulk/backfill-drive-images', async (c) => {
+    try {
+      const vendorId = c.req.param('vendorId');
+      if (!vendorId) {
+        return c.json({ success: false, error: 'vendorId is required' }, 400);
+      }
+      await invokeDriveImageIngestBackfill({ vendorId, limit: 200 });
+      return c.json({
+        success: true,
+        message: 'Drive image backfill queued for this vendor',
+      });
+    } catch (error: any) {
+      console.error('Error queueing Drive image backfill:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });

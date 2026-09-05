@@ -9,6 +9,7 @@ describe('bulk-product-upload image passthrough', () => {
     expect(src).not.toContain('product-image-ingest');
     expect(src).not.toContain('ingestExternalProductImageUrls');
     expect(src).toContain('skipImageIngest: true');
-    expect(src).toContain('const parentImages = rawParentImages');
+    expect(src).toContain('planBulkDriveImages');
+    expect(src).toContain('invokeDriveImageIngestWorker');
   });
 });
