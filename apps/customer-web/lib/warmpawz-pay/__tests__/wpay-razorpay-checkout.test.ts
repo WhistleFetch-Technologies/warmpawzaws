@@ -34,6 +34,7 @@ describe('runWpayRazorpayCheckout', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../wpay-razorpay-checkout.ts'), 'utf8');
     expect(source).toContain("'/customer/warmpawz-pay/initiate'");
     expect(source).toContain("'/customer/warmpawz-pay/verify'");
+    expect(source).toContain("'/customer/warmpawz-pay/reconcile'");
     expect(source).toContain('clientRequestId');
     expect(source).toContain('openStandardRazorpayCheckout');
     expect(source).not.toContain('includeInstrumentBlocks');
@@ -161,5 +162,59 @@ describe('runWpayRazorpayCheckout', () => {
 
     opened?.modal?.ondismiss?.();
     await expect(pending).rejects.toThrow('Payment cancelled');
+  });
+
+  it('recovers a captured UPI payment when checkout dismisses without verify', async () => {
+    post.mockImplementation(async (path: string) => {
+      if (path === '/customer/warmpawz-pay/initiate') {
+        return {
+          success: true,
+          paymentId: 'pay_row_3',
+          razorpayOrderId: 'order_wpay_3',
+          razorpayKeyId: 'rzp_test_key',
+          payableAmount: 136,
+          amount: 136,
+          amountPaise: 13600,
+          currency: 'INR',
+        };
+      }
+      if (path === '/customer/warmpawz-pay/reconcile') {
+        return {
+          success: true,
+          paymentId: 'pay_row_3',
+          originalAmount: 160,
+          discountAmount: 24,
+          payableAmount: 136,
+          savedAmount: 24,
+        };
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+
+    let opened: { modal?: { ondismiss?: () => void } } | undefined;
+    openStandardRazorpayCheckout.mockImplementation(async (input: typeof opened) => {
+      opened = input;
+    });
+
+    const pending = runWpayRazorpayCheckout({
+      vendorId: 'vendor-3',
+      vendorName: 'Clinic',
+      originalAmount: 160,
+      customerPhone: '7204349299',
+    });
+
+    for (let i = 0; i < 8 && !opened; i += 1) {
+      await Promise.resolve();
+    }
+    opened?.modal?.ondismiss?.();
+    await expect(pending).resolves.toMatchObject({
+      success: true,
+      paymentId: 'pay_row_3',
+      payableAmount: 136,
+    });
+    expect(post).toHaveBeenCalledWith('/customer/warmpawz-pay/reconcile', {
+      paymentId: 'pay_row_3',
+      phone: '7204349299',
+    });
   });
 });

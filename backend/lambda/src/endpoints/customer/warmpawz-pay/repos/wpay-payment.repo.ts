@@ -17,20 +17,86 @@ export type WpayPaymentRow = {
   created_at: string;
 };
 
+const WPAY_PAYMENT_SELECT = `id, customer_id, vendor_id, booking_id, amount, original_amount, discount_amount,
+            payment_status, razorpay_order_id, razorpay_payment_id, razorpay_signature,
+            metadata, completed_at, created_at`;
+
+export async function dbWpayPaymentById(paymentId: string): Promise<WpayPaymentRow | null> {
+  const result = await query(
+    `SELECT ${WPAY_PAYMENT_SELECT}
+     FROM payments
+     WHERE id = $1::uuid
+       AND payment_source = 'warmpawz_pay'
+     LIMIT 1`,
+    [paymentId],
+  );
+  return (result.rows[0] as WpayPaymentRow | undefined) ?? null;
+}
+
 export async function dbWpayPaymentByIdForCustomer(
   paymentId: string,
   customerId: string,
 ): Promise<WpayPaymentRow | null> {
   const result = await query(
-    `SELECT id, customer_id, vendor_id, booking_id, amount, original_amount, discount_amount,
-            payment_status, razorpay_order_id, razorpay_payment_id, razorpay_signature,
-            metadata, completed_at, created_at
+    `SELECT ${WPAY_PAYMENT_SELECT}
      FROM payments
      WHERE id = $1::uuid
        AND customer_id = $2::uuid
        AND payment_source = 'warmpawz_pay'
      LIMIT 1`,
     [paymentId, customerId],
+  );
+  return (result.rows[0] as WpayPaymentRow | undefined) ?? null;
+}
+
+export async function dbWpayPendingForCustomer(
+  customerId: string,
+  limit = 5,
+): Promise<WpayPaymentRow[]> {
+  const result = await query(
+    `SELECT ${WPAY_PAYMENT_SELECT}
+     FROM payments
+     WHERE customer_id = $1::uuid
+       AND payment_source = 'warmpawz_pay'
+       AND payment_status IN ('pending', 'processing')
+       AND razorpay_order_id IS NOT NULL
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [customerId, limit],
+  );
+  return result.rows as WpayPaymentRow[];
+}
+
+export async function dbWpayCompleteFromCapture(params: {
+  paymentId: string;
+  razorpayPaymentId: string;
+  originalAmount: number;
+  discountAmount: number;
+  customerId?: string;
+}): Promise<WpayPaymentRow | null> {
+  const customerSql = params.customerId ? 'AND customer_id = $5::uuid' : '';
+  const values: unknown[] = [
+    params.paymentId,
+    params.razorpayPaymentId,
+    params.originalAmount,
+    params.discountAmount,
+  ];
+  if (params.customerId) values.push(params.customerId);
+
+  const result = await query(
+    `UPDATE payments
+     SET payment_status = 'completed',
+         razorpay_payment_id = COALESCE(razorpay_payment_id, $2),
+         original_amount = COALESCE(original_amount, $3),
+         discount_amount = COALESCE(discount_amount, $4),
+         completed_at = COALESCE(completed_at, NOW()),
+         updated_at = NOW()
+     WHERE id = $1::uuid
+       AND payment_source = 'warmpawz_pay'
+       AND payment_status IN ('pending', 'processing', 'completed')
+       ${customerSql}
+     RETURNING ${WPAY_PAYMENT_SELECT}`,
+    values,
   );
   return (result.rows[0] as WpayPaymentRow | undefined) ?? null;
 }

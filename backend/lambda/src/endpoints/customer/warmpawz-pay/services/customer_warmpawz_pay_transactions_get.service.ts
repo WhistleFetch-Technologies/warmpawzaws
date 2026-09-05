@@ -1,7 +1,12 @@
 import type { Context } from 'hono';
 import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { resolveMerchantDisplayName } from '../../../warmpawz-pay/shared/merchant/merchant-display-name.resolver';
-import { dbWpayTransactionsPage, type WpayTransactionDbRow } from '../repos/wpay-payment.repo';
+import {
+  dbWpayPendingForCustomer,
+  dbWpayTransactionsPage,
+  type WpayTransactionDbRow,
+} from '../repos/wpay-payment.repo';
+import { reconcileWpayRazorpayCapture } from '../shared/reconcile-wpay-razorpay-capture';
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 20;
 
@@ -71,6 +76,12 @@ export async function executeCustomerWarmpawzPayTransactionsGet(c: Context) {
 
     const limit = parseLimit(c.req.query('limit'));
     const cursor = c.req.query('cursor')?.trim() || null;
+    const pending = await dbWpayPendingForCustomer(customerId, 3);
+    for (const row of pending) {
+      await reconcileWpayRazorpayCapture(row, customerId).catch((error) => {
+        console.error('[customer/warmpawz-pay/transactions] reconcile failed', error);
+      });
+    }
     const page = await dbWpayTransactionsPage({ customerId, limit, cursor });
 
     const transactions = page.rows.map(mapWpayCustomerHistoryCard);

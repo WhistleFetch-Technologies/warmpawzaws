@@ -41,6 +41,9 @@ describe('requestGuestAuthForWpayPay export', () => {
     expect(resolveGuestPublicApiPath('/customer/warmpawz-pay/verify')).toBe(
       '/customer/warmpawz-pay/verify'
     );
+    expect(resolveGuestPublicApiPath('/customer/warmpawz-pay/reconcile')).toBe(
+      '/customer/warmpawz-pay/reconcile'
+    );
     expect(resolveGuestPublicApiPath('/customer/warmpawz-pay/appointment-context?vendorId=v')).toBe(
       '/customer/warmpawz-pay/appointment-context?vendorId=v'
     );

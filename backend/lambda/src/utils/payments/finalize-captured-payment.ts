@@ -142,6 +142,9 @@ export async function finalizeCapturedPayment(
     | 'unfulfillable_captured_payment'
     | null = null;
   let result: FinalizeCapturedPaymentResult = { outcome: 'not_found' };
+  let wpayFulfill:
+    | { paymentId: string; razorpayPaymentId: string }
+    | null = null;
 
   await withTransaction(async (client) => {
     const payment = await loadPaymentRow(client, input);
@@ -150,6 +153,12 @@ export async function finalizeCapturedPayment(
       return;
     }
     const paymentId = String(payment.id);
+    if (String(payment.payment_source || '') === 'warmpawz_pay') {
+      const capturedId = String(input.razorpayPaymentId || payment.razorpay_payment_id || '');
+      if (capturedId) {
+        wpayFulfill = { paymentId, razorpayPaymentId: capturedId };
+      }
+    }
     const rzPayId = input.razorpayPaymentId || payment.razorpay_payment_id;
     const prevPayStatus = String(payment.payment_status || '');
 
@@ -425,6 +434,17 @@ export async function finalizeCapturedPayment(
 
     result = { outcome: 'already_final', paymentId };
   });
+
+  if (wpayFulfill) {
+    try {
+      const { fulfillWpayCapturedPayment } = await import(
+        '../../endpoints/customer/warmpawz-pay/shared/fulfill-wpay-captured-payment'
+      );
+      await fulfillWpayCapturedPayment(wpayFulfill);
+    } catch (error) {
+      console.error('[PAYMENT-SAFETY] WPay capture fulfill failed:', error);
+    }
+  }
 
   logPaymentSafety('finalization', {
     entity_type: result.entityType,

@@ -93,6 +93,12 @@ describe('single payment finalization path', () => {
     expect(file).toContain("outcome === 'already_final'");
   });
 
+  test('WPay capture hook accrues settlement after finalize', () => {
+    const file = read('src/utils/payments/finalize-captured-payment.ts');
+    expect(file).toContain("payment_source || '') === 'warmpawz_pay'");
+    expect(file).toContain('fulfillWpayCapturedPayment');
+  });
+
   test('razorpay verify and webhook call post-payment lifecycle notify safety net', () => {
     const razorpay = read('src/endpoints/razorpay/endpoints/razorpay.razorpay.ts');
     const enhanced = read('src/endpoints/payments-enhanced.ts');

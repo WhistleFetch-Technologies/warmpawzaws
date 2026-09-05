@@ -83,6 +83,17 @@ export async function runWpayRazorpayCheckout(params: {
 
   const paymentDescription = razorpaySafeDescription(`Warmpawz Pay - ${vendorName}`);
 
+  async function reconcileCaptured(): Promise<WpayVerifyResponse | null> {
+    try {
+      const reconciled = (await apiClient.post('/customer/warmpawz-pay/reconcile', {
+        ...verifyPayload,
+      })) as WpayVerifyResponse;
+      return reconciled?.success ? reconciled : null;
+    } catch {
+      return null;
+    }
+  }
+
   return new Promise<WpayVerifyResponse>((resolve, reject) => {
     void openStandardRazorpayCheckout({
       key: initiate.razorpayKeyId!,
@@ -110,12 +121,22 @@ export async function runWpayRazorpayCheckout(params: {
           }
           resolve(verified);
         } catch (e: unknown) {
+          const recovered = await reconcileCaptured();
+          if (recovered) {
+            resolve(recovered);
+            return;
+          }
           reject(e instanceof Error ? e : new Error('Payment verification failed'));
         }
       },
       theme: { color: '#FF8C42' },
       modal: {
-        ondismiss: () => reject(new Error('Payment cancelled')),
+        ondismiss: () => {
+          void reconcileCaptured().then((recovered) => {
+            if (recovered) resolve(recovered);
+            else reject(new Error('Payment cancelled'));
+          });
+        },
       },
       onPaymentFailed: reject,
     }).catch(reject);
