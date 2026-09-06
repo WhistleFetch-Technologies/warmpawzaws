@@ -11,6 +11,7 @@ import {
 } from '@/lib/warmpawz-pay/wpay-api';
 import { previewWpayCommercialQuote, previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
+import { buildWpaySuccessPath } from '@/lib/warmpawz-pay/wpay-success-href';
 import { consumeRestoredWpayPayBillAmount } from '@/lib/warmpawz-pay/wpay-guest-journey';
 import {
   emitGuestAuthAnalytics,
@@ -123,18 +124,22 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         originalAmount: billAmount,
         customerPhone: phone,
       });
+      const paymentId = String(result.paymentId ?? '').trim();
+      if (!paymentId) {
+        throw new Error(result.error || 'Payment confirmation is still pending');
+      }
       const saved = Number(result.savedAmount ?? result.discountAmount ?? quote.discountAmount);
-      const qs = new URLSearchParams({
-        saved: String(saved),
-        vendor: vendor.name,
-      });
-      router.push(`/warmpawz-pay/success?${qs.toString()}`);
+      router.push(
+        buildWpaySuccessPath({
+          paymentId,
+          saved,
+          vendor: vendor.name,
+        }),
+      );
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Payment failed';
-      if (msg !== 'Payment cancelled') {
-        emitGuestAuthAnalytics('payment_failed', { source: 'pay_bill' });
-        setPayError(msg);
-      }
+      emitGuestAuthAnalytics('payment_failed', { source: 'pay_bill' });
+      setPayError(msg);
     } finally {
       setPaying(false);
     }

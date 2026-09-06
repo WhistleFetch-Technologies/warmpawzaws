@@ -28,6 +28,25 @@ describe('buildSanitizedStandardRazorpayCheckoutOptions', () => {
     });
   });
 
+  test('omits callback_url and redirect unless the caller sets them', () => {
+    const options = buildSanitizedStandardRazorpayCheckoutOptions(minimalInput);
+    expect(options.callback_url).toBeUndefined();
+    expect(options.redirect).toBeUndefined();
+    expect(options.method).toBeUndefined();
+  });
+
+  test('passes Pay Bill callback_url and redirect through the sanitizer', () => {
+    const options = buildSanitizedStandardRazorpayCheckoutOptions({
+      ...minimalInput,
+      callback_url: 'https://app.example/warmpawz-pay/success?paymentId=pay_1',
+      redirect: true,
+    });
+    expect(options.callback_url).toBe('https://app.example/warmpawz-pay/success?paymentId=pay_1');
+    expect(options.redirect).toBe(true);
+    expect(options.method).toBeUndefined();
+    expect(options.config).toBeUndefined();
+  });
+
   test('builds minimal Standard Checkout without UPI blocks or invented email', () => {
     const options = buildSanitizedStandardRazorpayCheckoutOptions({
       ...minimalInput,

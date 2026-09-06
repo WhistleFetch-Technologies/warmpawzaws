@@ -2,6 +2,7 @@ import { apiClient } from '@/lib/api-client';
 import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
 import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { razorpaySafeDescription } from '@/lib/razorpay/razorpay-utils';
+import { buildWpayCheckoutCallbackUrl } from '@/lib/warmpawz-pay/wpay-success-href';
 
 export type WpayInitiateResponse = {
   success?: boolean;
@@ -22,6 +23,7 @@ export type WpayInitiateResponse = {
 
 export type WpayVerifyResponse = {
   success?: boolean;
+  pending?: boolean;
   paymentId?: string;
   originalAmount?: number;
   discountAmount?: number;
@@ -130,11 +132,18 @@ export async function runWpayRazorpayCheckout(params: {
         }
       },
       theme: { color: '#FF8C42' },
+      callback_url: buildWpayCheckoutCallbackUrl(paymentId),
+      redirect: true,
       modal: {
         ondismiss: () => {
           void reconcileCaptured().then((recovered) => {
-            if (recovered) resolve(recovered);
-            else reject(new Error('Payment cancelled'));
+            if (recovered) {
+              resolve(recovered);
+              return;
+            }
+            // Dismissal is not proof of cancellation. Leave the row pending
+            // and let the success page confirm / poll reconcile.
+            resolve({ success: false, pending: true, paymentId });
           });
         },
       },

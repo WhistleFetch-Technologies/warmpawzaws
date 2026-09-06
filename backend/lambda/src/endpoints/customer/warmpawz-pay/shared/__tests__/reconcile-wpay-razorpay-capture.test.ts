@@ -50,6 +50,25 @@ describe('reconcileWpayRazorpayCapture', () => {
     });
   });
 
+  it('reuses fulfill for an already-completed payment without another Razorpay lookup', async () => {
+    const completed = {
+      ...pending,
+      payment_status: 'completed',
+      razorpay_payment_id: 'pay_already',
+    };
+    (fulfillWpayCapturedPayment as jest.Mock).mockResolvedValue(completed);
+
+    const result = await reconcileWpayRazorpayCapture(completed, 'cust-1');
+    expect(result?.payment_status).toBe('completed');
+    expect(razorpayRequest).not.toHaveBeenCalled();
+    expect(fulfillWpayCapturedPayment).toHaveBeenCalledTimes(1);
+    expect(fulfillWpayCapturedPayment).toHaveBeenCalledWith({
+      paymentId: 'pay-1',
+      razorpayPaymentId: 'pay_already',
+      customerId: 'cust-1',
+    });
+  });
+
   it('returns null when Razorpay order was never paid', async () => {
     (razorpayRequest as jest.Mock).mockResolvedValueOnce({
       status: 'created',

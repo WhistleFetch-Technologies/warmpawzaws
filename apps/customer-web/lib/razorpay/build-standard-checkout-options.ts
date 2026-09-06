@@ -64,6 +64,12 @@ export interface BuildStandardRazorpayCheckoutOptionsInput {
   offers?: string[];
   notes?: Record<string, unknown>;
   retry?: { enabled: boolean; max_count: number };
+  /**
+   * Pay Bill UPI return only. Other checkout callers must omit these so
+   * shop / booking Standard Checkout stays handler-only.
+   */
+  callback_url?: string;
+  redirect?: boolean;
 }
 
 /**
@@ -90,6 +96,8 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
     offers,
     notes,
     retry,
+    callback_url,
+    redirect,
   } = input;
 
   const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
@@ -141,6 +149,10 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
     ...(offerIds.length > 0 ? { offers: offerIds } : {}),
     ...(notes && Object.keys(notes).length > 0 ? { notes } : {}),
     ...(retry ? { retry } : {}),
+    ...(typeof callback_url === 'string' && callback_url.trim()
+      ? { callback_url: callback_url.trim() }
+      : {}),
+    ...(redirect === true ? { redirect: true } : {}),
   };
 
   return sanitizeRazorpayInstanceOptions(raw);

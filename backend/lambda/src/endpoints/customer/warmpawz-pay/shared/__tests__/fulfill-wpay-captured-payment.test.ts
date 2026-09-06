@@ -71,6 +71,27 @@ describe('fulfillWpayCapturedPayment', () => {
     expect(notifyWpayPaymentCompleted).toHaveBeenCalledWith('pay-1');
   });
 
+  it('accrues settlement idempotently when the payment is already completed', async () => {
+    const completed = {
+      ...payment,
+      payment_status: 'completed',
+      razorpay_payment_id: 'pay_rzp_1',
+    };
+    (dbWpayPaymentById as jest.Mock).mockResolvedValue(completed);
+    (dbWpayCompleteFromCapture as jest.Mock).mockResolvedValue(completed);
+    (accrueWpaySettlement as jest.Mock).mockResolvedValue({ inserted: false, settlementId: 's1' });
+
+    const result = await fulfillWpayCapturedPayment({
+      paymentId: 'pay-1',
+      razorpayPaymentId: 'pay_rzp_1',
+      customerId: 'cust-1',
+    });
+
+    expect(result?.payment_status).toBe('completed');
+    expect(accrueWpaySettlement).toHaveBeenCalledTimes(1);
+    expect(dbWpayCompleteFromCapture).toHaveBeenCalled();
+  });
+
   it('rejects a customer mismatch', async () => {
     (dbWpayPaymentById as jest.Mock).mockResolvedValue(payment);
     await expect(

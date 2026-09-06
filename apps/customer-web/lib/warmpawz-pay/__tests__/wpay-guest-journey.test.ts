@@ -109,5 +109,7 @@ describe('wpay guest Pay Bill journey', () => {
     expect(tabs).toMatch(/handleNavClick\('warmpawz-pay'\)/);
     expect(tabs).not.toMatch(/requestGuestAuth/);
     expect(payScreen).toMatch(/requestGuestAuthForWpayPay\(\{ vendorId: resolvedVendorId, amount: billAmount \}\)/);
+    expect(payScreen).toContain('buildWpaySuccessPath');
+    expect(payScreen).not.toMatch(/Payment cancelled/);
   });
 });

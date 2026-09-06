@@ -37,6 +37,10 @@ describe('runWpayRazorpayCheckout', () => {
     expect(source).toContain("'/customer/warmpawz-pay/reconcile'");
     expect(source).toContain('clientRequestId');
     expect(source).toContain('openStandardRazorpayCheckout');
+    expect(source).toContain('callback_url');
+    expect(source).toContain('redirect: true');
+    expect(source).toContain('buildWpayCheckoutCallbackUrl');
+    expect(source).not.toContain("Payment cancelled");
     expect(source).not.toContain('includeInstrumentBlocks');
     expect(source).not.toMatch(/\bgst\b/i);
     expect(source).not.toContain('new window.Razorpay');
@@ -116,6 +120,8 @@ describe('runWpayRazorpayCheckout', () => {
     expect(checkoutArg.order_id).toBe('order_wpay_1');
     expect(checkoutArg.key).toBe('rzp_test_key');
     expect(checkoutArg.includeInstrumentBlocks).toBeUndefined();
+    expect(checkoutArg.redirect).toBe(true);
+    expect(checkoutArg.callback_url).toContain('/warmpawz-pay/success?paymentId=pay_row_1');
     expect(checkoutArg.description).toContain("Harley's Corner");
 
     expect(post).toHaveBeenCalledWith('/customer/warmpawz-pay/verify', {
@@ -161,7 +167,11 @@ describe('runWpayRazorpayCheckout', () => {
     expect(opened?.amountPaise).not.toBe(Math.round(23.6 * 1.18 * 100));
 
     opened?.modal?.ondismiss?.();
-    await expect(pending).rejects.toThrow('Payment cancelled');
+    await expect(pending).resolves.toMatchObject({
+      success: false,
+      pending: true,
+      paymentId: 'pay_row_2',
+    });
   });
 
   it('recovers a captured UPI payment when checkout dismisses without verify', async () => {
@@ -216,5 +226,46 @@ describe('runWpayRazorpayCheckout', () => {
       paymentId: 'pay_row_3',
       phone: '7204349299',
     });
+  });
+
+  it('F: dismiss without capture resolves pending and does not cancel', async () => {
+    post.mockImplementation(async (path: string) => {
+      if (path === '/customer/warmpawz-pay/initiate') {
+        return {
+          success: true,
+          paymentId: 'pay_row_4',
+          razorpayOrderId: 'order_wpay_4',
+          razorpayKeyId: 'rzp_test_key',
+          payableAmount: 100,
+          amount: 100,
+          amountPaise: 10000,
+          currency: 'INR',
+        };
+      }
+      if (path === '/customer/warmpawz-pay/reconcile') {
+        throw new Error('Payment not captured yet');
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+
+    let opened: { modal?: { ondismiss?: () => void } } | undefined;
+    openStandardRazorpayCheckout.mockImplementation(async (input: typeof opened) => {
+      opened = input;
+    });
+
+    const pending = runWpayRazorpayCheckout({
+      vendorId: 'vendor-4',
+      vendorName: 'Clinic',
+      originalAmount: 100,
+      customerPhone: '7204349299',
+    });
+
+    for (let i = 0; i < 8 && !opened; i += 1) {
+      await Promise.resolve();
+    }
+    opened?.modal?.ondismiss?.();
+    const result = await pending;
+    expect(result).toMatchObject({ success: false, pending: true, paymentId: 'pay_row_4' });
+    expect(JSON.stringify(result)).not.toMatch(/cancelled/i);
   });
 });
