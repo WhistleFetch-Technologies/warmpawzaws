@@ -13,6 +13,7 @@ import {
   scheduleVendorPushRegistrationAfterLogin,
   unwrapVerifyOtpResponseBody,
 } from '@/lib/vendor-session-from-api';
+import { parseExpiresInSeconds } from '@/lib/cognito-auth';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { ChatWidget } from '@/components/customer/ChatWidget';
 import {
@@ -432,18 +433,18 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
         throw new Error('Authentication failed: No access token received');
       }
 
-      const { accessToken, user, profile, vendorId, onboardingStatus, phone: dialablePhone } =
-        unwrapped;
-
-      const tokens = ((loginRaw as any)?.data?.data?.token ||
-        (loginRaw as any)?.data?.token ||
-        (loginRaw as any)?.token ||
-        {}) as Record<string, string>;
-      const idToken = tokens.id_token || tokens.idToken || accessToken;
-      const refreshToken = tokens.refresh_token || tokens.refreshToken || '';
-      const expiresInRaw = tokens.expires_in ?? tokens.expiresIn;
-      const expiresIn =
-        typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
+      const {
+        accessToken,
+        idToken: unwrappedIdToken,
+        refreshToken,
+        expiresIn,
+        user,
+        profile,
+        vendorId,
+        onboardingStatus,
+        phone: dialablePhone,
+      } = unwrapped;
+      const idToken = unwrappedIdToken || accessToken;
 
       try {
         const { persistVendorCognitoTokens } = require('@/lib/vendor-session-from-api');
@@ -707,15 +708,19 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       const profile = responseData.profile || {}; // ✅ FIX: Get profile directly from verify-otp response
       
       // Get access token from various possible locations
-      const accessToken = tokens.access_token || 
-                         tokens.accessToken || 
-                         responseData.token?.access_token ||
-                         responseData.access_token;
-      const idToken = tokens.id_token || tokens.idToken || accessToken;
-      const refreshToken = tokens.refresh_token || tokens.refreshToken || '';
-      const expiresInRaw = tokens.expires_in ?? tokens.expiresIn;
-      const expiresIn =
-        typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
+      const unwrappedOtp = unwrapVerifyOtpResponseBody(verifyData);
+      const accessToken =
+        unwrappedOtp?.accessToken ||
+        tokens.access_token ||
+        tokens.accessToken ||
+        responseData.token?.access_token ||
+        responseData.access_token;
+      const idToken = unwrappedOtp?.idToken || tokens.id_token || tokens.idToken || accessToken;
+      const refreshToken =
+        unwrappedOtp?.refreshToken || tokens.refresh_token || tokens.refreshToken || '';
+      const expiresIn = unwrappedOtp
+        ? unwrappedOtp.expiresIn
+        : parseExpiresInSeconds(tokens.expires_in ?? tokens.expiresIn, 86400);
       
       // ✅ FIX: Get onboarding_status directly from verify-otp response (it's already there!)
       const onboardingStatus = profile.onboarding_status || responseData.onboarding_status || 'INIT';

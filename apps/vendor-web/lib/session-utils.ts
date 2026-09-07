@@ -97,6 +97,7 @@ export function hasRecoverableVendorSession(): boolean {
   const token = getStoredVendorJwtForSession();
   if (token && token.length >= 10 && !isTokenExpired(token)) return true;
 
+  // Access JWT may be expired; isAuthenticated / getCognitoTokens stay true while the refresh window is open.
   return isAuthenticated();
 }
 

@@ -14,8 +14,20 @@ export interface CognitoTokens {
 const TOKEN_STORAGE_KEY = 'vendorCognitoTokens';
 const USER_STORAGE_KEY = 'vendorUser';
 
+const ACCESS_REFRESH_LEEWAY_MS = 60_000;
+
 function defaultOpaqueRefreshWindowMs(): number {
   return 90 * 24 * 60 * 60 * 1000;
+}
+
+/** Coerce API expires_in (number or numeric string) so "3600" is not treated as 86400. */
+export function parseExpiresInSeconds(raw: unknown, fallback = 86400): number {
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return fallback;
 }
 
 function jwtExpMs(token: string | undefined | null): number | null {
@@ -53,31 +65,53 @@ export function syncVendorLegacyAuthTokens(idToken: string): void {
   localStorage.setItem('vendorAuthToken', idToken);
 }
 
+function computeAccessExpiryMs(tokens: CognitoTokens): number {
+  const expiresIn = parseExpiresInSeconds(tokens.expiresIn, 86400);
+  const fromExpires = Date.now() + expiresIn * 1000;
+  const jwtEnd = jwtExpMs(tokens.accessToken) ?? jwtExpMs(tokens.idToken);
+  return jwtEnd != null ? Math.min(fromExpires, jwtEnd) : fromExpires;
+}
+
+function isAccessTokenLocallyValid(tokens: CognitoTokens): boolean {
+  const expiryTime = localStorage.getItem('vendorTokenExpiry');
+  const localOk = !expiryTime || Date.now() < parseInt(expiryTime, 10);
+  const jwtEnd = jwtExpMs(tokens.accessToken) ?? jwtExpMs(tokens.idToken);
+  const jwtOk = jwtEnd == null || Date.now() < jwtEnd - ACCESS_REFRESH_LEEWAY_MS;
+  return localOk && jwtOk;
+}
+
+function isRefreshWindowOpen(tokens: CognitoTokens): boolean {
+  const refreshExpiry = localStorage.getItem('vendorRefreshTokenExpiry');
+  if (refreshExpiry && Date.now() < parseInt(refreshExpiry, 10)) return true;
+  if (tokens.refreshToken) {
+    ensureRefreshWindowBackfill(tokens);
+    const again = localStorage.getItem('vendorRefreshTokenExpiry');
+    return !!again && Date.now() < parseInt(again, 10);
+  }
+  return isAccessTokenLocallyValid(tokens);
+}
+
 export function storeCognitoTokens(tokens: CognitoTokens, opts?: StoreCognitoTokensOptions): void {
   if (typeof window === 'undefined') return;
 
-  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
-  const expiryTime = Date.now() + tokens.expiresIn * 1000;
-  localStorage.setItem('vendorTokenExpiry', expiryTime.toString());
+  const normalized: CognitoTokens = {
+    ...tokens,
+    expiresIn: parseExpiresInSeconds(tokens.expiresIn, 86400),
+  };
+  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(normalized));
+  localStorage.setItem('vendorTokenExpiry', String(computeAccessExpiryMs(normalized)));
 
   const freshLogin = opts?.isNewLogin === true;
-  if (freshLogin) {
-    if (tokens.refreshToken) {
+  if (normalized.refreshToken) {
+    if (freshLogin || !localStorage.getItem('vendorRefreshTokenExpiry')) {
       localStorage.setItem(
         'vendorRefreshTokenExpiry',
-        String(computeRefreshExpiryAtLogin(tokens.refreshToken)),
+        String(computeRefreshExpiryAtLogin(normalized.refreshToken)),
       );
-    } else {
-      localStorage.removeItem('vendorRefreshTokenExpiry');
     }
-  } else if (!localStorage.getItem('vendorRefreshTokenExpiry') && tokens.refreshToken) {
-    localStorage.setItem(
-      'vendorRefreshTokenExpiry',
-      String(computeRefreshExpiryAtLogin(tokens.refreshToken)),
-    );
   }
 
-  syncVendorLegacyAuthTokens(tokens.idToken);
+  syncVendorLegacyAuthTokens(normalized.idToken);
 }
 
 export function getCognitoTokens(): CognitoTokens | null {
@@ -87,11 +121,8 @@ export function getCognitoTokens(): CognitoTokens | null {
   if (!stored) return null;
 
   try {
-    const tokens = JSON.parse(stored);
-    const expiryTime = localStorage.getItem('vendorTokenExpiry');
-    if (expiryTime && Date.now() > parseInt(expiryTime, 10)) {
-      return null;
-    }
+    const tokens = JSON.parse(stored) as CognitoTokens;
+    if (!isRefreshWindowOpen(tokens)) return null;
     return tokens;
   } catch {
     return null;
@@ -138,6 +169,7 @@ export function getUserInfo(): unknown | null {
 }
 
 let vendorRefreshInFlight: Promise<RefreshOutcome> | null = null;
+let vendorUnauthorizedRefreshInFlight: Promise<RefreshOutcome> | null = null;
 
 export type RefreshOutcomeKind = 'renewed' | 'unchanged' | 'failed_network' | 'failed_refresh';
 
@@ -242,7 +274,7 @@ async function postRefreshToken(
     };
 
     localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(updated));
-    localStorage.setItem('vendorTokenExpiry', String(Date.now() + updated.expiresIn * 1000));
+    localStorage.setItem('vendorTokenExpiry', String(computeAccessExpiryMs(updated)));
     syncVendorLegacyAuthTokens(newId);
 
     return { kind: 'renewed', tokens: updated };
@@ -268,20 +300,19 @@ async function refreshVendorTokensWithOutcomeInner(forceRefresh: boolean): Promi
     return { kind: 'failed_refresh', tokens: null };
   }
 
-  const expiryTime = localStorage.getItem('vendorTokenExpiry');
-  if (!forceRefresh && expiryTime && Date.now() < parseInt(expiryTime, 10)) {
+  if (!forceRefresh && isAccessTokenLocallyValid(tokens)) {
     return { kind: 'unchanged', tokens };
   }
 
   ensureRefreshWindowBackfill(tokens);
 
-  const refreshExpiry = localStorage.getItem('vendorRefreshTokenExpiry');
-  if (!refreshExpiry || Date.now() > parseInt(refreshExpiry, 10)) {
+  if (!tokens.refreshToken) {
     clearCognitoTokens();
     return { kind: 'failed_refresh', tokens: null };
   }
 
-  if (!tokens.refreshToken) {
+  const refreshExpiry = localStorage.getItem('vendorRefreshTokenExpiry');
+  if (refreshExpiry && Date.now() > parseInt(refreshExpiry, 10)) {
     clearCognitoTokens();
     return { kind: 'failed_refresh', tokens: null };
   }
@@ -289,9 +320,14 @@ async function refreshVendorTokensWithOutcomeInner(forceRefresh: boolean): Promi
   return postRefreshToken(tokens.refreshToken, tokens);
 }
 
-/** After HTTP 401 — bypass mutex so a server rejection can still trigger refresh. */
+/** After HTTP 401 — force refresh, coalesced so parallel 401s share one POST /auth/refresh. */
 export async function refreshVendorAfterUnauthorized401(): Promise<RefreshOutcome> {
-  return refreshVendorTokensWithOutcomeInner(true);
+  if (!vendorUnauthorizedRefreshInFlight) {
+    vendorUnauthorizedRefreshInFlight = refreshVendorTokensWithOutcomeInner(true).finally(() => {
+      vendorUnauthorizedRefreshInFlight = null;
+    });
+  }
+  return vendorUnauthorizedRefreshInFlight;
 }
 
 export async function refreshVendorTokensWithOutcome(): Promise<RefreshOutcome> {

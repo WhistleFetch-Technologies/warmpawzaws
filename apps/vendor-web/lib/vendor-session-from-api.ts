@@ -67,13 +67,10 @@ export function persistVendorCognitoTokens(bundle: VendorAuthTokenBundle): void 
       /* ignore */
     }
   }
-  const expiresIn =
-    typeof bundle.expiresIn === 'number' && Number.isFinite(bundle.expiresIn)
-      ? bundle.expiresIn
-      : 86400;
+  const { parseExpiresInSeconds, storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
+  const expiresIn = parseExpiresInSeconds(bundle.expiresIn, 86400);
 
   try {
-    const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
     storeCognitoTokens(
       {
         accessToken,
@@ -212,9 +209,8 @@ export function unwrapVerifyOtpResponseBody(verifyData: unknown): {
 
   const idToken = tokens.id_token || tokens.idToken || accessToken;
   const refreshToken = tokens.refresh_token || tokens.refreshToken || '';
-  const expiresInRaw = tokens.expires_in ?? tokens.expiresIn;
-  const expiresIn =
-    typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
+  const { parseExpiresInSeconds } = require('@/lib/cognito-auth');
+  const expiresIn = parseExpiresInSeconds(tokens.expires_in ?? tokens.expiresIn, 86400);
 
   const u = user as { phone?: string; phone_number?: string };
   const p = profile as { phone?: string; phone_number?: string };

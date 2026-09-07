@@ -244,14 +244,15 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         return;
       }
     } catch (err: any) {
-      // 403 = deactivated, 404 = deleted/not found
-      if (err?.statusCode === 403 || err?.statusCode === 404 || err?.status === 403 || err?.status === 404) {
-        console.warn(`[VendorApp] ⚠️ Profile check returned ${err?.statusCode || err?.status} — clearing session`);
+      const gone =
+        err?.originalError?.code === 'VENDOR_DELETED' ||
+        err?.originalError?.code === 'VENDOR_DEACTIVATED';
+      if (gone) {
+        console.warn('[VendorApp] Backend marked vendor gone — clearing session');
         clearVendorSession();
         window.location.replace('/auth');
         return;
       }
-      // Other errors (network, 500, etc.) — don't clear session, just log
       console.warn('[VendorApp] Background profile validation failed (non-fatal):', err?.message);
     }
   };
@@ -353,11 +354,13 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         setVendorData(v);
             }
           } catch (err: any) {
-          const statusCode = err?.statusCode;
-          if (statusCode === 403 || statusCode === 404) {
-            console.warn(`⚠️ [VendorApp] FAST PATH 1: Vendor account invalid (${statusCode}) — clearing session`);
-            clearVendorSession();
-            window.location.replace('/auth');
+            const gone =
+              err?.originalError?.code === 'VENDOR_DELETED' ||
+              err?.originalError?.code === 'VENDOR_DEACTIVATED';
+            if (gone) {
+              console.warn('⚠️ [VendorApp] FAST PATH 1: Vendor account terminated — clearing session');
+              clearVendorSession();
+              window.location.replace('/auth');
               return;
             }
             console.warn('⚠️ [VendorApp] FAST PATH 1: Could not fetch profile, using session data:', err?.message);
@@ -465,10 +468,9 @@ export function VendorApp({ initialSession }: VendorAppProps) {
                 }
               } catch (err: any) {
 
-                const statusCode = err?.statusCode;
                 const errorCode = err?.originalError?.code;
-                if (statusCode === 403 || statusCode === 404 || errorCode === 'VENDOR_DELETED' || errorCode === 'VENDOR_DEACTIVATED') {
-                  console.warn(`⚠️ [VendorApp] Vendor account invalid (status: ${statusCode}, code: ${errorCode}) — clearing session`);
+                if (errorCode === 'VENDOR_DELETED' || errorCode === 'VENDOR_DEACTIVATED') {
+                  console.warn(`⚠️ [VendorApp] Vendor account terminated (${errorCode}) — clearing session`);
                   clearVendorSession();
                   window.location.replace('/auth');
                   return;
