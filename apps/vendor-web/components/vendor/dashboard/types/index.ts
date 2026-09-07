@@ -72,6 +72,11 @@ export interface ScheduleItem {
     serviceType: string;
     status: string;
     price: number;
+    commerce_mode?: string;
+    commerceMode?: string;
+    communicationType?: string;
+    selectedServices?: unknown;
+    selected_services?: unknown;
     address: string;
     specialInstructions?: string;
     prescriptionUrl?: string;
