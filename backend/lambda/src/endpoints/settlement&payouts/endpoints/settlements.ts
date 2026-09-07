@@ -47,6 +47,7 @@ import {
 } from '../../../utils/delivery-settlement-finance';
 import { useFundingAwareSettlementBatch } from '../../../finance/settlement/finance-settlement-mode';
 import { fetchEligibleVendorEarningsForBatch } from '../../../finance/settlement/aggregate-vendor-earnings-batch';
+import { promoteVendorBankAccountToPrimary } from '../../../utils/vendor-bank-primary';
 
 function safeMoneyAmount(raw: unknown): number {
   if (raw === null || raw === undefined || raw === '') return 0;
@@ -283,12 +284,12 @@ async function resolveOrCreateVendorIdForBank(vendorId: string): Promise<{ actua
   return { actualVendorId: vendorId };
 }
 
-/** GET /bank-details masks account numbers; Settings must not persist a masked placeholder as the real account number. */
-async function resolveAccountNumberForBankSave(vendorId: string, submitted: string): Promise<string> {
-  const clean = String(submitted || '').replace(/\s/g, '');
-  const looksMasked = /^\*{3,}\d{1,4}$/.test(clean) || /^[•…]{3,}\d{1,4}$/.test(clean);
-  if (!looksMasked) return clean;
+function isMaskedBankAccountNumber(value: string): boolean {
+  const clean = String(value || '').replace(/\s/g, '');
+  return /^\*{3,}\d{1,4}$/.test(clean) || /^[•…]{3,}\d{1,4}$/.test(clean);
+}
 
+async function loadStoredVendorAccountNumber(vendorId: string): Promise<string> {
   try {
     const t = await query(`
       SELECT EXISTS (
@@ -306,14 +307,24 @@ async function resolveAccountNumberForBankSave(vendorId: string, submitted: stri
       );
       const n = r.rows[0]?.account_number;
       const digits = n != null ? String(n).replace(/\s/g, '') : '';
-      if (digits.length >= 9 && !/^\*{3,}\d{1,4}$/.test(digits)) return digits;
+      if (digits.length >= 9 && !isMaskedBankAccountNumber(digits)) return digits;
     }
     const d = await select('vendor_bank_details', { vendor_id: vendorId });
     const n = (d[0] as { account_number?: string } | undefined)?.account_number;
     const digits = n != null ? String(n).replace(/\s/g, '') : '';
-    if (digits.length >= 9 && !/^\*{3,}\d{1,4}$/.test(digits)) return digits;
+    if (digits.length >= 9 && !isMaskedBankAccountNumber(digits)) return digits;
   } catch (e) {
-    console.warn('[BankDetails] resolveAccountNumberForBankSave:', e);
+    console.warn('[BankDetails] loadStoredVendorAccountNumber:', e);
+  }
+  return '';
+}
+
+/** GET /bank-details masks account numbers; Settings must not persist a masked placeholder as the real account number. */
+async function resolveAccountNumberForBankSave(vendorId: string, submitted: string): Promise<string> {
+  const clean = String(submitted || '').replace(/\s/g, '');
+  if (!clean || isMaskedBankAccountNumber(clean)) {
+    const stored = await loadStoredVendorAccountNumber(vendorId);
+    if (stored) return stored;
   }
   return clean;
 }
@@ -329,8 +340,7 @@ function validateBankDetailsPayload(accountNumber: string, ifscCode: string): st
   }
 
   const cleanAcct = String(accountNumber || '').replace(/\s/g, '');
-  const looksMasked = /^\*{3,}\d{1,4}$/.test(cleanAcct) || /^[•…]{3,}\d{1,4}$/.test(cleanAcct);
-  if (looksMasked) {
+  if (isMaskedBankAccountNumber(cleanAcct)) {
     return 'Account number cannot be a masked value; enter the full account number';
   }
   if (!/^\d+$/.test(cleanAcct) || cleanAcct.length < BANK_ACCOUNT_MIN_LEN || cleanAcct.length > BANK_ACCOUNT_MAX_LEN) {
@@ -359,40 +369,112 @@ async function persistVendorBankDetailsForVendor(
   const bankTrim =
     bankName != null && String(bankName).trim() !== '' ? String(bankName).trim() : null;
 
-  try {
-    const schemaCheck = await query(`
-      SELECT EXISTS (
+  const schemaCheck = await query(`
+    SELECT
+      EXISTS (
         SELECT 1 FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name = 'vendor_bank_accounts'
-      ) as table_exists
-    `);
-    if (schemaCheck.rows[0]?.table_exists) {
-      const primaryRow = await query(
-        `SELECT id FROM vendor_bank_accounts
-         WHERE vendor_id = $1::uuid
-         ORDER BY updated_at DESC NULLS LAST, is_primary DESC NULLS LAST, created_at DESC
-         LIMIT 1`,
-        [vendorId]
-      );
-      const rowId = primaryRow.rows[0]?.id;
-      if (rowId) {
-        await query(
-          `UPDATE vendor_bank_accounts SET
-            account_holder_name = $1,
-            account_number = $2,
-            ifsc_code = $3,
-            bank_name = COALESCE($4, bank_name),
-            is_verified = false,
-            verification_status = 'pending',
-            verified_at = NULL,
-            updated_at = NOW()
-          WHERE id = $5::uuid AND vendor_id = $6::uuid`,
-          [holder, cleanAcct, ifsc, bankTrim, rowId, vendorId]
-        );
+      ) as table_exists,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'vendor_bank_accounts' AND column_name = 'is_verified'
+      ) as has_is_verified,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'vendor_bank_accounts' AND column_name = 'verification_status'
+      ) as has_verification_status,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'vendor_bank_accounts' AND column_name = 'verified_at'
+      ) as has_verified_at,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'vendor_bank_accounts' AND column_name = 'bank_name'
+      ) as has_bank_name,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'vendor_bank_accounts' AND column_name = 'is_primary'
+      ) as has_is_primary
+  `);
+  const schema = schemaCheck.rows[0] || {};
+
+  if (schema.table_exists) {
+    const primaryRow = await query(
+      `SELECT id FROM vendor_bank_accounts
+       WHERE vendor_id = $1::uuid
+       ORDER BY updated_at DESC NULLS LAST, is_primary DESC NULLS LAST, created_at DESC
+       LIMIT 1`,
+      [vendorId]
+    );
+    const rowId = primaryRow.rows[0]?.id as string | undefined;
+
+    const applyAccountsWrite = async (targetId: string | undefined) => {
+      if (targetId) {
+        try {
+          await query(
+            `UPDATE vendor_bank_accounts SET
+              account_holder_name = $1,
+              account_number = $2,
+              ifsc_code = $3,
+              bank_name = COALESCE($4, bank_name),
+              is_verified = false,
+              verification_status = 'pending',
+              verified_at = NULL,
+              updated_at = NOW()
+            WHERE id = $5::uuid AND vendor_id = $6::uuid`,
+            [holder, cleanAcct, ifsc, bankTrim, targetId, vendorId]
+          );
+        } catch (fullErr: any) {
+          console.warn('[BankDetails] full vendor_bank_accounts update failed, retrying core columns:', fullErr?.message);
+          await query(
+            `UPDATE vendor_bank_accounts SET
+              account_holder_name = $1,
+              account_number = $2,
+              ifsc_code = $3,
+              updated_at = NOW()
+            WHERE id = $4::uuid AND vendor_id = $5::uuid`,
+            [holder, cleanAcct, ifsc, targetId, vendorId]
+          );
+          if (schema.has_bank_name && bankTrim) {
+            await query(
+              `UPDATE vendor_bank_accounts SET bank_name = $1 WHERE id = $2::uuid AND vendor_id = $3::uuid`,
+              [bankTrim, targetId, vendorId]
+            );
+          }
+        }
+        try {
+          await promoteVendorBankAccountToPrimary(vendorId, String(targetId));
+        } catch (pe: any) {
+          console.warn('[BankDetails] promote to primary after update:', pe?.message);
+        }
+        return targetId;
       }
-    }
-  } catch (e) {
-    console.warn('[BankDetails] vendor_bank_accounts sync skipped:', e);
+
+      const insertData: Record<string, unknown> = {
+        vendor_id: vendorId,
+        account_holder_name: holder,
+        account_number: cleanAcct,
+        ifsc_code: ifsc,
+      };
+      if (schema.has_bank_name) insertData.bank_name = bankTrim || 'Unknown Bank';
+      if (schema.has_is_primary) insertData.is_primary = true;
+      if (schema.has_verification_status) insertData.verification_status = 'pending';
+      if (schema.has_is_verified) insertData.is_verified = false;
+      if (schema.has_verified_at) insertData.verified_at = null;
+
+      const createdAccounts = await insert('vendor_bank_accounts', insertData);
+      const newId = (createdAccounts[0] as { id?: string } | undefined)?.id;
+      if (newId && schema.has_is_primary) {
+        try {
+          await promoteVendorBankAccountToPrimary(vendorId, String(newId));
+        } catch (pe: any) {
+          console.warn('[BankDetails] promote to primary after insert:', pe?.message);
+        }
+      }
+      return newId;
+    };
+
+    await applyAccountsWrite(rowId);
   }
 
   const existing = await select('vendor_bank_details', { vendor_id: vendorId });
@@ -2042,13 +2124,27 @@ export function registerSettlementEndpoints(app: Hono) {
       const vendorId = resolved.actualVendorId;
 
       const bankData = await c.req.json().catch(() => ({}));
-      const accountNumber = bankData.accountNumber ?? bankData.account_number;
+      const keepExisting =
+        bankData.keep_existing_account === true || bankData.keepExistingAccount === true;
+      const rawAccount = bankData.accountNumber ?? bankData.account_number;
       const ifscCode = bankData.ifscCode ?? bankData.ifsc_code;
       const accountHolderName = bankData.accountHolderName ?? bankData.account_holder_name;
       const bankName = bankData.bankName ?? bankData.bank_name;
 
-      if (!accountNumber || !ifscCode || !accountHolderName) {
+      let accountNumber = rawAccount != null ? String(rawAccount) : '';
+      if (keepExisting || !accountNumber.trim() || isMaskedBankAccountNumber(accountNumber)) {
+        accountNumber = await resolveAccountNumberForBankSave(vendorId, accountNumber);
+      }
+
+      if (!ifscCode || !accountHolderName) {
         return c.json({ error: 'account_number, ifsc_code, and account_holder_name are required' }, 400);
+      }
+      if (!accountNumber) {
+        return c.json({
+          error: keepExisting
+            ? 'No stored account number to update; enter the full account number'
+            : 'account_number, ifsc_code, and account_holder_name are required',
+        }, 400);
       }
 
       const validationError = validateBankDetailsPayload(String(accountNumber), String(ifscCode));
@@ -2083,15 +2179,27 @@ export function registerSettlementEndpoints(app: Hono) {
       const vendorId = resolved.actualVendorId;
 
       const bankData = await c.req.json();
+      const keepExisting =
+        bankData.keep_existing_account === true || bankData.keepExistingAccount === true;
       const {
-        accountNumber,
         ifscCode,
         accountHolderName,
         bankName,
       } = bankData;
+      let accountNumber = bankData.accountNumber ?? bankData.account_number ?? '';
+      if (keepExisting || !String(accountNumber).trim() || isMaskedBankAccountNumber(String(accountNumber))) {
+        accountNumber = await resolveAccountNumberForBankSave(vendorId, String(accountNumber));
+      }
 
-      if (!accountNumber || !ifscCode || !accountHolderName) {
+      if (!ifscCode || !accountHolderName) {
         return c.json({ error: 'accountNumber, ifscCode, and accountHolderName are required' }, 400);
+      }
+      if (!accountNumber) {
+        return c.json({
+          error: keepExisting
+            ? 'No stored account number to update; enter the full account number'
+            : 'accountNumber, ifscCode, and accountHolderName are required',
+        }, 400);
       }
 
       const validationError = validateBankDetailsPayload(String(accountNumber), String(ifscCode));

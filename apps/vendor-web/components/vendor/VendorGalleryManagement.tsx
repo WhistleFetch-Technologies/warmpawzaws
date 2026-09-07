@@ -13,6 +13,7 @@ import {
   uploadFacilityCenterPhotos,
 } from '@/lib/photo-upload-enhanced';
 import { takePendingCameraUploadPayloads } from '@/lib/camera-upload-bridge';
+import { sanitizeDisplayImageUrl } from '@/lib/sanitize-display-image-url';
 
 interface VendorGalleryManagementProps {
   vendorId: string;
@@ -37,7 +38,9 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
       facility?: { photos?: string[] };
     };
     const list = facilityData?.success && facilityData?.facility?.photos ? facilityData.facility.photos : [];
-    const cleaned = Array.isArray(list) ? list.filter(Boolean) : [];
+    const cleaned = Array.isArray(list)
+      ? list.map((u) => sanitizeDisplayImageUrl(u)).filter((u): u is string => Boolean(u))
+      : [];
     setPhotos(cleaned);
     return cleaned.length;
   }, [effectiveVendorId]);
@@ -127,7 +130,10 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
       });
 
       if (result.displayUrls?.length) {
-        setPhotos((prev) => [...prev, ...result.displayUrls!]);
+        const displayable = result.displayUrls
+          .map((u) => sanitizeDisplayImageUrl(u))
+          .filter((u): u is string => Boolean(u));
+        setPhotos((prev) => [...prev, ...displayable]);
         const stored = result.uploadedCount ?? result.displayUrls.length;
         toast.success(stored === 1 ? 'Photo uploaded' : `${stored} photos uploaded`);
         return;
@@ -232,7 +238,15 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
                 <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-3">
                   {photos.map((photo, idx) => (
                     <div key={`${idx}-${photo.slice(0, 48)}`} className="relative aspect-video overflow-hidden rounded-lg bg-gray-100">
-                      <img src={photo} alt={`Center ${idx + 1}`} className="h-full w-full object-cover" loading="lazy" />
+                      <img
+                        src={photo}
+                        alt={`Center ${idx + 1}`}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.currentTarget.parentElement as HTMLElement | null)?.classList.add('hidden');
+                        }}
+                      />
                       <button
                         type="button"
                         disabled={deletingIndex !== null}

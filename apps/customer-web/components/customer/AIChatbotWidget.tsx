@@ -520,6 +520,7 @@ export function AIChatbotWidget({
   const pickWizardServiceType = useCallback(
     async (key: BookingServiceStyleKey) => {
       if (wizardStep === 'booked' || !bookingSessionId || !bookingDraft) return;
+      if (key === 'tele') return;
       const filtered = servicesFilteredByBookingStyleKey(wizardVendorServicesAll, key);
       if (filtered.length === 0) {
         toast.error('No services for that visit type.');
@@ -567,7 +568,7 @@ export function AIChatbotWidget({
     async (messageText: string): Promise<boolean> => {
       if (wizardStep === 'booked') return false;
       const style = inferVisitStyleFromText(messageText);
-      if (!style || !bookingSessionId || !bookingDraft) return false;
+      if (!style || style === 'tele' || !bookingSessionId || !bookingDraft) return false;
       const filtered = servicesFilteredByBookingStyleKey(wizardVendorServicesAll, style);
       if (filtered.length === 0) {
         toast.error(`This provider does not offer ${bookingServiceStyleShortLabel(style)} services.`);
@@ -684,6 +685,10 @@ export function AIChatbotWidget({
         }
 
         const styles = distinctBookingStyleKeysFromServices(list);
+        if (styles.length === 0) {
+          toast.error('This provider has no clinic or home-visit services for in-chat booking.');
+          return;
+        }
         if (styles.length === 1) {
           const key = styles[0];
           const filtered = servicesFilteredByBookingStyleKey(list, key);
@@ -717,7 +722,7 @@ export function AIChatbotWidget({
             {
               id: `bot-${Date.now()}`,
               type: 'bot',
-              content: `**${p.businessName}** — pick a **visit type** (clinic, home, or video), then a service, date, and time.`,
+              content: `**${p.businessName}** — pick a **visit type** (clinic or home), then a service, date, and time.`,
               timestamp: new Date().toISOString(),
               intent: 'booking',
             },

@@ -1,21 +1,24 @@
 /**
  * Build display URLs for image keys (presign today; CloudFront when configured).
+ * Never invents a signed URL for an object that is not in any upload bucket.
  */
 
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   presignS3GetForBucketKey,
   resolveUploadBucketForKey,
 } from '../../endpoints/constants/helper';
 import { presignS3GetUrlIfApplicable } from '../../utils/s3-media-presign';
 import { buildPublicS3ObjectUrl } from '../../utils/s3-presign-upload';
-import { getUploadsBucket } from './image-repository';
 
 const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
-const s3Client = new S3Client({ region: AWS_REGION });
 
 const PRESIGN_TTL_SECONDS = 604800;
+
+function httpsOrNull(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const s = String(url).trim();
+  return /^https?:\/\//i.test(s) ? s : null;
+}
 
 export async function urlForImageKey(key: string | null | undefined): Promise<string | null> {
   if (!key) return null;
@@ -23,33 +26,24 @@ export async function urlForImageKey(key: string | null | undefined): Promise<st
   if (!trimmed) return null;
   if (trimmed.startsWith('data:') || trimmed.startsWith('/')) return trimmed;
 
-  const cdnDomain = (process.env.MEDIA_CDN_DOMAIN || '').trim().replace(/\/$/, '');
-  if (cdnDomain && !trimmed.includes('://')) {
-    const path = trimmed.replace(/^\/+/, '');
-    return `https://${cdnDomain}/${path}`;
-  }
-
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return (await presignS3GetUrlIfApplicable(trimmed)) ?? trimmed;
+    return httpsOrNull((await presignS3GetUrlIfApplicable(trimmed)) ?? trimmed);
   }
 
   const objectKey = trimmed.replace(/^\/+/, '');
   const resolvedBucket = await resolveUploadBucketForKey(objectKey);
-  const bucket = resolvedBucket ?? getUploadsBucket();
-  if (resolvedBucket) {
-    const signed = await presignS3GetForBucketKey(resolvedBucket, objectKey, PRESIGN_TTL_SECONDS);
-    if (signed) return signed;
+  if (!resolvedBucket) return null;
+
+  const cdnDomain = (process.env.MEDIA_CDN_DOMAIN || '').trim().replace(/\/$/, '');
+  if (cdnDomain) {
+    return `https://${cdnDomain}/${objectKey}`;
   }
 
-  const stableUrl = buildPublicS3ObjectUrl(bucket, objectKey, AWS_REGION);
-  return (
-    (await presignS3GetUrlIfApplicable(stableUrl)) ??
-    (await getSignedUrl(
-      s3Client,
-      new GetObjectCommand({ Bucket: bucket, Key: objectKey }),
-      { expiresIn: PRESIGN_TTL_SECONDS },
-    ))
-  );
+  const signed = await presignS3GetForBucketKey(resolvedBucket, objectKey, PRESIGN_TTL_SECONDS);
+  if (signed) return signed;
+
+  const stableUrl = buildPublicS3ObjectUrl(resolvedBucket, objectKey, AWS_REGION);
+  return httpsOrNull(await presignS3GetUrlIfApplicable(stableUrl));
 }
 
 export async function attachUrlsToImageDto(dto: {

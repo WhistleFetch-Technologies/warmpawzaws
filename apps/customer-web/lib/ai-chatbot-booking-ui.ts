@@ -222,9 +222,6 @@ export function inferVisitStyleFromText(message: string): BookingServiceStyleKey
     .toLowerCase()
     .trim();
   if (!m) return null;
-  if (/\b(tele|video\s*consult|online\s*consult|virtual\s*visit|video\s*call)\b/.test(m)) {
-    return 'tele';
-  }
   if (/\b(home\s*visit|at\s*home|home\s*service|visit\s*at\s*home)\b/.test(m)) {
     return 'at_home';
   }
@@ -239,9 +236,6 @@ export function inferVisitStyleFromText(message: string): BookingServiceStyleKey
 }
 
 export function visitStyleChangeMessage(style: BookingServiceStyleKey): string {
-  if (style === 'tele') {
-    return 'Switched to **tele / video** visit. Pick a service below, then choose a date that has openings.';
-  }
   if (style === 'at_home') {
     return 'Switched to **home visit**. Pick a service below, then choose a date that has openings.';
   }

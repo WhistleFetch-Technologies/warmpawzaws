@@ -23,4 +23,6 @@ export { detectImageMime, validateImageBuffer } from './image-validator';
 export {
   resolveCustomerPhotoForDisplay,
   resolvePetPhotoForDisplay,
+  resolveVendorPhotoForDisplay,
+  overlayVendorDisplayPhotoFields,
 } from './resolve-entity-profile-photo';

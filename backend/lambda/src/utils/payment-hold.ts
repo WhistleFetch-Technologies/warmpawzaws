@@ -8,6 +8,7 @@ import { logAuditEntry, logBookingStatusChange } from './audit-log';
 import { parseJsonMetaFromNotes } from './booking-notes-meta';
 import { finalizeCapturedPayment } from './payments/finalize-captured-payment';
 import { razorpayRequest } from './payments/razorpay-client';
+import { creditNetWalletDebitForAbandonedBooking } from './booking-wallet-capture';
 
 export const PAYMENT_HOLD_TTL_SECONDS = 300;
 
@@ -195,6 +196,18 @@ export async function expirePaymentHolds(options?: {
       });
 
       if (!released) continue;
+
+      if (row.customer_id) {
+        try {
+          await creditNetWalletDebitForAbandonedBooking({
+            customerId: String(row.customer_id),
+            bookingId,
+            label: 'booking',
+          });
+        } catch (walletErr) {
+          console.warn('[payment-hold] wallet credit after expiry failed', bookingId, walletErr);
+        }
+      }
 
       await logBookingStatusChange(bookingId, oldStatus, 'cancelled', 'system', 'system', reason);
       await logAuditEntry({

@@ -1,5 +1,9 @@
 import { describe, expect, test } from '@jest/globals';
-import { buildUnifiedPushMessage, buildSilentDataFcmMessage } from '../firebase-client';
+import {
+  buildAppIconBadgeOnlyMessage,
+  buildSilentDataFcmMessage,
+  buildUnifiedPushMessage,
+} from '../firebase-client';
 
 describe('buildUnifiedPushMessage', () => {
   test('includes Android channel config unchanged for scalable Android delivery', () => {
@@ -25,7 +29,7 @@ describe('buildUnifiedPushMessage', () => {
     const apns = message.apns as {
       headers?: { 'apns-push-type'?: string };
       payload?: {
-        aps?: { sound?: string; alert?: { title?: string; body?: string } };
+        aps?: { sound?: string; badge?: number; alert?: { title?: string; body?: string } };
         deep_link?: string;
         booking_id?: string;
       };
@@ -33,8 +37,19 @@ describe('buildUnifiedPushMessage', () => {
     expect(apns?.headers?.['apns-push-type']).toBe('alert');
     expect(apns?.payload?.aps?.alert).toEqual({ title: 'Booking', body: 'Confirmed' });
     expect(apns?.payload?.aps?.sound).toBe('default');
+    expect(apns?.payload?.aps?.badge).toBe(1);
     expect(apns?.payload?.deep_link).toBe('/bookings');
     expect(apns?.payload?.booking_id).toBe('abc-123');
+  });
+
+  test('respects explicit badge on alert pushes', () => {
+    const message = buildUnifiedPushMessage(
+      { title: 'Hi', body: 'There', badge: 3, data: { type: 'test' } },
+      'token',
+      'tok'
+    );
+    const apns = message.apns as { payload?: { aps?: { badge?: number } } };
+    expect(apns?.payload?.aps?.badge).toBe(3);
   });
 
   test('multicast tokens shape supports iOS + Android in one Firebase send', () => {
@@ -75,5 +90,22 @@ describe('buildUnifiedPushMessage', () => {
     };
     expect(apns?.headers?.['apns-push-type']).toBe('background');
     expect(apns?.payload?.aps?.['content-available']).toBe(1);
+  });
+});
+
+describe('buildAppIconBadgeOnlyMessage', () => {
+  test('clears iOS icon badge without tray alert/sound', () => {
+    const message = buildAppIconBadgeOnlyMessage(0, 'tokens', ['ios-tok']);
+    const apns = message.apns as {
+      headers?: { 'apns-push-type'?: string };
+      payload?: { aps?: { badge?: number; alert?: unknown; sound?: unknown } };
+    };
+    expect(message.tokens).toEqual(['ios-tok']);
+    expect(message.notification).toBeUndefined();
+    expect(apns?.headers?.['apns-push-type']).toBe('alert');
+    expect(apns?.payload?.aps?.badge).toBe(0);
+    expect(apns?.payload?.aps?.alert).toBeUndefined();
+    expect(apns?.payload?.aps?.sound).toBeUndefined();
+    expect((message.data as { type?: string })?.type).toBe('app_icon_badge_sync');
   });
 });

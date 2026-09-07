@@ -18,6 +18,7 @@ import { formatDistanceDisplay, pickProviderDistanceKm } from '@/lib/distance-di
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
 import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
@@ -594,17 +595,12 @@ export function VendorListingByStyle({
                 onClick={() => handleViewVendor(vendor)}
               >
                 <div className="flex items-start gap-3">
-                  {vendor.photo ? (
-                    <img 
-                      src={vendor.photo} 
-                      alt={vendor.name}
-                      className="w-16 h-16 rounded-xl object-cover border-2 border-[#FF8C42]"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] rounded-xl flex items-center justify-center text-white font-bold text-xl">
-                      {vendor.name.charAt(0)}
-                    </div>
-                  )}
+                  <DiscoveryProviderAvatar
+                    name={vendor.name}
+                    photo={vendor.photo}
+                    className="w-16 h-16 rounded-xl object-cover border-2 border-[#FF8C42]"
+                    fallbackClassName="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] rounded-xl flex items-center justify-center text-white font-bold text-xl"
+                  />
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">

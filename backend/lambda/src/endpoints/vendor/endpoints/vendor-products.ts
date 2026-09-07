@@ -657,7 +657,7 @@ class GetVendorProductsHandler extends BaseHandler {
           if (skus.length > 0) {
             base.stock = aggregateParentStock(skus);
           }
-          return base;
+          return flattenProductForApiResponse(base);
         }),
       );
 

@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
 import { normalizeProfilePhotoFile } from '@/lib/normalize-profile-photo';
+import { sanitizeDisplayImageUrl } from '@/lib/sanitize-display-image-url';
 
 interface PhotoUploadProps {
   photoUrl?: string;
@@ -54,14 +55,16 @@ export function PhotoUpload({
   const overlayFileRef = useRef<HTMLInputElement>(null);
   const mainFileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<string | null>(photoUrl || null);
+  const [preview, setPreview] = useState<string | null>(sanitizeDisplayImageUrl(photoUrl) ?? null);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Update preview when photoUrl prop changes (e.g., after loading profile)
   React.useEffect(() => {
-    if (photoUrl) {
-      setPreview(photoUrl);
+    const next = sanitizeDisplayImageUrl(photoUrl);
+    if (next) {
+      setPreview(next);
+    } else if (!photoUrl) {
+      setPreview(null);
     }
   }, [photoUrl]);
 
@@ -97,7 +100,7 @@ export function PhotoUpload({
       const result = await onUpload(normalized);
       
       if (result.success && result.photo_url) {
-        setPreview(result.photo_url);
+        setPreview(sanitizeDisplayImageUrl(result.photo_url) ?? result.photo_url);
         toast.success('Photo uploaded successfully');
       } else {
         throw new Error('Upload failed');
@@ -107,7 +110,7 @@ export function PhotoUpload({
       setError(err.message || 'Failed to upload photo');
       toast.error(err.message || 'Failed to upload photo');
       // Reset preview on error
-      setPreview(photoUrl || null);
+      setPreview(sanitizeDisplayImageUrl(photoUrl) ?? null);
     } finally {
       setUploading(false);
     }
@@ -184,6 +187,7 @@ export function PhotoUpload({
                 src={preview}
                 alt="Profile"
                 className="w-full h-full object-cover"
+                onError={() => setPreview(null)}
               />
               {!disabled && (
                 <button

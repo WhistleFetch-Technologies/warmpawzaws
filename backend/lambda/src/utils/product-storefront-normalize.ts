@@ -10,6 +10,10 @@ import {
   type StorefrontDimensions,
 } from '@warmpawz/shared-types';
 import { stripStorefrontListPriceFields } from './product-ecommerce-pricing';
+import {
+  readImageIngestStatus,
+  resolveDisplayableProductImages,
+} from './bulk-drive-image-plan';
 
 export function parseSpecificationsObject(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
@@ -112,6 +116,16 @@ export function flattenProductForApiResponse(
 
   out.pet_type_display = formatPetTypeForCustomer(out.pet_type, out.pet_type_other);
 
+  out.images = resolveDisplayableProductImages(out.images, out.metadata);
+  if (Array.isArray(out.skus)) {
+    out.skus = (out.skus as Record<string, unknown>[]).map((sku) => ({
+      ...sku,
+      images: resolveDisplayableProductImages(sku.images, out.metadata),
+    }));
+  }
+  const ingestStatus = readImageIngestStatus(out.metadata);
+  if (ingestStatus) out.image_ingest_status = ingestStatus;
+
   return out;
 }
 
@@ -143,6 +157,13 @@ export function sanitizeStorefrontProductForCustomer(
   delete out.gst_rate;
   delete out.sku;
   delete out.cost_price;
+  out.images = resolveDisplayableProductImages(out.images, out.metadata);
+  if (Array.isArray(out.skus)) {
+    out.skus = (out.skus as Record<string, unknown>[]).map((sku) => ({
+      ...sku,
+      images: resolveDisplayableProductImages(sku.images, out.metadata),
+    }));
+  }
   delete out.metadata;
   if (out.pet_type_display == null) {
     out.pet_type_display = formatPetTypeForCustomer(out.pet_type, out.pet_type_other);

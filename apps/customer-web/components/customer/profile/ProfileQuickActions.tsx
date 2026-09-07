@@ -2,6 +2,7 @@
 
 import {
   Heart,
+  Lock,
   LogOut,
   MapPin,
   Pencil,
@@ -19,6 +20,7 @@ interface QuickAction {
 
 interface ProfileQuickActionsProps {
   onEditProfile: () => void;
+  onChangePassword: () => void;
   onManageAddress: () => void;
   onFavouritePets: () => void;
   onLogout: () => void;
@@ -26,6 +28,7 @@ interface ProfileQuickActionsProps {
 
 export function ProfileQuickActions({
   onEditProfile,
+  onChangePassword,
   onManageAddress,
   onFavouritePets,
   onLogout,
@@ -38,6 +41,14 @@ export function ProfileQuickActions({
       iconBg: 'bg-orange-50',
       iconColor: 'text-[#FF8C42]',
       onClick: onEditProfile,
+    },
+    {
+      id: 'password',
+      label: 'Change Password',
+      icon: Lock,
+      iconBg: 'bg-blue-50',
+      iconColor: 'text-blue-600',
+      onClick: onChangePassword,
     },
     {
       id: 'address',

@@ -587,9 +587,9 @@ function ShopPageContent() {
   );
 
   const activeTopCategoryId = useMemo(() => {
-    if (!selectedCategory) return '';
-    return categoryById.get(selectedCategory)?.parent_category_id || selectedCategory;
-  }, [selectedCategory, categoryById]);
+    if (!catalogCategory) return '';
+    return categoryById.get(catalogCategory)?.parent_category_id || catalogCategory;
+  }, [catalogCategory, categoryById]);
 
   const activeSubCategories = useMemo(() => {
     if (!activeTopCategoryId) return [];
@@ -598,9 +598,9 @@ function ShopPageContent() {
   }, [categories, activeTopCategoryId]);
 
   const activeSubCategoryId = useMemo(() => {
-    if (!selectedCategory) return '';
-    return categoryById.get(selectedCategory)?.parent_category_id ? selectedCategory : '';
-  }, [selectedCategory, categoryById]);
+    if (!catalogCategory) return '';
+    return categoryById.get(catalogCategory)?.parent_category_id ? catalogCategory : '';
+  }, [catalogCategory, categoryById]);
 
   // Search, sort, and price filtering are now server-side.
   // `products` is the final list to render; no client-side filter step.

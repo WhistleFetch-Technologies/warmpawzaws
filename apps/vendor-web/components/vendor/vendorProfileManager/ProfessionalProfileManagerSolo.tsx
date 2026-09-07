@@ -34,6 +34,7 @@ import { ProfessionalProfile, ProfessionalProfileManagerProps } from './constant
 import { parseSpecializations } from './constants/helpers';
 import { hasVendorRole } from '@/lib/vendor-utils';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { sanitizeDisplayImageUrl } from '@/lib/sanitize-display-image-url';
 
 // ✅ REMOVED: Hardcoded specializations - now using SpecializationSelector which fetches role-specific specializations from database
 // This ensures specializations are always up-to-date and role-specific based on admin configuration
@@ -68,7 +69,13 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     latitude: initialProfile?.latitude ?? undefined,
     longitude: initialProfile?.longitude ?? undefined,
     description: initialProfile?.description || '',
-    photo_url: initialProfile?.profile_photo_url || initialProfile?.logo_url || initialProfile?.photo_url || '',
+    photo_url:
+      sanitizeDisplayImageUrl(
+        initialProfile?.profilePhotoUrl ||
+          initialProfile?.profile_photo_url ||
+          initialProfile?.logo_url ||
+          initialProfile?.photo_url,
+      ) || '',
     qualifications: initialProfile?.qualifications || '',
     specializations: parseSpecializations(initialProfile?.specializations),
     experience_years: initialProfile?.experience_years ?? initialProfile?.experienceYears ?? 0,
@@ -166,7 +173,13 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           latitude: response.vendor.latitude ?? undefined,
           longitude: response.vendor.longitude ?? undefined,
           description: response.vendor.description || '',
-          photo_url: response.vendor.profile_photo_url || response.vendor.photo_url || response.vendor.logo_url || '',
+          photo_url:
+            sanitizeDisplayImageUrl(
+              response.vendor.profilePhotoUrl ||
+                response.vendor.profile_photo_url ||
+                response.vendor.photo_url ||
+                response.vendor.logo_url,
+            ) || '',
           qualifications: response.vendor.qualifications || '',
           specializations: parseSpecializations(response.vendor.specializations),
           experience_years: response.vendor.experience_years ?? response.vendor.experienceYears ?? 0, // ✅ Use nullish coalescing to preserve 0

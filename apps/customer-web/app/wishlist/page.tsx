@@ -10,7 +10,11 @@ import {
   fetchWishlistProductSummary,
   type WishlistProductRow,
 } from '@/lib/wishlist-product-fetch';
-import { goBackOrHome, consumeWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
+import { consumeWishlistOpenedFromShop, handleProfileChildPageBack } from '@/lib/go-back-or-replace';
+import {
+  BACK_HANDLER_PRIORITY,
+  registerBackHandler,
+} from '@/lib/navigation/back-handler-registry';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
@@ -120,9 +124,22 @@ function WishlistPageContent() {
     }
   }, []);
 
+  const handleBack = useCallback(() => {
+    handleProfileChildPageBack(router);
+  }, [router]);
+
   useEffect(() => {
     consumeWishlistOpenedFromShop();
   }, []);
+
+  useEffect(() => {
+    return registerBackHandler(() => {
+      if (typeof window === 'undefined') return false;
+      if (window.location.pathname !== '/wishlist') return false;
+      handleProfileChildPageBack(router);
+      return true;
+    }, BACK_HANDLER_PRIORITY.urlHistory + 5);
+  }, [router]);
 
   useEffect(() => {
     void loadWishlist('initial');
@@ -169,7 +186,7 @@ function WishlistPageContent() {
         <header className="sticky top-0 z-20 flex shrink-0 items-center gap-2 border-b border-orange-100/80 bg-white/95 px-4 py-3 backdrop-blur cw-header-safe-top cw-header-safe-x">
           <button
             type="button"
-            onClick={() => goBackOrHome(router)}
+            onClick={handleBack}
             className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl px-2 text-gray-800 hover:bg-orange-50 active:opacity-90"
             aria-label="Back"
           >
@@ -204,7 +221,7 @@ function WishlistPageContent() {
       <header className="sticky top-0 z-20 flex shrink-0 items-center gap-3 border-b border-orange-100/80 bg-white/95 px-4 py-3 backdrop-blur cw-header-safe-top cw-header-safe-x">
         <button
           type="button"
-          onClick={() => goBackOrHome(router)}
+          onClick={handleBack}
           className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl hover:bg-orange-50 active:opacity-90"
           aria-label="Back"
         >

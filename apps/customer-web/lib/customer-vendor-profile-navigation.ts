@@ -160,7 +160,10 @@ export function getWebGroomingTrainingEmbedVendorId(provider: Record<string, unk
   return pickCustomerVendorAccountId(provider);
 }
 
-/** Walker problem-grid / UniversalServicesByStyle chevron → {@link HomeServiceProviderProfile}. */
+/**
+ * Walker discovery chevron → same embed profile as grooming/training
+ * (`vendorId` on UniversalServicesByStyle), not HomeServiceProviderProfile.
+ */
 export function getWebWalkerDiscoveryChevronNavTarget(input: {
   provider: Record<string, unknown>;
   providerDisplayName?: string;
@@ -174,18 +177,15 @@ export function getWebWalkerDiscoveryChevronNavTarget(input: {
   if (!String(vendorId).trim()) {
     return null;
   }
-  const displayName =
-    input.providerDisplayName?.trim() ||
-    String(row.name || row.businessName || row.business_name || 'Walker').trim() ||
-    'Walker';
-  return buildWalkerProviderProfileNavPayload({
-    vendorId: String(vendorId).trim(),
-    displayName,
-    serviceStyle: input.serviceStyle,
-    profileBackScreen: input.profileBackScreen,
-    specialization: input.specialization,
-    walkerSeed: row,
-  });
+  return {
+    screen: 'walker_embed_vendor_profile',
+    data: {
+      vendorId: String(vendorId).trim(),
+      serviceStyle: String(input.serviceStyle),
+      ...(input.profileBackScreen ? { walkerProfileBackScreen: input.profileBackScreen } : {}),
+      ...(input.specialization ? { specialization: input.specialization } : {}),
+    },
+  };
 }
 
 /** Available Walkers hub (WAPPT) → {@link WarmpawzAppointmentsVendorProfile}. */
@@ -213,6 +213,7 @@ export function buildWalkerWapptProfileNavFromRow(input: {
   };
 }
 
+/** Hub / promo / problem-grid: open walker_home with embedded vendor profile. */
 /** UniversalServicesByStyle vendorId embed must redirect to HomeServiceProviderProfile, not vet-style profile UI. */
 export function buildWalkerProviderProfileNavPayload(input: {
   vendorId: string;
@@ -224,8 +225,9 @@ export function buildWalkerProviderProfileNavPayload(input: {
 }): { screen: string; data: Record<string, unknown> } {
   const displayName = input.displayName?.trim() || 'Walker';
   return {
-    screen: 'walker-provider-profile',
+    screen: 'walker_home',
     data: {
+      embedVendorId: input.vendorId,
       vendorId: input.vendorId,
       walker: { name: displayName, vendorId: input.vendorId, ...(input.walkerSeed ?? {}) },
       serviceType: 'walking',

@@ -103,4 +103,29 @@ describe('product-storefront-normalize', () => {
     expect(out.pet_type_display).toBe('All pets');
     expect(out.pet_type_other).toBeUndefined();
   });
+
+  it('strips Drive image URLs and exposes ingest status', () => {
+    const out = flattenProductForApiResponse({
+      id: 'p1',
+      images: [
+        'https://cdn.example.com/ok.jpg',
+        'https://drive.google.com/uc?export=view&id=1AbCdEfGhIjKlMnOpQrStUvWxYz012345',
+      ],
+      metadata: { image_ingest: { status: 'processing' } },
+    });
+    expect(out.images).toEqual(['https://cdn.example.com/ok.jpg']);
+    expect(out.image_ingest_status).toBe('processing');
+  });
+
+  it('fills empty images from Drive ingest file ids so catalog cards show photos', () => {
+    const fileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+    const out = flattenProductForApiResponse({
+      id: 'p1',
+      images: [],
+      metadata: {
+        image_ingest: { status: 'processing', fileIds: [fileId] },
+      },
+    });
+    expect(out.images).toEqual([`https://lh3.googleusercontent.com/d/${fileId}`]);
+  });
 });

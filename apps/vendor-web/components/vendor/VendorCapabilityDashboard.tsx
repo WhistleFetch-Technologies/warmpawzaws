@@ -13,6 +13,7 @@ import { CAPABILITY_ROUTES, getCapabilitiesByCategory } from '@/lib/capability-r
 import { vendorNavigate } from '@/lib/vendor-route-nav';
 import { formatPayBillEarningsLabel } from '@/lib/load-vendor-earnings-summary';
 import { MealPlansComingSoonPanel } from './MealPlansComingSoonPanel';
+import { sanitizeDisplayImageUrl } from '@/lib/sanitize-display-image-url';
 
 // ============================================================================
 // TYPES
@@ -912,13 +913,21 @@ function ProfileSection({ vendor }: { vendor: Vendor | null }) {
   const router = useRouter();
   
   if (!vendor) return null;
+  const logoSrc = sanitizeDisplayImageUrl((vendor as { logo_url?: string }).logo_url);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <div className="w-24 h-24 bg-gradient-to-br from-orange-100 to-amber-100 rounded-2xl flex items-center justify-center text-4xl overflow-hidden">
-          {vendor.logo_url ? (
-            <img src={vendor.logo_url} alt="Profile" className="w-full h-full object-cover" />
+          {logoSrc ? (
+            <img
+              src={logoSrc}
+              alt="Profile"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
           ) : (
             '🏪'
           )}

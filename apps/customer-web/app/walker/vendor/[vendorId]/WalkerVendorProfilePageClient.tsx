@@ -2,18 +2,13 @@
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { HomeServiceProviderProfile } from '@/components/customer/home-services/HomeServiceProviderProfile';
+import { UniversalServicesByStyle } from '@/components/customer/shared/UniversalServicesByStyle';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { SERVICE_CONFIGS } from '@/lib/home/service-configs';
 import {
   SEARCH_WALKER_BOOKING_INTENT_KEY,
   SEARCH_WALKER_CENTER_RETURN_KEY,
   type SearchWalkerBookingIntent,
 } from '@/lib/search-booking-launch';
-import {
-  buildWalkerServiceDataForVendorPackagePurchase,
-  isVendorServicePackageRow,
-} from '@/lib/vendor-package-purchase-nav';
 
 function readReturnSearchUrl(): string {
   if (typeof window === 'undefined') return '/search?category=walker';
@@ -68,41 +63,29 @@ function WalkerVendorProfileContent({ vendorId }: { vendorId: string }) {
   }
 
   return (
-    <HomeServiceProviderProfile
+    <UniversalServicesByStyle
       phone={phone}
+      roleId="walker"
+      serviceStyle="at_home"
+      serviceTypeName="Dog Walker"
+      category="walker"
+      bookingScreen="walker-booking"
       vendorId={vendorId}
-      serviceType="walker"
-      config={SERVICE_CONFIGS.walker}
       onBack={handleBack}
-      onSelectService={(service, rawRow) => {
-        if (rawRow && isVendorServicePackageRow(rawRow)) {
-          const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-            vendorId,
-            serviceRow: rawRow,
-            serviceTypeCategory: 'walking',
-            serviceStyle: 'at_home',
+      onNavigate={(screen, data) => {
+        if (screen === 'purchase-package' || screen === 'walker-booking' || screen === 'booking') {
+          launchWalkerBooking({
+            serviceId: String(data?.serviceId || data?.vendorServiceId || ''),
+            serviceName: data?.serviceName,
+            price: data?.price,
+            duration: data?.duration,
+            walker: (data?.walker as Record<string, unknown> | undefined) ?? {
+              id: vendorId,
+              vendorId,
+              name: data?.vendorName,
+            },
           });
-          if (pkgNav) {
-            launchWalkerBooking({
-              serviceId: String(pkgNav.serviceId || service.id),
-              serviceName: service.name,
-              price: service.price,
-              duration: service.duration,
-              walker: pkgNav.walker as Record<string, unknown> | undefined,
-            });
-            return;
-          }
         }
-        launchWalkerBooking({
-          serviceId: service.id,
-          serviceName: service.name,
-          price: service.price,
-          duration: service.duration,
-          walker: { id: vendorId, vendorId },
-        });
-      }}
-      onNavigate={() => {
-        /* search profile — no shell child screens */
       }}
     />
   );

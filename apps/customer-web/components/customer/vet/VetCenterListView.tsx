@@ -5,6 +5,7 @@ import { ArrowLeft, MapPin, Star, Clock, Phone, Search } from 'lucide-react';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
 import { formatOperatingHours } from '@/lib/format-utils';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 
 interface VetCenterListViewProps {
   phone: string;
@@ -90,17 +91,13 @@ export function VetCenterListView({ phone, onBack, onNavigate }: VetCenterListVi
               className="bg-white rounded-xl p-4 border border-gray-200 hover:border-primary transition-colors cursor-pointer"
             >
               <div className="flex gap-3">
-                {center.logo ? (
-                  <img
-                    src={center.logo}
-                    alt={center.businessName}
-                    className="w-20 h-20 rounded-lg object-cover"
-                  />
-                ) : (
-                  <div className="w-20 h-20 bg-gray-200 rounded-lg flex items-center justify-center">
-                    <span className="text-2xl">🏥</span>
-                  </div>
-                )}
+                <DiscoveryProviderAvatar
+                  name={center.businessName}
+                  photo={center.logo}
+                  className="w-20 h-20 rounded-lg object-cover"
+                  fallbackClassName="w-20 h-20 bg-gray-200 rounded-lg flex items-center justify-center"
+                  fallback={<span className="text-2xl">🏥</span>}
+                />
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold truncate">{center.businessName}</h3>
                   
