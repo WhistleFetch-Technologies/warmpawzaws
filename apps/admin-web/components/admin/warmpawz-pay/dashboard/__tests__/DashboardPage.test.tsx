@@ -21,6 +21,14 @@ jest.mock('../PaymentsTable', () => ({
   PaymentsTable: () => null,
 }));
 
+jest.mock('../ConvenienceSettingsPanel', () => ({
+  ConvenienceSettingsPanel: () => null,
+}));
+
+jest.mock('../PaymentsFilterBar', () => ({
+  PaymentsFilterBar: () => <div>Payments filters</div>,
+}));
+
 jest.mock('@/components/admin/marketing/analytics/AnalyticsStateViews', () => ({
   AnalyticsErrorState: ({
     message,

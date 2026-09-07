@@ -4,6 +4,14 @@ import { buildWpayPaymentsDateFilterSql } from './wpay-payments-date-filter';
 
 export const WPAY_ADMIN_PAYMENTS_MAX_EXPORT_ROWS = 5000;
 
+export type WpayAdminPayoutStatusFilter = 'all' | 'pending' | 'settled';
+
+export type WpayAdminPaymentsQueryFilters = {
+  readonly dateFilter: WpayPaymentsDateFilter;
+  readonly payoutStatus?: WpayAdminPayoutStatusFilter;
+  readonly vendorSearch?: string;
+};
+
 export type WpayAdminPaymentDbRow = {
   payment_id: string;
   customer_id: string;
@@ -29,6 +37,9 @@ export type WpayAdminPaymentDbRow = {
   platform_withhold_percent: string | number | null;
   payment_metadata: Record<string, unknown> | null;
   settlement_breakup: Record<string, unknown> | null;
+  settlement_id: string | null;
+  settlement_status: string | null;
+  settlement_completed_at: string | null;
 };
 
 const WPAY_PAYMENTS_BASE_WHERE = `
@@ -66,7 +77,10 @@ const WPAY_PAYMENTS_SELECT = `
   s.commission_amount AS platform_withhold_amount,
   (s.settlement_breakup->>'platformWithholdPercent')::numeric AS platform_withhold_percent,
   p.metadata AS payment_metadata,
-  s.settlement_breakup AS settlement_breakup
+  s.settlement_breakup AS settlement_breakup,
+  s.id::text AS settlement_id,
+  s.settlement_status AS settlement_status,
+  s.completed_at AS settlement_completed_at
 `;
 
 const WPAY_PAYMENTS_FROM = `
@@ -84,6 +98,35 @@ export class WpayPaymentsExportTooLargeError extends Error {
     super(`Export exceeds maximum of ${WPAY_ADMIN_PAYMENTS_MAX_EXPORT_ROWS} rows (${total} matched)`);
     this.name = 'WpayPaymentsExportTooLargeError';
   }
+}
+
+function buildExtraFilterSql(
+  filters: WpayAdminPaymentsQueryFilters,
+  startParamIndex: number,
+): { sql: string; params: unknown[]; nextParamIndex: number } {
+  let sql = '';
+  const params: unknown[] = [];
+  let paramIndex = startParamIndex;
+
+  const vendorSearch = String(filters.vendorSearch ?? '').trim();
+  if (vendorSearch) {
+    sql += ` AND (
+      COALESCE(v.business_name, '') ILIKE $${paramIndex}
+      OR COALESCE(v.owner_name, '') ILIKE $${paramIndex}
+      OR p.vendor_id::text ILIKE $${paramIndex}
+    )`;
+    params.push(`%${vendorSearch}%`);
+    paramIndex += 1;
+  }
+
+  const payoutStatus = filters.payoutStatus ?? 'all';
+  if (payoutStatus === 'pending') {
+    sql += ` AND s.id IS NOT NULL AND LOWER(COALESCE(s.settlement_status, '')) NOT IN ('completed', 'processed')`;
+  } else if (payoutStatus === 'settled') {
+    sql += ` AND LOWER(COALESCE(s.settlement_status, '')) IN ('completed', 'processed')`;
+  }
+
+  return { sql, params, nextParamIndex: paramIndex };
 }
 
 export async function dbWpayPlatformWithholdPercentByVendorIds(
@@ -111,29 +154,28 @@ export async function dbWpayPlatformWithholdPercentByVendorIds(
   return map;
 }
 
-async function countWpayAdminPayments(dateFilter: WpayPaymentsDateFilter): Promise<number> {
-  const { sql, params } = buildWpayPaymentsDateFilterSql(dateFilter, 1);
+async function countWpayAdminPayments(filters: WpayAdminPaymentsQueryFilters): Promise<number> {
+  const datePart = buildWpayPaymentsDateFilterSql(filters.dateFilter, 1);
+  const extra = buildExtraFilterSql(filters, datePart.nextParamIndex);
   const countResult = await query(
     `SELECT COUNT(*)::int AS total
-     FROM payments p
-     WHERE ${WPAY_PAYMENTS_BASE_WHERE}${sql}`,
-    params,
+     ${WPAY_PAYMENTS_FROM}
+     WHERE ${WPAY_PAYMENTS_BASE_WHERE}${datePart.sql}${extra.sql}`,
+    [...datePart.params, ...extra.params],
   );
   return Number((countResult.rows[0] as { total?: number })?.total ?? 0);
 }
 
 async function selectWpayAdminPayments(params: {
-  dateFilter: WpayPaymentsDateFilter;
+  filters: WpayAdminPaymentsQueryFilters;
   limit?: number;
   offset?: number;
 }): Promise<WpayAdminPaymentDbRow[]> {
-  const { sql, params: filterParams, nextParamIndex } = buildWpayPaymentsDateFilterSql(
-    params.dateFilter,
-    1,
-  );
-  const queryParams = [...filterParams];
+  const datePart = buildWpayPaymentsDateFilterSql(params.filters.dateFilter, 1);
+  const extra = buildExtraFilterSql(params.filters, datePart.nextParamIndex);
+  const queryParams = [...datePart.params, ...extra.params];
   let limitSql = '';
-  let paramIndex = nextParamIndex;
+  let paramIndex = extra.nextParamIndex;
 
   if (params.limit != null) {
     queryParams.push(params.limit);
@@ -148,7 +190,7 @@ async function selectWpayAdminPayments(params: {
   const result = await query(
     `SELECT ${WPAY_PAYMENTS_SELECT}
      ${WPAY_PAYMENTS_FROM}
-     WHERE ${WPAY_PAYMENTS_BASE_WHERE}${sql}
+     WHERE ${WPAY_PAYMENTS_BASE_WHERE}${datePart.sql}${extra.sql}
      ORDER BY p.completed_at DESC, p.id DESC${limitSql}`,
     queryParams,
   );
@@ -159,12 +201,12 @@ async function selectWpayAdminPayments(params: {
 export async function dbWpayAdminPaymentsPage(params: {
   page: number;
   pageSize: number;
-  dateFilter: WpayPaymentsDateFilter;
+  filters: WpayAdminPaymentsQueryFilters;
 }): Promise<{ rows: WpayAdminPaymentDbRow[]; total: number }> {
-  const total = await countWpayAdminPayments(params.dateFilter);
+  const total = await countWpayAdminPayments(params.filters);
   const offset = (params.page - 1) * params.pageSize;
   const rows = await selectWpayAdminPayments({
-    dateFilter: params.dateFilter,
+    filters: params.filters,
     limit: params.pageSize,
     offset,
   });
@@ -172,11 +214,46 @@ export async function dbWpayAdminPaymentsPage(params: {
 }
 
 export async function dbWpayAdminPaymentsExport(
-  dateFilter: WpayPaymentsDateFilter,
+  filters: WpayAdminPaymentsQueryFilters,
 ): Promise<WpayAdminPaymentDbRow[]> {
-  const total = await countWpayAdminPayments(dateFilter);
+  const total = await countWpayAdminPayments(filters);
   if (total > WPAY_ADMIN_PAYMENTS_MAX_EXPORT_ROWS) {
     throw new WpayPaymentsExportTooLargeError(total);
   }
-  return selectWpayAdminPayments({ dateFilter });
+  return selectWpayAdminPayments({ filters });
+}
+
+/**
+ * Mark WPay settlements as completed (vendor payout settled). Status-only; amounts unchanged.
+ * One-way: only rows currently `pending` (or non-completed) are updated.
+ */
+export async function dbWpayAdminSettlePaymentsByPaymentIds(
+  paymentIds: readonly string[],
+): Promise<{ settledPaymentIds: string[] }> {
+  const uniqueIds = [...new Set(paymentIds.map((id) => String(id).trim()).filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    return { settledPaymentIds: [] };
+  }
+
+  const result = await query(
+    `UPDATE settlements s
+     SET settlement_status = 'completed',
+         completed_at = COALESCE(s.completed_at, NOW()),
+         processed_at = COALESCE(s.processed_at, NOW())
+     FROM payments p
+     WHERE s.payment_id = p.id
+       AND s.order_type = 'warmpawz_pay'
+       AND p.payment_source = 'warmpawz_pay'
+       AND p.payment_status = 'completed'
+       AND p.id = ANY($1::uuid[])
+       AND LOWER(COALESCE(s.settlement_status, '')) NOT IN ('completed', 'processed')
+     RETURNING p.id::text AS payment_id`,
+    [uniqueIds],
+  );
+
+  const settledPaymentIds = (result.rows as Array<{ payment_id?: string }>)
+    .map((row) => String(row.payment_id ?? '').trim())
+    .filter(Boolean);
+
+  return { settledPaymentIds };
 }
