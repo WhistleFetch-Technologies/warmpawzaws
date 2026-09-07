@@ -49,6 +49,7 @@ import {
   getAdminPortalMarketingNavItems,
   type AdminPortalNavItem,
 } from '@warmpawz/shared-types';
+import { hrefForAdminSidebarView } from '@/lib/admin-sidebar-nav';
 
 const logoImage = '/logo.png';
 
@@ -135,14 +136,9 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
       window.location.href = '/marketing/campaigns';
     };
   }
-  if (item.id === 'warmpawz-pay-catalogue') {
+  if (item.id === 'warmpawz-pay-catalogue' || item.id === 'warmpawz-appointments-catalogue') {
     return () => {
-      window.location.href = '/warmpawz-pay/catalogue';
-    };
-  }
-  if (item.id === 'warmpawz-appointments-catalogue') {
-    return () => {
-      window.location.href = item.routeHint ?? '/warmpawz-appointments/catalogue';
+      window.location.href = hrefForAdminSidebarView(item.id);
     };
   }
   return () => onNavigate(item.id);

@@ -31,7 +31,8 @@ export type WpayAdminPaymentDbRow = {
   settlement_breakup: Record<string, unknown> | null;
 };
 
-const WPAY_PAYMENTS_BASE_WHERE = `
+/** Successful Pay Bill rows — shared by the payments list and dashboard money totals. */
+export const WPAY_PAYMENTS_BASE_WHERE = `
   p.payment_source = 'warmpawz_pay'
   AND p.payment_status = 'completed'
   AND p.completed_at IS NOT NULL
@@ -179,4 +180,64 @@ export async function dbWpayAdminPaymentsExport(
     throw new WpayPaymentsExportTooLargeError(total);
   }
   return selectWpayAdminPayments({ dateFilter });
+}
+
+export type WpayAdminPaymentsDashboardTotals = {
+  readonly payBillOrders: number;
+  readonly customerPaid: number;
+  readonly customerSaved: number;
+  readonly platformRevenue: number;
+};
+
+function asDashboardMoney(value: unknown): number {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * All-time aggregates for completed Warmpawz Pay Bill payments.
+ * Reuses the same success filter as the admin payments list (`total` / row source).
+ * Sums persisted payment and settlement-breakup amounts — does not recalculate fees.
+ */
+export async function dbWpayAdminPaymentsDashboardTotals(
+  db: { query: typeof query } = { query },
+): Promise<WpayAdminPaymentsDashboardTotals> {
+  const result = await db.query(
+    `SELECT
+        COUNT(p.id)::int AS pay_bill_orders,
+        COALESCE(SUM(p.amount), 0) AS customer_paid,
+        COALESCE(SUM(p.discount_amount), 0) AS customer_saved,
+        COALESCE(
+          SUM(
+            COALESCE(
+              (s.settlement_breakup->>'wpayRevenueAmount')::numeric,
+              s.commission_amount,
+              0
+            )
+          ),
+          0
+        ) AS platform_revenue
+     FROM payments p
+     LEFT JOIN settlements s
+       ON s.payment_id = p.id
+      AND s.order_type = 'warmpawz_pay'
+     WHERE ${WPAY_PAYMENTS_BASE_WHERE}`,
+  );
+
+  const row = result.rows[0] as
+    | {
+        pay_bill_orders?: number | string;
+        customer_paid?: number | string;
+        customer_saved?: number | string;
+        platform_revenue?: number | string;
+      }
+    | undefined;
+
+  return {
+    payBillOrders: Number(row?.pay_bill_orders ?? 0) || 0,
+    customerPaid: asDashboardMoney(row?.customer_paid),
+    customerSaved: asDashboardMoney(row?.customer_saved),
+    platformRevenue: asDashboardMoney(row?.platform_revenue),
+  };
 }

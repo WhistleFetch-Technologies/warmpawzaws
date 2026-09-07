@@ -243,7 +243,7 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     section: 'main',
     sortOrder: 74,
     description: 'Warmpawz Appointments vendor catalogue administration',
-    routeHint: '/warmpawz-appointments/catalogue',
+    routeHint: '/warmpawz-appointments',
   },
   {
     id: 'warmpawz-pay-catalogue',

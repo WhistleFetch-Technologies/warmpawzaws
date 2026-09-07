@@ -11,6 +11,10 @@ export class DashboardMetricsLoadError extends Error {
   }
 }
 
+function asMetricCount(value: number): { value: number } {
+  return { value: Number.isFinite(value) ? value : 0 };
+}
+
 export class WarmpawzPayDashboardService {
   constructor(
     private readonly metricsRepository: IDashboardMetricsRepository = dashboardMetricsRepository,
@@ -20,15 +24,34 @@ export class WarmpawzPayDashboardService {
     console.info(`${WARMPAWZ_PAY_DASHBOARD_LOG_PREFIX} Loading dashboard metrics`);
 
     try {
-      const [publishedMerchants, averageDiscountPercent] = await Promise.all([
+      const [
+        publishedMerchants,
+        averageDiscountPercent,
+        draftUnpublished,
+        payEnabledTiers,
+        moneyTotals,
+        burnMode,
+      ] = await Promise.all([
         this.metricsRepository.countPublishedMerchants(),
         this.metricsRepository.getAverageDiscountPercent(),
+        this.metricsRepository.countDraftUnpublished(),
+        this.metricsRepository.countPayEnabledTiers(),
+        this.metricsRepository.getPayBillMoneyTotals(),
+        this.metricsRepository.getBurnMode(),
       ]);
 
       return {
         metrics: {
-          publishedMerchants: { value: publishedMerchants },
-          averageDiscountPercent: { value: averageDiscountPercent },
+          publishedMerchants: asMetricCount(publishedMerchants),
+          averageDiscountPercent: asMetricCount(averageDiscountPercent),
+          draftUnpublished: asMetricCount(draftUnpublished),
+          payEnabledTiers: asMetricCount(payEnabledTiers),
+          payBillOrders: asMetricCount(moneyTotals.payBillOrders),
+          customerPaid: asMetricCount(moneyTotals.customerPaid),
+          customerSaved: asMetricCount(moneyTotals.customerSaved),
+          platformRevenue: burnMode
+            ? { value: null, available: false }
+            : { value: asMetricCount(moneyTotals.platformRevenue).value, available: true },
         },
         generatedAt: new Date().toISOString(),
       };

@@ -21,6 +21,14 @@ jest.mock('../PaymentsTable', () => ({
   PaymentsTable: () => null,
 }));
 
+jest.mock('../PaymentsFilterBar', () => ({
+  PaymentsFilterBar: () => null,
+}));
+
+jest.mock('../ConvenienceSettingsPanel', () => ({
+  ConvenienceSettingsPanel: () => <div>Global WPay Fee Settings</div>,
+}));
+
 jest.mock('@/components/admin/marketing/analytics/AnalyticsStateViews', () => ({
   AnalyticsErrorState: ({
     message,
@@ -69,6 +77,12 @@ const sampleDashboardData: WarmpawzPayDashboardData = {
   metrics: {
     publishedMerchants: { value: 2 },
     averageDiscountPercent: { value: 12.5 },
+    draftUnpublished: { value: 1 },
+    payEnabledTiers: { value: 3 },
+    payBillOrders: { value: 4 },
+    customerPaid: { value: 200 },
+    customerSaved: { value: 20 },
+    platformRevenue: { value: 10, available: true },
   },
   generatedAt: '2026-07-23T12:00:00.000Z',
 };
@@ -145,5 +159,7 @@ describe('DashboardPage', () => {
     expect(
       screen.getByText('No merchants have been published yet.'),
     ).toBeInTheDocument();
+    expect(screen.getByText('0')).toBeInTheDocument();
+    expect(screen.getByText('0%')).toBeInTheDocument();
   });
 });

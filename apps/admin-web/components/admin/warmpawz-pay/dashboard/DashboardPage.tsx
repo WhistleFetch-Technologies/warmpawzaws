@@ -49,9 +49,7 @@ export function DashboardPage() {
         <EmptyState title="No merchants have been published yet." />
       ) : null}
 
-      {!isLoading && !error && data && !isEmpty ? (
-        <MetricsGrid metrics={data.metrics} />
-      ) : null}
+      {!isLoading && !error && data ? <MetricsGrid metrics={data.metrics} /> : null}
 
       <ConvenienceSettingsPanel />
 

@@ -30,6 +30,12 @@ function createDashboardService(
       metrics: {
         publishedMerchants: { value: 5 },
         averageDiscountPercent: { value: 0 },
+        draftUnpublished: { value: 2 },
+        payEnabledTiers: { value: 3 },
+        payBillOrders: { value: 8 },
+        customerPaid: { value: 1200 },
+        customerSaved: { value: 80 },
+        platformRevenue: { value: 40, available: true },
       },
       generatedAt: '2026-07-23T12:00:00.000Z',
     }),
@@ -75,6 +81,12 @@ describe('GET /admin/warmpawz-pay/dashboard', () => {
     expect(body.success).toBe(true);
     expect(body.data.metrics.publishedMerchants).toEqual({ value: 5 });
     expect(body.data.metrics.averageDiscountPercent).toEqual({ value: 0 });
+    expect(body.data.metrics.draftUnpublished).toEqual({ value: 2 });
+    expect(body.data.metrics.payEnabledTiers).toEqual({ value: 3 });
+    expect(body.data.metrics.payBillOrders).toEqual({ value: 8 });
+    expect(body.data.metrics.customerPaid).toEqual({ value: 1200 });
+    expect(body.data.metrics.customerSaved).toEqual({ value: 80 });
+    expect(body.data.metrics.platformRevenue).toEqual({ value: 40, available: true });
     expect(body.data.generatedAt).toBe('2026-07-23T12:00:00.000Z');
   });
 

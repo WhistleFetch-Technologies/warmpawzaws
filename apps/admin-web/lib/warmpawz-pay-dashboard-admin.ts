@@ -6,9 +6,20 @@ export interface DashboardMetricValue {
   readonly value: number;
 }
 
+export interface DashboardOptionalMetricValue {
+  readonly value: number | null;
+  readonly available: boolean;
+}
+
 export interface DashboardMetrics {
   readonly publishedMerchants: DashboardMetricValue;
   readonly averageDiscountPercent: DashboardMetricValue;
+  readonly draftUnpublished: DashboardMetricValue;
+  readonly payEnabledTiers: DashboardMetricValue;
+  readonly payBillOrders: DashboardMetricValue;
+  readonly customerPaid: DashboardMetricValue;
+  readonly customerSaved: DashboardMetricValue;
+  readonly platformRevenue: DashboardOptionalMetricValue;
 }
 
 export interface WarmpawzPayDashboardData {
@@ -40,6 +51,15 @@ function assertSuccess<T>(response: SuccessEnvelope<T> | ErrorEnvelope | T): T {
     }
   }
   return response as T;
+}
+
+export function dashboardMetricCount(metric?: { value?: number | null }): number {
+  const value = Number(metric?.value);
+  return Number.isFinite(value) ? value : 0;
+}
+
+export function isDashboardMetricAvailable(metric?: { available?: boolean }): boolean {
+  return metric?.available !== false;
 }
 
 export async function fetchWarmpawzPayDashboard(): Promise<WarmpawzPayDashboardData> {
