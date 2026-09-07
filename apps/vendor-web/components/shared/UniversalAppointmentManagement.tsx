@@ -124,6 +124,10 @@ interface Booking {
   customerLat?: string;
   customerLng?: string;
   distance?: number;
+  selectedServices?: unknown;
+  selected_services?: unknown;
+  commerce_mode?: string;
+  commerceMode?: string;
 }
 
 interface TimeSlot {
