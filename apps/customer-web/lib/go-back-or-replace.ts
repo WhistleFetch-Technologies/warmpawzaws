@@ -794,6 +794,112 @@ export function rememberBeforeWpayHistoryNav(): void {
   rememberWpayHistoryBackFromCurrentUrl();
 }
 
+// --- Warmpawz Pay hub / vendor: return to the service shell screen, not always home ---
+
+export const WPAY_BACK_INTENT_KEY = 'warmpawz_wpay_back_intent';
+export const WARMPAWZ_SHELL_SCREEN_KEY = 'warmpawz_shell_screen';
+
+type WpayBackIntent =
+  | { kind: 'path'; path: string }
+  | { kind: 'spa'; screen: string };
+
+const SERVICE_KEY_TO_SHELL_SCREEN: Record<string, string> = {
+  vet: 'vet',
+  grooming: 'grooming',
+  training: 'training',
+  walking: 'walker',
+  boarding: 'boarding',
+  sitting: 'pet-sitter',
+  nutrition: 'nutritionist',
+};
+
+export function persistShellScreen(screen: string): void {
+  if (typeof window === 'undefined') return;
+  const id = String(screen || '').trim();
+  if (!id) return;
+  try {
+    sessionStorage.setItem(WARMPAWZ_SHELL_SCREEN_KEY, id);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readPersistedShellScreen(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return String(sessionStorage.getItem(WARMPAWZ_SHELL_SCREEN_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function mapServiceKeyToShellScreen(serviceKey?: string): string {
+  const token = String(serviceKey || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, '_');
+  if (SERVICE_KEY_TO_SHELL_SCREEN[token]) return SERVICE_KEY_TO_SHELL_SCREEN[token];
+  if (token === 'groomer' || token === 'pet_groomer') return 'grooming';
+  if (token === 'trainer' || token === 'behaviorist' || token === 'behaviourist') return 'training';
+  if (token === 'walker' || token === 'dog_walker') return 'walker';
+  if (token === 'pet_sitter' || token === 'pet_sitting') return 'pet-sitter';
+  if (token === 'nutritionist') return 'nutritionist';
+  return '';
+}
+
+/** Call before leaving `/` or another route for `/warmpawz-pay`. */
+export function rememberWpayBackBeforeLeave(opts?: {
+  screen?: string;
+  serviceKey?: string;
+}): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname + window.location.search;
+  if (!isSafeInternalPath(path) || path.startsWith('/warmpawz-pay')) return;
+  if (path !== '/' && path !== '') {
+    sessionStorage.setItem(
+      WPAY_BACK_INTENT_KEY,
+      JSON.stringify({ kind: 'path', path } satisfies WpayBackIntent),
+    );
+    return;
+  }
+  const screen =
+    String(opts?.screen || '').trim() ||
+    readPersistedShellScreen() ||
+    mapServiceKeyToShellScreen(opts?.serviceKey);
+  if (!screen) return;
+  sessionStorage.setItem(
+    WPAY_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'spa', screen } satisfies WpayBackIntent),
+  );
+}
+
+/** Warmpawz Pay hub / vendor Back — prior service screen, prior route, or home. */
+export function handleWpayPageBack(router: RouterWithPush): void {
+  if (typeof window === 'undefined') {
+    router.replace('/');
+    return;
+  }
+  const raw = sessionStorage.getItem(WPAY_BACK_INTENT_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as WpayBackIntent;
+      sessionStorage.removeItem(WPAY_BACK_INTENT_KEY);
+      if (parsed.kind === 'path' && isSafeInternalPath(parsed.path) && !parsed.path.startsWith('/warmpawz-pay')) {
+        router.push(parsed.path);
+        return;
+      }
+      if (parsed.kind === 'spa' && parsed.screen) {
+        sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, parsed.screen);
+        router.replace('/');
+        return;
+      }
+    } catch {
+      sessionStorage.removeItem(WPAY_BACK_INTENT_KEY);
+    }
+  }
+  goBackOrReplace(router, '/');
+}
+
 /** Warmpawz Pay History header Back — profile menu, prior route, or Pay hub. */
 export function handleWpayHistoryPageBack(router: RouterWithPush): void {
   if (typeof window === 'undefined') {

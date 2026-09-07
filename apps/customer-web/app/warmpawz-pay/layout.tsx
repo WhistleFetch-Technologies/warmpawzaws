@@ -1,10 +1,22 @@
 'use client';
 
+import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { BottomNavigation } from '@/components/customer/bottomNavigation/BottomNavigation';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
+import { handleWpayPageBack } from '@/lib/go-back-or-replace';
+import { BACK_HANDLER_PRIORITY, registerBackHandler } from '@/lib/navigation/back-handler-registry';
 
 const WPAY_VENDORS_PATH = '/warmpawz-pay';
+
+function isWpayHubOrVendorPath(pathname: string): boolean {
+  const path = (pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
+  if (!path.startsWith('/warmpawz-pay')) return false;
+  if (path.startsWith('/warmpawz-pay/history') || path.startsWith('/warmpawz-pay/success')) {
+    return false;
+  }
+  return true;
+}
 
 export default function WarmpawzPayLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -12,6 +24,15 @@ export default function WarmpawzPayLayout({ children }: { children: React.ReactN
   const { handleTabbedBottomNav, accountSidebar } = useCustomerAccountSidebarHost();
   const onVendorsList =
     pathname === WPAY_VENDORS_PATH || pathname === `${WPAY_VENDORS_PATH}/`;
+
+  useEffect(() => {
+    return registerBackHandler(() => {
+      const path = typeof window !== 'undefined' ? window.location.pathname : pathname || '';
+      if (!isWpayHubOrVendorPath(path)) return false;
+      handleWpayPageBack(router);
+      return true;
+    }, BACK_HANDLER_PRIORITY.urlHistory + 5);
+  }, [pathname, router]);
 
   return (
     <>

@@ -1,3 +1,5 @@
+/** @jest-environment jsdom */
+
 jest.mock('@/lib/commerce-switch-routing/resolve-service-booking-commerce-route', () => ({
   resolveServiceBookingCommerceRouteForNavigation: jest.fn(),
 }));
@@ -43,5 +45,29 @@ describe('launchWarmpawzPayServiceBooking', () => {
     });
 
     expect(push).toHaveBeenCalledWith('/warmpawz-pay/vendors/placeholder?vendorId=v-1');
+  });
+
+  it('remembers the service screen before opening Pay so Back can restore it', () => {
+    (resolveServiceBookingCommerceRouteForNavigation as jest.Mock).mockReturnValue({
+      useMarketplaceFlow: false,
+      effectiveModelId: 'warmpawz_pay',
+    });
+    sessionStorage.clear();
+    Object.defineProperty(window, 'location', {
+      value: { pathname: '/', search: '', href: 'http://localhost/' },
+      writable: true,
+      configurable: true,
+    });
+
+    launchWarmpawzPayServiceBooking({
+      router,
+      serviceKey: 'vet',
+      category: 'vet',
+      vendorId: 'v-1',
+    });
+
+    expect(sessionStorage.getItem('warmpawz_wpay_back_intent')).toBe(
+      JSON.stringify({ kind: 'spa', screen: 'vet' }),
+    );
   });
 });

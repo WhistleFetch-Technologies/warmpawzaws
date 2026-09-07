@@ -1,4 +1,5 @@
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import { rememberWpayBackBeforeLeave } from '@/lib/go-back-or-replace';
 import { buildWpayVendorPayPath } from '@/lib/warmpawz-pay/wpay-guest-journey';
 import { mapServiceKeyToWpayCategory } from './map-service-to-wpay-category';
 import { resolveServiceBookingCommerceRouteForNavigation } from './resolve-service-booking-commerce-route';
@@ -18,6 +19,7 @@ export function launchWarmpawzPayServiceBooking(opts: {
   serviceKey: string;
   category?: string;
   vendorId?: string;
+  resumeScreen?: string;
 }): void {
   const route = resolveServiceBookingCommerceRouteForNavigation({
     serviceKey: opts.serviceKey,
@@ -26,6 +28,11 @@ export function launchWarmpawzPayServiceBooking(opts: {
   if (!isWarmpawzPayBookingFlow(route)) {
     return;
   }
+
+  rememberWpayBackBeforeLeave({
+    screen: opts.resumeScreen,
+    serviceKey: opts.serviceKey,
+  });
 
   const vendorId = String(opts.vendorId ?? '').trim();
   if (vendorId) {

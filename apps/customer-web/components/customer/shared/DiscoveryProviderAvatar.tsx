@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { CachedImage } from '@/components/shared/CachedImage';
 
 type DiscoveryProviderAvatarProps = {
   name: string;
@@ -9,7 +10,7 @@ type DiscoveryProviderAvatarProps = {
   fallbackClassName?: string;
 };
 
-/** List-card avatar with onError fallback when presigned/thumb URL fails. */
+/** List-card avatar — CachedImage signs S3 keys / expired URLs; letter fallback on miss. */
 export function DiscoveryProviderAvatar({
   name,
   photo,
@@ -23,14 +24,15 @@ export function DiscoveryProviderAvatar({
   }, [photo]);
 
   const initial = (name || 'P').charAt(0).toUpperCase();
+  const showPhoto = Boolean(photo?.trim()) && !failed;
 
-  if (photo && !failed) {
+  if (showPhoto) {
     return (
-      <img
+      <CachedImage
         src={photo}
         alt={name}
         className={className}
-        onError={() => setFailed(true)}
+        onUnavailable={() => setFailed(true)}
       />
     );
   }

@@ -45,6 +45,8 @@ describe('dbListWapptDiscoveryByCategory specialization filter', () => {
     expect(resolveSpecializationDiscoveryKeys).toHaveBeenCalledWith('vaccination');
     expect(sqlVendorMatchesDeclaredSpecialization).toHaveBeenCalled();
     const [sql, params] = query.mock.calls[0];
+    expect(String(sql)).toContain('v.profile_photo_url');
+    expect(String(sql)).toContain('v.metadata');
     expect(String(sql)).toContain('vendor_specializations filter');
     expect(params).toEqual(
       expect.arrayContaining([['vaccination'], expect.arrayContaining(['%vaccination%'])]),

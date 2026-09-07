@@ -16,6 +16,8 @@ export type WapptDiscoveryVendorRow = {
   city: string | null;
   address: string | null;
   profile_image: string | null;
+  profile_photo_url: string | null;
+  metadata: unknown;
   is_online: boolean;
   role_display_name: string | null;
   role_name: string | null;
@@ -131,6 +133,8 @@ export async function dbListWapptDiscoveryByCategory(opts: {
       v.city,
       v.address,
       v.profile_image,
+      v.profile_photo_url,
+      v.metadata,
       COALESCE(v.is_online, false) AS is_online,
       r.display_name AS role_display_name,
       r.name AS role_name,

@@ -58,6 +58,8 @@ import { emitGuestAuthAnalytics, requestGuestAuth, requestGuestAuthForProfileCon
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
+  persistShellScreen,
+  rememberWpayBackBeforeLeave,
   consumeOpenAccountMenuAfterNav,
   rememberMyPackagesBackFromAccountMenu,
   rememberWpayHistoryBackFromAccountMenu,
@@ -86,6 +88,7 @@ import {
   WALLET_HUB_CHILDREN,
 } from '@/lib/navigation/account-shell-back';
 import { createShellNavigationService } from '@/lib/navigation/shell-navigation-service';
+import { isKnownShellScreen } from '@/lib/navigation/shell-route-policies';
 import {
   completeEmbeddedCheckoutSuccess,
   completeEmbeddedCheckoutViewOrders,
@@ -684,6 +687,9 @@ export function CustomerHomeWrapper({
   const handleShellAccountBackRef = useRef<() => void>(() => {});
   const currentScreenForBackRef = useRef(currentScreen);
   currentScreenForBackRef.current = currentScreen;
+  useEffect(() => {
+    persistShellScreen(String(currentScreen || ''));
+  }, [currentScreen]);
   /** After opening grooming/training style hub from problem-grid discovery, full back returns here instead of the service hub. */
   const [returnToProblemGridFromStyleHub, setReturnToProblemGridFromStyleHub] = useState(false);
   /**
@@ -1078,7 +1084,7 @@ export function CustomerHomeWrapper({
     const raw = sessionStorage.getItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
     if (!raw) return;
     sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
-    if (WARMPAWZ_HOME_RESUME_SCREENS.has(raw)) {
+    if (WARMPAWZ_HOME_RESUME_SCREENS.has(raw) || isKnownShellScreen(raw)) {
       if (raw === 'booking-messages') {
         openMessages();
         return;
@@ -2513,6 +2519,7 @@ export function CustomerHomeWrapper({
         goToHome();
         return;
       }
+      rememberWpayBackBeforeLeave({ screen: currentScreenForBackRef.current });
       router.push('/warmpawz-pay');
     } else if (screen === 'profile') {
       setPetSitterOriginScreen(null);

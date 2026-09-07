@@ -189,6 +189,14 @@ export function getShellForwardPolicy(screen: string): ShellRoutePolicyDef {
   return { forward: 'push' };
 }
 
+/** True when `screen` is a registered hub / entity / overlay — safe to restore after URL leave. */
+export function isKnownShellScreen(screen: string): boolean {
+  const id = String(screen || '').trim();
+  if (!id) return false;
+  if (HUB_SCREENS.has(id) || RESET_SCREENS.has(id) || REPLACE_SCREENS.has(id)) return true;
+  return id in ENTITY_SCREENS || id in explicitPolicies;
+}
+
 /** All registered shell screen ids with policies (for dev validation). */
 export function listRegisteredShellScreens(): string[] {
   const ids = new Set<string>([

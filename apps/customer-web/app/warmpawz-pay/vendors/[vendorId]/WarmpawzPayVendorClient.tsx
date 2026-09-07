@@ -13,6 +13,7 @@ import { previewWpayCommercialQuote, previewWpayQuote } from '@/lib/warmpawz-pay
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
 import { buildWpaySuccessPath } from '@/lib/warmpawz-pay/wpay-success-href';
 import { consumeRestoredWpayPayBillAmount } from '@/lib/warmpawz-pay/wpay-guest-journey';
+import { handleWpayPageBack } from '@/lib/go-back-or-replace';
 import {
   emitGuestAuthAnalytics,
   isGuestApplicationState,
@@ -153,7 +154,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     return (
       <div className="p-8 text-center">
         <p className="text-sm text-red-600">{error ?? 'Vendor not found'}</p>
-        <button type="button" onClick={() => router.back()} className="mt-4 text-sm text-[#FF6B00]">
+        <button type="button" onClick={() => handleWpayPageBack(router)} className="mt-4 text-sm text-[#FF6B00]">
           Go back
         </button>
       </div>
@@ -171,7 +172,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         serviceIcon={QrCode}
         iconColor="text-white"
         showBackButton={true}
-        onBack={() => router.back()}
+        onBack={() => handleWpayPageBack(router)}
         bottomEdge="flat"
       />
 

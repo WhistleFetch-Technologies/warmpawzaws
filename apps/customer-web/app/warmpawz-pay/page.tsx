@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Clock, Search } from 'lucide-react';
 import { useWpayVendorFeed } from '@/hooks/useWpayVendorFeed';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
-import { rememberWpayHistoryBackFromCurrentUrl } from '@/lib/go-back-or-replace';
+import { handleWpayPageBack, rememberWpayHistoryBackFromCurrentUrl } from '@/lib/go-back-or-replace';
 import { mapWpayVendorCardToProps } from '@/lib/warmpawz-pay/map-wpay-vendor-card-to-props';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { buildWpayVendorPayPath } from '@/lib/warmpawz-pay/wpay-guest-journey';
@@ -119,7 +119,7 @@ function WarmpawzPayPageContent() {
     <div className="mx-auto w-full max-w-customer">
       <header className="bg-gradient-to-b from-[#FF8C42] to-[#FF6B00] px-4 pb-4 pt-[max(0.75rem,env(safe-area-inset-top))] text-white">
         <div className="mb-3 flex items-center justify-between">
-          <button type="button" onClick={() => router.push('/')} aria-label="Back" className="p-1">
+          <button type="button" onClick={() => handleWpayPageBack(router)} aria-label="Back" className="p-1">
             <ArrowLeft className="h-6 w-6" />
           </button>
           <button

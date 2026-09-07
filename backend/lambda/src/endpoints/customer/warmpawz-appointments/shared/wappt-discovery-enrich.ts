@@ -2,6 +2,7 @@ import { acceptableStylesForService } from '../../../../lib/search-discovery-par
 import { getNextAvailableSlot } from '../../discovery/repos/legacy-helpers.repo';
 import { mapWithConcurrency } from '../../../../services/image';
 import { DISCOVERY_LIST_SLOT_TIMEOUT_MS } from '../../../../utils/discovery-list-enrich';
+import { getVendorListingPhotoUrl } from '../../../../utils/vendor-listing-photo';
 
 const CLINIC_HOME_STYLES = ['at_center', 'at_vendor', 'at_clinic', 'at_home', 'home_visit'];
 const TELE_STYLES = ['tele', 'online', 'video_consultation'];
@@ -41,8 +42,24 @@ export async function enrichWapptDiscoveryCards(
       DISCOVERY_LIST_SLOT_TIMEOUT_MS,
     );
     const display = slot?.display?.trim() || 'Tap to view availability';
+    let photoUrl: string | null = (typeof card.photoUrl === 'string' && card.photoUrl.trim())
+      ? String(card.photoUrl)
+      : null;
+    try {
+      photoUrl = await getVendorListingPhotoUrl({
+        id: vendorId,
+        vendor_id: vendorId,
+        vendor_type: card.vendorType,
+        profile_photo_url: card.profile_photo_url,
+        profile_image: card.profile_image ?? card.photoUrl,
+        metadata: card.metadata,
+      });
+    } catch {
+      /* keep mapped photoUrl */
+    }
     return {
       ...card,
+      photoUrl,
       nextAvailable: slot ?? { display },
       availabilityText: display,
       nextAvailableSlot: display,
