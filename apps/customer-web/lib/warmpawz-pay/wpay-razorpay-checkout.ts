@@ -147,7 +147,15 @@ export async function runWpayRazorpayCheckout(params: {
           });
         },
       },
-      onPaymentFailed: reject,
+      // A failed ATTEMPT is not terminal. Razorpay keeps Checkout open and
+      // shows its retry sheet. Rejecting here would settle Pay Bill while
+      // the user can still complete a later attempt (handler or callback_url).
+      onPaymentFailed: (error) => {
+        console.warn(
+          '[wpay] Razorpay payment attempt failed; checkout remains open for retry',
+          error.message,
+        );
+      },
     }).catch(reject);
   });
 }
