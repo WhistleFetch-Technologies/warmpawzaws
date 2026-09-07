@@ -23,6 +23,7 @@ import {
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
   WAPPT_BOOKING_MODE,
 } from '@/lib/warmpawz-appointments-customer';
+import { toWapptRequestedServices } from '@/lib/wappt-requested-services';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
@@ -1035,6 +1036,9 @@ export function TrainingBookingRouter({
         quantity={1}
         customerPhone={phone}
         customerId={customerId || undefined}
+        selectedServices={
+          appointmentsMode ? toWapptRequestedServices(allSelectedServices) : undefined
+        }
         onBack={() => {
           setShowPaymentPage(false);
           if (appointmentsMode && step === 'payment') {
@@ -1077,6 +1081,7 @@ export function TrainingBookingRouter({
             amount={reviewTotal}
             selectedDate={selectedDate}
             selectedTime={selectedTime}
+            requestedServices={toWapptRequestedServices(allSelectedServices)}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
             addressLine={
@@ -1256,6 +1261,7 @@ export function TrainingBookingRouter({
             amount={reviewTotal}
             selectedDate={selectedDate}
             selectedTime={selectedTime}
+            requestedServices={toWapptRequestedServices(allSelectedServices)}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
             addressLine={

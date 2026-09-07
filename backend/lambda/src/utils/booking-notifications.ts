@@ -6,6 +6,7 @@ import { sendEventNotification } from '../aws/aws-sns-notification-service';
 import { dispatchNotification } from './notification-dispatch';
 import { WAPPT_BOOKING_MODE } from '../endpoints/warmpawz-appointments/shared/wappt-booking-preflight';
 import { resolveBookingNotificationServiceName } from '../endpoints/warmpawz-appointments/shared/vendor-booking-display';
+import { sanitizeWapptSelectedServices } from '../endpoints/warmpawz-appointments/shared/wappt-booking-preflight';
 export { resolveBookingNotificationServiceName } from '../endpoints/warmpawz-appointments/shared/vendor-booking-display';
 import {
   formatIstBookingWhen,
@@ -99,6 +100,9 @@ export async function notifyBookingCreated(bookingId: string, requestId?: string
     String(booking.booking_date || ''),
     String(booking.booking_time || '')
   );
+  const selectedServices = sanitizeWapptSelectedServices(
+    booking.selected_services ?? booking.selectedServices,
+  );
 
   if (booking.vendor_id) {
     await dispatchNotification({
@@ -118,6 +122,7 @@ export async function notifyBookingCreated(bookingId: string, requestId?: string
         bookingDate: booking.booking_date,
         bookingTime: booking.booking_time,
         address: booking.address,
+        ...(selectedServices.length ? { selectedServices } : {}),
         dedupeKey: `booking-${booking.id}-created-vendor`,
       },
     });

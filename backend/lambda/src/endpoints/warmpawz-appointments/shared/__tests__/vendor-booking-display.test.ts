@@ -2,6 +2,7 @@ import {
   applyVendorBookingDisplayFields,
   isTeleServiceStyle,
   isWarmpawzAppointmentsCommerceMode,
+  resolveBookingNotificationServiceName,
   resolveVendorBookingServiceDisplayName,
   shouldExposeVendorBookingPrice,
 } from '../vendor-booking-display';
@@ -37,6 +38,18 @@ describe('vendor-booking-display', () => {
     expect(patch.serviceName).toBe('Appointment');
     expect(patch.price).toBeNull();
     expect(patch.total_amount).toBeNull();
+    expect(
+      resolveVendorBookingServiceDisplayName({
+        ...booking,
+        selected_services: [{ id: 'a', name: 'Bath' }],
+      } as typeof booking & { selected_services: Array<{ id: string; name: string }> }),
+    ).toBe('Appointment');
+    expect(
+      resolveBookingNotificationServiceName({
+        ...booking,
+        selected_services: [{ id: 'a', name: 'Bath' }, { id: 'b', name: 'Haircut' }],
+      }),
+    ).toBe('Appointment (Bath, Haircut)');
   });
 
   it('WAPPT tele edge case: tele wins — catalog name and price visible', () => {

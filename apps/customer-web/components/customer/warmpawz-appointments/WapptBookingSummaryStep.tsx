@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatTime12Hour } from '@/lib/wappt-booking-time';
 import { getWarmpawzAppointmentServiceLabel } from '@/lib/warmpawz-appointments-customer';
+import { formatWapptRequestedServiceNames } from '@/lib/wappt-requested-services';
 
 type WapptBookingSummaryStepProps = {
   category: string;
@@ -23,6 +24,7 @@ type WapptBookingSummaryStepProps = {
   onContinue: () => void;
   continueLabel?: string;
   loading?: boolean;
+  requestedServices?: Array<{ name?: string; serviceName?: string }>;
 };
 
 function formatStayDate(date: string): string {
@@ -51,10 +53,12 @@ export function WapptBookingSummaryStep({
   onContinue,
   continueLabel = 'Proceed to Payment',
   loading,
+  requestedServices,
 }: WapptBookingSummaryStepProps) {
   const StyleIcon = serviceStyle === 'at_home' ? Home : Building2;
   const serviceLabel = getWarmpawzAppointmentServiceLabel({ category, serviceStyle });
   const isBoarding = variant === 'boarding';
+  const requestedNames = formatWapptRequestedServiceNames(requestedServices ?? []);
 
   return (
     <div className="space-y-4 cw-scroll-pad-tabbar">
@@ -70,6 +74,12 @@ export function WapptBookingSummaryStep({
           </div>
           <p className="font-bold text-orange-600">{formatPriceWithSymbol(amount)}</p>
         </div>
+        {requestedNames ? (
+          <p className="text-sm text-gray-600">
+            <span className="font-medium text-gray-800">Services requested: </span>
+            {requestedNames}
+          </p>
+        ) : null}
 
         {isBoarding ? (
           <div className="space-y-2 text-sm">

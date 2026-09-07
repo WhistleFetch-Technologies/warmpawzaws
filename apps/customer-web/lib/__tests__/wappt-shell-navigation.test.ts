@@ -111,6 +111,38 @@ describe('handleWapptShellScreenNavigate', () => {
     );
   });
 
+  it('preserves selectedServices through shell booking payload', () => {
+    const payload = buildWapptShellBookingPayload('grooming', {
+      vendorId: 'g-1',
+      appointmentsMode: true,
+      selectedServices: [{ id: 'svc-bath', serviceId: 'svc-bath', name: 'Bath' }],
+    });
+    expect(payload.appointmentsMode).toBe(true);
+    expect(payload.selectedServices).toEqual([
+      { id: 'svc-bath', serviceId: 'svc-bath', name: 'Bath' },
+    ]);
+  });
+
+  it('routes walker booking with selectedServices', () => {
+    const actions = createActions();
+    handleWapptShellScreenNavigate(
+      'walker',
+      'walker-booking',
+      {
+        vendorId: 'w-1',
+        selectedServices: [{ id: 'walk-1', serviceId: 'walk-1', name: 'Evening Walk' }],
+      },
+      actions,
+    );
+    expect(actions.setWalkerBookingState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appointmentsMode: true,
+        vendorId: 'w-1',
+        selectedServices: [{ id: 'walk-1', serviceId: 'walk-1', name: 'Evening Walk' }],
+      }),
+    );
+  });
+
   it('buildWapptShellBookingPayload sets appointmentsMode for boarding', () => {
     const payload = buildWapptShellBookingPayload('boarding', { vendorId: 'b-1' });
     expect(payload.appointmentsMode).toBe(true);

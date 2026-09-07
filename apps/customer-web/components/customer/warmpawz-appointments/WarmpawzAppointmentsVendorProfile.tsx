@@ -45,6 +45,13 @@ import { resolveWapptStylePlaceholderIcon } from '@/lib/warmpawz-appointments/wa
 import { getWapptHubConfig } from '@/lib/wappt-hub-registry';
 import { useWarmpawzAppointmentsVendorProfile } from '@/hooks/useWarmpawzAppointmentsVendorProfile';
 import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
+import {
+  canSelectWapptSlot,
+  partitionWapptListedServices,
+  toWapptRequestedServices,
+  toggleWapptOneOffSelection,
+  wapptServiceSelectionKey,
+} from '@/lib/wappt-requested-services';
 
 type TabId = 'overview' | 'services' | 'reviews';
 
@@ -73,6 +80,7 @@ export function WarmpawzAppointmentsVendorProfile({
 }: WarmpawzAppointmentsVendorProfileProps) {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(() => new Set());
   const previousTabRef = useRef<TabId>('overview');
 
   const {
@@ -172,6 +180,16 @@ export function WarmpawzAppointmentsVendorProfile({
     [provider?.services, searchQuery],
   );
 
+  const { oneOff: selectableServices } = useMemo(
+    () => partitionWapptListedServices(filteredServices),
+    [filteredServices],
+  );
+
+  const canBookSlot = canSelectWapptSlot({
+    selectableCount: selectableServices.length,
+    selectedCount: selectedServiceIds.size,
+  });
+
   const handleShare = async () => {
     if (!profileVendorId) return;
     await shareVendorProfile({
@@ -198,6 +216,7 @@ export function WarmpawzAppointmentsVendorProfile({
     ) {
       return;
     }
+    if (!canBookSlot) return;
     if (category === 'nutrition') {
       onNavigate('nutritionist-booking', {
         vendorId: vid,
@@ -209,15 +228,27 @@ export function WarmpawzAppointmentsVendorProfile({
       });
       return;
     }
+    const requested = toWapptRequestedServices(
+      selectableServices.filter((service) =>
+        selectedServiceIds.has(wapptServiceSelectionKey(service)),
+      ),
+    );
     onNavigate(resolveWarmpawzBookingScreen(category), {
       ...buildWarmpawzAppointmentsBookingNav({
         vendorId: vid,
         vendorName: providerName,
         serviceStyle,
         category,
+        selectedServices: requested,
       }),
       appointmentsMode: true,
     });
+  };
+
+  const handleToggleService = (service: { id?: string; serviceId?: string }) => {
+    const key = wapptServiceSelectionKey(service);
+    if (!key) return;
+    setSelectedServiceIds((prev) => toggleWapptOneOffSelection(prev, key, selectableServices));
   };
 
   const isTeleMarketplace = serviceStyle === 'tele';
@@ -532,13 +563,38 @@ export function WarmpawzAppointmentsVendorProfile({
 
                 {filteredServices.length > 0 ? (
                   <div className="space-y-3">
-                    {filteredServices.map((service) => (
+                    {filteredServices.map((service) => {
+                      const serviceKey = wapptServiceSelectionKey(service);
+                      const isOneOff = selectableServices.some(
+                        (row) => wapptServiceSelectionKey(row) === serviceKey,
+                      );
+                      const isSelected = serviceKey ? selectedServiceIds.has(serviceKey) : false;
+                      return (
                       <div
                         key={service.id || service.serviceId}
-                        className="rounded-xl border border-gray-200 bg-white p-4"
+                        className={`rounded-xl border bg-white p-4 ${
+                          isSelected ? 'border-[#FF8C42] ring-1 ring-[#FF8C42]/30' : 'border-gray-200'
+                        }`}
                       >
                         <div className="mb-2 flex items-start justify-between gap-3">
-                          <h4 className="text-base font-bold text-gray-900">{service.name}</h4>
+                          <div className="flex min-w-0 items-start gap-3">
+                            {!isTeleMarketplace && isOneOff ? (
+                              <button
+                                type="button"
+                                aria-pressed={isSelected}
+                                aria-label={`${isSelected ? 'Deselect' : 'Select'} ${service.name}`}
+                                onClick={() => handleToggleService(service)}
+                                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                                  isSelected
+                                    ? 'border-[#FF8C42] bg-[#FF8C42] text-white'
+                                    : 'border-gray-300 bg-white text-transparent'
+                                }`}
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
+                            <h4 className="text-base font-bold text-gray-900">{service.name}</h4>
+                          </div>
                           {isTeleMarketplace && service.price != null ? (
                             <span className="shrink-0 font-bold text-[#FF8C42]">
                               {formatPriceWithSymbol(service.price)}
@@ -571,7 +627,8 @@ export function WarmpawzAppointmentsVendorProfile({
                           ) : null}
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                     <DiscoveryVendorFeedSentinel
                       hasMore={!!provider.servicesNextCursor}
                       loading={fetchingServices && !provider.servicesHydrated}
@@ -666,10 +723,13 @@ export function WarmpawzAppointmentsVendorProfile({
             <div className="p-4">
               <Button
                 onClick={handleBookAppointment}
-                className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] sm:text-lg"
+                disabled={!canBookSlot}
+                className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] disabled:opacity-50 sm:text-lg"
               >
                 <Calendar className="mr-2 h-5 w-5" />
-                Select Slot for Appointment
+                {selectableServices.length > 0 && selectedServiceIds.size > 0
+                  ? `Select Slot · ${selectedServiceIds.size} selected`
+                  : 'Select Slot for Appointment'}
               </Button>
             </div>
           </div>

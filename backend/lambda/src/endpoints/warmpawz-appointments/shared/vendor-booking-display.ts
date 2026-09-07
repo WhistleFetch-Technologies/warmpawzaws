@@ -1,4 +1,5 @@
 import {
+  sanitizeWapptSelectedServices,
   WAPPT_BOOKING_MODE,
   WAPPT_DISPLAY_SERVICE_NAME,
 } from './wappt-booking-preflight';
@@ -123,15 +124,32 @@ export function applyVendorBookingDisplayFields(
   };
 }
 
-/** Notifications: WAPPT non-tele uses "Appointment"; tele uses catalog name. */
+export function formatWapptNotificationSelectedNames(booking: Record<string, unknown>): string {
+  return sanitizeWapptSelectedServices(
+    booking.selected_services ?? booking.selectedServices,
+  )
+    .map((row) => row.name)
+    .filter(Boolean)
+    .join(', ');
+}
+
+/** Notifications: WAPPT non-tele uses "Appointment" (+ selected names); tele uses catalog name. */
 export function resolveBookingNotificationServiceName(
   booking: Record<string, unknown>,
   joinedServiceName?: string | null,
 ): string {
-  return resolveVendorBookingServiceDisplayName(
+  const base = resolveVendorBookingServiceDisplayName(
     booking as VendorBookingDisplayLike,
     joinedServiceName ||
       String(booking.service_name || booking.serviceName || '').trim() ||
       null,
   );
+  if (
+    !isWarmpawzAppointmentsCommerceMode(booking as VendorBookingDisplayLike) ||
+    isTeleServiceStyle(booking as VendorBookingDisplayLike)
+  ) {
+    return base;
+  }
+  const names = formatWapptNotificationSelectedNames(booking);
+  return names ? `${base} (${names})` : base;
 }

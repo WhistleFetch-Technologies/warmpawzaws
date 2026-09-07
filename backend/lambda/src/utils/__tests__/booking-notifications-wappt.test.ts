@@ -21,6 +21,21 @@ describe('resolveBookingNotificationServiceName', () => {
     expect(label).toBe('Appointment');
   });
 
+  it('appends selected service names for WAPPT notifications only', () => {
+    const label = resolveBookingNotificationServiceName(
+      {
+        commerce_mode: WAPPT_BOOKING_MODE,
+        service_name: WAPPT_DISPLAY_SERVICE_NAME,
+        selected_services: [
+          { id: 'a', serviceId: 'a', name: 'Bath', price: 499 },
+          { id: 'b', serviceId: 'b', name: 'Haircut', originalPrice: 799 },
+        ],
+      },
+      'Grooming Bath',
+    );
+    expect(label).toBe('Appointment (Bath, Haircut)');
+  });
+
   it('uses joined catalog name for marketplace bookings', () => {
     const label = resolveBookingNotificationServiceName(
       { commerce_mode: 'marketplace', service_name: 'Stored label' },

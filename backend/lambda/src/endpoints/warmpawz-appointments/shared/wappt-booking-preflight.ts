@@ -26,6 +26,40 @@ export type WapptBookingPreflightResult =
   | { ok: true; appointmentFee: number; resolvedServiceId: string }
   | { ok: false; status: number; message: string };
 
+export type WapptPersistedSelectedService = {
+  id: string;
+  serviceId: string;
+  name: string;
+};
+
+/** Persist requested names only — never listed prices or durations. */
+export function sanitizeWapptSelectedServices(
+  rows: unknown,
+): WapptPersistedSelectedService[] {
+  if (!Array.isArray(rows)) return [];
+  const seen = new Set<string>();
+  const out: WapptPersistedSelectedService[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as Record<string, unknown>;
+    const id = String(r.id || r.serviceId || '').trim();
+    const serviceId = String(r.serviceId || r.id || '').trim();
+    const name = String(r.name || r.serviceName || '').trim();
+    const key = id || serviceId;
+    if (!key || !name || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: id || serviceId, serviceId: serviceId || id, name });
+  }
+  return out;
+}
+
+/** Selected listed prices/durations never contribute to WAPPT money or slot length. */
+export function wapptSelectedServicesMoneyImpact(
+  _selectedServices: unknown,
+): { durationMinutes: number; listedAmount: number } {
+  return { durationMinutes: 0, listedAmount: 0 };
+}
+
 export function applyWapptCatalogueFeeAmounts(appointmentFee: number): {
   basePrice: number;
   totalAmount: number;

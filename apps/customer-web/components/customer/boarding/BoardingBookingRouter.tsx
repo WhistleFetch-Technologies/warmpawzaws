@@ -47,6 +47,7 @@ import {
   WAPPT_BOOKING_MODE,
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
 } from '@/lib/warmpawz-appointments-customer';
+import { toWapptRequestedServices } from '@/lib/wappt-requested-services';
 import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
 import { WapptBookingSummaryStep } from '../warmpawz-appointments/WapptBookingSummaryStep';
 import { WapptBookingAddressStep } from '../warmpawz-appointments/WapptBookingAddressStep';
@@ -84,6 +85,7 @@ interface BoardingBookingRouterProps {
   /** Boarding hub sub-type (`swimming`, `overnight`, …) for keyword match after vendor services load. */
   presetServiceSlug?: string;
   appointmentsMode?: boolean;
+  selectedServices?: Array<{ id?: string; serviceId?: string; name?: string; serviceName?: string }>;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -549,6 +551,7 @@ export function BoardingBookingRouter({
   presetSittingOptionId,
   presetServiceSlug,
   appointmentsMode = false,
+  selectedServices,
   onBack, 
   onNavigate, 
   onViewBooking,
@@ -1913,6 +1916,9 @@ export function BoardingBookingRouter({
         vendorId={vendorId || ''}
         vendorName={isPetSitting ? 'Pet sitter' : 'Boarding Provider'}
         bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
+        selectedServices={
+          appointmentsMode ? toWapptRequestedServices(selectedServices ?? []) : undefined
+        }
         bookingDate={checkInDate}
         bookingTime={checkInTime}
         petId={selectedPet?.id}
@@ -1980,6 +1986,7 @@ export function BoardingBookingRouter({
             amount={wapptReviewTotal}
             selectedDate={checkInDate}
             selectedTime={checkInTime}
+            requestedServices={toWapptRequestedServices(selectedServices ?? [])}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
             addressLine={
@@ -2119,6 +2126,7 @@ export function BoardingBookingRouter({
             amount={wapptReviewTotal}
             selectedDate={checkInDate}
             selectedTime={checkInTime}
+            requestedServices={toWapptRequestedServices(selectedServices ?? [])}
             checkOutDate={checkOutDate}
             checkOutTime={checkOutTime}
             petName={selectedPet?.name}

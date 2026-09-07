@@ -3334,6 +3334,7 @@ export function CustomerHomeWrapper({
         price={walkerServiceData?.price}
         duration={walkerServiceData?.duration}
         appointmentsMode={walkerServiceData?.appointmentsMode === true}
+        selectedServices={walkerServiceData?.selectedServices}
         bookingDate={walkerServiceData?.bookingDate || vetServiceData?.bookingDate}
         bookingTime={walkerServiceData?.bookingTime || vetServiceData?.bookingTime}
         onBack={() => backFromBannerOr(handleBack, walkerServiceData, vetServiceData)}
@@ -5927,6 +5928,7 @@ export function CustomerHomeWrapper({
                   : undefined
             }
             appointmentsMode={vetServiceData?.appointmentsMode === true}
+            selectedServices={vetServiceData?.selectedServices}
             onBack={() => backFromBannerOr(handleBack, vetServiceData)}
             onInternalBackReady={(fn) => { boardingBookingInternalBackRef.current = fn; }}
             onNavigate={(screen, data) => {

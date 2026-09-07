@@ -69,6 +69,12 @@ export function buildWarmpawzTeleDiscoveryNav(opts?: {
   };
 }
 
+export type WarmpawzAppointmentsRequestedService = {
+  id: string;
+  serviceId: string;
+  name: string;
+};
+
 export type WarmpawzAppointmentsBookingNav = {
   vendorId: string;
   vendorName?: string;
@@ -77,6 +83,7 @@ export type WarmpawzAppointmentsBookingNav = {
   appointmentsMode: true;
   serviceId: typeof WAPPT_APPOINTMENT_SERVICE_ID;
   bookingMode: typeof WAPPT_APPOINTMENT_SERVICE_ID;
+  selectedServices?: WarmpawzAppointmentsRequestedService[];
 };
 
 export function buildWarmpawzAppointmentsBookingNav(opts: {
@@ -84,6 +91,7 @@ export function buildWarmpawzAppointmentsBookingNav(opts: {
   vendorName?: string;
   serviceStyle: string;
   category: string;
+  selectedServices?: WarmpawzAppointmentsRequestedService[];
 }): WarmpawzAppointmentsBookingNav {
   return {
     vendorId: opts.vendorId,
@@ -93,6 +101,7 @@ export function buildWarmpawzAppointmentsBookingNav(opts: {
     appointmentsMode: true,
     serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
     bookingMode: WAPPT_APPOINTMENT_SERVICE_ID,
+    ...(opts.selectedServices?.length ? { selectedServices: opts.selectedServices } : {}),
   };
 }
 

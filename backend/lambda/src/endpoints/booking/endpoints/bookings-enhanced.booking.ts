@@ -100,6 +100,8 @@ import {
   applyWapptCatalogueFeeAmounts,
   isWarmpawzAppointmentsBooking,
   resolveWarmpawzAppointmentsBookingPreflight,
+  sanitizeWapptSelectedServices,
+  wapptSelectedServicesMoneyImpact,
   WAPPT_BOOKING_MODE,
   WAPPT_DISPLAY_SERVICE_NAME,
 } from '../../warmpawz-appointments/shared/wappt-booking-preflight';
@@ -387,9 +389,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const promotionId = body.promotionId || body.promotion_id;
     
     // ✅ Calculate total duration and amount from selected services if provided
+    // WAPPT: ignore listed prices/durations — fee + slot come from catalogue appointment fee.
     let totalDurationMinutes = 0;
     let totalSelectedServicesAmount = 0;
-    if (selectedServices && selectedServices.length > 0) {
+    const wapptSelectedServices =
+      wapptAppointmentFee != null ? sanitizeWapptSelectedServices(selectedServices) : [];
+    if (wapptAppointmentFee != null) {
+      const ignored = wapptSelectedServicesMoneyImpact(selectedServices);
+      totalDurationMinutes = ignored.durationMinutes;
+      totalSelectedServicesAmount = ignored.listedAmount;
+    } else if (selectedServices && selectedServices.length > 0) {
       totalDurationMinutes = selectedServices.reduce((sum, s) => {
         const quantity = s.quantity || 1;
         const duration = s.duration || 30;
@@ -1228,7 +1237,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             boardingServerTotalRupee ?? swimmingServerTotalRupee ?? petSittingServerTotalRupee,
           vendorCustomPrice: (service as any)?.custom_price,
           vendorPrice: (service as any)?.price,
-          selectedServices,
+          selectedServices:
+            wapptAppointmentFee != null ? wapptSelectedServices : selectedServices,
         });
         const listedServerPrice = bookingListPrice;
         let grossPayableBeforeWallet =
@@ -1630,9 +1640,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           subscription_booking: isSubscriptionBooking,
           pet_id: petId || null,
           ...(persistedServiceLabel ? { service_name: persistedServiceLabel } : {}),
-          selected_services: selectedServices && selectedServices.length > 0 
-            ? JSON.stringify(selectedServices) 
-            : null,
+          selected_services:
+            wapptAppointmentFee != null
+              ? wapptSelectedServices.length > 0
+                ? JSON.stringify(wapptSelectedServices)
+                : null
+              : selectedServices && selectedServices.length > 0
+                ? JSON.stringify(selectedServices)
+                : null,
           total_duration_minutes:
             boardingServerBilledMinutes != null
               ? boardingServerBilledMinutes

@@ -65,6 +65,7 @@ import {
   isWalletDebitAllowedOnPaymentRequest,
   WAPPT_APPOINTMENT_SERVICE_ID,
 } from '@/lib/warmpawz-appointments-customer';
+import { toWapptRequestedServices } from '@/lib/wappt-requested-services';
 import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
 import {
   isWarmpawzCustomerNativeWebView,
@@ -2820,10 +2821,13 @@ export function UniversalPaymentPage({
           customerName: customerNameValue, // âœ… Customer name
           address: addressValue, // âœ… Optional string
           notes: '', // âœ… Optional string
-          // Pass selected services for multi-service bookings (omit for WAPPT — server uses flat fee)
+          // WAPPT: persist requested names only (no listed prices). Marketplace: keep priced lines.
           selectedServices:
             wapptPayment
-              ? undefined
+              ? (() => {
+                  const requested = toWapptRequestedServices(selectedServices ?? []);
+                  return requested.length > 0 ? requested : undefined;
+                })()
               : selectedServices && selectedServices.length > 0
                 ? selectedServices.map((s) => ({
                     id: s.id || s.serviceId,

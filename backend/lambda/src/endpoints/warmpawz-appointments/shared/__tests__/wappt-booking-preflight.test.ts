@@ -2,6 +2,8 @@ import {
   applyWapptCatalogueFeeAmounts,
   isWarmpawzAppointmentsBooking,
   resolveWarmpawzAppointmentsBookingPreflight,
+  sanitizeWapptSelectedServices,
+  wapptSelectedServicesMoneyImpact,
   WAPPT_BOOKING_MODE,
   WAPPT_CATALOG_SERVICE_SENTINEL_ID,
   WAPPT_DISPLAY_SERVICE_NAME,
@@ -48,6 +50,27 @@ describe('wappt-booking-preflight', () => {
         serviceId: '550e8400-e29b-41d4-a716-446655440000',
       }),
     ).toBe(false);
+  });
+
+  it('persists WAPPT selected services without listed prices', () => {
+    expect(
+      sanitizeWapptSelectedServices([
+        { id: 'a', serviceId: 'a', name: 'Bath', price: 499, duration: 45 },
+        { id: 'b', name: 'Haircut', originalPrice: 799 },
+      ]),
+    ).toEqual([
+      { id: 'a', serviceId: 'a', name: 'Bath' },
+      { id: 'b', serviceId: 'b', name: 'Haircut' },
+    ]);
+  });
+
+  it('ignores selected listed prices and durations for WAPPT totals', () => {
+    expect(
+      wapptSelectedServicesMoneyImpact([
+        { price: 499, originalPrice: 499, duration: 45, quantity: 2 },
+        { price: 799, duration: 30, quantity: 1 },
+      ]),
+    ).toEqual({ durationMinutes: 0, listedAmount: 0 });
   });
 
   it('locks catalogue fee and zeros GST so marketplace list price cannot win', () => {

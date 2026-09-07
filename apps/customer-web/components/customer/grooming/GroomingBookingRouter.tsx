@@ -35,6 +35,7 @@ import {
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
   WAPPT_BOOKING_MODE,
 } from '@/lib/warmpawz-appointments-customer';
+import { toWapptRequestedServices } from '@/lib/wappt-requested-services';
 import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
 import { WapptBookingSummaryStep } from '../warmpawz-appointments/WapptBookingSummaryStep';
 import { WapptBookingAddressStep } from '../warmpawz-appointments/WapptBookingAddressStep';
@@ -1227,7 +1228,11 @@ export function GroomingBookingRouter({
         quantity={1}
         customerPhone={phone}
         customerId={customerId || undefined}
-        selectedServices={appointmentsMode ? undefined : allSelectedServices}
+        selectedServices={
+          appointmentsMode
+            ? toWapptRequestedServices(allSelectedServices)
+            : allSelectedServices
+        }
         onBack={() => {
           setShowPaymentPage(false);
           if (step === 'payment') {
@@ -1266,6 +1271,7 @@ export function GroomingBookingRouter({
             amount={reviewTotal}
             selectedDate={selectedDate}
             selectedTime={selectedTime}
+            requestedServices={toWapptRequestedServices(allSelectedServices)}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
             addressLine={
@@ -1466,6 +1472,7 @@ export function GroomingBookingRouter({
             amount={reviewTotal}
             selectedDate={selectedDate}
             selectedTime={selectedTime}
+            requestedServices={toWapptRequestedServices(allSelectedServices)}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
             addressLine={

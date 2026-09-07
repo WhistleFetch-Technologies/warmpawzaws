@@ -40,6 +40,7 @@ import {
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
   WAPPT_BOOKING_MODE,
 } from '@/lib/warmpawz-appointments-customer';
+import { toWapptRequestedServices } from '@/lib/wappt-requested-services';
 import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
 import { useWapptBookingSlots } from '@/hooks/useWapptBookingSlots';
 import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
@@ -1374,7 +1375,7 @@ export function VetBookingRouter({
                 duration={totalDuration}
                 selectedServices={
                   appointmentsMode
-                    ? undefined
+                    ? toWapptRequestedServices(allSelectedServices)
                     : allSelectedServices && allSelectedServices.length > 0
                       ? allSelectedServices
                       : undefined
@@ -1816,6 +1817,7 @@ export function VetBookingRouter({
             amount={wapptReviewTotal}
             selectedDate={selectedDate}
             selectedTime={selectedTime}
+            requestedServices={toWapptRequestedServices(allSelectedServices)}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
             addressLine={
@@ -1834,6 +1836,7 @@ export function VetBookingRouter({
             amount={wapptReviewTotal}
             selectedDate={selectedDate}
             selectedTime={selectedTime}
+            requestedServices={toWapptRequestedServices(allSelectedServices)}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
             addressLine={

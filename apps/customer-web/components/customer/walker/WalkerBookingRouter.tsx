@@ -38,6 +38,7 @@ import {
   getWarmpawzAppointmentServiceLabel,
   wapptReviewAmount,
 } from '@/lib/warmpawz-appointments-customer';
+import { toWapptRequestedServices } from '@/lib/wappt-requested-services';
 import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
 import { WapptBookingSummaryStep } from '../warmpawz-appointments/WapptBookingSummaryStep';
 import { WapptBookingAddressStep } from '../warmpawz-appointments/WapptBookingAddressStep';
@@ -66,6 +67,7 @@ interface WalkerBookingRouterProps {
   price?: number; // ✅ FIX: Add price
   duration?: number; // ✅ FIX: Add duration
   appointmentsMode?: boolean;
+  selectedServices?: Array<{ id?: string; serviceId?: string; name?: string; serviceName?: string }>;
   bookingDate?: string;
   bookingTime?: string;
   onBack: () => void;
@@ -129,6 +131,7 @@ export function WalkerBookingRouter({
   price,
   duration,
   appointmentsMode = false,
+  selectedServices,
   bookingDate: preFilledDate,
   bookingTime: preFilledTime,
   onBack, 
@@ -960,6 +963,9 @@ export function WalkerBookingRouter({
         customerPhone={phone}
         customerId={customerId || undefined}
         bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
+        selectedServices={
+          appointmentsMode ? toWapptRequestedServices(selectedServices ?? []) : undefined
+        }
         onBack={() => {
           setShowPaymentPage(false);
           if (appointmentsMode && step === 'payment') {
@@ -1027,6 +1033,7 @@ export function WalkerBookingRouter({
             amount={reviewTotal}
             selectedDate={selectedDate}
             selectedTime={selectedTime}
+            requestedServices={toWapptRequestedServices(selectedServices ?? [])}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
             addressLine={
@@ -1174,6 +1181,7 @@ export function WalkerBookingRouter({
             amount={reviewTotal}
             selectedDate={selectedDate}
             selectedTime={selectedTime}
+            requestedServices={toWapptRequestedServices(selectedServices ?? [])}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
             addressLine={

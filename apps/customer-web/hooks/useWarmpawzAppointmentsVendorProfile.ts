@@ -28,6 +28,9 @@ export type WapptProfileService = {
   duration?: number;
   category?: string;
   price?: number;
+  isPackage?: boolean;
+  packageDetails?: unknown;
+  metadata?: unknown;
 };
 
 export type WapptProfileProvider = {
@@ -73,6 +76,10 @@ function formatFacilitySpecializations(
 }
 
 function mapGenericServiceRow(row: Record<string, unknown>): WapptProfileService {
+  const meta =
+    row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+      ? row.metadata
+      : undefined;
   return {
     id: String(row.id ?? row.serviceId ?? ''),
     serviceId: String(row.serviceId ?? row.id ?? ''),
@@ -80,6 +87,9 @@ function mapGenericServiceRow(row: Record<string, unknown>): WapptProfileService
     description: typeof row.description === 'string' ? row.description : undefined,
     duration: row.duration != null ? Number(row.duration) : undefined,
     category: typeof row.category === 'string' ? row.category : undefined,
+    isPackage: Boolean(row.isPackage ?? row.is_package ?? (meta as { isPackage?: unknown } | undefined)?.isPackage),
+    packageDetails: row.packageDetails ?? (meta as { packageDetails?: unknown } | undefined)?.packageDetails,
+    metadata: meta ?? row.metadata,
   };
 }
 
@@ -246,6 +256,9 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
                 description: s.description,
                 duration: s.duration,
                 category: s.category,
+                isPackage: s.isPackage,
+                packageDetails: s.packageDetails,
+                metadata: s.metadata,
                 ...(serviceStyle === 'tele' && s.price != null ? { price: Number(s.price) } : {}),
               }))
             : rows.map((row) => {
