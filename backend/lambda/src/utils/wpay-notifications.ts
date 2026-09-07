@@ -28,13 +28,33 @@ export type WpayVendorNotifyBreakdown = {
   discountPercent: number;
   platformWithholdPercent: number;
   platformWithholdAmount: number;
+  /** Amount payable to the vendor (burn mode = full quoted bill). */
   vendorEarnings: number;
+  paidAt: string | null;
 };
 
+export function formatWpayPaidAtForNotify(iso: string | null | undefined): string {
+  const raw = String(iso || '').trim();
+  if (!raw) return '';
+  try {
+    return new Date(raw).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return raw;
+  }
+}
+
+/** Push / inbox body: customer name, vendor payable, payment time. */
 export function buildWpayVendorNotifyMessage(b: WpayVendorNotifyBreakdown): string {
-  const discountPart =
-    b.discountPercent > 0 ? `, ${b.discountPercent}% off` : b.discountAmount > 0 ? '' : '';
-  return `${b.customerName} paid ₹${b.paidAmount.toFixed(2)} (bill ₹${b.quotedAmount.toFixed(2)}${discountPart}). Your earnings: ₹${b.vendorEarnings.toFixed(2)}`;
+  const paidAtPart = formatWpayPaidAtForNotify(b.paidAt);
+  const timeSuffix = paidAtPart ? ` · ${paidAtPart}` : '';
+  return `${b.customerName} paid via Warmpawz Pay. You receive ₹${b.vendorEarnings.toFixed(2)}${timeSuffix}`;
 }
 
 export async function loadWpayVendorNotifyBreakdown(
@@ -49,6 +69,7 @@ export async function loadWpayVendorNotifyBreakdown(
             p.discount_amount,
             p.metadata,
             p.payment_status,
+            p.completed_at,
             COALESCE(c.full_name, 'Customer') AS customer_name,
             s.net_amount,
             s.commission_amount,
@@ -89,7 +110,16 @@ export async function loadWpayVendorNotifyBreakdown(
   let platformWithholdAmount = round2(
     Number(row.commission_amount ?? breakup.platformWithholdAmount ?? 0),
   );
-  let vendorEarnings = round2(Number(row.net_amount ?? breakup.vendorNetAmount ?? 0));
+  // Prefer accrued vendor payable (burn mode = full Q); then settlement net.
+  let vendorEarnings = round2(
+    Number(
+      breakup.vendorPayableAmount ??
+        row.net_amount ??
+        breakup.vendorNetAmount ??
+        readMetaNumber(meta, 'vendorPayableAmount') ??
+        0,
+    ),
+  );
 
   if (vendorEarnings <= 0 && paidAmount > 0) {
     if (platformWithholdPercent <= 0) {
@@ -104,6 +134,14 @@ export async function loadWpayVendorNotifyBreakdown(
     vendorEarnings = computed.vendorSettlementAmount;
   }
 
+  const paidAtRaw = row.completed_at;
+  const paidAt =
+    paidAtRaw instanceof Date
+      ? paidAtRaw.toISOString()
+      : paidAtRaw
+        ? String(paidAtRaw)
+        : null;
+
   return {
     paymentId: String(row.id),
     vendorId: String(row.vendor_id),
@@ -116,8 +154,11 @@ export async function loadWpayVendorNotifyBreakdown(
     platformWithholdPercent,
     platformWithholdAmount,
     vendorEarnings,
+    paidAt,
   };
 }
+
+export const WPAY_VENDOR_EARNINGS_DEEP_LINK = '/bookings?tab=earnings';
 
 export async function notifyWpayPaymentCompleted(paymentId: string): Promise<void> {
   const breakdown = await loadWpayVendorNotifyBreakdown(paymentId);
@@ -136,10 +177,11 @@ export async function notifyWpayPaymentCompleted(paymentId: string): Promise<voi
         recipientId: breakdown.vendorId,
         recipientType: 'vendor',
         notificationType: 'warmpawz_pay_received',
-        title: 'Payment received',
+        title: 'Warmpawz Pay received',
         message,
         channels: { inApp: true, push: true },
         priority: 'high',
+        deepLinkOverride: WPAY_VENDOR_EARNINGS_DEEP_LINK,
         data: {
           paymentId: breakdown.paymentId,
           customerId: breakdown.customerId,
@@ -147,12 +189,15 @@ export async function notifyWpayPaymentCompleted(paymentId: string): Promise<voi
           quotedAmount: breakdown.quotedAmount,
           paidAmount: breakdown.paidAmount,
           payableAmount: breakdown.paidAmount,
+          vendorPayableAmount: breakdown.vendorEarnings,
           discountAmount: breakdown.discountAmount,
           discountPercent: breakdown.discountPercent,
           platformWithholdPercent: breakdown.platformWithholdPercent,
           platformWithholdAmount: breakdown.platformWithholdAmount,
           vendorEarnings: breakdown.vendorEarnings,
+          paidAt: breakdown.paidAt,
           flowType: 'pay_bill',
+          deep_link: WPAY_VENDOR_EARNINGS_DEEP_LINK,
           dedupeKey,
         },
       });

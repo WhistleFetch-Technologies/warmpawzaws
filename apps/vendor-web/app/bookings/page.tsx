@@ -11,6 +11,11 @@ function BookingsPageContent() {
   const searchParams = useSearchParams();
   const walkSessionsFocus = searchParams.get('walkSessions') === '1';
   const openBookingId = searchParams.get('bookingId')?.trim() || undefined;
+  const tabParam = searchParams.get('tab')?.trim().toLowerCase();
+  const initialTab =
+    tabParam === 'earnings' || tabParam === 'payouts' || tabParam === 'bookings'
+      ? tabParam
+      : undefined;
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const [vendorData, setVendorData] = useState<any>(null);
@@ -71,6 +76,7 @@ function BookingsPageContent() {
         embedded
         walkSessionsFocus={walkSessionsFocus}
         initialOpenBookingId={openBookingId}
+        initialTab={initialTab}
         vendorId={vendorId}
         vendorData={effectiveVendorData}
         onBack={handleBack}

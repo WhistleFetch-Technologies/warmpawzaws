@@ -77,6 +77,7 @@ import { VendorSupportDashboard } from '../VendorSupportDashboard'; // ✅ NEW: 
 import { ServicePromotionsManagement } from '../ServicePromotionsManagement'; // ✅ NEW: Service Promotions
 import { TeleCallNotification } from '../notification/teleNotification/TeleCallNotification'; // ✅ P2P Video Call Notification
 import { VendorNewBookingOrderAlert } from '../VendorNewBookingOrderAlert'; // Rule 4: Large new appointment/order alert
+import { VendorWpayPaymentAlert } from '../VendorWpayPaymentAlert';
 import { isPharmacyVendor, isPetProductsStoreVendor } from './constants/helpers';
 import { useVendorNotificationService } from '../hooks/useVendorNotificationService';
 import { PackageManagementContainer } from '../packages/PackageManagementContainer';
@@ -108,6 +109,11 @@ export function VendorLandingPage({
   const [showConsultation, setShowConsultation] = useState(false);
   const [showServiceManagement, setShowServiceManagement] = useState(false);
   const [showBookingManagement, setShowBookingManagement] = useState(false);
+  const [bookingManagementInitialTab, setBookingManagementInitialTab] = useState<
+    'bookings' | 'earnings' | 'payouts' | undefined
+  >(undefined);
+  const [newBookingAlert, setNewBookingAlert] = useState<any>(null);
+  const [wpayPaymentAlert, setWpayPaymentAlert] = useState<any>(null);
   const [showTeleConsultation, setShowTeleConsultation] = useState(false);
   const [showAdvancedAvailability, setShowAdvancedAvailability] = useState(false);
   const [showFacilityManagement, setShowFacilityManagement] = useState(false);
@@ -142,7 +148,6 @@ export function VendorLandingPage({
   const [showPolicyManagement, setShowPolicyManagement] = useState(false);
   const [showDistancePricing, setShowDistancePricing] = useState(false);
   const [showServicePromotions, setShowServicePromotions] = useState(false);
-  const [newBookingAlert, setNewBookingAlert] = useState<any>(null);
   const [isReEditing, setIsReEditing] = useState(false);
   const [existingApplicationData, setExistingApplicationData] = useState<any>(null);
   const [reEditMode, setReEditMode] = useState<'correction' | 'clarification' | null>(null);
@@ -189,7 +194,11 @@ export function VendorLandingPage({
     onNewNotification: (notification) => {
       const type = notification.type || notification.notification_type;
 
-      if (type === 'new_booking' || type === 'new_order' || type === 'warmpawz_pay_received') {
+      if (type === 'warmpawz_pay_received') {
+        setWpayPaymentAlert(notification);
+        return;
+      }
+      if (type === 'new_booking' || type === 'new_order') {
         setNewBookingAlert(notification);
       }
     }
@@ -1067,7 +1076,11 @@ export function VendorLandingPage({
           <VendorBookingManagement
             vendorId={vendorId}
             vendorData={vendorData}
-            onBack={() => setShowBookingManagement(false)}
+            onBack={() => {
+              setShowBookingManagement(false);
+              setBookingManagementInitialTab(undefined);
+            }}
+            initialTab={bookingManagementInitialTab}
             chatEnabled={!!capabilities?.chat}
             vendorPhone={vendorData?.phone}
             vendorName={vendorData?.fullName || vendorData?.businessName}
@@ -1695,12 +1708,25 @@ export function VendorLandingPage({
               </DialogContent>
             </Dialog>
           )}
+          {wpayPaymentAlert && vendorId && (
+            <VendorWpayPaymentAlert
+              notification={wpayPaymentAlert}
+              onViewEarnings={() => {
+                setWpayPaymentAlert(null);
+                setBookingManagementInitialTab('earnings');
+                setShowBookingManagement(true);
+              }}
+              onDismiss={() => setWpayPaymentAlert(null)}
+              playSound={true}
+            />
+          )}
           {newBookingAlert && vendorId && (
             <VendorNewBookingOrderAlert
               notification={newBookingAlert}
               vendorId={vendorId}
               onView={(bookingId) => {
                 setNewBookingAlert(null);
+                setBookingManagementInitialTab('bookings');
                 setShowBookingManagement(true);
               }}
               onDismiss={() => setNewBookingAlert(null)}

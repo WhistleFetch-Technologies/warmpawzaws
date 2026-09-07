@@ -1185,7 +1185,8 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
               <div className="rounded-xl border border-orange-100 bg-orange-50/60 p-4">
                 <p className="text-sm font-medium text-orange-900">Warmpawz Pay — counter bill payments</p>
                 <p className="mt-1 text-xs text-orange-800/80">
-                  Customer name, bill amount, and your net earnings after platform withhold. Payment method details are not shown here.
+                  Customer name, payable amount, status, and payment time. Payment method details are
+                  not shown here.
                 </p>
               </div>
 
@@ -1236,7 +1237,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                           </p>
                         </div>
                         <div className="rounded-lg bg-green-50 p-2 border border-green-100">
-                          <p className="text-[10px] text-green-700">Your earnings</p>
+                          <p className="text-[10px] text-green-700">Payable</p>
                           <p className="text-sm font-bold text-green-700">
                             ₹{row.vendorEarnings.toLocaleString()}
                           </p>

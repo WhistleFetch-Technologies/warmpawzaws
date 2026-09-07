@@ -23,6 +23,14 @@ import { VendorProfileDashboardHeader } from '@/components/customer/shared/Vendo
 import { VendorHeroPhotoCarousel } from '@/components/customer/shared/VendorHeroPhotoCarousel';
 import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
 import { StarRating } from '@/components/customer/shared/StarRating';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const QUICK_AMOUNTS = [500, 1000, 1500, 2000];
 
@@ -42,6 +50,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const [quoteReady, setQuoteReady] = useState(false);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const [showWaitForConfirmDialog, setShowWaitForConfirmDialog] = useState(false);
 
   useEffect(() => {
     if (!resolvedVendorId) return;
@@ -108,7 +117,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     setQuoteReady(true);
   }, [billAmount]);
 
-  const onProceedToPay = useCallback(async () => {
+  const runPaymentCheckout = useCallback(async () => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
     if (requestGuestAuthForWpayPay({ vendorId: resolvedVendorId, amount: billAmount })) return;
     const phone = readCustomerPhoneFromStorage();
@@ -147,6 +156,23 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
       setPaying(false);
     }
   }, [billAmount, quote, resolvedVendorId, router, vendor]);
+
+  const onProceedToPay = useCallback(() => {
+    if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
+    if (requestGuestAuthForWpayPay({ vendorId: resolvedVendorId, amount: billAmount })) return;
+    const phone = readCustomerPhoneFromStorage();
+    if (!phone) {
+      setPayError('Please log in to continue');
+      return;
+    }
+    setPayError(null);
+    setShowWaitForConfirmDialog(true);
+  }, [billAmount, quote, resolvedVendorId, vendor]);
+
+  const onConfirmWaitAndPay = useCallback(() => {
+    setShowWaitForConfirmDialog(false);
+    void runPaymentCheckout();
+  }, [runPaymentCheckout]);
 
   if (loading) {
     return <p className="p-8 text-center text-sm text-gray-500">Loading…</p>;
@@ -311,7 +337,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
             <button
               type="button"
               disabled={billAmount <= 0 || paying}
-              onClick={quoteReady ? () => void onProceedToPay() : onGetDiscount}
+              onClick={quoteReady ? () => onProceedToPay() : onGetDiscount}
               className="w-full rounded-xl bg-[#FF6B00] py-3 text-center font-semibold text-white disabled:opacity-50"
             >
               {paying ? 'Opening payment…' : quoteReady ? 'Proceed to Pay' : 'Get Discount'}
@@ -320,6 +346,53 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={showWaitForConfirmDialog}
+        onOpenChange={(open) => {
+          if (!paying) setShowWaitForConfirmDialog(open);
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          overlayClassName="bg-black/55 backdrop-blur-[3px]"
+          className="w-[calc(100%-2rem)] max-w-[420px] gap-0 overflow-hidden rounded-[20px] border-0 bg-white p-0 shadow-[0_16px_40px_rgba(0,0,0,0.18)] sm:max-w-[420px]"
+          onPointerDownOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+        >
+          <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] px-5 py-4 text-white">
+            <DialogHeader className="space-y-1 text-left">
+              <DialogTitle className="text-lg text-white">Stay on this screen</DialogTitle>
+              <DialogDescription className="text-sm text-white/90">
+                Please wait until you see Confirmed. Don&apos;t exit the app until payment is
+                confirmed so your payment is registered in our system.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="space-y-4 px-5 py-5">
+            <p className="text-sm text-gray-600">
+              After you continue, complete payment in Razorpay and wait on the confirmation screen
+              until it says your order / payment is confirmed.
+            </p>
+            <DialogFooter className="flex-col gap-2 sm:flex-col">
+              <button
+                type="button"
+                onClick={onConfirmWaitAndPay}
+                className="w-full rounded-xl bg-[#FF6B00] py-3 text-center font-semibold text-white"
+              >
+                Continue to payment
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowWaitForConfirmDialog(false)}
+                className="w-full rounded-xl border border-gray-200 bg-white py-3 text-center font-medium text-gray-700"
+              >
+                Cancel
+              </button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

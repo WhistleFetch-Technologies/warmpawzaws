@@ -48,8 +48,12 @@ export function resolveNotificationDeepLink(params: {
     return '/orders';
   }
 
-  if (eventType.includes('settlement') || eventType.includes('payout') || eventType === 'warmpawz_pay_received') {
+  if (eventType.includes('settlement') || eventType.includes('payout')) {
     return isVendor ? '/settlements' : '/wallet';
+  }
+
+  if (eventType === 'warmpawz_pay_received') {
+    return isVendor ? '/bookings?tab=earnings' : '/wallet';
   }
 
   if (eventType.includes('vendor_application') || eventType.includes('vendor_approved') || eventType.includes('vendor_rejected')) {

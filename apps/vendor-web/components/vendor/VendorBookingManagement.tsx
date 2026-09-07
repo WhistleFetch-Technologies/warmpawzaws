@@ -133,6 +133,8 @@ interface VendorBookingManagementProps {
   walkSessionsFocus?: boolean;
   /** Open appointment detail for this booking on load (e.g. from reviews "View booking"). */
   initialOpenBookingId?: string;
+  /** Open Bookings / Earnings / Payouts tab (e.g. `/bookings?tab=earnings` from WPay push). */
+  initialTab?: 'bookings' | 'earnings' | 'payouts';
 }
 
 interface Booking {
@@ -263,6 +265,7 @@ export function VendorBookingManagement({
   embedded = false,
   walkSessionsFocus = false,
   initialOpenBookingId,
+  initialTab,
 }: VendorBookingManagementProps) {
   const router = useRouter();
 
@@ -280,7 +283,12 @@ export function VendorBookingManagement({
   const [bookingsPageIndex, setBookingsPageIndex] = useState(0);
   const [bookingsTotal, setBookingsTotal] = useState(0);
   const [bookingsHasMore, setBookingsHasMore] = useState(false);
-  const [activeTab, setActiveTab] = useState<'bookings' | 'earnings' | 'payouts'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'earnings' | 'payouts'>(() => {
+    if (initialTab === 'earnings' || initialTab === 'payouts' || initialTab === 'bookings') {
+      return initialTab;
+    }
+    return 'bookings';
+  });
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -288,6 +296,12 @@ export function VendorBookingManagement({
   useEffect(() => {
     if (walkSessionsFocus) setActiveTab('bookings');
   }, [walkSessionsFocus]);
+
+  useEffect(() => {
+    if (initialTab === 'earnings' || initialTab === 'payouts' || initialTab === 'bookings') {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const [stats, setStats] = useState({
     calls: 0,
@@ -1877,13 +1891,14 @@ export function VendorBookingManagement({
                 {/* Recent Transactions */}
                 <div className="p-4">
                   <h3 className="font-semibold text-gray-900 mb-1">Recent Transactions</h3>
-                  <p className="text-xs text-gray-500 mb-3">Amounts credited to your account (may differ from appointment date).</p>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Amount payable to you, customer, status, and payment time.
+                  </p>
                   {(!earningsData?.transactions || earningsData.transactions.length === 0) ? (
                     <div className="text-center py-8 text-gray-500 text-sm space-y-1">
                       <p>No credited earnings yet</p>
                       <p className="text-xs text-gray-400">
-                        Complete a booking to record your share (after tier commission). Amounts appear here once the
-                        appointment is marked completed.
+                        Complete a booking or receive a Warmpawz Pay bill payment to see earnings here.
                       </p>
                     </div>
                   ) : (
@@ -1891,17 +1906,30 @@ export function VendorBookingManagement({
                       {earningsData.transactions.map((transaction) => (
                         <div key={transaction.id} className="border border-gray-200 rounded-xl p-3">
                           <div className="flex items-start justify-between mb-2">
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                               <div className="font-medium text-gray-900 text-sm">{transaction.service}</div>
-                              <div className="text-xs text-gray-500">
-                                {transaction.customer} · Credited{' '}
-                                {new Date(transaction.date).toLocaleDateString('en-IN')}
+                              <div className="text-xs text-gray-500 mt-0.5">
+                                {transaction.customer}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-0.5">
+                                {transaction.date
+                                  ? new Date(transaction.date).toLocaleString('en-IN', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      year: 'numeric',
+                                      hour: 'numeric',
+                                      minute: '2-digit',
+                                    })
+                                  : '—'}
                               </div>
                             </div>
-                            <div className="text-right">
-                              <div className="font-bold text-green-600">₹{transaction.amount.toLocaleString('en-IN')}</div>
+                            <div className="text-right shrink-0">
+                              <div className="text-[10px] text-gray-500">Payable</div>
+                              <div className="font-bold text-green-600">
+                                ₹{transaction.amount.toLocaleString('en-IN')}
+                              </div>
                               <div className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${
-                                transaction.status === 'completed' 
+                                transaction.status === 'completed' || transaction.status === 'settled'
                                   ? 'bg-green-100 text-green-700' 
                                   : 'bg-orange-100 text-orange-700'
                               }`}>
