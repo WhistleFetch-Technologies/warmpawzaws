@@ -10,6 +10,7 @@ import {
   Home,
   Loader2,
   MapPin,
+  Package,
   Navigation,
   Phone,
   Search,
@@ -45,6 +46,7 @@ import { resolveWapptStylePlaceholderIcon } from '@/lib/warmpawz-appointments/wa
 import { getWapptHubConfig } from '@/lib/wappt-hub-registry';
 import { useWarmpawzAppointmentsVendorProfile } from '@/hooks/useWarmpawzAppointmentsVendorProfile';
 import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
+import { apiClient } from '@/lib/api-client';
 import {
   canSelectWapptSlot,
   partitionWapptListedServices,
@@ -78,6 +80,7 @@ export function WarmpawzAppointmentsVendorProfile({
   onBack,
   onNavigate,
 }: WarmpawzAppointmentsVendorProfileProps) {
+  const [bookPackagesAvailable, setBookPackagesAvailable] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(() => new Set());
@@ -199,6 +202,54 @@ export function WarmpawzAppointmentsVendorProfile({
       persona: config.sharePersona,
       vendorName: providerName,
       serviceStyle,
+    });
+  };
+
+  useEffect(() => {
+    const vid = String(vendorId || '').trim();
+    if (!vid) return;
+    let cancelled = false;
+    void apiClient
+      .get<{ success?: boolean; bookPackages?: boolean }>(
+        `/customer/warmpawz-pay/vendors/${vid}/booking-options`,
+      )
+      .catch(() =>
+        apiClient.get<{ success?: boolean; bookPackages?: boolean }>(
+          `/public/warmpawz-pay/vendors/${vid}/booking-options`,
+        ),
+      )
+      .then((res) => {
+        if (cancelled) return;
+        setBookPackagesAvailable(Boolean(res?.bookPackages));
+      })
+      .catch(() => {
+        if (!cancelled) setBookPackagesAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorId]);
+
+  const handleBookPackages = () => {
+    const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
+    if (!vid) return;
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: category,
+        category,
+        vendorId: vid,
+        resumeScreen: 'purchase-package',
+        wapptMode: true,
+      })
+    ) {
+      return;
+    }
+    onNavigate('purchase-package', {
+      vendorId: vid,
+      vendorName: providerName,
+      serviceType: category,
+      serviceStyle,
+      commerceMode: 'warmpawz_pay',
     });
   };
 
@@ -720,7 +771,7 @@ export function WarmpawzAppointmentsVendorProfile({
       {!isTeleMarketplace ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
           <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] shadow-lg">
-            <div className="p-4">
+            <div className={`p-4 ${bookPackagesAvailable ? 'grid grid-cols-2 gap-3' : ''}`}>
               <Button
                 onClick={handleBookAppointment}
                 disabled={!canBookSlot}
@@ -729,8 +780,21 @@ export function WarmpawzAppointmentsVendorProfile({
                 <Calendar className="mr-2 h-5 w-5" />
                 {selectableServices.length > 0 && selectedServiceIds.size > 0
                   ? `Select Slot · ${selectedServiceIds.size} selected`
-                  : 'Select Slot for Appointment'}
+                  : bookPackagesAvailable
+                    ? 'Book Appointment'
+                    : 'Select Slot for Appointment'}
               </Button>
+              {bookPackagesAvailable ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleBookPackages}
+                  className="h-12 w-full border-[#FF8C42] text-base text-[#FF8C42] hover:bg-orange-50 sm:text-lg"
+                >
+                  <Package className="mr-2 h-5 w-5" />
+                  Book Packages
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>

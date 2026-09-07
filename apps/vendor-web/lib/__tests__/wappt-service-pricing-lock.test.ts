@@ -30,6 +30,13 @@ describe('wappt-service-pricing-lock', () => {
     expect(shouldHideVendorServicePrice('tele')).toBe(false);
   });
 
+  it('allows package price edits when Warmpawz Pay is active', () => {
+    mockedIsWarmpawzPay.mockReturnValue(true);
+    expect(canVendorEditServicePrice('at_home', { isPackage: true })).toBe(true);
+    expect(canVendorEditServicePrice('at_center', { isPackage: true })).toBe(true);
+    expect(canVendorEditServicePrice('at_home', { isPackage: false })).toBe(false);
+  });
+
   it('allows all styles in marketplace mode', () => {
     mockedIsWarmpawzPay.mockReturnValue(false);
     expect(canVendorEditServicePrice('at_home')).toBe(true);

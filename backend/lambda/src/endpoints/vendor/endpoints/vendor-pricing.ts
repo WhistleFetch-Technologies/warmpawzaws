@@ -27,6 +27,7 @@ import {
   type ServicePricingData,
   type BulkPricingData,
 } from '../../../lib/services/pricing-service';
+import { rejectVendorServicePriceChangeIfLocked } from '../shared/vendor-service-pricing-lock';
 
 export function registerVendorPricingEndpoints(app: Hono) {
   /**
@@ -47,6 +48,14 @@ export function registerVendorPricingEndpoints(app: Hono) {
       
       const service = services[0];
       const vendorId = service.vendor_id;
+      const priceReject = await rejectVendorServicePriceChangeIfLocked(
+        service.service_style,
+        { price: pricingData.price, customPrice: pricingData.price } as Record<string, unknown>,
+        service as Record<string, unknown>,
+      );
+      if (priceReject) {
+        return c.json({ success: false, ...priceReject }, 409);
+      }
       
       // Check capability
       const hasPricingCapability = await checkVendorCapability(vendorId, 'service_pricing');
@@ -185,6 +194,15 @@ export function registerVendorPricingEndpoints(app: Hono) {
         }
         
         const service = services[0];
+        const bulkReject = await rejectVendorServicePriceChangeIfLocked(
+          service.service_style,
+          { price, customPrice: price } as Record<string, unknown>,
+          service as Record<string, unknown>,
+        );
+        if (bulkReject) {
+          results.push({ serviceId, error: bulkReject.error, code: bulkReject.code });
+          continue;
+        }
         const oldPrice = service.custom_price || service.base_price || 0;
 
         // Validate individual pricing update

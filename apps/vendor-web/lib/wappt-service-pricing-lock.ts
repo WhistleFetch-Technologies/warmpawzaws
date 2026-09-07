@@ -12,12 +12,19 @@ export function isPricingLockedServiceStyle(serviceStyle?: string | null): boole
   return LOCKED_STYLES.has(raw);
 }
 
-/** Vendor may edit service price only when marketplace mode or tele style. */
-export function canVendorEditServicePrice(serviceStyle?: string | null): boolean {
+/** Vendor may edit service price only when marketplace mode, tele style, or the row is a package. */
+export function canVendorEditServicePrice(
+  serviceStyle?: string | null,
+  opts?: { isPackage?: boolean },
+): boolean {
+  if (opts?.isPackage) return true;
   if (!isWarmpawzPay()) return true;
   return !isPricingLockedServiceStyle(serviceStyle);
 }
 
-export function shouldHideVendorServicePrice(serviceStyle?: string | null): boolean {
-  return !canVendorEditServicePrice(serviceStyle);
+export function shouldHideVendorServicePrice(
+  serviceStyle?: string | null,
+  opts?: { isPackage?: boolean },
+): boolean {
+  return !canVendorEditServicePrice(serviceStyle, opts);
 }

@@ -1,4 +1,5 @@
 import { resolveVendorCommissionPolicy } from '../finance/commission/resolve-vendor-commission-policy';
+import { getPackageCommissionRate } from '../finance/commission/resolve-package-commission-policy';
 
 /** Canonical package parent row: purchase anchor — per-session earnings accrue on children elsewhere. */
 export function isCanonicalPackageParentBooking(booking: Record<string, unknown>): boolean {
@@ -22,4 +23,4 @@ export async function getVendorCommissionRate(vendorId: string): Promise<number>
   return policy.commissionRate;
 }
 
-export { resolveVendorCommissionPolicy };
+export { resolveVendorCommissionPolicy, getPackageCommissionRate };

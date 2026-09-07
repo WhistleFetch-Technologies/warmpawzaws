@@ -2,6 +2,7 @@ import { describe, expect, test, jest, beforeEach } from '@jest/globals';
 
 jest.mock('../vendor-commission-rate', () => ({
   getVendorCommissionRate: jest.fn(async () => 10),
+  getPackageCommissionRate: jest.fn(async () => 10),
   isCanonicalPackageParentBooking: jest.fn(() => false),
   isPackageSessionChildBooking: jest.fn(() => true),
 }));

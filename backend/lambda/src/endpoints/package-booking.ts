@@ -1713,6 +1713,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
         customerId,
         vendorIdRaw: String(vendorRef),
         vendorServiceId: String(vendorServiceId),
+        commerceMode: String(bodyObj.commerceMode ?? bodyObj.commerce_mode ?? ''),
       });
       if (!computed.ok) {
         return c.json({ error: computed.error }, computed.status as 400 | 403 | 404);

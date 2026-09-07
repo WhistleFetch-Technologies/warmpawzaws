@@ -2,6 +2,11 @@ import { toServiceCardDTOList } from '../../../../../utils/discovery-service-car
 
 export function stripVendorServicePrices<T extends Record<string, unknown>>(rows: T[]): T[] {
   return rows.map((row) => {
+    if (row.isPackage || row.is_package) return row;
+    const meta = row.metadata;
+    if (meta && typeof meta === 'object' && !Array.isArray(meta) && Boolean((meta as { isPackage?: unknown }).isPackage)) {
+      return row;
+    }
     const { price: _p, base_price: _b, custom_price: _c, ...rest } = row;
     return rest as T;
   });

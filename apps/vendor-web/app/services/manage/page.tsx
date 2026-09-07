@@ -309,7 +309,7 @@ export default function SoloProviderServiceManagePage() {
             isEnabled: s.isEnabled,
             customDuration: s.duration,
           };
-          if (canVendorEditServicePrice(s.serviceStyle)) {
+          if (canVendorEditServicePrice(s.serviceStyle, { isPackage: Boolean((s as { isPackage?: boolean }).isPackage) })) {
             row.customPrice = s.price;
           }
           return row;
