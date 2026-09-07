@@ -21,12 +21,12 @@ jest.mock('../PaymentsTable', () => ({
   PaymentsTable: () => null,
 }));
 
-jest.mock('../PaymentsFilterBar', () => ({
-  PaymentsFilterBar: () => null,
-}));
-
 jest.mock('../ConvenienceSettingsPanel', () => ({
   ConvenienceSettingsPanel: () => <div>Global WPay Fee Settings</div>,
+}));
+
+jest.mock('../PaymentsFilterBar', () => ({
+  PaymentsFilterBar: () => <div>Payments filters</div>,
 }));
 
 jest.mock('@/components/admin/marketing/analytics/AnalyticsStateViews', () => ({

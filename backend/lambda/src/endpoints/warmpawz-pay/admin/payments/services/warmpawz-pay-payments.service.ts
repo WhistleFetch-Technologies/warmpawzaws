@@ -4,18 +4,27 @@ import {
   clampWpayWithholdPercent,
   computeWpayVendorSettlement,
 } from '../../../shared/pricing/wpay-vendor-settlement';
+import { mapWpaySettlementLedgerStatus } from '../../../../customer/warmpawz-pay/shared/accrue-wpay-settlement';
 import {
   dbWpayAdminPaymentsExport,
   dbWpayAdminPaymentsPage,
+  dbWpayAdminSettlePaymentsByPaymentIds,
   dbWpayPlatformWithholdPercentByVendorIds,
   type WpayAdminPaymentDbRow,
+  type WpayAdminPaymentsQueryFilters,
 } from '../../../repositories/wpay-payments-admin.repository';
 import type {
   WpayAdminPaymentItemDTO,
   WpayAdminPaymentsListDTO,
+  WpayAdminPaymentsSettleDTO,
+  WpayAdminPayoutStatus,
   WpayCommercialModel,
 } from '../dto/payments.responses';
-import type { PaymentsExportQuery, PaymentsListQuery } from '../dto/payments.requests';
+import type {
+  PaymentsExportQuery,
+  PaymentsListQuery,
+  PaymentsSettleBody,
+} from '../dto/payments.requests';
 import {
   buildWpayPaymentsExportFilename,
   buildWpayPaymentsExportXlsx,
@@ -44,6 +53,30 @@ function resolveCommercialModel(row: WpayAdminPaymentDbRow): WpayCommercialModel
     return 'tier_commission';
   }
   return 'withhold';
+}
+
+function resolvePayoutStatus(row: WpayAdminPaymentDbRow): {
+  payoutStatus: WpayAdminPayoutStatus;
+  payoutSettledAt: string | null;
+  settlementId: string | null;
+} {
+  const settlementId = row.settlement_id ? String(row.settlement_id) : null;
+  if (!settlementId) {
+    return { payoutStatus: 'unavailable', payoutSettledAt: null, settlementId: null };
+  }
+  const ledger = mapWpaySettlementLedgerStatus(row.settlement_status);
+  if (ledger === 'settled') {
+    return {
+      payoutStatus: 'settled',
+      payoutSettledAt: row.settlement_completed_at ? String(row.settlement_completed_at) : null,
+      settlementId,
+    };
+  }
+  return {
+    payoutStatus: 'pending',
+    payoutSettledAt: null,
+    settlementId,
+  };
 }
 
 export function resolveWpayAdminPaymentSettlement(
@@ -87,6 +120,16 @@ export function resolveWpayAdminPaymentSettlement(
   };
 }
 
+function toQueryFilters(
+  query: Pick<PaymentsListQuery, 'dateFilter' | 'payoutStatus' | 'vendorSearch'>,
+): WpayAdminPaymentsQueryFilters {
+  return {
+    dateFilter: query.dateFilter,
+    payoutStatus: query.payoutStatus,
+    vendorSearch: query.vendorSearch,
+  };
+}
+
 function mapPaymentRow(
   row: WpayAdminPaymentDbRow,
   withholdByVendor: ReadonlyMap<string, number>,
@@ -107,6 +150,7 @@ function mapPaymentRow(
   const commercialModel = resolveCommercialModel(row);
   const breakup = row.settlement_breakup ?? undefined;
   const meta = row.payment_metadata ?? undefined;
+  const payout = resolvePayoutStatus(row);
 
   const base = {
     paymentId: row.payment_id,
@@ -115,6 +159,7 @@ function mapPaymentRow(
       phone: String(row.customer_phone ?? '').trim(),
     },
     vendor: {
+      id: String(row.vendor_id),
       name: resolveMerchantDisplayName({
         businessName: row.business_name,
         ownerName: row.owner_name,
@@ -133,6 +178,9 @@ function mapPaymentRow(
     discountAmount,
     payableAmount,
     paidAt: row.paid_at,
+    settlementId: payout.settlementId,
+    payoutStatus: payout.payoutStatus,
+    payoutSettledAt: payout.payoutSettledAt,
   };
 
   if (commercialModel === 'tier_commission') {
@@ -145,7 +193,6 @@ function mapPaymentRow(
       toFiniteNumber(row.platform_withhold_amount) ??
       0;
     const burnMode = Boolean(breakup?.burnMode ?? meta?.burnMode ?? false);
-    // Prefer live formula for admin: burn = vendor payable − customer paid.
     const burnAmount = burnMode
       ? Math.round(Math.max(0, vendorPayableAmount - payableAmount) * 100) / 100
       : readBreakupNumber(breakup, 'burnAmount') ??
@@ -216,7 +263,7 @@ export class WarmpawzPayPaymentsService {
     const { rows, total } = await dbWpayAdminPaymentsPage({
       page: query.page,
       pageSize: query.pageSize,
-      dateFilter: query.dateFilter,
+      filters: toQueryFilters(query),
     });
 
     const items = await mapPaymentRows(rows);
@@ -234,12 +281,30 @@ export class WarmpawzPayPaymentsService {
   async exportPaymentsXlsx(
     query: PaymentsExportQuery,
   ): Promise<{ buffer: Buffer; filename: string }> {
-    const rows = await dbWpayAdminPaymentsExport(query.dateFilter);
+    const rows = await dbWpayAdminPaymentsExport(toQueryFilters(query));
     const items = await mapPaymentRows(rows);
     const buffer = await buildWpayPaymentsExportXlsx(items);
     return {
       buffer,
       filename: buildWpayPaymentsExportFilename(query.dateFilter),
+    };
+  }
+
+  async settlePayments(body: PaymentsSettleBody): Promise<WpayAdminPaymentsSettleDTO> {
+    const requested = [...new Set(body.paymentIds.map((id) => String(id).trim()).filter(Boolean))];
+    const { settledPaymentIds } = await dbWpayAdminSettlePaymentsByPaymentIds(requested);
+    const settledSet = new Set(settledPaymentIds);
+    const skipped = requested
+      .filter((paymentId) => !settledSet.has(paymentId))
+      .map((paymentId) => ({
+        paymentId,
+        reason: 'Already settled, missing settlement row, or not a completed Warmpawz Pay payment',
+      }));
+
+    return {
+      settledPaymentIds,
+      settledCount: settledPaymentIds.length,
+      skipped,
     };
   }
 }

@@ -8,16 +8,21 @@ jest.mock('../../../repositories/wpay-payments-admin.repository', () => ({
   dbWpayAdminPaymentsPage: jest.fn(),
   dbWpayAdminPaymentsExport: jest.fn(),
   dbWpayPlatformWithholdPercentByVendorIds: jest.fn(),
+  dbWpayAdminSettlePaymentsByPaymentIds: jest.fn(),
 }));
 
 import {
   dbWpayAdminPaymentsExport,
   dbWpayAdminPaymentsPage,
+  dbWpayAdminSettlePaymentsByPaymentIds,
   dbWpayPlatformWithholdPercentByVendorIds,
 } from '../../../repositories/wpay-payments-admin.repository';
 
 const mockedPage = dbWpayAdminPaymentsPage as jest.MockedFunction<typeof dbWpayAdminPaymentsPage>;
 const mockedExport = dbWpayAdminPaymentsExport as jest.MockedFunction<typeof dbWpayAdminPaymentsExport>;
+const mockedSettle = dbWpayAdminSettlePaymentsByPaymentIds as jest.MockedFunction<
+  typeof dbWpayAdminSettlePaymentsByPaymentIds
+>;
 const mockedWithholdByVendor = dbWpayPlatformWithholdPercentByVendorIds as jest.MockedFunction<
   typeof dbWpayPlatformWithholdPercentByVendorIds
 >;
@@ -47,6 +52,9 @@ const baseRow: WpayAdminPaymentDbRow = {
   platform_withhold_percent: null,
   payment_metadata: null,
   settlement_breakup: null,
+  settlement_id: null,
+  settlement_status: null,
+  settlement_completed_at: null,
 };
 
 describe('resolveWpayAdminPaymentSettlement', () => {
@@ -97,6 +105,8 @@ describe('WarmpawzPayPaymentsService', () => {
           platform_withhold_amount: 66.6,
           platform_withhold_percent: 5,
           payable_amount: 1332,
+          settlement_id: 'set-1',
+          settlement_status: 'pending',
         },
       ],
     });
@@ -106,12 +116,18 @@ describe('WarmpawzPayPaymentsService', () => {
       page: 1,
       pageSize: 5,
       dateFilter: { mode: 'month', year: 2026, month: 8 },
+      payoutStatus: 'all',
+      vendorSearch: '',
     });
 
     expect(mockedPage).toHaveBeenCalledWith({
       page: 1,
       pageSize: 5,
-      dateFilter: { mode: 'month', year: 2026, month: 8 },
+      filters: {
+        dateFilter: { mode: 'month', year: 2026, month: 8 },
+        payoutStatus: 'all',
+        vendorSearch: '',
+      },
     });
 
     expect(mockedWithholdByVendor).not.toHaveBeenCalled();
@@ -119,6 +135,7 @@ describe('WarmpawzPayPaymentsService', () => {
     expect(result.items[0]?.platformWithholdAmount).toBe(66.6);
     expect(result.items[0]?.platformWithholdPercent).toBe(5);
     expect(result.items[0]?.settlementSource).toBe('persisted');
+    expect(result.items[0]?.payoutStatus).toBe('pending');
   });
 
   it('batch-loads pricing when any row lacks settlement', async () => {
@@ -130,17 +147,24 @@ describe('WarmpawzPayPaymentsService', () => {
       page: 1,
       pageSize: 5,
       dateFilter: { mode: 'month', year: 2026, month: 8 },
+      payoutStatus: 'all',
+      vendorSearch: '',
     });
 
     expect(mockedPage).toHaveBeenCalledWith({
       page: 1,
       pageSize: 5,
-      dateFilter: { mode: 'month', year: 2026, month: 8 },
+      filters: {
+        dateFilter: { mode: 'month', year: 2026, month: 8 },
+        payoutStatus: 'all',
+        vendorSearch: '',
+      },
     });
 
     expect(mockedWithholdByVendor).toHaveBeenCalledWith(['vendor-1']);
     expect(result.items[0]?.vendorSettlementAmount).toBe(855);
     expect(result.items[0]?.settlementSource).toBe('computed');
+    expect(result.items[0]?.payoutStatus).toBe('unavailable');
   });
 
   it('exports xlsx rows with filename for month filter', async () => {
@@ -150,16 +174,51 @@ describe('WarmpawzPayPaymentsService', () => {
         vendor_settlement_amount: 855,
         platform_withhold_amount: 45,
         platform_withhold_percent: 5,
+        settlement_id: 'set-1',
+        settlement_status: 'pending',
       },
     ]);
 
     const service = new WarmpawzPayPaymentsService();
     const result = await service.exportPaymentsXlsx({
       dateFilter: { mode: 'month', year: 2026, month: 8 },
+      payoutStatus: 'all',
+      vendorSearch: '',
     });
 
-    expect(mockedExport).toHaveBeenCalledWith({ mode: 'month', year: 2026, month: 8 });
+    expect(mockedExport).toHaveBeenCalledWith({
+      dateFilter: { mode: 'month', year: 2026, month: 8 },
+      payoutStatus: 'all',
+      vendorSearch: '',
+    });
     expect(result.filename).toBe('warmpawz-pay-orders-2026-08.xlsx');
     expect(result.buffer.length).toBeGreaterThan(0);
+  });
+
+  it('settles pending payments and reports skipped ids', async () => {
+    mockedSettle.mockResolvedValue({
+      settledPaymentIds: ['11111111-1111-4111-8111-111111111111'],
+    });
+
+    const service = new WarmpawzPayPaymentsService();
+    const result = await service.settlePayments({
+      paymentIds: [
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ],
+    });
+
+    expect(mockedSettle).toHaveBeenCalledWith([
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    ]);
+    expect(result.settledCount).toBe(1);
+    expect(result.skipped).toEqual([
+      {
+        paymentId: '22222222-2222-4222-8222-222222222222',
+        reason:
+          'Already settled, missing settlement row, or not a completed Warmpawz Pay payment',
+      },
+    ]);
   });
 });

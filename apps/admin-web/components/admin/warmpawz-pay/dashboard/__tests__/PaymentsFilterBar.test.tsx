@@ -62,4 +62,22 @@ describe('PaymentsFilterBar', () => {
       expect.objectContaining({ mode: 'month', yearMonth: '2026-07' }),
     );
   });
+
+  it('exposes vendor search, payout status, and settle action', () => {
+    const onSettle = jest.fn();
+    render(
+      <PaymentsFilterBar
+        filters={defaultWpayPaymentsFilters()}
+        onFiltersChange={() => undefined}
+        settleDisabled={false}
+        settleLabel="Settle selected (2)"
+        onSettle={onSettle}
+      />,
+    );
+
+    expect(screen.getByLabelText('Vendor search')).toBeInTheDocument();
+    expect(screen.getByLabelText('Payout status')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Settle selected \(2\)/i }));
+    expect(onSettle).toHaveBeenCalledTimes(1);
+  });
 });

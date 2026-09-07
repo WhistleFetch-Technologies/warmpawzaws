@@ -25,6 +25,8 @@ export type WpayPaymentsDateFilter =
   | WpayPaymentsRangeFilter
   | { readonly mode: 'none' };
 
+export const wpayPayoutStatusFilterSchema = z.enum(['all', 'pending', 'settled']).default('all');
+
 export const paymentsListQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
@@ -33,13 +35,27 @@ export const paymentsListQuerySchema = z
     month: z.coerce.number().int().optional(),
     fromDate: z.string().optional(),
     toDate: z.string().optional(),
+    payoutStatus: z.string().optional(),
+    vendorSearch: z.string().optional(),
   })
   .transform((value, ctx) => {
     const dateFilter = resolvePaymentsDateFilter(value, ctx);
+    const payoutParsed = wpayPayoutStatusFilterSchema.safeParse(
+      String(value.payoutStatus ?? 'all').trim().toLowerCase() || 'all',
+    );
+    if (!payoutParsed.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'payoutStatus must be all, pending, or settled',
+        path: ['payoutStatus'],
+      });
+    }
     return {
       page: value.page,
       pageSize: value.pageSize,
       dateFilter,
+      payoutStatus: payoutParsed.success ? payoutParsed.data : ('all' as const),
+      vendorSearch: String(value.vendorSearch ?? '').trim(),
     };
   });
 
@@ -49,13 +65,28 @@ export const paymentsExportQuerySchema = z
     month: z.coerce.number().int().optional(),
     fromDate: z.string().optional(),
     toDate: z.string().optional(),
+    payoutStatus: z.string().optional(),
+    vendorSearch: z.string().optional(),
   })
-  .transform((value, ctx) => ({
-    dateFilter: resolvePaymentsDateFilter(value, ctx),
-  }));
+  .transform((value, ctx) => {
+    const dateFilter = resolvePaymentsDateFilter(value, ctx);
+    const payoutParsed = wpayPayoutStatusFilterSchema.safeParse(
+      String(value.payoutStatus ?? 'all').trim().toLowerCase() || 'all',
+    );
+    return {
+      dateFilter,
+      payoutStatus: payoutParsed.success ? payoutParsed.data : ('all' as const),
+      vendorSearch: String(value.vendorSearch ?? '').trim(),
+    };
+  });
+
+export const paymentsSettleBodySchema = z.object({
+  paymentIds: z.array(z.string().uuid()).min(1).max(200),
+});
 
 export type PaymentsListQuery = z.infer<typeof paymentsListQuerySchema>;
 export type PaymentsExportQuery = z.infer<typeof paymentsExportQuerySchema>;
+export type PaymentsSettleBody = z.infer<typeof paymentsSettleBodySchema>;
 
 function resolvePaymentsDateFilter(
   value: {
@@ -138,6 +169,8 @@ export function parsePaymentsListQuery(
     month: query.month,
     fromDate: query.fromDate,
     toDate: query.toDate,
+    payoutStatus: query.payoutStatus,
+    vendorSearch: query.vendorSearch,
   });
 }
 
@@ -149,7 +182,13 @@ export function parsePaymentsExportQuery(
     month: query.month,
     fromDate: query.fromDate,
     toDate: query.toDate,
+    payoutStatus: query.payoutStatus,
+    vendorSearch: query.vendorSearch,
   });
+}
+
+export function parsePaymentsSettleBody(body: unknown): PaymentsSettleBody {
+  return paymentsSettleBodySchema.parse(body);
 }
 
 export function wpayPaymentsFilterLabel(filter: WpayPaymentsDateFilter): string {

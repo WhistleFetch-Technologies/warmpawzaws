@@ -9,6 +9,10 @@ export interface PaymentsFilterBarProps {
   readonly filters: WpayPaymentsFilters;
   readonly onFiltersChange: (filters: WpayPaymentsFilters) => void;
   readonly disabled?: boolean;
+  readonly settleDisabled?: boolean;
+  readonly settleLabel?: string;
+  readonly onSettle?: () => void;
+  readonly settling?: boolean;
 }
 
 function isRangeReady(filters: WpayPaymentsFilters): boolean {
@@ -19,6 +23,10 @@ export function PaymentsFilterBar({
   filters,
   onFiltersChange,
   disabled = false,
+  settleDisabled = true,
+  settleLabel = 'Settle selected',
+  onSettle,
+  settling = false,
 }: PaymentsFilterBarProps) {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -126,6 +134,41 @@ export function PaymentsFilterBar({
           </>
         )}
 
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-gray-600">Vendor</span>
+          <input
+            type="search"
+            aria-label="Vendor search"
+            placeholder="Name or vendor id"
+            value={filters.vendorSearch}
+            onChange={(event) =>
+              onFiltersChange({ ...filters, vendorSearch: event.target.value })
+            }
+            disabled={disabled}
+            className="min-w-[12rem] rounded-md border border-gray-300 bg-white px-3 py-2"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-gray-600">Payout status</span>
+          <select
+            aria-label="Payout status"
+            value={filters.payoutStatus}
+            onChange={(event) =>
+              onFiltersChange({
+                ...filters,
+                payoutStatus: event.target.value as WpayPaymentsFilters['payoutStatus'],
+              })
+            }
+            disabled={disabled}
+            className="rounded-md border border-gray-300 bg-white px-3 py-2"
+          >
+            <option value="all">All</option>
+            <option value="pending">Pending</option>
+            <option value="settled">Settled</option>
+          </select>
+        </label>
+
         <Button
           type="button"
           variant="outline"
@@ -134,6 +177,17 @@ export function PaymentsFilterBar({
         >
           {exporting ? 'Downloading…' : 'Download Excel'}
         </Button>
+
+        {onSettle ? (
+          <Button
+            type="button"
+            className="bg-orange-500 text-white hover:bg-orange-600"
+            onClick={onSettle}
+            disabled={settleDisabled || settling || disabled}
+          >
+            {settling ? 'Settling…' : settleLabel}
+          </Button>
+        ) : null}
       </div>
 
       {exportError ? (

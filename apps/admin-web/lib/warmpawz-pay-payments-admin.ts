@@ -10,6 +10,7 @@ export { defaultWpayPaymentsFilters } from '@/lib/warmpawz-pay-payments-export';
 export const WPAY_PAYMENTS_API_BASE = '/admin/warmpawz-pay/payments';
 
 export type WpayCommercialModel = 'tier_commission' | 'withhold';
+export type WpayAdminPayoutStatus = 'pending' | 'settled' | 'unavailable';
 
 export interface WpayAdminPaymentItem {
   readonly paymentId: string;
@@ -18,6 +19,7 @@ export interface WpayAdminPaymentItem {
     readonly phone: string;
   };
   readonly vendor: {
+    readonly id?: string;
     readonly name: string;
     readonly category: string;
     readonly tierName?: string | null;
@@ -43,6 +45,9 @@ export interface WpayAdminPaymentItem {
   readonly platformWithholdAmount?: number;
   readonly vendorSettlementAmount: number;
   readonly settlementSource?: 'persisted' | 'computed';
+  readonly settlementId?: string | null;
+  readonly payoutStatus?: WpayAdminPayoutStatus;
+  readonly payoutSettledAt?: string | null;
   readonly paidAt: string;
 }
 
@@ -92,6 +97,24 @@ export async function fetchWarmpawzPayPayments(params: {
   const response = await apiClient.get<
     SuccessEnvelope<WpayAdminPaymentsListData> | WpayAdminPaymentsListData
   >(`${WPAY_PAYMENTS_API_BASE}?${qs.toString()}`);
+  return assertSuccess(response);
+}
+
+export interface WpayAdminPaymentsSettleResult {
+  readonly settledPaymentIds: readonly string[];
+  readonly settledCount: number;
+  readonly skipped: readonly {
+    readonly paymentId: string;
+    readonly reason: string;
+  }[];
+}
+
+export async function settleWarmpawzPayPayments(
+  paymentIds: readonly string[],
+): Promise<WpayAdminPaymentsSettleResult> {
+  const response = await apiClient.post<
+    SuccessEnvelope<WpayAdminPaymentsSettleResult> | WpayAdminPaymentsSettleResult
+  >(`${WPAY_PAYMENTS_API_BASE}/settle`, { paymentIds });
   return assertSuccess(response);
 }
 

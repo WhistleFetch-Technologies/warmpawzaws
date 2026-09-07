@@ -9,6 +9,7 @@ const HEADERS = [
   'Phone',
   'Vendor',
   'Category',
+  'Payout Status',
   'Amount Quoted',
   'Discount (%)',
   'Discount Amount',
@@ -57,6 +58,7 @@ export async function buildWpayPaymentsExportXlsx(
       item.customer.phone,
       item.vendor.name,
       item.vendor.category,
+      item.payoutStatus,
       item.originalAmount,
       item.discountPercent,
       item.discountAmount,
@@ -70,7 +72,7 @@ export async function buildWpayPaymentsExportXlsx(
 
   sheet.getRow(1).font = { bold: true };
   sheet.columns = HEADERS.map((header, index) => {
-    if (index >= 5 && index <= 11) {
+    if (index >= 6 && index <= 12) {
       return { width: 18, style: { numFmt: '#,##0.00' } };
     }
     return { width: Math.max(header.length + 2, 14) };

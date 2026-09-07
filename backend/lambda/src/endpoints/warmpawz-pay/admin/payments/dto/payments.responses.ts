@@ -1,5 +1,8 @@
 export type WpayCommercialModel = 'tier_commission' | 'withhold';
 
+/** Vendor payout flag mirrored from settlements.settlement_status (ledger map). */
+export type WpayAdminPayoutStatus = 'pending' | 'settled' | 'unavailable';
+
 export interface WpayAdminPaymentItemDTO {
   readonly paymentId: string;
   readonly customer: {
@@ -7,6 +10,7 @@ export interface WpayAdminPaymentItemDTO {
     readonly phone: string;
   };
   readonly vendor: {
+    readonly id: string;
     readonly name: string;
     readonly category: string;
     readonly tierName?: string | null;
@@ -32,7 +36,20 @@ export interface WpayAdminPaymentItemDTO {
   readonly platformWithholdAmount?: number;
   readonly vendorSettlementAmount: number;
   readonly settlementSource: 'persisted' | 'computed';
+  readonly settlementId?: string | null;
+  /** pending | settled | unavailable (no settlement row yet) */
+  readonly payoutStatus: WpayAdminPayoutStatus;
+  readonly payoutSettledAt?: string | null;
   readonly paidAt: string;
+}
+
+export interface WpayAdminPaymentsSettleDTO {
+  readonly settledPaymentIds: readonly string[];
+  readonly settledCount: number;
+  readonly skipped: readonly {
+    readonly paymentId: string;
+    readonly reason: string;
+  }[];
 }
 
 export interface WpayAdminPaymentsListDTO {

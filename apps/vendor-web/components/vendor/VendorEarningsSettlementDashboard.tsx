@@ -697,6 +697,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     switch (String(status || '').toLowerCase()) {
       case 'completed':
       case 'processed':
+      case 'settled':
         return 'bg-green-100 text-green-700';
       case 'processing':
       case 'scheduled':

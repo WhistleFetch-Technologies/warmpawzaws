@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   Table,
   TableBody,
@@ -16,6 +16,7 @@ import {
   formatWpayPercent,
   formatWpayPhone,
   type WpayAdminPaymentItem,
+  type WpayAdminPayoutStatus,
 } from '@/lib/warmpawz-pay-payments-admin';
 import { Pagination } from '@/components/admin/warmpawz-pay/catalogue/Pagination';
 
@@ -25,6 +26,26 @@ export interface PaymentsTableProps {
   readonly pageSize: number;
   readonly total: number;
   readonly onPageChange: (page: number) => void;
+  readonly selectedPaymentIds: ReadonlySet<string>;
+  readonly onSelectedPaymentIdsChange: (next: Set<string>) => void;
+}
+
+function payoutLabel(status: WpayAdminPayoutStatus | undefined): string {
+  if (status === 'settled') return 'Settled';
+  if (status === 'unavailable') return 'No settlement';
+  return 'Pending';
+}
+
+function payoutBadgeClass(status: WpayAdminPayoutStatus | undefined): string {
+  if (status === 'settled') return 'bg-green-100 text-green-800';
+  if (status === 'unavailable') return 'bg-gray-100 text-gray-600';
+  return 'bg-amber-100 text-amber-800';
+}
+
+function rowTintClass(status: WpayAdminPayoutStatus | undefined): string {
+  if (status === 'settled') return 'bg-green-50/60';
+  if (status === 'pending') return 'bg-amber-50/50';
+  return '';
 }
 
 function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
@@ -57,6 +78,16 @@ function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
         <div><span className="text-gray-500">Convenience fee</span><p className="font-medium">{formatWpayInr(item.convenienceFee ?? 0)}</p></div>
         <div><span className="text-gray-500">Convenience GST</span><p className="font-medium">{formatWpayInr(item.convenienceGstAmount ?? 0)}</p></div>
         <div><span className="text-gray-500">Final GST</span><p className="font-semibold text-orange-700">{formatWpayInr(item.finalGstAmount ?? 0)}</p></div>
+        <div>
+          <span className="text-gray-500">Payout</span>
+          <p className="font-medium">{payoutLabel(item.payoutStatus)}</p>
+        </div>
+        {item.payoutSettledAt ? (
+          <div>
+            <span className="text-gray-500">Payout settled at</span>
+            <p className="font-medium">{formatWpayPaidAt(item.payoutSettledAt)}</p>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -67,6 +98,10 @@ function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
       <div><span className="text-gray-500">Withhold amount</span><p className="font-medium">{formatWpayInr(item.platformWithholdAmount ?? 0)}</p></div>
       <div><span className="text-gray-500">Vendor settlement</span><p className="font-medium">{formatWpayInr(item.vendorSettlementAmount)}</p></div>
       <div><span className="text-gray-500">Model</span><p className="font-medium">Historical withhold</p></div>
+      <div>
+        <span className="text-gray-500">Payout</span>
+        <p className="font-medium">{payoutLabel(item.payoutStatus)}</p>
+      </div>
     </div>
   );
 }
@@ -77,8 +112,18 @@ export function PaymentsTable({
   pageSize,
   total,
   onPageChange,
+  selectedPaymentIds,
+  onSelectedPaymentIdsChange,
 }: PaymentsTableProps) {
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
+
+  const pendingOnPage = useMemo(
+    () => items.filter((item) => item.payoutStatus === 'pending'),
+    [items],
+  );
+  const allPendingSelected =
+    pendingOnPage.length > 0 &&
+    pendingOnPage.every((item) => selectedPaymentIds.has(item.paymentId));
 
   if (items.length === 0) {
     return (
@@ -92,15 +137,43 @@ export function PaymentsTable({
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
 
+  const toggleOne = (paymentId: string, selectable: boolean) => {
+    if (!selectable) return;
+    const next = new Set(selectedPaymentIds);
+    if (next.has(paymentId)) next.delete(paymentId);
+    else next.add(paymentId);
+    onSelectedPaymentIdsChange(next);
+  };
+
+  const toggleAllPendingOnPage = () => {
+    const next = new Set(selectedPaymentIds);
+    if (allPendingSelected) {
+      for (const item of pendingOnPage) next.delete(item.paymentId);
+    } else {
+      for (const item of pendingOnPage) next.add(item.paymentId);
+    }
+    onSelectedPaymentIdsChange(next);
+  };
+
   return (
     <div className="space-y-4">
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  aria-label="Select all pending on page"
+                  checked={allPendingSelected}
+                  disabled={pendingOnPage.length === 0}
+                  onChange={toggleAllPendingOnPage}
+                />
+              </TableHead>
               <TableHead className="w-8" />
               <TableHead>Customer</TableHead>
               <TableHead>Vendor</TableHead>
+              <TableHead>Payout</TableHead>
               <TableHead className="text-right">Amount Quoted</TableHead>
               <TableHead className="text-right">Tier / Discount</TableHead>
               <TableHead className="text-right">Customer Paid</TableHead>
@@ -115,9 +188,19 @@ export function PaymentsTable({
               const expanded = expandedPaymentId === item.paymentId;
               const isTier = item.commercialModel === 'tier_commission';
               const burnOn = isTier && item.burnMode === true;
+              const canSelect = item.payoutStatus === 'pending';
               return (
                 <Fragment key={item.paymentId}>
-                  <TableRow>
+                  <TableRow className={rowTintClass(item.payoutStatus)}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${item.paymentId}`}
+                        checked={selectedPaymentIds.has(item.paymentId)}
+                        disabled={!canSelect}
+                        onChange={() => toggleOne(item.paymentId, canSelect)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <button
                         type="button"
@@ -152,6 +235,13 @@ export function PaymentsTable({
                           {item.vendor.tierName}
                         </span>
                       ) : null}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${payoutBadgeClass(item.payoutStatus)}`}
+                      >
+                        {payoutLabel(item.payoutStatus)}
+                      </span>
                     </TableCell>
                     <TableCell className="text-right">{formatWpayInr(item.originalAmount)}</TableCell>
                     <TableCell className="text-right">
@@ -196,7 +286,7 @@ export function PaymentsTable({
                   </TableRow>
                   {expanded ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="bg-gray-50 px-6 py-4">
+                      <TableCell colSpan={12} className="bg-gray-50 px-6 py-4">
                         <PaymentDetailDrawer item={item} />
                       </TableCell>
                     </TableRow>
@@ -211,6 +301,9 @@ export function PaymentsTable({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-gray-500">
           Showing {from}–{to} of {total} orders
+          {selectedPaymentIds.size > 0
+            ? ` · ${selectedPaymentIds.size} selected`
+            : ''}
         </p>
         <Pagination
           pagination={{ page, totalPages, total, pageSize }}

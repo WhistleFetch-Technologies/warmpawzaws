@@ -1,12 +1,15 @@
 import { getApiBaseUrl, isUatMode } from '@/lib/api-client';
 
 export type WpayPaymentsFilterMode = 'month' | 'range';
+export type WpayPayoutStatusFilter = 'all' | 'pending' | 'settled';
 
 export interface WpayPaymentsFilters {
   readonly mode: WpayPaymentsFilterMode;
   readonly yearMonth: string;
   readonly fromDate: string;
   readonly toDate: string;
+  readonly payoutStatus: WpayPayoutStatusFilter;
+  readonly vendorSearch: string;
 }
 
 export function defaultWpayPaymentsFilters(): WpayPaymentsFilters {
@@ -15,6 +18,8 @@ export function defaultWpayPaymentsFilters(): WpayPaymentsFilters {
     yearMonth: currentIstYearMonth(),
     fromDate: '',
     toDate: '',
+    payoutStatus: 'all',
+    vendorSearch: '',
   };
 }
 
@@ -69,12 +74,17 @@ export function appendWpayPaymentsDateParams(
       qs.set('year', match[1]);
       qs.set('month', String(parseInt(match[2], 10)));
     }
-    return;
-  }
-
-  if (filters.mode === 'range' && filters.fromDate && filters.toDate) {
+  } else if (filters.mode === 'range' && filters.fromDate && filters.toDate) {
     qs.set('fromDate', filters.fromDate);
     qs.set('toDate', filters.toDate);
+  }
+
+  if (filters.payoutStatus && filters.payoutStatus !== 'all') {
+    qs.set('payoutStatus', filters.payoutStatus);
+  }
+  const vendorSearch = String(filters.vendorSearch ?? '').trim();
+  if (vendorSearch) {
+    qs.set('vendorSearch', vendorSearch);
   }
 }
 
