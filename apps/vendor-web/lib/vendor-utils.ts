@@ -206,11 +206,13 @@ export function shouldShowVendorBookingServiceOnHomeDashboard(bookingLike: {
   return !isWarmpawzAppointmentsBooking(bookingLike);
 }
 
-export function formatVendorSelectedServiceNames(bookingLike: {
-  selectedServices?: unknown;
-  selected_services?: unknown;
-}): string {
-  const raw = bookingLike.selectedServices ?? bookingLike.selected_services;
+export function formatVendorSelectedServiceNames(bookingLike: unknown): string {
+  if (!bookingLike || typeof bookingLike !== 'object') return '';
+  const row = bookingLike as {
+    selectedServices?: unknown;
+    selected_services?: unknown;
+  };
+  const raw = row.selectedServices ?? row.selected_services;
   const rows = Array.isArray(raw) ? raw : [];
   const names = rows
     .map((row) => {
