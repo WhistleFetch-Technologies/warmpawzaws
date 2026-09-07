@@ -152,12 +152,7 @@ export default function PricingPage() {
   const styles = Array.from(new Set(services.map((s) => s.service_style))).filter(Boolean);
 
   const filteredPricing = pricing.filter((item) => {
-    const svc = services.find((s) => s.id === item.serviceId) as (Service & { isPackage?: boolean; metadata?: { isPackage?: boolean } }) | undefined;
-    if (
-      !canVendorEditServicePrice(item.serviceStyle, {
-        isPackage: Boolean(svc?.isPackage || svc?.metadata?.isPackage),
-      })
-    ) {
+    if (!canVendorEditServicePrice(item.serviceStyle)) {
       return false;
     }
     if (filterStyle !== 'all' && item.serviceStyle !== filterStyle) {

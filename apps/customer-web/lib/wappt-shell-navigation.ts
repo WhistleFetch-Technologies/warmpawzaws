@@ -96,11 +96,6 @@ export function handleWapptShellScreenNavigate(
     : null;
   const bookingScreen = hubConfig?.bookingScreen;
 
-  if (screen === 'purchase-package') {
-    actions.handleVetNavigate(screen, payload);
-    return;
-  }
-
   if (screen === 'wappt-vendor-profile') {
     actions.setWapptProfileData({
       vendorId: String(payload.vendorId || ''),

@@ -16,9 +16,6 @@ interface Service {
   base_price?: number;
   custom_duration?: number;
   duration_minutes?: number;
-  isPackage?: boolean;
-  is_package?: boolean;
-  metadata?: { isPackage?: boolean };
 }
 
 interface ServicePricingProps {
@@ -75,23 +72,13 @@ export function ServicePricing({ vendorId, serviceId, onBack }: ServicePricingPr
   };
 
   const editableServices = useMemo(
-    () =>
-      services.filter((service) =>
-        canVendorEditServicePrice(service.service_style, {
-          isPackage: Boolean(service.isPackage || service.is_package || service.metadata?.isPackage),
-        }),
-      ),
+    () => services.filter((service) => canVendorEditServicePrice(service.service_style)),
     [services],
   );
 
   const savePrice = async (serviceId: string) => {
     const service = services.find((s) => s.id === serviceId);
-    if (
-      service &&
-      !canVendorEditServicePrice(service.service_style, {
-        isPackage: Boolean(service.isPackage || service.is_package || service.metadata?.isPackage),
-      })
-    ) {
+    if (service && !canVendorEditServicePrice(service.service_style)) {
       toast.error('Pricing is managed by Warmpawz Appointments for this service style');
       return;
     }
@@ -125,12 +112,7 @@ export function ServicePricing({ vendorId, serviceId, onBack }: ServicePricingPr
       const updates = Object.entries(prices)
         .filter(([id]) => {
           const service = services.find((s) => s.id === id);
-          return (
-            service &&
-            canVendorEditServicePrice(service.service_style, {
-              isPackage: Boolean(service.isPackage || service.is_package || service.metadata?.isPackage),
-            })
-          );
+          return service && canVendorEditServicePrice(service.service_style);
         })
         .map(([id, data]) => ({
         serviceId: id,

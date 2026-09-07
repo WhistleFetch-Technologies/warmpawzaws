@@ -3,8 +3,7 @@
  * mark in_progress / completed idempotently (single decrement per visit).
  */
 
-import { getPackageCommissionRate } from './vendor-commission-rate';
-import { normalizePackageCommerceMode } from './vendor-service-is-package';
+import { getVendorCommissionRate } from './vendor-commission-rate';
 import {
   applySettlementPreviewToCommissionableGross,
   extractSettlementPreviewFromBooking,
@@ -333,7 +332,6 @@ async function accrueVendorEarningsForPackageSessionChild(
       `SELECT b.vendor_id::text AS vendor_id, b.total_amount::numeric AS total_amount,
               b.base_price::numeric AS base_price,
               b.notes,
-              b.commerce_mode,
               COALESCE(pp.amount, pp.package_price, 0)::numeric AS purchase_amount
        FROM bookings b
        LEFT JOIN package_purchases pp ON pp.id = b.package_purchase_id
@@ -364,10 +362,7 @@ async function accrueVendorEarningsForPackageSessionChild(
 
     await db.query(`SELECT id FROM package_purchases WHERE id = $1::uuid FOR UPDATE`, [packagePurchaseId]).catch(() => undefined);
 
-    const commissionRate = await getPackageCommissionRate(
-      String(parentRow.vendor_id),
-      normalizePackageCommerceMode((parentRow as { commerce_mode?: unknown }).commerce_mode),
-    );
+    const commissionRate = await getVendorCommissionRate(String(parentRow.vendor_id));
     const vendorPool = vendorPoolAfterCommission(parentTotal, commissionRate);
 
     await repairInflatedPackageSessionChildEarnings(db, {

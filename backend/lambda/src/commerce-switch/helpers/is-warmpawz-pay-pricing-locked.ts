@@ -27,17 +27,10 @@ export async function isWarmpawzPayActive(): Promise<boolean> {
   return resolved.activeModelId === WARMPAWZ_PAY_MODEL;
 }
 
-export type WarmpawzPayPricingLockOpts = {
-  /** Packages stay vendor-editable under Pay. One-off services stay locked. */
-  isPackage?: boolean;
-};
-
-/** Commerce Switch warmpawz_pay + at_home/at_center (not tele). Packages are exempt. */
+/** Commerce Switch warmpawz_pay + at_home/at_center (not tele). */
 export async function isWarmpawzPayPricingLocked(
   serviceStyle: string | null | undefined,
-  opts?: WarmpawzPayPricingLockOpts,
 ): Promise<boolean> {
-  if (opts?.isPackage) return false;
   if (!isPricingLockedServiceStyle(serviceStyle)) return false;
   return isWarmpawzPayActive();
 }

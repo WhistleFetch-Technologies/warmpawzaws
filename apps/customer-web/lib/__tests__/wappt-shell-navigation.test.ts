@@ -111,28 +111,6 @@ describe('handleWapptShellScreenNavigate', () => {
     );
   });
 
-  it('routes Book Packages through purchase-package with Pay commerce mode', () => {
-    const actions = createActions();
-    handleWapptShellScreenNavigate(
-      'grooming',
-      'purchase-package',
-      {
-        vendorId: 'g-1',
-        vendorName: 'Groomer',
-        commerceMode: 'warmpawz_pay',
-      },
-      actions,
-    );
-    expect(actions.handleVetNavigate).toHaveBeenCalledWith(
-      'purchase-package',
-      expect.objectContaining({
-        vendorId: 'g-1',
-        commerceMode: 'warmpawz_pay',
-        appointmentsMode: true,
-      }),
-    );
-  });
-
   it('preserves selectedServices through shell booking payload', () => {
     const payload = buildWapptShellBookingPayload('grooming', {
       vendorId: 'g-1',

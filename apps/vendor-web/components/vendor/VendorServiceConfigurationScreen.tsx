@@ -205,12 +205,6 @@ export function VendorServiceConfigurationScreen({
     () => canVendorEditServicePrice(serviceStyle) && !pricingLocked,
     [serviceStyle, pricingLocked, commerceSwitchReady],
   );
-  const canEditServicePricing = useCallback(
-    (svc?: { isPackage?: boolean } | null) =>
-      canVendorEditServicePrice(serviceStyle, { isPackage: Boolean(svc?.isPackage) }) &&
-      (!pricingLocked || Boolean(svc?.isPackage)),
-    [serviceStyle, pricingLocked, commerceSwitchReady],
-  );
 
   useEffect(() => {
     void getActiveCommerceModelAsync().finally(() => setCommerceSwitchReady(true));
@@ -721,7 +715,7 @@ export function VendorServiceConfigurationScreen({
   // ✅ Save edits from Edit modal (unpublished services only)
   const saveEditService = async () => {
     if (!editingService) return;
-    if (canEditServicePricing(editingService) && editForm.price <= 0) {
+    if (canEditPricing && editForm.price <= 0) {
       toast.error('Price must be greater than 0');
       return;
     }
@@ -735,7 +729,7 @@ export function VendorServiceConfigurationScreen({
         customDuration: editForm.duration,
         description: editForm.description,
       };
-      if (canEditServicePricing(editingService)) {
+      if (canEditPricing) {
         payload.customPrice = editForm.price;
       }
       const data = await apiClient.put(`/vendor/${vendorId}/services/${editingService.id}`, payload) as any;
@@ -793,7 +787,6 @@ export function VendorServiceConfigurationScreen({
           customDuration: s.customDuration,
           customDescription: s.customDescription,
           price: s.price || s.basePrice || 0,
-          isPackage: Boolean(s.isPackage),
         }));
 
       if (servicesToSave.length === 0) {
@@ -807,7 +800,7 @@ export function VendorServiceConfigurationScreen({
       const invalidServices = servicesToSave.filter(s => {
         if (!s.isEnabled) return false;
         const duration = s.customDuration ?? 30;
-        if (canEditServicePricing(s)) {
+        if (canEditPricing) {
           const price = s.customPrice ?? s.price ?? 0;
           return price <= 0 || duration < 5;
         }
@@ -833,7 +826,7 @@ export function VendorServiceConfigurationScreen({
           customDuration: service.customDuration ?? durationMins,
           description: service.customDescription,
         };
-        if (canEditServicePricing(service)) {
+        if (canEditPricing) {
           const price = service.customPrice ?? service.price ?? 0;
           payload.price = price;
           payload.customPrice = service.customPrice;
@@ -1334,8 +1327,8 @@ export function VendorServiceConfigurationScreen({
                   </>
                 ) : (
                   <>
-                    <strong>Warmpawz Appointments:</strong> One-off service prices stay locked. You can still set
-                    and publish <strong>package</strong> selling prices.
+                    <strong>Warmpawz Appointments:</strong> Enable or disable services only. Appointment fees are
+                    set by the platform — per-service prices are not shown to customers for this style.
                   </>
                 )}
               </p>
@@ -1414,7 +1407,7 @@ export function VendorServiceConfigurationScreen({
 
                             {/* Quick Info */}
                             <div className="flex items-center gap-3 text-xs text-gray-600 mb-2">
-                              {canEditServicePricing(service) && (
+                              {canEditPricing && (
                                 <span className="flex items-center gap-1 font-semibold text-[#FF8C42]">
                                   ₹{Number(service.customPrice || service.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                 </span>
@@ -1532,7 +1525,7 @@ export function VendorServiceConfigurationScreen({
                           )}
 
                           {/* Pricing & Duration - Editable if allowed */}
-                          {canEditServicePricing(service) && (
+                          {canEditPricing && (
                             <div className="mt-3 space-y-2">
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
@@ -1651,15 +1644,15 @@ export function VendorServiceConfigurationScreen({
           <DialogHeader>
             <DialogTitle>Edit Service</DialogTitle>
             <DialogDescription>
-              {canEditServicePricing(editingService)
+              {canEditPricing
                 ? 'Update price, duration, and description. After saving, you can publish when ready.'
-                : 'Update duration and description. One-off service pricing is set by Warmpawz Appointments.'}
+                : 'Update duration and description. Pricing is set by Warmpawz Appointments for this service style.'}
             </DialogDescription>
           </DialogHeader>
           {editingService && (
             <div className="space-y-4 py-4">
               <p className="text-sm font-medium text-gray-700">{editingService.name || editingService.serviceName}</p>
-              {canEditServicePricing(editingService) ? (
+              {canEditPricing ? (
                 <div className="space-y-2">
                   <Label className="text-xs text-gray-700">Price (₹) *</Label>
                   <Input

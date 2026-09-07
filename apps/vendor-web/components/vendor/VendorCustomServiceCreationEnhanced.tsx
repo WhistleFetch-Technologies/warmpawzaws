@@ -415,8 +415,8 @@ export function VendorCustomServiceCreationEnhanced({
   }, [allowedServiceStyles, isSoloProvider]);
 
   const canEditCreatePrice = useMemo(
-    () => canVendorEditServicePrice(selectedServiceStyle, { isPackage }),
-    [selectedServiceStyle, isPackage, commerceSwitchReady],
+    () => canVendorEditServicePrice(selectedServiceStyle),
+    [selectedServiceStyle, commerceSwitchReady],
   );
 
   // ============================================================================
