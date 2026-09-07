@@ -3,11 +3,14 @@ import {
   WPAY_BURN_MODE_KEY,
   WPAY_CONVENIENCE_DEFAULTS,
   WPAY_CONVENIENCE_FEE_KEY,
+  WPAY_CONVENIENCE_FEE_MODE_KEY,
   WPAY_CONVENIENCE_GST_RATE_KEY,
   WPAY_PLATFORM_FEE_GST_RATE_KEY,
   WPAY_PLATFORM_FEE_KEY,
+  WPAY_PLATFORM_FEE_MODE_KEY,
   WPAY_PLATFORM_GST_RATE_KEY,
   WPAY_SETTINGS_CATEGORY,
+  type WpayFeeMode,
 } from '../constants/wpay-convenience-settings';
 import type {
   IWpayConvenienceSettingsRepository,
@@ -17,8 +20,10 @@ import type { VendorCatalogDbClient } from './vendor-catalog.repository';
 
 const SETTING_KEYS = [
   WPAY_PLATFORM_FEE_KEY,
+  WPAY_PLATFORM_FEE_MODE_KEY,
   WPAY_PLATFORM_FEE_GST_RATE_KEY,
   WPAY_CONVENIENCE_FEE_KEY,
+  WPAY_CONVENIENCE_FEE_MODE_KEY,
   WPAY_CONVENIENCE_GST_RATE_KEY,
   WPAY_PLATFORM_GST_RATE_KEY,
   WPAY_BURN_MODE_KEY,
@@ -52,17 +57,31 @@ function parseJsonbBoolean(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+function parseJsonbFeeMode(value: unknown, fallback: WpayFeeMode): WpayFeeMode {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (raw === 'fixed' || raw === 'percent') return raw;
+  return fallback;
+}
+
 function mapSettings(
   rows: ReadonlyArray<{ setting_key: string; setting_value: unknown }>,
 ): WpayConvenienceSettingsRow {
   const byKey = new Map(rows.map((row) => [row.setting_key, row.setting_value]));
   return {
     platformFee: parseJsonbNumber(byKey.get(WPAY_PLATFORM_FEE_KEY), WPAY_CONVENIENCE_DEFAULTS.platformFee),
+    platformFeeMode: parseJsonbFeeMode(
+      byKey.get(WPAY_PLATFORM_FEE_MODE_KEY),
+      WPAY_CONVENIENCE_DEFAULTS.platformFeeMode,
+    ),
     platformFeeGstRate: parseJsonbNumber(
       byKey.get(WPAY_PLATFORM_FEE_GST_RATE_KEY),
       WPAY_CONVENIENCE_DEFAULTS.platformFeeGstRate,
     ),
     convenienceFee: parseJsonbNumber(byKey.get(WPAY_CONVENIENCE_FEE_KEY), WPAY_CONVENIENCE_DEFAULTS.convenienceFee),
+    convenienceFeeMode: parseJsonbFeeMode(
+      byKey.get(WPAY_CONVENIENCE_FEE_MODE_KEY),
+      WPAY_CONVENIENCE_DEFAULTS.convenienceFeeMode,
+    ),
     convenienceGstRate: parseJsonbNumber(
       byKey.get(WPAY_CONVENIENCE_GST_RATE_KEY),
       WPAY_CONVENIENCE_DEFAULTS.convenienceGstRate,
@@ -90,10 +109,12 @@ export class WpayConvenienceSettingsRepository implements IWpayConvenienceSettin
   }
 
   async putConvenienceSettings(input: WpayConvenienceSettingsRow): Promise<WpayConvenienceSettingsRow> {
-    const pairs: ReadonlyArray<{ key: string; value: number | boolean }> = [
+    const pairs: ReadonlyArray<{ key: string; value: number | boolean | string }> = [
       { key: WPAY_PLATFORM_FEE_KEY, value: input.platformFee },
+      { key: WPAY_PLATFORM_FEE_MODE_KEY, value: input.platformFeeMode },
       { key: WPAY_PLATFORM_FEE_GST_RATE_KEY, value: input.platformFeeGstRate },
       { key: WPAY_CONVENIENCE_FEE_KEY, value: input.convenienceFee },
+      { key: WPAY_CONVENIENCE_FEE_MODE_KEY, value: input.convenienceFeeMode },
       { key: WPAY_CONVENIENCE_GST_RATE_KEY, value: input.convenienceGstRate },
       { key: WPAY_PLATFORM_GST_RATE_KEY, value: input.platformGstRate },
       { key: WPAY_BURN_MODE_KEY, value: input.burnMode },

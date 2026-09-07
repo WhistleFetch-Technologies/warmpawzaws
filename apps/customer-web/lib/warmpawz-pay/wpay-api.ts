@@ -19,8 +19,10 @@ export type WpayVendorDetail = WpayVendorCard & {
   offerLabel: string;
   commercialModel?: 'tier_commission' | 'withhold';
   platformFee?: number;
+  platformFeeMode?: 'fixed' | 'percent';
   platformFeeGstRate?: number;
   convenienceFee?: number;
+  convenienceFeeMode?: 'fixed' | 'percent';
   convenienceGstRate?: number;
 };
 

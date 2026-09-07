@@ -15,8 +15,10 @@ const mockedResolvePermissions = resolveAdminPermissionsFromRequest as jest.Mock
 
 const sampleSettings = {
   platformFee: 0,
+  platformFeeMode: 'fixed' as const,
   platformFeeGstRate: 18,
   convenienceFee: 0,
+  convenienceFeeMode: 'fixed' as const,
   convenienceGstRate: 18,
   platformGstRate: 18,
   burnMode: false,
@@ -96,8 +98,10 @@ describe('Warmpawz Pay convenience settings admin routes', () => {
 
     const payload = {
       platformFee: 30,
+      platformFeeMode: 'fixed',
       platformFeeGstRate: 18,
       convenienceFee: 20,
+      convenienceFeeMode: 'fixed',
       convenienceGstRate: 18,
       platformGstRate: 18,
       burnMode: true,
@@ -137,8 +141,10 @@ describe('Warmpawz Pay convenience settings admin routes', () => {
       },
       body: JSON.stringify({
         platformFee: 30,
+        platformFeeMode: 'fixed',
         platformFeeGstRate: 18,
         convenienceFee: 20,
+        convenienceFeeMode: 'fixed',
         convenienceGstRate: 18,
         platformGstRate: 18,
         burnMode: false,

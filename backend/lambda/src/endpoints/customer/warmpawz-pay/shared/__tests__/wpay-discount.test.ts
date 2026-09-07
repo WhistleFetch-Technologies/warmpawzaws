@@ -153,6 +153,67 @@ describe('computeWpayCommercialQuote', () => {
     expect(normal.burnAmount).toBe(0);
   });
 
+  it('case 9: percent fees use post-discount amount, not original quote', () => {
+    // Q=1000, D=15% → discount=150, servicePayable=850
+    // platform 2% of 850 = 17; convenience 1% of 850 = 8.5
+    const quote = computeWpayCommercialQuote({
+      quotedAmount: 1000,
+      commissionPercent: 20,
+      discountPercent: 15,
+      platformFee: 2,
+      platformFeeMode: 'percent',
+      platformFeeGstRate: 18,
+      convenienceFee: 1,
+      convenienceFeeMode: 'percent',
+      convenienceGstRate: 18,
+    });
+    expect(quote.servicePayableAmount).toBe(850);
+    expect(quote.platformFee).toBe(17);
+    expect(quote.platformFeeGstAmount).toBe(3.06);
+    expect(quote.convenienceFee).toBe(8.5);
+    expect(quote.convenienceGstAmount).toBe(1.53);
+    expect(quote.payNowAmount).toBe(880.09);
+  });
+
+  it('case 10: guardrail zeros all fees when total fees >= discount', () => {
+    // Q=100, D=10% → discount=10, servicePayable=90
+    // fees 8+1.44+2+0.36 = 11.8 >= 10 → zero
+    const quote = computeWpayCommercialQuote({
+      quotedAmount: 100,
+      commissionPercent: 20,
+      discountPercent: 10,
+      platformFee: 8,
+      platformFeeMode: 'fixed',
+      platformFeeGstRate: 18,
+      convenienceFee: 2,
+      convenienceFeeMode: 'fixed',
+      convenienceGstRate: 18,
+    });
+    expect(quote.discountAmount).toBe(10);
+    expect(quote.platformFee).toBe(0);
+    expect(quote.platformFeeGstAmount).toBe(0);
+    expect(quote.convenienceFee).toBe(0);
+    expect(quote.convenienceGstAmount).toBe(0);
+    expect(quote.payNowAmount).toBe(90);
+  });
+
+  it('case 11: guardrail also fires when total fees exactly equal discount', () => {
+    const quote = computeWpayCommercialQuote({
+      quotedAmount: 1000,
+      commissionPercent: 20,
+      discountPercent: 10,
+      platformFee: 100,
+      platformFeeMode: 'fixed',
+      platformFeeGstRate: 0,
+      convenienceFee: 0,
+      convenienceFeeMode: 'fixed',
+      convenienceGstRate: 0,
+    });
+    expect(quote.discountAmount).toBe(100);
+    expect(quote.platformFee).toBe(0);
+    expect(quote.payNowAmount).toBe(900);
+  });
+
   it('assertDiscountBelowCommission enforces D < C', () => {
     expect(() => assertDiscountBelowCommission(20, 15)).not.toThrow();
     expect(() => assertDiscountBelowCommission(20, 20)).toThrow(WpayCommercialValidationError);

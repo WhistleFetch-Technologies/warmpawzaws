@@ -66,15 +66,27 @@ export function computeWpayDiscountQuote(
   };
 }
 
+export type WpayFeeMode = 'fixed' | 'percent';
+
 export type WpayCommercialQuoteInput = {
   quotedAmount: number;
   commissionPercent: number;
   discountPercent: number;
   /** @deprecated Ignored — appointment credit unwired from Pay Bill. */
   appointmentFeeCredit?: number;
+  /**
+   * Configured platform fee value: ₹ when mode=fixed, or % of post-discount
+   * customer amount (servicePayableAmount) when mode=percent.
+   */
   platformFee?: number;
+  platformFeeMode?: WpayFeeMode;
   platformFeeGstRate?: number;
+  /**
+   * Configured convenience fee value: ₹ when mode=fixed, or % of post-discount
+   * customer amount when mode=percent.
+   */
   convenienceFee?: number;
+  convenienceFeeMode?: WpayFeeMode;
   convenienceGstRate?: number;
   /** Inclusive GST rate for platform revenue (C − D). */
   platformGstRate?: number;
@@ -138,12 +150,35 @@ export function assertDiscountBelowCommission(
   }
 }
 
+function normalizeFeeMode(mode: WpayFeeMode | undefined): WpayFeeMode {
+  return mode === 'percent' ? 'percent' : 'fixed';
+}
+
+/**
+ * Resolve configured fee: fixed ₹, or % of post-discount customer amount
+ * (`servicePayableAmount` = Q − discount), never % of original quote Q.
+ */
+export function resolveWpayConfiguredFeeAmount(params: {
+  servicePayableAmount: number;
+  configuredValue: number;
+  mode?: WpayFeeMode;
+}): number {
+  const value = Math.max(0, Number(params.configuredValue ?? 0));
+  if (!Number.isFinite(value)) return 0;
+  if (normalizeFeeMode(params.mode) === 'percent') {
+    return round2((params.servicePayableAmount * value) / 100);
+  }
+  return round2(value);
+}
+
 /**
  * Tier-commission Pay Bill quote:
  * - C/D on full Q; platform revenue = C − D (GST inclusive extract) unless burnMode
  * - burnMode: vendor paid full Q; platform funds discount; fees unchanged
  * - No appointment credit
  * - Platform fee + convenience fee each with exclusive GST on top
+ * - Fees may be fixed ₹ or % of post-discount amount
+ * - Guardrail: if total fees (incl. fee GST) >= discount ₹, zero all fees + fee GST
  */
 export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): WpayCommercialQuote {
   const quotedAmount = round2(Number(input.quotedAmount));
@@ -182,20 +217,41 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
   const appointmentFeeCredit = 0;
   const serviceDueAfterCredit = servicePayableAmount;
 
-  const platformFee = round2(Math.max(0, Number(input.platformFee ?? 0)));
+  let platformFee = resolveWpayConfiguredFeeAmount({
+    servicePayableAmount,
+    configuredValue: Number(input.platformFee ?? 0),
+    mode: input.platformFeeMode,
+  });
   const platformFeeGstRate = round2(Number(input.platformFeeGstRate ?? 18));
-  const platformFeeGstAmount =
+  let platformFeeGstAmount =
     platformFee > 0 && platformFeeGstRate > 0
       ? round2((platformFee * platformFeeGstRate) / 100)
       : 0;
-  const platformFeeGrossAmount = round2(platformFee + platformFeeGstAmount);
 
-  const convenienceFee = round2(Math.max(0, Number(input.convenienceFee ?? 0)));
+  let convenienceFee = resolveWpayConfiguredFeeAmount({
+    servicePayableAmount,
+    configuredValue: Number(input.convenienceFee ?? 0),
+    mode: input.convenienceFeeMode,
+  });
   const convenienceGstRate = round2(Number(input.convenienceGstRate ?? 18));
-  const convenienceGstAmount =
+  let convenienceGstAmount =
     convenienceFee > 0 && convenienceGstRate > 0
       ? round2((convenienceFee * convenienceGstRate) / 100)
       : 0;
+
+  const totalCustomerFees = round2(
+    platformFee + platformFeeGstAmount + convenienceFee + convenienceGstAmount,
+  );
+  // Preserve full displayed discount: drop all customer fees when they would
+  // consume the entire monetary discount (effective discount would be ≤ 0).
+  if (totalCustomerFees >= discountAmount) {
+    platformFee = 0;
+    platformFeeGstAmount = 0;
+    convenienceFee = 0;
+    convenienceGstAmount = 0;
+  }
+
+  const platformFeeGrossAmount = round2(platformFee + platformFeeGstAmount);
   const convenienceGrossAmount = round2(convenienceFee + convenienceGstAmount);
 
   const finalGstAmount = round2(platformGstAmount + platformFeeGstAmount + convenienceGstAmount);

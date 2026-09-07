@@ -17,10 +17,16 @@ export async function fetchWpayEligibleTiers(): Promise<WpayEligibleTier[]> {
   return Array.isArray(raw) ? raw : [];
 }
 
+export type WpayFeeMode = 'fixed' | 'percent';
+
 export interface WpayConvenienceSettings {
   platformFee: number;
+  /** fixed = ₹; percent = % of post-discount customer amount. */
+  platformFeeMode: WpayFeeMode;
   platformFeeGstRate: number;
   convenienceFee: number;
+  /** fixed = ₹; percent = % of post-discount customer amount. */
+  convenienceFeeMode: WpayFeeMode;
   convenienceGstRate: number;
   /** Inclusive GST extract from platform revenue (C − D). */
   platformGstRate: number;

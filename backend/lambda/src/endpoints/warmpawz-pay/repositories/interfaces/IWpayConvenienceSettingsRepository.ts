@@ -1,7 +1,13 @@
+import type { WpayFeeMode } from '../../constants/wpay-convenience-settings';
+
 export interface WpayConvenienceSettingsRow {
   readonly platformFee: number;
+  /** fixed = ₹ amount; percent = % of post-discount customer amount. */
+  readonly platformFeeMode: WpayFeeMode;
   readonly platformFeeGstRate: number;
   readonly convenienceFee: number;
+  /** fixed = ₹ amount; percent = % of post-discount customer amount. */
+  readonly convenienceFeeMode: WpayFeeMode;
   readonly convenienceGstRate: number;
   /** Inclusive GST rate extracted from platform revenue (C − D). */
   readonly platformGstRate: number;

@@ -86,8 +86,10 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         discountPercent: vendor.discountPercent,
         maxDiscountAmount: vendor.maxDiscountAmount,
         platformFee: vendor.platformFee ?? 0,
+        platformFeeMode: vendor.platformFeeMode ?? 'fixed',
         platformFeeGstRate: vendor.platformFeeGstRate ?? 18,
         convenienceFee: vendor.convenienceFee ?? 0,
+        convenienceFeeMode: vendor.convenienceFeeMode ?? 'fixed',
         convenienceGstRate: vendor.convenienceGstRate ?? 18,
       });
     }

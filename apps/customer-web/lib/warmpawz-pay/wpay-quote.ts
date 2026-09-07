@@ -8,6 +8,8 @@ export type WpayQuotePreview = {
   payableAmount: number;
 };
 
+export type WpayFeeMode = 'fixed' | 'percent';
+
 export type WpayCommercialQuotePreview = {
   commercialModel: 'tier_commission';
   originalAmount: number;
@@ -27,6 +29,24 @@ export type WpayCommercialQuotePreview = {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function normalizeFeeMode(mode: WpayFeeMode | undefined): WpayFeeMode {
+  return mode === 'percent' ? 'percent' : 'fixed';
+}
+
+/** Resolve fee: fixed ₹, or % of post-discount amount (not original quote). */
+function resolveConfiguredFeeAmount(params: {
+  servicePayableAmount: number;
+  configuredValue: number;
+  mode?: WpayFeeMode;
+}): number {
+  const value = Math.max(0, Number(params.configuredValue ?? 0));
+  if (!Number.isFinite(value)) return 0;
+  if (normalizeFeeMode(params.mode) === 'percent') {
+    return round2((params.servicePayableAmount * value) / 100);
+  }
+  return round2(value);
 }
 
 /** Historical withhold model preview (discount on full Q; credit ignored). */
@@ -63,8 +83,10 @@ export function previewWpayCommercialQuote(params: {
   discountPercent: number;
   appointmentFeeCredit?: number;
   platformFee?: number;
+  platformFeeMode?: WpayFeeMode;
   platformFeeGstRate?: number;
   convenienceFee?: number;
+  convenienceFeeMode?: WpayFeeMode;
   convenienceGstRate?: number;
   maxDiscountAmount?: number | null;
 }): WpayCommercialQuotePreview {
@@ -81,20 +103,39 @@ export function previewWpayCommercialQuote(params: {
   const appointmentFeeCredit = 0;
   const serviceDueAfterCredit = servicePayableAmount;
 
-  const platformFee = round2(Math.max(0, Number(params.platformFee ?? 0)));
+  let platformFee = resolveConfiguredFeeAmount({
+    servicePayableAmount,
+    configuredValue: Number(params.platformFee ?? 0),
+    mode: params.platformFeeMode,
+  });
   const platformFeeGstRate = round2(Number(params.platformFeeGstRate ?? 18));
-  const platformFeeGstAmount =
+  let platformFeeGstAmount =
     platformFee > 0 && platformFeeGstRate > 0
       ? round2((platformFee * platformFeeGstRate) / 100)
       : 0;
-  const platformFeeGrossAmount = round2(platformFee + platformFeeGstAmount);
 
-  const convenienceFee = round2(Math.max(0, Number(params.convenienceFee ?? 0)));
+  let convenienceFee = resolveConfiguredFeeAmount({
+    servicePayableAmount,
+    configuredValue: Number(params.convenienceFee ?? 0),
+    mode: params.convenienceFeeMode,
+  });
   const convenienceGstRate = round2(Number(params.convenienceGstRate ?? 18));
-  const convenienceGstAmount =
+  let convenienceGstAmount =
     convenienceFee > 0 && convenienceGstRate > 0
       ? round2((convenienceFee * convenienceGstRate) / 100)
       : 0;
+
+  const totalCustomerFees = round2(
+    platformFee + platformFeeGstAmount + convenienceFee + convenienceGstAmount,
+  );
+  if (totalCustomerFees >= discountAmount) {
+    platformFee = 0;
+    platformFeeGstAmount = 0;
+    convenienceFee = 0;
+    convenienceGstAmount = 0;
+  }
+
+  const platformFeeGrossAmount = round2(platformFee + platformFeeGstAmount);
   const convenienceGrossAmount = round2(convenienceFee + convenienceGstAmount);
   const payableAmount = Math.max(
     0.01,

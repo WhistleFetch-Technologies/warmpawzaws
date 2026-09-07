@@ -41,4 +41,42 @@ describe('previewWpayCommercialQuote', () => {
       appointmentFeeCredit: 0,
     });
   });
+
+  it('applies percent fees on post-discount amount and zeros fees when they exhaust discount', () => {
+    expect(
+      previewWpayCommercialQuote({
+        originalAmount: 100,
+        discountPercent: 10,
+        platformFee: 8,
+        platformFeeMode: 'fixed',
+        platformFeeGstRate: 18,
+        convenienceFee: 2,
+        convenienceFeeMode: 'fixed',
+        convenienceGstRate: 18,
+      }),
+    ).toMatchObject({
+      discountAmount: 10,
+      platformFee: 0,
+      convenienceFee: 0,
+      payableAmount: 90,
+    });
+
+    expect(
+      previewWpayCommercialQuote({
+        originalAmount: 1000,
+        discountPercent: 15,
+        platformFee: 2,
+        platformFeeMode: 'percent',
+        platformFeeGstRate: 0,
+        convenienceFee: 1,
+        convenienceFeeMode: 'percent',
+        convenienceGstRate: 0,
+      }),
+    ).toMatchObject({
+      servicePayableAmount: 850,
+      platformFee: 17,
+      convenienceFee: 8.5,
+      payableAmount: 875.5,
+    });
+  });
 });

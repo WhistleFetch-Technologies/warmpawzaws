@@ -7,16 +7,57 @@ import {
   fetchWpayConvenienceSettings,
   updateWpayConvenienceSettings,
   type WpayConvenienceSettings,
+  type WpayFeeMode,
 } from '@/lib/warmpawz-pay-settings-admin';
 
 const EMPTY: WpayConvenienceSettings = {
   platformFee: 0,
+  platformFeeMode: 'fixed',
   platformFeeGstRate: 18,
   convenienceFee: 0,
+  convenienceFeeMode: 'fixed',
   convenienceGstRate: 18,
   platformGstRate: 18,
   burnMode: false,
 };
+
+function FeeModeToggle({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: WpayFeeMode;
+  onChange: (mode: WpayFeeMode) => void;
+}) {
+  return (
+    <div
+      id={id}
+      className="inline-flex rounded-md border border-gray-200 bg-white p-0.5"
+      role="group"
+      aria-label="Fee mode"
+    >
+      <button
+        type="button"
+        onClick={() => onChange('fixed')}
+        className={`rounded px-2.5 py-1 text-xs font-medium ${
+          value === 'fixed' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        Fixed ₹
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('percent')}
+        className={`rounded px-2.5 py-1 text-xs font-medium ${
+          value === 'percent' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        Percentage %
+      </button>
+    </div>
+  );
+}
 
 export function ConvenienceSettingsPanel() {
   const [settings, setSettings] = useState<WpayConvenienceSettings>(EMPTY);
@@ -25,7 +66,14 @@ export function ConvenienceSettingsPanel() {
 
   useEffect(() => {
     void fetchWpayConvenienceSettings()
-      .then(setSettings)
+      .then((loaded) =>
+        setSettings({
+          ...EMPTY,
+          ...loaded,
+          platformFeeMode: loaded.platformFeeMode === 'percent' ? 'percent' : 'fixed',
+          convenienceFeeMode: loaded.convenienceFeeMode === 'percent' ? 'percent' : 'fixed',
+        }),
+      )
       .catch(() => toast.error('Failed to load WPay fee settings'))
       .finally(() => setLoading(false));
   }, []);
@@ -34,7 +82,12 @@ export function ConvenienceSettingsPanel() {
     setSaving(true);
     try {
       const saved = await updateWpayConvenienceSettings(settings);
-      setSettings(saved);
+      setSettings({
+        ...EMPTY,
+        ...saved,
+        platformFeeMode: saved.platformFeeMode === 'percent' ? 'percent' : 'fixed',
+        convenienceFeeMode: saved.convenienceFeeMode === 'percent' ? 'percent' : 'fixed',
+      });
       toast.success('WPay fee settings saved');
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : 'Failed to save settings');
@@ -52,8 +105,11 @@ export function ConvenienceSettingsPanel() {
       <div className="mb-4">
         <h3 className="text-base font-semibold text-gray-900">Global WPay Fee Settings</h3>
         <p className="text-sm text-gray-500">
-          Platform fee and convenience fee are GST-exclusive (GST on top). Platform revenue GST is
-          inclusive in margin (commission − discount).
+          Platform fee and convenience fee are GST-exclusive (GST on top). Percentage mode uses the
+          post-discount customer amount (quoted − discount), not the original quote. If total fees
+          including fee GST would consume the full discount, all fees are dropped so the customer
+          still receives the displayed discount. Platform revenue GST is inclusive in margin
+          (commission − discount).
         </p>
       </div>
 
@@ -89,12 +145,22 @@ export function ConvenienceSettingsPanel() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="space-y-2">
-          <Label htmlFor="wpay-platform-fee">Platform Fee (₹)</Label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label htmlFor="wpay-platform-fee">
+              Platform Fee ({settings.platformFeeMode === 'percent' ? '%' : '₹'})
+            </Label>
+            <FeeModeToggle
+              id="wpay-platform-fee-mode"
+              value={settings.platformFeeMode}
+              onChange={(platformFeeMode) => setSettings((s) => ({ ...s, platformFeeMode }))}
+            />
+          </div>
           <Input
             id="wpay-platform-fee"
             type="number"
             min={0}
-            step={1}
+            max={settings.platformFeeMode === 'percent' ? 100 : undefined}
+            step={settings.platformFeeMode === 'percent' ? 0.01 : 1}
             value={settings.platformFee}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setSettings((s) => ({ ...s, platformFee: Number(e.target.value) || 0 }))
@@ -116,12 +182,22 @@ export function ConvenienceSettingsPanel() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="wpay-convenience-fee">Convenience Fee (₹)</Label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label htmlFor="wpay-convenience-fee">
+              Convenience Fee ({settings.convenienceFeeMode === 'percent' ? '%' : '₹'})
+            </Label>
+            <FeeModeToggle
+              id="wpay-convenience-fee-mode"
+              value={settings.convenienceFeeMode}
+              onChange={(convenienceFeeMode) => setSettings((s) => ({ ...s, convenienceFeeMode }))}
+            />
+          </div>
           <Input
             id="wpay-convenience-fee"
             type="number"
             min={0}
-            step={1}
+            max={settings.convenienceFeeMode === 'percent' ? 100 : undefined}
+            step={settings.convenienceFeeMode === 'percent' ? 0.01 : 1}
             value={settings.convenienceFee}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setSettings((s) => ({ ...s, convenienceFee: Number(e.target.value) || 0 }))

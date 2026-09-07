@@ -15,8 +15,10 @@ export type WpayVendorDetailDto = WpayVendorCardDto & {
   offerLabel: string;
   commercialModel: 'tier_commission' | 'withhold';
   platformFee: number;
+  platformFeeMode: 'fixed' | 'percent';
   platformFeeGstRate: number;
   convenienceFee: number;
+  convenienceFeeMode: 'fixed' | 'percent';
   convenienceGstRate: number;
 };
 
@@ -51,8 +53,10 @@ export async function mapWpayVendorDetailRow(
     offerLabel: buildOfferLabel(card.discountPercent),
     commercialModel: commercial.commercialModel,
     platformFee: convenience.platformFee,
+    platformFeeMode: convenience.platformFeeMode,
     platformFeeGstRate: convenience.platformFeeGstRate,
     convenienceFee: convenience.convenienceFee,
+    convenienceFeeMode: convenience.convenienceFeeMode,
     convenienceGstRate: convenience.convenienceGstRate,
   };
 }

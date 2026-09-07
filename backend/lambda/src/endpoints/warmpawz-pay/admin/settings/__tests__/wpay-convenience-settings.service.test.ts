@@ -3,8 +3,10 @@ import { WpayConvenienceSettingsService } from '../services/wpay-convenience-set
 
 const sample = {
   platformFee: 30,
+  platformFeeMode: 'fixed' as const,
   platformFeeGstRate: 18,
   convenienceFee: 20,
+  convenienceFeeMode: 'fixed' as const,
   convenienceGstRate: 18,
   platformGstRate: 18,
   burnMode: false,
