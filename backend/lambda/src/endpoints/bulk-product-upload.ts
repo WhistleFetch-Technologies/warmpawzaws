@@ -612,7 +612,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             const skuInputs = buildSkuInputsFromGroup(group).map((sku) => ({
               ...sku,
               images: imagePlan.needsIngest
-                ? []
+                ? imagePlan.persistImages
                 : normalizeImagesArray(sku.images).filter((u) => !isDriveHostedProductImageUrl(u)),
             }));
             await syncProductSkus(vendorId, savedProductId, skuInputs, undefined, {
@@ -649,13 +649,24 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
       const ingestJobs = groupDriveIngestEnqueueJobs(vendorId, pendingDriveIngest);
       for (const job of ingestJobs) {
-        await invokeDriveImageIngestWorker({
-          vendorId: job.vendorId,
-          productIds: job.productIds,
-          folderId: job.folderId,
-          remainingFileIds: job.remainingFileIds,
-          hop: 1,
-        });
+        try {
+          await invokeDriveImageIngestWorker({
+            vendorId: job.vendorId,
+            productIds: job.productIds,
+            folderId: job.folderId,
+            remainingFileIds: job.remainingFileIds,
+            hop: 1,
+          });
+        } catch (ingestErr: any) {
+          console.error(
+            JSON.stringify({
+              metric: 'drive_image_ingest_enqueue_failed',
+              vendorId,
+              productIds: job.productIds,
+              error: ingestErr?.message || String(ingestErr),
+            }),
+          );
+        }
       }
 
       return c.json({

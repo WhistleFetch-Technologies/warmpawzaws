@@ -773,6 +773,7 @@ function ProductCard({
             src={product.images[0]}
             alt=""
             className="w-full h-full object-cover"
+            referrerPolicy="no-referrer"
             onError={(e) => {
               e.currentTarget.style.display = 'none';
             }}

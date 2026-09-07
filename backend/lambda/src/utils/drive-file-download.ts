@@ -52,6 +52,8 @@ export function extractDriveFileId(urlOrId: string): string | null {
     if (fromQuery && FILE_ID_RE.test(fromQuery)) return fromQuery;
     const fileMatch = u.pathname.match(/\/file\/d\/(1[A-Za-z0-9_-]{20,})/);
     if (fileMatch) return fileMatch[1];
+    const lh3Match = u.pathname.match(/\/d\/(1[A-Za-z0-9_-]{20,})/);
+    if (lh3Match) return lh3Match[1];
   } catch {
     const loose = raw.match(/\/file\/d\/(1[A-Za-z0-9_-]{20,})/);
     if (loose) return loose[1];
@@ -205,7 +207,10 @@ export async function downloadDriveFileImage(
   }
 
   try {
-    const first = await tryUrl(driveDownloadUrl(id), fetchFn);
+    const lh3 = await tryUrl(lh3DriveUrl(id), fetchFn);
+    if (lh3.image) return lh3.image;
+
+    const first = await tryUrl(driveDownloadUrl(id), fetchFn, lh3.cookies);
     if (first.image) return first.image;
 
     if (first.html) {
@@ -215,9 +220,6 @@ export async function downloadDriveFileImage(
         if (confirmed.image) return confirmed.image;
       }
     }
-
-    const lh3 = await tryUrl(lh3DriveUrl(id), fetchFn, first.cookies);
-    if (lh3.image) return lh3.image;
   } catch {
     return { ok: false, message: FAIL_MSG };
   }

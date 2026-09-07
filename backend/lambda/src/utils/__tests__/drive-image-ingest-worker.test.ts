@@ -93,6 +93,58 @@ describe('drive-image-ingest-worker', () => {
     expect(deleteManaged).toHaveBeenCalledWith(['products/x/old.webp'], VENDOR);
   });
 
+  it('writes lh3 URLs from remaining file ids when product images are empty', async () => {
+    const writeImages = jest.fn().mockResolvedValue(undefined);
+    const fileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+    await runDriveIngestHop(
+      {
+        job: 'drive-image-ingest',
+        vendorId: VENDOR,
+        productIds: ['p1'],
+        remainingFileIds: [fileId],
+        completedKeys: [],
+        hop: 1,
+      },
+      {
+        downloadFile: async () => ({ ok: false, message: 'fail' }),
+        uploadKey: async () => 'should-not-run',
+        loadProducts: async () => [{ id: 'p1', vendor_id: VENDOR, images: [], metadata: {} }],
+        writeImages,
+        invokeNext: jest.fn(),
+        deleteManaged: async () => undefined,
+        cleanupRemoved: async () => undefined,
+      },
+    );
+    expect(writeImages.mock.calls[0][0].images).toEqual([
+      `https://lh3.googleusercontent.com/d/${fileId}`,
+    ]);
+  });
+
+  it('keeps lh3 display URLs when every file in the hop fails', async () => {
+    const writeImages = jest.fn().mockResolvedValue(undefined);
+    const lh3 = 'https://lh3.googleusercontent.com/d/1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+    await runDriveIngestHop(
+      {
+        job: 'drive-image-ingest',
+        vendorId: VENDOR,
+        productIds: ['p1'],
+        remainingFileIds: ['file1'],
+        completedKeys: [],
+        hop: 1,
+      },
+      {
+        downloadFile: async () => ({ ok: false, message: 'fail' }),
+        uploadKey: async () => 'should-not-run',
+        loadProducts: async () => [{ id: 'p1', vendor_id: VENDOR, images: [lh3], metadata: {} }],
+        writeImages,
+        invokeNext: jest.fn(),
+        deleteManaged: async () => undefined,
+        cleanupRemoved: async () => undefined,
+      },
+    );
+    expect(writeImages.mock.calls[0][0].images).toEqual([lh3]);
+  });
+
   it('cleans previous S3 when ingest finishes with new keys', async () => {
     const cleanupRemoved = jest.fn().mockResolvedValue(undefined);
     const prior = `https://warmpawz-dev-uploads.s3.ap-south-1.amazonaws.com/products/${VENDOR}/old.webp`;

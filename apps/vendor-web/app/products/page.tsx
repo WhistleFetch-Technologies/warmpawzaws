@@ -299,6 +299,7 @@ export default function ProductsPage() {
                       src={product.images[0]}
                       alt={product.name}
                       className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
                     />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center text-6xl">

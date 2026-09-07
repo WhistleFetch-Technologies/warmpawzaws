@@ -116,4 +116,16 @@ describe('product-storefront-normalize', () => {
     expect(out.images).toEqual(['https://cdn.example.com/ok.jpg']);
     expect(out.image_ingest_status).toBe('processing');
   });
+
+  it('fills empty images from Drive ingest file ids so catalog cards show photos', () => {
+    const fileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+    const out = flattenProductForApiResponse({
+      id: 'p1',
+      images: [],
+      metadata: {
+        image_ingest: { status: 'processing', fileIds: [fileId] },
+      },
+    });
+    expect(out.images).toEqual([`https://lh3.googleusercontent.com/d/${fileId}`]);
+  });
 });

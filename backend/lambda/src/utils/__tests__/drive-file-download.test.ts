@@ -18,6 +18,7 @@ describe('drive-file-download', () => {
     expect(extractDriveFileId(id)).toBe(id);
     expect(extractDriveFileId(`https://drive.google.com/uc?export=view&id=${id}`)).toBe(id);
     expect(extractDriveFileId(`https://drive.google.com/file/d/${id}/view`)).toBe(id);
+    expect(extractDriveFileId(`https://lh3.googleusercontent.com/d/${id}`)).toBe(id);
     expect(extractDriveFileId('https://example.com/photo.jpg')).toBeNull();
   });
 
@@ -30,6 +31,14 @@ describe('drive-file-download', () => {
   it('follows confirm-token HTML then returns image bytes', async () => {
     const fileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
     const fetchFn: DriveBinaryFetch = jest.fn(async (url) => {
+      if (url === lh3DriveUrl(fileId)) {
+        return {
+          status: 200,
+          contentType: 'text/html',
+          body: Buffer.from('<html>not bytes</html>'),
+          setCookie: [],
+        };
+      }
       if (url === driveDownloadUrl(fileId)) {
         return {
           status: 200,
@@ -57,22 +66,18 @@ describe('drive-file-download', () => {
     }
   });
 
-  it('falls back to lh3 when download HTML is not an image', async () => {
+  it('uses lh3 first when it returns image bytes', async () => {
     const fileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
     const fetchFn: DriveBinaryFetch = jest.fn(async (url) => {
       if (url.includes('googleusercontent.com')) {
         return { status: 200, contentType: 'image/png', body: TINY_PNG, setCookie: [] };
       }
-      return {
-        status: 200,
-        contentType: 'text/html',
-        body: Buffer.from('<html>quota</html>'),
-        setCookie: [],
-      };
+      throw new Error(`should not fetch ${url}`);
     });
     const result = await downloadDriveFileImage(fileId, fetchFn);
     expect(result.ok).toBe(true);
     expect(fetchFn).toHaveBeenCalledWith(lh3DriveUrl(fileId), undefined);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it('fails closed on non-image HTML and does not invent a Drive URL', async () => {
