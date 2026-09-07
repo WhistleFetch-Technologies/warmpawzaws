@@ -26,6 +26,7 @@ import {
   filterTopLevelShopCategories,
   mapApiCategoriesToShop,
   mergeShopSubcategoriesForStorefront,
+  resolveShopCatalogCategory,
   resolveShopCategoryParam,
   sortPetFoodSubcategoriesForShop,
   SHOP_CATEGORIES_WITH_PRODUCTS_PATH,
@@ -216,7 +217,6 @@ function ShopPageContent() {
    */
   useEffect(() => {
     if (lastAppliedUrlCategoryRef.current === categoryFromUrl) return;
-    lastAppliedUrlCategoryRef.current = categoryFromUrl;
 
     if (
       resolvedCategoryRef.current &&
@@ -224,10 +224,12 @@ function ShopPageContent() {
       (categoryFromUrl === resolvedCategoryRef.current ||
         resolveShopCategoryParam(categoryFromUrl, categories) === resolvedCategoryRef.current)
     ) {
+      lastAppliedUrlCategoryRef.current = categoryFromUrl;
       return;
     }
 
     if (!categoryFromUrl) {
+      lastAppliedUrlCategoryRef.current = categoryFromUrl;
       resolvedCategoryRef.current = '';
       setSelectedCategory('');
       return;
@@ -238,11 +240,24 @@ function ShopPageContent() {
     const resolved = resolveShopCategoryParam(categoryFromUrl, categories) || categoryFromUrl;
     resolvedCategoryRef.current = resolved;
     setSelectedCategory(resolved);
+    lastAppliedUrlCategoryRef.current = categoryFromUrl;
+
     if (resolved !== categoryFromUrl) {
       router.replace(`/shop?category=${encodeURIComponent(resolved)}`, { scroll: false });
       lastAppliedUrlCategoryRef.current = resolved;
     }
   }, [categoryFromUrl, categories, categoriesReady, router]);
+
+  const catalogCategory = useMemo(
+    () =>
+      resolveShopCatalogCategory({
+        categoryFromUrl,
+        selectedCategory,
+        categories,
+        categoriesReady,
+      }),
+    [categoryFromUrl, selectedCategory, categories, categoriesReady],
+  );
 
   /**
    * Load storefront category chips once per mount (categories that have products).
@@ -344,8 +359,8 @@ function ShopPageContent() {
 
   const loadMoreProducts = useCallback(() => {
     if (!hasMore || loadingMore || loading) return;
-    void loadProducts(false, offset, selectedCategory);
-  }, [hasMore, loadingMore, loading, loadProducts, offset, selectedCategory]);
+    void loadProducts(false, offset, catalogCategory);
+  }, [hasMore, loadingMore, loading, loadProducts, offset, catalogCategory]);
 
   const loadFeaturedDeals = useCallback(async () => {
     try {
@@ -399,12 +414,11 @@ function ShopPageContent() {
    * Load catalog: All tab starts immediately; URL category waits for categoriesReady.
    */
   useEffect(() => {
-    const needsCategoryResolution = Boolean(categoryFromUrl);
-    if (needsCategoryResolution && !categoriesReady) return;
-    void loadProducts(true, 0, selectedCategory);
+    if (categoryFromUrl && !categoriesReady) return;
+    void loadProducts(true, 0, catalogCategory);
   }, [
     categoriesReady,
-    selectedCategory,
+    catalogCategory,
     sortBy,
     debouncedSearch,
     priceRange,
@@ -565,9 +579,9 @@ function ShopPageContent() {
   );
 
   const activeTopCategoryId = useMemo(() => {
-    if (!selectedCategory) return '';
-    return categoryById.get(selectedCategory)?.parent_category_id || selectedCategory;
-  }, [selectedCategory, categoryById]);
+    if (!catalogCategory) return '';
+    return categoryById.get(catalogCategory)?.parent_category_id || catalogCategory;
+  }, [catalogCategory, categoryById]);
 
   const activeSubCategories = useMemo(() => {
     if (!activeTopCategoryId) return [];
@@ -576,9 +590,9 @@ function ShopPageContent() {
   }, [categories, activeTopCategoryId]);
 
   const activeSubCategoryId = useMemo(() => {
-    if (!selectedCategory) return '';
-    return categoryById.get(selectedCategory)?.parent_category_id ? selectedCategory : '';
-  }, [selectedCategory, categoryById]);
+    if (!catalogCategory) return '';
+    return categoryById.get(catalogCategory)?.parent_category_id ? catalogCategory : '';
+  }, [catalogCategory, categoryById]);
 
   // Search, sort, and price filtering are now server-side.
   // `products` is the final list to render; no client-side filter step.
@@ -666,7 +680,7 @@ function ShopPageContent() {
             getCartQuantity={getCartQuantity}
             hasMore={hasMore}
             loadingMore={loadingMore}
-            onRetry={() => void loadProducts(true, 0, selectedCategory)}
+            onRetry={() => void loadProducts(true, 0, catalogCategory)}
             onAddToCart={addToCart}
             onQuantityChange={updateProductQuantity}
             onLoadMore={loadMoreProducts}

@@ -11,8 +11,8 @@ import {
 } from '@warmpawz/shared-types';
 import { stripStorefrontListPriceFields } from './product-ecommerce-pricing';
 import {
-  filterDisplayableProductImages,
   readImageIngestStatus,
+  resolveDisplayableProductImages,
 } from './bulk-drive-image-plan';
 
 export function parseSpecificationsObject(raw: unknown): Record<string, unknown> {
@@ -116,13 +116,11 @@ export function flattenProductForApiResponse(
 
   out.pet_type_display = formatPetTypeForCustomer(out.pet_type, out.pet_type_other);
 
-  if (out.images !== undefined) {
-    out.images = filterDisplayableProductImages(out.images);
-  }
+  out.images = resolveDisplayableProductImages(out.images, out.metadata);
   if (Array.isArray(out.skus)) {
     out.skus = (out.skus as Record<string, unknown>[]).map((sku) => ({
       ...sku,
-      images: filterDisplayableProductImages(sku.images),
+      images: resolveDisplayableProductImages(sku.images, out.metadata),
     }));
   }
   const ingestStatus = readImageIngestStatus(out.metadata);
@@ -159,20 +157,18 @@ export function sanitizeStorefrontProductForCustomer(
   delete out.gst_rate;
   delete out.sku;
   delete out.cost_price;
+  out.images = resolveDisplayableProductImages(out.images, out.metadata);
+  if (Array.isArray(out.skus)) {
+    out.skus = (out.skus as Record<string, unknown>[]).map((sku) => ({
+      ...sku,
+      images: resolveDisplayableProductImages(sku.images, out.metadata),
+    }));
+  }
   delete out.metadata;
   if (out.pet_type_display == null) {
     out.pet_type_display = formatPetTypeForCustomer(out.pet_type, out.pet_type_other);
   }
   delete out.pet_type_other;
-  if (out.images !== undefined) {
-    out.images = filterDisplayableProductImages(out.images);
-  }
-  if (Array.isArray(out.skus)) {
-    out.skus = (out.skus as Record<string, unknown>[]).map((sku) => ({
-      ...sku,
-      images: filterDisplayableProductImages(sku.images),
-    }));
-  }
 
   const specs = parseSpecificationsObject(out.specifications);
   out.specifications = customerSpecificationsFromRow(specs);

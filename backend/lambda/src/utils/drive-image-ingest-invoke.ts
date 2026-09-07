@@ -125,6 +125,15 @@ export async function invokeDriveImageIngestWorker(
     failedFileIds: event.failedFileIds ?? [],
     hop,
   };
+  console.log(
+    JSON.stringify({
+      metric: 'drive_image_ingest_invoke',
+      vendorId: event.vendorId,
+      productCount: event.productIds.length,
+      remaining: event.remainingFileIds.length,
+      hop,
+    }),
+  );
   await invokeEvent(payload);
   return { invoked: true, hop, capped: false };
 }

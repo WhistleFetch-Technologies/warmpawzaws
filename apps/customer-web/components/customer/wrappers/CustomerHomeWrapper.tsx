@@ -2990,7 +2990,7 @@ export function CustomerHomeWrapper({
           <UniversalServicesByStyle
             phone={phone}
             roleId="walker"
-            serviceStyle={String(walkerServiceData?.serviceStyle || 'at_home')}
+            serviceStyle={walkerServiceData?.serviceStyle || 'at_home'}
             serviceTypeName="Dog Walker"
             category="walker"
             bookingScreen="walker-booking"

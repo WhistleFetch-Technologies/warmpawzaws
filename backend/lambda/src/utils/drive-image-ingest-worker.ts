@@ -5,8 +5,10 @@
 import { uploadDisplayImage } from '../services/image';
 import { downloadDriveFileImage } from './drive-file-download';
 import {
-  extractDriveFileIdsFromImageList,
+  collectBackfillFileIds,
+  keepDisplayableProductImages,
   keptManagedS3Images,
+  lh3DisplayUrlsForFileIds,
 } from './bulk-drive-image-plan';
 import { parseProductMetadata } from './product-group-identity';
 import {
@@ -164,9 +166,11 @@ export async function runDriveIngestHop(
   const status = ingestStatus(rest, completedKeys, failedFileIds);
   const metadataByProduct: Record<string, Record<string, unknown>> = {};
   const prevS3All: string[] = [];
+  const fallbackDisplay: string[] = [];
 
   for (const p of products) {
     prevS3All.push(...keptManagedS3Images(p.images, vendorId));
+    fallbackDisplay.push(...keepDisplayableProductImages(p.images, vendorId));
     const meta = parseProductMetadata(p.metadata);
     metadataByProduct[String(p.id)] = {
       ...meta,
@@ -180,7 +184,19 @@ export async function runDriveIngestHop(
     };
   }
 
-  const persistImages = completedKeys.length > 0 ? completedKeys : prevS3All.filter((u, i, a) => a.indexOf(u) === i);
+  const persistImages =
+    completedKeys.length > 0
+      ? completedKeys
+      : [
+          ...new Set(
+            fallbackDisplay.length > 0
+              ? fallbackDisplay
+              : lh3DisplayUrlsForFileIds([
+                  ...(event.remainingFileIds ?? []),
+                  ...(event.failedFileIds ?? []),
+                ]),
+          ),
+        ];
 
   try {
     await writeImages({
@@ -216,7 +232,24 @@ export async function runDriveIngestHop(
 }
 
 export async function processDriveImageIngestJob(event: DriveImageIngestJobEvent): Promise<void> {
-  await runDriveIngestHop(event);
+  console.log(
+    JSON.stringify({
+      metric: 'drive_image_ingest_hop_start',
+      vendorId: event.vendorId,
+      productIds: event.productIds,
+      remaining: event.remainingFileIds?.length ?? 0,
+      hop: event.hop ?? 1,
+    }),
+  );
+  const result = await runDriveIngestHop(event);
+  console.log(
+    JSON.stringify({
+      metric: 'drive_image_ingest_hop_done',
+      vendorId: event.vendorId,
+      status: result.status,
+      nextHop: result.nextHop,
+    }),
+  );
 }
 
 export async function loadDriveBackfillTargets(
@@ -226,10 +259,22 @@ export async function loadDriveBackfillTargets(
   const cap = Math.max(1, Math.min(500, Math.floor(limit)));
   const { query } = await import('../database/rds-connection');
   const productRows = await query(
-    `SELECT id, vendor_id, images
+    `SELECT id, vendor_id, images, metadata
      FROM products
-     WHERE images::text ILIKE '%drive.google.com%'
-       AND ($1::uuid IS NULL OR vendor_id = $1)
+     WHERE ($1::uuid IS NULL OR vendor_id = $1)
+       AND (
+         images::text ILIKE '%drive.google.com%'
+         OR images::text ILIKE '%lh3.googleusercontent.com/d/%'
+         OR COALESCE(metadata->'image_ingest'->>'status', '') IN ('processing', 'failed')
+         OR (
+           metadata->'image_ingest' IS NOT NULL
+           AND (
+             images IS NULL
+             OR images = '[]'::jsonb
+             OR (jsonb_typeof(images) = 'array' AND jsonb_array_length(images) = 0)
+           )
+         )
+       )
      LIMIT $2`,
     [vendorId ?? null, cap],
   );
@@ -243,17 +288,17 @@ export async function loadDriveBackfillTargets(
   );
 
   const byProduct = new Map<string, { vendorId: string; productId: string; fileIds: Set<string> }>();
-  const add = (productId: string, vid: string, images: unknown) => {
+  const add = (productId: string, vid: string, images: unknown, metadata?: unknown) => {
     let entry = byProduct.get(productId);
     if (!entry) {
       entry = { vendorId: vid, productId, fileIds: new Set() };
       byProduct.set(productId, entry);
     }
-    for (const id of extractDriveFileIdsFromImageList(images)) entry.fileIds.add(id);
+    for (const id of collectBackfillFileIds(images, metadata)) entry.fileIds.add(id);
   };
 
   for (const row of productRows.rows) {
-    add(String(row.id), String(row.vendor_id), row.images);
+    add(String(row.id), String(row.vendor_id), row.images, row.metadata);
   }
   for (const row of skuRows.rows) {
     add(String(row.product_id), String(row.vendor_id), row.images);

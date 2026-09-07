@@ -4,6 +4,7 @@ import {
   mapApiCategoriesToShop,
   normalizeShopCategoryRow,
   resolveShopCategoryParam,
+  resolveShopCatalogCategory,
   sortPetFoodSubcategoriesForShop,
   sortShopCategories,
 } from '../shop-category-display';
@@ -110,6 +111,57 @@ describe('shop-category-display', () => {
       'Dry Pet Food',
       'Wet Pet Food',
     ]);
+  });
+
+  describe('resolveShopCatalogCategory', () => {
+    const categories = [
+      { id: 'uuid-food', name: 'Pet Food' },
+      { id: 'uuid-toys', name: 'Pet Toys' },
+    ];
+
+    it('uses selected chip when URL has no category', () => {
+      expect(
+        resolveShopCatalogCategory({
+          categoryFromUrl: '',
+          selectedCategory: 'uuid-toys',
+          categories,
+          categoriesReady: true,
+        })
+      ).toBe('uuid-toys');
+    });
+
+    it('waits on selectedCategory while categories are loading', () => {
+      expect(
+        resolveShopCatalogCategory({
+          categoryFromUrl: 'pet-food',
+          selectedCategory: '',
+          categories,
+          categoriesReady: false,
+        })
+      ).toBe('');
+    });
+
+    it('resolves URL slug once categories are ready even if selectedCategory is stale', () => {
+      expect(
+        resolveShopCatalogCategory({
+          categoryFromUrl: 'pet-food',
+          selectedCategory: '',
+          categories,
+          categoriesReady: true,
+        })
+      ).toBe('uuid-food');
+    });
+
+    it('passes through raw URL param when slug cannot be resolved', () => {
+      expect(
+        resolveShopCatalogCategory({
+          categoryFromUrl: 'unknown-slug',
+          selectedCategory: '',
+          categories,
+          categoriesReady: true,
+        })
+      ).toBe('unknown-slug');
+    });
   });
 
   describe('filterShopCategoriesWithProducts', () => {
