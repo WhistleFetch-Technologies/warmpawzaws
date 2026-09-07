@@ -17,6 +17,7 @@ import { apiClient } from '@/lib/api-client';
 import {
   isVendorTeleConsultationBooking,
   resolveVendorBookingId,
+  formatVendorSelectedServiceNames,
   resolveVendorBookingServiceLabel,
   shouldShowVendorBookingPrice,
 } from '@/lib/vendor-utils';
@@ -923,6 +924,9 @@ export function UniversalAppointmentManagement({
                             <div className="flex items-center gap-2">
                               <Package className="w-4 h-4 text-gray-400" />
                               <span className="text-sm font-medium text-[#FF8C42]">{resolveVendorBookingServiceLabel(booking)}</span>
+                              {formatVendorSelectedServiceNames(booking) ? (
+                                <span className="text-xs text-gray-600"> · {formatVendorSelectedServiceNames(booking)}</span>
+                              ) : null}
                             </div>
                             {booking.location && (
                               <div className="flex items-center gap-2">
@@ -1181,6 +1185,9 @@ export function UniversalAppointmentManagement({
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <p className="text-sm text-blue-800">
                   <strong>Service:</strong> {resolveVendorBookingServiceLabel(selectedBooking)}
+                  {formatVendorSelectedServiceNames(selectedBooking)
+                    ? ` (${formatVendorSelectedServiceNames(selectedBooking)})`
+                    : ''}
                 </p>
                 <p className="text-sm text-blue-800">
                   <strong>Customer:</strong> {selectedBooking.customerName}

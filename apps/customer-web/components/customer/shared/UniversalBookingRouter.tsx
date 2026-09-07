@@ -1029,7 +1029,9 @@ export function UniversalBookingRouter({
               <h3 className="font-semibold text-sm sm:text-base">{svcName}</h3>
               {svcDuration > 0 && <p className="text-xs sm:text-sm text-gray-500">{svcDuration} mins</p>}
             </div>
-            <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svcPrice)}</p>
+            {svcPrice > 0 ? (
+              <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svcPrice)}</p>
+            ) : null}
           </div>
         );
       })()}
@@ -1438,7 +1440,9 @@ export function UniversalBookingRouter({
                       <p className="font-semibold text-gray-900">{svc.name || s?.name || s?.serviceName}</p>
                       {svc.duration && <p className="text-xs text-gray-500">{svc.duration} mins</p>}
                     </div>
-                    <p className="font-bold text-orange-600">{formatPriceWithSymbol(svc.price ?? s?.price ?? 0)}</p>
+                    {Number(svc.price ?? s?.price) > 0 ? (
+                      <p className="font-bold text-orange-600">{formatPriceWithSymbol(svc.price ?? s?.price ?? 0)}</p>
+                    ) : null}
                   </div>
                 );
               })}

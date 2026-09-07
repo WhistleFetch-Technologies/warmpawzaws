@@ -450,13 +450,17 @@ export function GroomingBookingRouter({
 
   // Load slots when date is selected and vendor is known
   useEffect(() => {
+    if (appointmentsMode) {
+      setTimeSlots([]);
+      return;
+    }
     if (selectedDate && vendorId && selectedServiceIds.size > 0) {
       loadTimeSlots(selectedDate);
     } else {
       // Reset slots when date is cleared
       setTimeSlots([]);
     }
-  }, [selectedDate, vendorId, selectedServiceType, selectedServiceIds]);
+  }, [appointmentsMode, selectedDate, vendorId, selectedServiceType, selectedServiceIds]);
 
   /** Keep guest → auth booking draft in sync (date/slot/vendor). */
   useEffect(() => {
@@ -489,12 +493,14 @@ export function GroomingBookingRouter({
   ]);
 
   useEffect(() => {
-    if (!selectedTime || timeSlots.length === 0) return;
-    if (!isSelectedSlotStillAvailable(selectedTime, timeSlots)) {
+    const slots = appointmentsMode ? wapptSlots.timeSlots : timeSlots;
+    if (!selectedTime || slots.length === 0) return;
+    if (appointmentsMode && wapptSlots.loadingSlots) return;
+    if (!isSelectedSlotStillAvailable(selectedTime, slots)) {
       setSelectedTime('');
       toast.error('That time is no longer available. Please choose another slot.');
     }
-  }, [timeSlots, selectedTime]);
+  }, [appointmentsMode, timeSlots, wapptSlots.timeSlots, wapptSlots.loadingSlots, selectedTime]);
 
   // Scheduling policy and operating-hours are deprecated (replaced by advance availability).
   // Slots come from GET /customer/vendor/:id/available-slots only; no extra policy/hours APIs.

@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { formatVendorFacingCustomerNotes } from '@/lib/vendor-facing-booking-notes';
 import {
+  formatVendorSelectedServiceNames,
   resolveVendorBookingServiceLabel,
   shouldShowVendorBookingPrice,
 } from '@/lib/vendor-utils';
@@ -259,6 +260,9 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                       )}
                     </div>
                     <p className="text-sm text-gray-500">{resolveVendorBookingServiceLabel(booking)}</p>
+                    {formatVendorSelectedServiceNames(booking) ? (
+                      <p className="text-xs text-gray-600">{formatVendorSelectedServiceNames(booking)}</p>
+                    ) : null}
                     <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
                       <span>📅 {new Date(booking.booking_date).toLocaleDateString()}</span>
                       <span>

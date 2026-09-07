@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Clock, Search } from 'lucide-react';
 import { useWpayVendorFeed } from '@/hooks/useWpayVendorFeed';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
+import { consumeWpayPendingReturnPath } from '@/lib/warmpawz-pay/wpay-pending-return';
 import { handleWpayPageBack, rememberWpayHistoryBackFromCurrentUrl } from '@/lib/go-back-or-replace';
 import { mapWpayVendorCardToProps } from '@/lib/warmpawz-pay/map-wpay-vendor-card-to-props';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
@@ -34,6 +35,13 @@ function WarmpawzPayPageContent() {
   const [category, setCategory] = useState('all');
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const chipSelectedByUserRef = useRef(false);
+
+  useEffect(() => {
+    const pendingPath = consumeWpayPendingReturnPath();
+    if (pendingPath) {
+      router.replace(pendingPath);
+    }
+  }, [router]);
 
   useEffect(() => {
     const requested = searchParams.get('category');

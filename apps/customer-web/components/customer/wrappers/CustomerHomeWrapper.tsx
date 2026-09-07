@@ -73,6 +73,7 @@ import {
 } from '@/lib/go-back-or-replace';
 import { isWarmpawzPayCommerceActive, isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
+import { consumeWpayPendingReturnPath, peekWpayPendingReturn } from '@/lib/warmpawz-pay/wpay-pending-return';
 import { buildWapptShellBookingPayload, handleWapptShellScreenNavigate } from '@/lib/wappt-shell-navigation';
 import { consumeWalkInShellNav } from '@/lib/walk-in-vendor-actions';
 import { resolveHomeVisitVendorListNavigation } from '@/lib/home-visit-wappt-navigation';
@@ -525,7 +526,16 @@ export function CustomerHomeWrapper({
 
   useEffect(() => {
     if (pathname !== '/') return;
+    const pendingPath = consumeWpayPendingReturnPath();
+    if (pendingPath) {
+      router.replace(pendingPath);
+    }
+  }, [pathname, router]);
+
+  useEffect(() => {
+    if (pathname !== '/') return;
     if (searchParams.get('service')) return;
+    if (peekWpayPendingReturn()?.paymentId) return;
     // Guest / unauthenticated shell: do not force profile or onboarding (that looped guests to /auth).
     if (!phone) return;
     if (!readProfileCompleted()) {

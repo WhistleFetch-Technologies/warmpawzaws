@@ -12,15 +12,21 @@ import {
 } from '@/lib/warmpawz-pay/wpay-success-confirm';
 
 const mockPush = jest.fn();
+const mockReplace = jest.fn();
 const search = new URLSearchParams('paymentId=pay-1&vendor=Clinic&saved=24');
 
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
   useSearchParams: () => search,
 }));
 
 jest.mock('@/lib/warmpawz-pay/wpay-api', () => ({
   readCustomerPhoneFromStorage: () => '9876543210',
+  WPAY_HISTORY_PATH: '/warmpawz-pay/history',
+}));
+
+jest.mock('@/lib/warmpawz-pay/wpay-pending-return', () => ({
+  clearWpayPendingReturn: jest.fn(),
 }));
 
 jest.mock('@/lib/warmpawz-pay/wpay-success-confirm', () => {
@@ -39,6 +45,7 @@ describe('WarmpawzPaySuccessClient', () => {
   beforeEach(() => {
     confirm.mockReset();
     mockPush.mockReset();
+    mockReplace.mockReset();
   });
 
   it('shows confirming copy until the backend confirms success', async () => {

@@ -17,9 +17,12 @@ import {
   getVendorAllowedServiceStyles,
   isVendorTeleConsultationBooking,
   resolveVendorBookingId,
+  formatVendorSelectedServiceNames,
+  isWarmpawzAppointmentsBooking,
   resolveVendorBookingServiceLabel,
   shouldShowVendorBookingPrice,
   shouldShowVendorBookingServiceOnHomeDashboard,
+  WAPPT_VENDOR_SERVICE_LABEL,
 } from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
@@ -1794,10 +1797,23 @@ export function VendorDashboard({
                                 )}
                               </div>
                               <div className="text-sm font-medium text-gray-900 mb-1">{appointment.petName} {appointment.petBreed ? `(${appointment.petBreed})` : ''}</div>
-                              {shouldShowVendorBookingServiceOnHomeDashboard(appointment) && (
-                                <div className="flex items-center gap-1 mb-2">
-                                  <span className="text-xs text-gray-500">Service:</span>
-                                  <span className="text-xs font-medium text-[#FF8C42]">{resolveVendorBookingServiceLabel(appointment)}</span>
+                              {(shouldShowVendorBookingServiceOnHomeDashboard(appointment) ||
+                                (isWarmpawzAppointmentsBooking(appointment) &&
+                                  !isVendorTeleConsultationBooking(appointment))) && (
+                                <div className="mb-2">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs text-gray-500">Service:</span>
+                                    <span className="text-xs font-medium text-[#FF8C42]">
+                                      {shouldShowVendorBookingServiceOnHomeDashboard(appointment)
+                                        ? resolveVendorBookingServiceLabel(appointment)
+                                        : WAPPT_VENDOR_SERVICE_LABEL}
+                                    </span>
+                                  </div>
+                                  {formatVendorSelectedServiceNames(appointment) ? (
+                                    <p className="mt-0.5 text-xs text-gray-700">
+                                      {formatVendorSelectedServiceNames(appointment)}
+                                    </p>
+                                  ) : null}
                                 </div>
                               )}
 

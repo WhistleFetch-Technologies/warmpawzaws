@@ -206,6 +206,22 @@ export function shouldShowVendorBookingServiceOnHomeDashboard(bookingLike: {
   return !isWarmpawzAppointmentsBooking(bookingLike);
 }
 
+export function formatVendorSelectedServiceNames(bookingLike: {
+  selectedServices?: unknown;
+  selected_services?: unknown;
+}): string {
+  const raw = bookingLike.selectedServices ?? bookingLike.selected_services;
+  const rows = Array.isArray(raw) ? raw : [];
+  const names = rows
+    .map((row) => {
+      if (!row || typeof row !== 'object') return '';
+      const r = row as { name?: string; serviceName?: string; service_name?: string };
+      return String(r.name || r.serviceName || r.service_name || '').trim();
+    })
+    .filter(Boolean);
+  return [...new Set(names)].join(', ');
+}
+
 export function resolveVendorBookingServiceLabel(bookingLike: {
   commerce_mode?: string | null;
   commerceMode?: string | null;

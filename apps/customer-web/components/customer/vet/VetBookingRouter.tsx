@@ -496,12 +496,14 @@ export function VetBookingRouter({
   ]);
 
   useEffect(() => {
-    if (!selectedTime || timeSlots.length === 0) return;
-    if (!isSelectedSlotStillAvailable(selectedTime, timeSlots)) {
+    const slots = appointmentsMode ? wapptSlots.timeSlots : timeSlots;
+    if (!selectedTime || slots.length === 0) return;
+    if (appointmentsMode && wapptSlots.loadingSlots) return;
+    if (!isSelectedSlotStillAvailable(selectedTime, slots)) {
       setSelectedTime('');
       toast.error('That time is no longer available. Please choose another slot.');
     }
-  }, [timeSlots, selectedTime]);
+  }, [appointmentsMode, timeSlots, wapptSlots.timeSlots, wapptSlots.loadingSlots, selectedTime]);
 
   const loadTimeSlots = async (date: string) => {
     const effectiveVendorId = vendorId || doctorId;

@@ -1,6 +1,7 @@
 import { buildWarmpawzAppointmentsBookingNav } from '@/lib/warmpawz-appointments-customer';
 import {
   canSelectWapptSlot,
+  shouldPromptWapptServicePick,
   partitionWapptListedServices,
   toWapptRequestedServices,
   toggleWapptOneOffSelection,
@@ -31,6 +32,8 @@ describe('wappt requested services', () => {
     expect(canSelectWapptSlot({ selectableCount: 0, selectedCount: 0 })).toBe(true);
     expect(canSelectWapptSlot({ selectableCount: 2, selectedCount: 0 })).toBe(false);
     expect(canSelectWapptSlot({ selectableCount: 2, selectedCount: 1 })).toBe(true);
+    expect(shouldPromptWapptServicePick({ selectableCount: 2, selectedCount: 0 })).toBe(true);
+    expect(shouldPromptWapptServicePick({ selectableCount: 2, selectedCount: 1 })).toBe(false);
   });
 
   it('strips listed prices from persist/nav payload', () => {

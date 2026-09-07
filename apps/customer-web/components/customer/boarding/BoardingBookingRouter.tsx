@@ -889,11 +889,12 @@ export function BoardingBookingRouter({
 
   useEffect(() => {
     if (!checkInTime || !appointmentsMode || wapptSlots.timeSlots.length === 0) return;
+    if (wapptSlots.loadingSlots) return;
     if (!isSelectedSlotStillAvailable(checkInTime, wapptSlots.timeSlots)) {
       setCheckInTime('');
       toast.error('That time is no longer available. Please choose another slot.');
     }
-  }, [appointmentsMode, wapptSlots.timeSlots, checkInTime]);
+  }, [appointmentsMode, wapptSlots.timeSlots, wapptSlots.loadingSlots, checkInTime]);
 
   useEffect(() => {
     if (!vendorId && !checkInDate) return;

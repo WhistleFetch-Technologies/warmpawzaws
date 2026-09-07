@@ -2,6 +2,7 @@ import { apiClient } from '@/lib/api-client';
 import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
 import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { razorpaySafeDescription } from '@/lib/razorpay/razorpay-utils';
+import { rememberWpayPendingReturn } from '@/lib/warmpawz-pay/wpay-pending-return';
 import { buildWpayCheckoutCallbackUrl } from '@/lib/warmpawz-pay/wpay-success-href';
 
 export type WpayInitiateResponse = {
@@ -77,6 +78,7 @@ export async function runWpayRazorpayCheckout(params: {
 
   const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
   const paymentId = String(initiate.paymentId);
+  rememberWpayPendingReturn({ paymentId, vendor: vendorName });
 
   const verifyPayload = {
     paymentId,

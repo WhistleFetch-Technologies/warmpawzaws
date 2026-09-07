@@ -42,6 +42,10 @@ import {
   shouldShowVendorBookingPrice,
 } from '@/lib/vendor-utils';
 
+function pickSelectedServices(booking: Record<string, unknown>): unknown {
+  return booking.selectedServices ?? booking.selected_services ?? [];
+}
+
 function formatDbTimeTo12h(raw: string): string {
   if (!raw || typeof raw !== 'string') return 'N/A';
   if (raw.includes('AM') || raw.includes('PM')) return raw.trim();
@@ -143,6 +147,7 @@ export function mapVendorBookingsApiToScheduleItem(
       | string
       | undefined,
     serviceName: resolveVendorBookingServiceLabel(bookingLike),
+    selectedServices: pickSelectedServices(booking),
     serviceType,
     status: String(booking.status || 'pending'),
     price: shouldShowVendorBookingPrice(bookingLike) ? parsedPrice : 0,
@@ -207,6 +212,7 @@ export function mapDashboardBookingToScheduleItem(b: Record<string, unknown>, de
     customerPhone: (b.customer_phone as string) || '',
     customerId: (b.customerId ?? b.customer_id) as string | undefined,
     serviceName: resolveVendorBookingServiceLabel(bookingLike),
+    selectedServices: pickSelectedServices(b),
     serviceType,
     status: (b.status as string) || 'pending',
     price: shouldShowVendorBookingPrice(bookingLike) ? parsedPrice : 0,

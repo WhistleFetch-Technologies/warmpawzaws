@@ -1,4 +1,5 @@
 import {
+  formatVendorSelectedServiceNames,
   isWarmpawzAppointmentsBooking,
   resolveVendorBookingServiceLabel,
   shouldShowVendorBookingPrice,
@@ -40,5 +41,16 @@ describe('vendor WAPPT booking display', () => {
     expect(shouldShowVendorBookingPrice(booking)).toBe(true);
     expect(shouldShowVendorBookingServiceOnHomeDashboard(booking)).toBe(true);
     expect(resolveVendorBookingServiceLabel(booking)).toBe('Home Grooming');
+  });
+
+  it('lists selected WAPPT service names without prices', () => {
+    expect(
+      formatVendorSelectedServiceNames({
+        selectedServices: [
+          { name: 'Bath', price: 499 },
+          { serviceName: 'Haircut', price: 0 },
+        ],
+      }),
+    ).toBe('Bath, Haircut');
   });
 });

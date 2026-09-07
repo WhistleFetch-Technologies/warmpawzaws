@@ -47,6 +47,7 @@ import { useWarmpawzAppointmentsVendorProfile } from '@/hooks/useWarmpawzAppoint
 import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 import {
   canSelectWapptSlot,
+  shouldPromptWapptServicePick,
   partitionWapptListedServices,
   toWapptRequestedServices,
   toggleWapptOneOffSelection,
@@ -205,6 +206,15 @@ export function WarmpawzAppointmentsVendorProfile({
   const handleBookAppointment = () => {
     const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
     if (!vid) return;
+    if (
+      shouldPromptWapptServicePick({
+        selectableCount: selectableServices.length,
+        selectedCount: selectedServiceIds.size,
+      })
+    ) {
+      setActiveTab('services');
+      return;
+    }
     if (
       requestGuestAuthForProfileContinue({
         persona: category,
@@ -723,8 +733,7 @@ export function WarmpawzAppointmentsVendorProfile({
             <div className="p-4">
               <Button
                 onClick={handleBookAppointment}
-                disabled={!canBookSlot}
-                className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] disabled:opacity-50 sm:text-lg"
+                className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] sm:text-lg"
               >
                 <Calendar className="mr-2 h-5 w-5" />
                 {selectableServices.length > 0 && selectedServiceIds.size > 0

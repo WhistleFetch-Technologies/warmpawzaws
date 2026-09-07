@@ -161,9 +161,11 @@ function ServiceSummaryBlock({
               <p className="mt-1 line-clamp-2 text-sm text-gray-500">{displayDescription}</p>
             ) : null}
           </div>
-          <p className="shrink-0 text-xl font-bold tabular-nums text-[#FF8C42]">
-            {formatPriceWithSymbol(svcPrice)}
-          </p>
+          {svcPrice > 0 ? (
+            <p className="shrink-0 text-xl font-bold tabular-nums text-[#FF8C42]">
+              {formatPriceWithSymbol(svcPrice)}
+            </p>
+          ) : null}
         </div>
         <DurationCategoryPills duration={duration} category={category} />
       </div>

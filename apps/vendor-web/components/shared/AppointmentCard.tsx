@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation';
 import { Clock, User, Phone, Home, Video, MapPin, MessageSquare, Navigation, CheckCircle2, Play, Radio, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { isVendorTeleConsultationBooking, resolveVendorBookingServiceLabel, shouldShowVendorBookingPrice, shouldShowVendorBookingServiceOnHomeDashboard } from '@/lib/vendor-utils';
+import { formatVendorSelectedServiceNames, isVendorTeleConsultationBooking, isWarmpawzAppointmentsBooking, resolveVendorBookingServiceLabel, shouldShowVendorBookingPrice, shouldShowVendorBookingServiceOnHomeDashboard, WAPPT_VENDOR_SERVICE_LABEL } from '@/lib/vendor-utils';
 
 interface AppointmentCardProps {
   appointment: {
@@ -39,6 +39,8 @@ interface AppointmentCardProps {
     isRescheduled?: boolean; // Indicates if booking was rescheduled from original time/date
     rescheduledAt?: string | null; // Timestamp when booking was rescheduled
     otp?: string;
+    selectedServices?: unknown;
+    selected_services?: unknown;
   };
   onViewDetails?: (appointmentId: string) => void;
   onCall?: (phone: string) => void;
@@ -75,8 +77,11 @@ export function AppointmentCard({
   const serviceType = appointment.serviceType?.toLowerCase();
   const isTele = isVendorTeleConsultationBooking(appointment);
   const serviceLabel = resolveVendorBookingServiceLabel(appointment);
+  const selectedServiceNames = formatVendorSelectedServiceNames(appointment);
   const showPrice = shouldShowVendorBookingPrice(appointment);
   const showServiceLabel = shouldShowVendorBookingServiceOnHomeDashboard(appointment);
+  const showWapptSelectedServices =
+    isWarmpawzAppointmentsBooking(appointment) && !isVendorTeleConsultationBooking(appointment);
   
   // Determine service style icon and colors
   let typeIcon = Home;
@@ -147,10 +152,17 @@ export function AppointmentCard({
             {appointment.petName} {appointment.petBreed ? `(${appointment.petBreed})` : ''}
           </div>
 
-          {showServiceLabel && (
-            <div className="flex items-center gap-1 mb-2">
-              <span className="text-xs text-gray-500">Service:</span>
-              <span className="text-xs font-medium text-[#FF8C42]">{serviceLabel}</span>
+          {(showServiceLabel || showWapptSelectedServices) && (
+            <div className="mb-2">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-500">Service:</span>
+                <span className="text-xs font-medium text-[#FF8C42]">
+                  {showServiceLabel ? serviceLabel : WAPPT_VENDOR_SERVICE_LABEL}
+                </span>
+              </div>
+              {selectedServiceNames ? (
+                <p className="mt-0.5 text-xs text-gray-700">{selectedServiceNames}</p>
+              ) : null}
             </div>
           )}
 

@@ -23,7 +23,7 @@ import {
   type BoardingIntakeV1Payload,
 } from '@/lib/boarding-intake-notes';
 import { formatVendorFacingCustomerNotes } from '@/lib/vendor-facing-booking-notes';
-import { getVendorBookingVenuePillLabel, resolveVendorBookingServiceLabel, shouldShowVendorBookingPrice } from '@/lib/vendor-utils';
+import { formatVendorSelectedServiceNames, getVendorBookingVenuePillLabel, resolveVendorBookingServiceLabel, shouldShowVendorBookingPrice } from '@/lib/vendor-utils';
 
 // Dynamically import PrescriptionDocument for A4 view
 const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
@@ -361,6 +361,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           rawBooking.service?.serviceName ||
           rawBooking.service_name ||
           'Service',
+        selectedServices: rawBooking.selectedServices || rawBooking.selected_services || [],
         commerce_mode: rawBooking.commerce_mode || rawBooking.commerceMode,
         commerceMode: rawBooking.commerceMode || rawBooking.commerce_mode,
         serviceType: rawBooking.serviceStyle || rawBooking.serviceType || 'at_center',
@@ -779,6 +780,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       (serviceName && (serviceName.includes('tele') || serviceName.includes('video'))));
 
   const vendorServiceLabel = booking ? resolveVendorBookingServiceLabel(booking) : '';
+  const vendorSelectedServiceNames = booking ? formatVendorSelectedServiceNames(booking) : '';
   const showVendorBookingPrice = booking ? shouldShowVendorBookingPrice(booking) : false;
 
   /** Package canonical parent row (purchase placeholder): no Complete-with-OTP here — each `isPackageSession` child owns completion. */
@@ -1806,6 +1808,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   <div>
                     <p className="text-sm text-gray-500">Service</p>
                     <p className="font-medium text-gray-900">{vendorServiceLabel}</p>
+                    {vendorSelectedServiceNames ? (
+                      <p className="mt-1 text-sm text-gray-700">{vendorSelectedServiceNames}</p>
+                    ) : null}
                   </div>
 
                   {/* Package session: show package name, session X of Y, remaining (E2E Section 5 & 9) */}

@@ -20,6 +20,7 @@ import {
   hasVendorRole,
   isVendorTeleConsultationBooking,
   resolveVendorBookingId,
+  formatVendorSelectedServiceNames,
   resolveVendorBookingServiceLabel,
 } from '@/lib/vendor-utils';
 
@@ -110,8 +111,13 @@ export function VendorBookingCard({
             <span>🐕</span>
             <span>{booking.petName} - {booking.petType}</span>
           </div>
-          <div className="flex items-center gap-1 text-xs font-medium text-[#FF8C42] mb-1">
-            <span>{resolveVendorBookingServiceLabel(booking)}</span>
+          <div className="mb-1">
+            <div className="flex items-center gap-1 text-xs font-medium text-[#FF8C42]">
+              <span>{resolveVendorBookingServiceLabel(booking)}</span>
+            </div>
+            {formatVendorSelectedServiceNames(booking) ? (
+              <p className="text-xs text-gray-600">{formatVendorSelectedServiceNames(booking)}</p>
+            ) : null}
           </div>
           {(booking.packagePurchaseId || booking.package_purchase_id) && (
             <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-purple-800">

@@ -16,4 +16,9 @@ describe('guest-slot-revalidate', () => {
     expect(retainValidRestoredSlot('18:00', slots)).toBe('');
     expect(retainValidRestoredSlot('21:00', slots)).toBe('');
   });
+
+  it('treats 12-hour and seconds variants as the same slot', () => {
+    expect(isSelectedSlotStillAvailable('5:00 PM', slots)).toBe(true);
+    expect(isSelectedSlotStillAvailable('17:00:00', slots)).toBe(true);
+  });
 });

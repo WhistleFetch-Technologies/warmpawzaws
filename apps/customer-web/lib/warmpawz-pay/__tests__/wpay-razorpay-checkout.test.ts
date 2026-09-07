@@ -40,6 +40,7 @@ describe('runWpayRazorpayCheckout', () => {
     expect(source).toContain('callback_url');
     expect(source).toContain('redirect: true');
     expect(source).toContain('buildWpayCheckoutCallbackUrl');
+    expect(source).toContain('rememberWpayPendingReturn');
     expect(source).not.toContain("Payment cancelled");
     expect(source).not.toContain('includeInstrumentBlocks');
     expect(source).not.toMatch(/\bgst\b/i);

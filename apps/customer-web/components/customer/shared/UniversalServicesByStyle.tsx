@@ -73,6 +73,7 @@ import { ServiceStyleLaunchBlocked } from './ServiceStyleLaunchBlocked';
 import { applyWapptHubDiscoveryToProviders } from '@/lib/filter-hub-services';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
+import { toWapptRequestedServices } from '@/lib/wappt-requested-services';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -700,12 +701,18 @@ export function UniversalServicesByStyle({
     if (appointmentsMode && profileProvider) {
       const vid = String(profileProvider.vendorId || profileProvider.providerId || '');
       const style = wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;
+      const requested = toWapptRequestedServices(
+        Array.from(selectedServices)
+          .map((id) => profileProvider.services.find((s) => s.id === id || s.serviceId === id))
+          .filter(Boolean) as Array<{ id?: string; serviceId?: string; name?: string }>,
+      );
       onNavigate(resolveWarmpawzBookingScreen(finalCategory), {
         ...buildWarmpawzAppointmentsBookingNav({
           vendorId: vid,
           vendorName: profileProvider.name,
           serviceStyle: style,
           category: finalCategory,
+          selectedServices: requested,
         }),
         appointmentsMode: true,
       });

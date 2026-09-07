@@ -1120,9 +1120,11 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                             {booking.serviceStyle && ` • ${getServiceStyleLabel(booking.serviceStyle)}`}
                           </p>
                         </div>
-                        <div className="text-right">
-                          <p className="font-bold text-[#FF8C42]">₹{(s.price || 0) * (s.quantity || 1)}</p>
-                        </div>
+                        {Number(s.price) > 0 ? (
+                          <div className="text-right">
+                            <p className="font-bold text-[#FF8C42]">₹{(s.price || 0) * (s.quantity || 1)}</p>
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                     <div className="flex justify-between items-center pt-2 border-t border-gray-100">

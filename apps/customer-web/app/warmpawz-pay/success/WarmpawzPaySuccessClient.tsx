@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { CheckCircle2 } from 'lucide-react';
-import { readCustomerPhoneFromStorage } from '@/lib/warmpawz-pay/wpay-api';
+import { readCustomerPhoneFromStorage, WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
+import { clearWpayPendingReturn } from '@/lib/warmpawz-pay/wpay-pending-return';
 import {
   confirmWpayPaymentFromSuccessPage,
   WPAY_CONFIRM_TIMEOUT_COPY,
@@ -68,6 +69,18 @@ export function WarmpawzPaySuccessClient() {
   );
 
   const [view, setView] = useState<SuccessView>({ kind: 'confirming' });
+
+  useEffect(() => {
+    clearWpayPendingReturn();
+  }, [paymentId]);
+
+  useEffect(() => {
+    if (view.kind !== 'success') return;
+    const timer = window.setTimeout(() => {
+      router.replace(WPAY_HISTORY_PATH);
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, [view.kind, router]);
 
   useEffect(() => {
     if (!paymentId) {
@@ -164,15 +177,15 @@ export function WarmpawzPaySuccessClient() {
       <div className="mt-8 flex w-full flex-col gap-3">
         <button
           type="button"
-          onClick={() => router.push('/warmpawz-pay/history')}
-          className="w-full rounded-xl border border-gray-200 bg-white py-3 text-sm font-medium"
+          onClick={() => router.replace(WPAY_HISTORY_PATH)}
+          className="w-full rounded-xl bg-[#FF6B00] py-3 text-sm font-semibold text-white"
         >
           View payment history
         </button>
         <button
           type="button"
           onClick={() => router.push('/warmpawz-pay')}
-          className="w-full rounded-xl bg-[#FF6B00] py-3 text-sm font-semibold text-white"
+          className="w-full rounded-xl border border-gray-200 bg-white py-3 text-sm font-medium"
         >
           Back to Warmpawz Pay
         </button>

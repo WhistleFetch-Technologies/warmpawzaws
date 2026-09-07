@@ -30,6 +30,14 @@ export function canSelectWapptSlot(opts: {
   return opts.selectedCount > 0;
 }
 
+/** First tap should open Services so the customer can pick, then book. */
+export function shouldPromptWapptServicePick(opts: {
+  selectableCount: number;
+  selectedCount: number;
+}): boolean {
+  return opts.selectableCount > 0 && opts.selectedCount <= 0;
+}
+
 export function toWapptRequestedServices(
   rows: Array<{
     id?: string | null;
