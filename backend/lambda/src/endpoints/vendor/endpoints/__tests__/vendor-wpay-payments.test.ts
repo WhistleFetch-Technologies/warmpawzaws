@@ -6,6 +6,10 @@ jest.mock('../../../../database/rds-connection', () => ({
   query: jest.fn(),
 }));
 
+jest.mock('../../../customer/warmpawz-pay/shared/reconcile-wpay-razorpay-capture', () => ({
+  reconcilePendingWpayPayments: jest.fn().mockResolvedValue({ checked: 0, completed: 0 }),
+}));
+
 jest.mock('../../../../utils/vendor-resolve', () => ({
   resolveVendorId: jest.fn(),
   resolveVendorIdsForLedger: jest.fn(),

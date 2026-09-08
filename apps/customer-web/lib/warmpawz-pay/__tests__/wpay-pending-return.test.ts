@@ -13,6 +13,7 @@ import {
 describe('wpay pending return', () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
   });
 
   it('stores and peeks a paymentId for the success page', () => {
@@ -23,6 +24,13 @@ describe('wpay pending return', () => {
       saved: 24,
     });
     expect(sessionStorage.getItem(WPAY_PENDING_RETURN_KEY)).toContain('pay-1');
+    expect(localStorage.getItem(WPAY_PENDING_RETURN_KEY)).toContain('pay-1');
+  });
+
+  it('still finds a pending return after sessionStorage is cleared', () => {
+    rememberWpayPendingReturn({ paymentId: 'pay-apk' });
+    sessionStorage.clear();
+    expect(peekWpayPendingReturn()?.paymentId).toBe('pay-apk');
   });
 
   it('consumes into the success path once', () => {

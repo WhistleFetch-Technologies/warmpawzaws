@@ -1,12 +1,19 @@
-import { reconcileWpayRazorpayCapture } from '../reconcile-wpay-razorpay-capture';
+import {
+  reconcilePendingWpayPayments,
+  reconcileWpayRazorpayCapture,
+} from '../reconcile-wpay-razorpay-capture';
 import { fulfillWpayCapturedPayment } from '../fulfill-wpay-captured-payment';
 import { razorpayRequest } from '../../../../../utils/payments/razorpay-client';
+import { dbWpayPendingOpenOrders } from '../../repos/wpay-payment.repo';
 
 jest.mock('../fulfill-wpay-captured-payment', () => ({
   fulfillWpayCapturedPayment: jest.fn(),
 }));
 jest.mock('../../../../../utils/payments/razorpay-client', () => ({
   razorpayRequest: jest.fn(),
+}));
+jest.mock('../../repos/wpay-payment.repo', () => ({
+  dbWpayPendingOpenOrders: jest.fn(),
 }));
 
 const pending = {
@@ -77,5 +84,22 @@ describe('reconcileWpayRazorpayCapture', () => {
     });
     await expect(reconcileWpayRazorpayCapture(pending)).resolves.toBeNull();
     expect(fulfillWpayCapturedPayment).not.toHaveBeenCalled();
+  });
+
+  it('sweeps open pending orders through the same capture lookup', async () => {
+    (dbWpayPendingOpenOrders as jest.Mock).mockResolvedValue([pending]);
+    (razorpayRequest as jest.Mock)
+      .mockResolvedValueOnce({ status: 'paid', amount: 13600, amount_paid: 13600 })
+      .mockResolvedValueOnce({ items: [{ id: 'pay_TYIXYhhxKaLfXb', status: 'captured' }] });
+    (fulfillWpayCapturedPayment as jest.Mock).mockResolvedValue({
+      ...pending,
+      payment_status: 'completed',
+      razorpay_payment_id: 'pay_TYIXYhhxKaLfXb',
+    });
+
+    await expect(reconcilePendingWpayPayments({ limit: 8 })).resolves.toEqual({
+      checked: 1,
+      completed: 1,
+    });
   });
 });

@@ -1,5 +1,8 @@
 import { razorpayRequest } from '../../../../utils/payments/razorpay-client';
-import type { WpayPaymentRow } from '../repos/wpay-payment.repo';
+import {
+  dbWpayPendingOpenOrders,
+  type WpayPaymentRow,
+} from '../repos/wpay-payment.repo';
 import { fulfillWpayCapturedPayment } from './fulfill-wpay-captured-payment';
 
 export async function findCapturedRazorpayPaymentId(orderId: string): Promise<string | null> {
@@ -45,4 +48,26 @@ export async function reconcileWpayRazorpayCapture(
     console.error('[wpay-reconcile] Razorpay lookup failed', { paymentId: payment.id, error });
     return null;
   }
+}
+
+/** Same Razorpay lookup as history GET — no new completion path. */
+export async function reconcilePendingWpayPayments(options?: {
+  limit?: number;
+  vendorIds?: string[];
+  minAgeSeconds?: number;
+}): Promise<{ checked: number; completed: number }> {
+  const pending = await dbWpayPendingOpenOrders({
+    limit: options?.limit,
+    vendorIds: options?.vendorIds,
+    minAgeSeconds: options?.minAgeSeconds,
+  });
+  let completed = 0;
+  for (const row of pending) {
+    const done = await reconcileWpayRazorpayCapture(row).catch((error) => {
+      console.error('[wpay-reconcile] pending sweep failed', { paymentId: row.id, error });
+      return null;
+    });
+    if (done && String(done.payment_status).toLowerCase() === 'completed') completed += 1;
+  }
+  return { checked: pending.length, completed };
 }

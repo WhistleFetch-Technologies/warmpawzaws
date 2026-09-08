@@ -117,6 +117,7 @@ import {
 } from '../../../utils/resolve-ecommerce-commission-rate';
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
 import { reconcilePendingShopPayments } from '../../../utils/payments/shop-payment-reconciliation';
+import { reconcilePendingWpayPayments } from '../../customer/warmpawz-pay/shared/reconcile-wpay-razorpay-capture';
 import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
 import {
@@ -2035,7 +2036,11 @@ export function registerEcommerceEndpoints(app: Hono) {
   app.post('/ecommerce/process-payment-hold-expiry', async (c) => {
     try {
       const results = await expireShopPaymentHolds({ limit: 200, requestId: randomUUID() });
-      return c.json({ success: true, ...results });
+      const wpay = await reconcilePendingWpayPayments({ limit: 15 }).catch((error) => {
+        console.warn('[ecommerce] reconcilePendingWpayPayments failed:', error);
+        return { checked: 0, completed: 0 };
+      });
+      return c.json({ success: true, ...results, wpay });
     } catch (error: any) {
       console.error('[ecommerce] process-payment-hold-expiry failed:', error);
       return c.json({ error: error.message || 'Failed to expire payment holds' }, 500);

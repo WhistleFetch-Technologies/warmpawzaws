@@ -9,6 +9,7 @@ import {
 import { getPostLogoutHref, signOutCustomer } from '@/lib/session-utils';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { WpayHomePendingReconcile } from '@/components/warmpawz-pay/WpayHomePendingReconcile';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
 import { resetHomeBootstrapForPhone, ensureCustomerProfileAndPets } from '@/lib/customer-home-bootstrap';
@@ -118,6 +119,7 @@ export function CustomerApp({
 
   return (
     <CustomerBookingMessagesModalProvider phone={session.phone}>
+      <WpayHomePendingReconcile phone={session.phone} />
       <CustomerHomeWrapper
         phone={session.phone}
         isGuest={session.isGuest === true}

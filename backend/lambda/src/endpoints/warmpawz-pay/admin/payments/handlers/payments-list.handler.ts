@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { reconcilePendingWpayPayments } from '../../../../customer/warmpawz-pay/shared/reconcile-wpay-razorpay-capture';
 import {
   mapWpayAdminHandlerError,
   wpayAdminSuccessResponse,
@@ -11,6 +12,9 @@ export async function paymentsListHandler(
   deps: PaymentsAdminRouteDeps,
 ): Promise<Response> {
   try {
+    await reconcilePendingWpayPayments({ limit: 10, minAgeSeconds: 45 }).catch((error) => {
+      console.warn('[admin/warmpawz-pay/payments] reconcile failed', error);
+    });
     const query = parsePaymentsListQuery(c.req.query());
     const data = await deps.paymentsService.listPayments(query);
     return wpayAdminSuccessResponse(c, data);

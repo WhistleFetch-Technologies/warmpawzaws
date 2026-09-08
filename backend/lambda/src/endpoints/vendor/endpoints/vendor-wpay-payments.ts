@@ -2,6 +2,7 @@ import type { Hono } from 'hono';
 import { query } from '../../../database/rds-connection';
 import { resolveVendorId, resolveVendorIdsForLedger } from '../../../utils/vendor-resolve';
 import { mapWpaySettlementLedgerStatus } from '../../customer/warmpawz-pay/shared/accrue-wpay-settlement';
+import { reconcilePendingWpayPayments } from '../../customer/warmpawz-pay/shared/reconcile-wpay-razorpay-capture';
 
 const VENDOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EARNINGS_PERIOD_TZ = 'Asia/Kolkata';
@@ -96,6 +97,14 @@ export function registerVendorWpayPaymentsEndpoints(app: Hono): void {
       const vendorId = await resolveVendorId(String(paramVendorId));
       let vendorIds = await resolveVendorIdsForLedger(String(paramVendorId));
       if (vendorIds.length === 0) vendorIds = [vendorId];
+
+      await reconcilePendingWpayPayments({
+        limit: 8,
+        vendorIds,
+        minAgeSeconds: 45,
+      }).catch((error) => {
+        console.warn('[vendor/warmpawz-pay/payments] reconcile failed', error);
+      });
 
       const realizedCol = 'COALESCE(p.completed_at, s.settlement_date::timestamptz, s.created_at)';
       const periodSql =

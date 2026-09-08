@@ -67,6 +67,37 @@ export async function dbWpayPendingForCustomer(
   return result.rows as WpayPaymentRow[];
 }
 
+/** Open Pay Bill checkouts that may already be captured on Razorpay. */
+export async function dbWpayPendingOpenOrders(params?: {
+  limit?: number;
+  vendorIds?: string[];
+  minAgeSeconds?: number;
+}): Promise<WpayPaymentRow[]> {
+  const limit = Math.min(Math.max(params?.limit ?? 10, 1), 25);
+  const minAge = Math.min(Math.max(params?.minAgeSeconds ?? 45, 0), 3600);
+  const vendorIds = (params?.vendorIds || []).filter(Boolean);
+  const values: unknown[] = [limit, minAge];
+  let vendorSql = '';
+  if (vendorIds.length > 0) {
+    vendorSql = 'AND vendor_id = ANY($3::uuid[])';
+    values.push(vendorIds);
+  }
+
+  const result = await query(
+    `SELECT ${WPAY_PAYMENT_SELECT}
+     FROM payments
+     WHERE payment_source = 'warmpawz_pay'
+       AND payment_status IN ('pending', 'processing')
+       AND razorpay_order_id IS NOT NULL
+       AND created_at <= NOW() - ($2::int * INTERVAL '1 second')
+       ${vendorSql}
+     ORDER BY created_at ASC
+     LIMIT $1`,
+    values,
+  );
+  return result.rows as WpayPaymentRow[];
+}
+
 export async function dbWpayCompleteFromCapture(params: {
   paymentId: string;
   razorpayPaymentId: string;
