@@ -113,6 +113,14 @@ export function keptManagedS3Images(prev: unknown, vendorId: string): string[] {
   return normalizeImagesArray(prev).filter((u) => isManagedProductS3Image(u, vendorId));
 }
 
+/** Only evict old S3 when the persist list still contains managed keys (never while only lh3). */
+export function canEvictPreviousProductS3OnBulkSave(
+  persistImages: unknown,
+  vendorId: string,
+): boolean {
+  return keptManagedS3Images(persistImages, vendorId).length > 0;
+}
+
 /** Prefer existing S3; otherwise keep non-fragile display URLs (e.g. lh3). */
 export function keepDisplayableProductImages(prev: unknown, vendorId: string): string[] {
   const s3 = keptManagedS3Images(prev, vendorId);

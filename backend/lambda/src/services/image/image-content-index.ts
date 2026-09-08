@@ -50,7 +50,10 @@ export async function insertDedupEntry(opts: {
     await query(
       `INSERT INTO image_content_index (content_sha256, webp_key, thumb_key, byte_size)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (content_sha256) DO NOTHING`,
+       ON CONFLICT (content_sha256) DO UPDATE SET
+         webp_key = EXCLUDED.webp_key,
+         thumb_key = EXCLUDED.thumb_key,
+         byte_size = EXCLUDED.byte_size`,
       [opts.sha256, opts.webpKey, opts.thumbKey, opts.byteSize],
     );
   } catch (err: unknown) {
@@ -59,6 +62,20 @@ export async function insertDedupEntry(opts: {
       return;
     }
     console.warn('[image-content-index] insert failed:', msg);
+  }
+}
+
+export async function deleteDedupEntryByWebpKey(webpKey: string): Promise<void> {
+  const key = String(webpKey ?? '').trim();
+  if (!key) return;
+  try {
+    await query(`DELETE FROM image_content_index WHERE webp_key = $1`, [key]);
+  } catch (err: unknown) {
+    const msg = (err as Error)?.message || '';
+    if (msg.includes('image_content_index') && msg.includes('does not exist')) {
+      return;
+    }
+    console.warn('[image-content-index] delete by webp_key failed:', msg);
   }
 }
 

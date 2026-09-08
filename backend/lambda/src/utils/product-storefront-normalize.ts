@@ -14,6 +14,7 @@ import {
   readImageIngestStatus,
   resolveDisplayableProductImages,
 } from './bulk-drive-image-plan';
+import { readApprovalHold } from './product-image-approval-gate';
 
 export function parseSpecificationsObject(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
@@ -125,6 +126,8 @@ export function flattenProductForApiResponse(
   }
   const ingestStatus = readImageIngestStatus(out.metadata);
   if (ingestStatus) out.image_ingest_status = ingestStatus;
+  const approvalHold = readApprovalHold(out.metadata);
+  if (approvalHold) out.approval_hold = approvalHold;
 
   return out;
 }

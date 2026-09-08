@@ -4,6 +4,8 @@
  */
 
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { buildThumbWebpKey } from '../services/image/image-key-builder';
+import { deleteDedupEntryByWebpKey } from '../services/image/image-content-index';
 import { normalizeImagesArray } from './product-sku-resolve';
 
 export const PRODUCT_S3_PREFIX = 'products/';
@@ -80,17 +82,23 @@ export async function deleteManagedProductS3Image(
   const key = extractProductS3Key(value, vendorId);
   if (!key) return;
 
-  try {
-    await s3Client.send(
-      new DeleteObjectCommand({
-        Bucket: getProductUploadsBucket(),
-        Key: key,
-      }),
-    );
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.warn('[deleteManagedProductS3Image] failed:', msg);
+  const thumbKey = key.toLowerCase().endsWith('.webp') ? buildThumbWebpKey(key) : null;
+  const bucket = getProductUploadsBucket();
+  for (const objectKey of [key, thumbKey]) {
+    if (!objectKey) continue;
+    try {
+      await s3Client.send(
+        new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: objectKey,
+        }),
+      );
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn('[deleteManagedProductS3Image] failed:', msg);
+    }
   }
+  await deleteDedupEntryByWebpKey(key);
 }
 
 export function collectImageUrlsFromJsonb(raw: unknown): string[] {

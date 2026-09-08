@@ -3,7 +3,7 @@
  */
 
 import type { AssetType, ImageDisplayContext } from './image-types';
-import { isWebpKey } from './image-key-builder';
+import { buildThumbWebpKey, isWebpKey } from './image-key-builder';
 import { ensureWebpFromLegacy, extractRawImageKey } from './image-migrator';
 import type { ImagePersistTarget } from './image-migrator-persist';
 import { persistMigratedImageKey } from './image-migrator-persist';
@@ -64,7 +64,7 @@ function derivedListThumbKey(
   migrate: boolean | undefined,
 ): string | null {
   if (migrate === false) return null;
-  return isWebpKey(imageKey) ? thumbKeyForDisplay(imageKey, null) : null;
+  return isWebpKey(imageKey) ? buildThumbWebpKey(imageKey) : null;
 }
 
 async function resolveExternalUrl(raw: string): Promise<ResolvedImageDto | null> {

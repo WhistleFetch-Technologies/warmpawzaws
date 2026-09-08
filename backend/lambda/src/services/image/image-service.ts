@@ -20,6 +20,7 @@ import { processImageBuffer } from './image-processor';
 import { moveKeyToCleanup, putWebpObject, getUploadsBucket } from './image-repository';
 import { validateImageBuffer } from './image-validator';
 import { attachUrlsToImageDto } from './image-url-builder';
+import { resolveUploadBucketForKey } from '../../endpoints/constants/helper';
 
 export class ImageProcessingError extends Error {
   constructor(
@@ -29,6 +30,13 @@ export class ImageProcessingError extends Error {
     super(message);
     this.name = 'ImageProcessingError';
   }
+}
+
+export async function isLiveDedupObject(webpKey: string): Promise<boolean> {
+  const key = String(webpKey ?? '').trim();
+  if (!key) return false;
+  const bucket = await resolveUploadBucketForKey(key);
+  return Boolean(bucket);
 }
 
 function resolveDisplayKey(input: ImageUploadInput, suffix: string): string {
@@ -60,7 +68,7 @@ export async function uploadDisplayImage(input: ImageUploadInput): Promise<Image
 
   if (shouldDedup(assetType)) {
     const existing = await lookupDedupEntry(hash);
-    if (existing) {
+    if (existing && (await isLiveDedupObject(existing.webpKey))) {
       dedupHit = true;
       const dto = await attachUrlsToImageDto({
         imageKey: existing.webpKey,

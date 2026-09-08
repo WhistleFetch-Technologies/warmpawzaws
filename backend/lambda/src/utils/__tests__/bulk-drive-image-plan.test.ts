@@ -1,4 +1,5 @@
 import {
+  canEvictPreviousProductS3OnBulkSave,
   collectBackfillFileIds,
   filterDisplayableProductImages,
   groupDriveIngestEnqueueJobs,
@@ -95,6 +96,14 @@ describe('bulk-drive-image-plan', () => {
         image_ingest: { status: 'failed', failedFileIds: [FILE_A], pendingFileIds: [] },
       }),
     ).toEqual([`https://lh3.googleusercontent.com/d/${FILE_A}`]);
+  });
+
+  it('does not evict prior S3 while persist is still lh3-only', () => {
+    const priorS3 = `https://warmpawz-dev-uploads.s3.ap-south-1.amazonaws.com/products/${VENDOR}/old.webp`;
+    expect(canEvictPreviousProductS3OnBulkSave([`https://lh3.googleusercontent.com/d/${FILE_A}`], VENDOR)).toBe(
+      false,
+    );
+    expect(canEvictPreviousProductS3OnBulkSave([priorS3], VENDOR)).toBe(true);
   });
 
   it('strips Drive view URLs and keeps HTTP, S3, and lh3 display URLs', () => {

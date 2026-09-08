@@ -17,6 +17,8 @@ export type DriveImageIngestJobEvent = {
   remainingFileIds: string[];
   completedKeys?: string[];
   failedFileIds?: string[];
+  fileIds?: string[];
+  attempt?: number;
   hop?: number;
 };
 
@@ -123,6 +125,8 @@ export async function invokeDriveImageIngestWorker(
     remainingFileIds: event.remainingFileIds,
     completedKeys: event.completedKeys ?? [],
     failedFileIds: event.failedFileIds ?? [],
+    fileIds: event.fileIds ?? event.remainingFileIds,
+    attempt: event.attempt,
     hop,
   };
   console.log(

@@ -14,7 +14,8 @@
  */
 import http from 'http';
 import https from 'https';
-import { isManagedProductS3Image } from './product-s3-image';
+import { resolveUploadBucketForKey } from '../endpoints/constants/helper';
+import { extractProductS3Key, isManagedProductS3Image } from './product-s3-image';
 import { uploadDisplayImage } from '../services/image';
 import { validateImageBuffer } from '../services/image/image-validator';
 
@@ -108,7 +109,12 @@ export async function ingestExternalProductImageUrl(
   const url = String(rawUrl ?? '').trim();
   if (!url) return url;
   if (!/^https?:\/\//i.test(url)) return url;
-  if (isManagedProductS3Image(url)) return url;
+  if (isManagedProductS3Image(url)) {
+    const existingKey = extractProductS3Key(url, vendorId);
+    if (existingKey && (await resolveUploadBucketForKey(existingKey))) return url;
+    console.warn('[product-image-ingest] Managed S3 key is missing, keeping original URL:', url);
+    return url;
+  }
 
   try {
     const { body } = await fetchBinary(url);
@@ -128,6 +134,14 @@ export async function ingestExternalProductImageUrl(
       ownerId: vendorId,
       vendorId,
     });
+    if (!(await resolveUploadBucketForKey(asset.imageKey))) {
+      console.warn(
+        '[product-image-ingest] Uploaded key failed HeadObject, keeping original URL:',
+        url,
+        asset.imageKey,
+      );
+      return url;
+    }
     return asset.imageKey;
   } catch (e) {
     console.warn(

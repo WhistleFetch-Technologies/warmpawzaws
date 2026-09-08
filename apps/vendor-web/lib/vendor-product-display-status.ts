@@ -5,16 +5,41 @@ export type VendorProductDisplayStatus =
   | 'draft'
   | 'rejected'
   | 'inactive'
-  | 'out_of_stock';
+  | 'out_of_stock'
+  | 'photos_uploading'
+  | 'photos_retrying';
 
 export interface VendorProductStatusFields {
   status?: string | null;
   is_active?: boolean | null;
+  image_ingest_status?: string | null;
+  approval_hold?: string | null;
+}
+
+function isPendingLike(status: string): boolean {
+  return (
+    status === 'pending' ||
+    status === 'pending_approval' ||
+    status === 'submit_for_approval' ||
+    status === 'submitted' ||
+    !status
+  );
+}
+
+function imageHoldKind(
+  product: VendorProductStatusFields,
+): 'photos_uploading' | 'photos_retrying' | null {
+  const ingest = String(product.image_ingest_status ?? '').trim().toLowerCase();
+  const hold = String(product.approval_hold ?? '').trim().toLowerCase();
+  if (ingest === 'failed') return 'photos_retrying';
+  if (ingest === 'processing' || hold === 'images') return 'photos_uploading';
+  return null;
 }
 
 /**
  * Maps raw product fields to a single display status for Seller Hub.
  * - `inactive` = removed from catalog (soft delete or explicit inactive status)
+ * - `photos_uploading` / `photos_retrying` = images copying to S3; not yet in admin queue
  * - `pending` = awaiting admin approval (not the same as removed)
  */
 export function getVendorDisplayStatus(
@@ -31,14 +56,8 @@ export function getVendorDisplayStatus(
 
   if (s === 'active' && product.is_active !== false) return 'active';
 
-  if (
-    s === 'pending' ||
-    s === 'pending_approval' ||
-    s === 'submit_for_approval' ||
-    s === 'submitted' ||
-    !s
-  ) {
-    return 'pending';
+  if (isPendingLike(s)) {
+    return imageHoldKind(product) ?? 'pending';
   }
 
   if (product.is_active === false) return 'inactive';
@@ -58,6 +77,8 @@ export function getVendorDisplayStatusLabel(status: string): string {
     rejected: 'Rejected',
     inactive: 'Removed',
     out_of_stock: 'Out of stock',
+    photos_uploading: 'Uploading photos',
+    photos_retrying: 'Photos retrying',
   };
   return labels[status] ?? status.replace(/_/g, ' ');
 }

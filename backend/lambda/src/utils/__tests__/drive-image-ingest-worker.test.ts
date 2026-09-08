@@ -59,6 +59,7 @@ describe('drive-image-ingest-worker', () => {
         invokeNext,
         deleteManaged: async () => undefined,
         cleanupRemoved: async () => undefined,
+        verifyKey: async () => true,
       },
     );
     expect(result.nextHop).toBe(true);
@@ -167,8 +168,40 @@ describe('drive-image-ingest-worker', () => {
         invokeNext: jest.fn(),
         deleteManaged: async () => undefined,
         cleanupRemoved,
+        verifyKey: async () => true,
       },
     );
     expect(cleanupRemoved).toHaveBeenCalledWith([prior], [`products/${VENDOR}/new.webp`], VENDOR);
+  });
+
+  it('keeps lh3 and does not mark ready when HeadObject fails', async () => {
+    const writeImages = jest.fn().mockResolvedValue(undefined);
+    const invokeNext = jest.fn().mockResolvedValue({ invoked: true, hop: 2, capped: false });
+    const lh3 = 'https://lh3.googleusercontent.com/d/1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+    const result = await runDriveIngestHop(
+      {
+        job: 'drive-image-ingest',
+        vendorId: VENDOR,
+        productIds: ['p1'],
+        remainingFileIds: ['file1'],
+        completedKeys: [],
+        hop: 1,
+      },
+      {
+        downloadFile: async () => ({ ok: true, buffer: TINY_PNG, mime: 'image/png' }),
+        uploadKey: async () => `products/${VENDOR}/ghost.webp`,
+        loadProducts: async () => [{ id: 'p1', vendor_id: VENDOR, images: [lh3], metadata: {} }],
+        writeImages,
+        invokeNext,
+        deleteManaged: async () => undefined,
+        cleanupRemoved: async () => undefined,
+        verifyKey: async () => false,
+      },
+    );
+    expect(writeImages.mock.calls[0][0].images).toEqual([lh3]);
+    expect(writeImages.mock.calls[0][0].metadataByProduct.p1.image_ingest.status).not.toBe('ready');
+    expect(writeImages.mock.calls[0][0].metadataByProduct.p1.approval_hold).toBe('images');
+    expect(result.status).toBe('processing');
+    expect(invokeNext).toHaveBeenCalled();
   });
 });

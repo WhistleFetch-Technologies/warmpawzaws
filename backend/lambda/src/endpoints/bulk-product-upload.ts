@@ -70,8 +70,10 @@ import {
   buildImageIngestMetadata,
   groupDriveIngestEnqueueJobs,
   isDriveHostedProductImageUrl,
+  canEvictPreviousProductS3OnBulkSave,
   planBulkDriveImages,
 } from '../utils/bulk-drive-image-plan';
+import { applyImageApprovalHold } from '../utils/product-image-approval-gate';
 import { invokeDriveImageIngestBackfill, invokeDriveImageIngestWorker } from '../utils/drive-image-ingest-invoke';
 import { normalizeImagesArray } from '../utils/product-sku-resolve';
 
@@ -568,9 +570,13 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             }
           }
           if (typeof productData.metadata === 'object' && productData.metadata !== null) {
-            productData.metadata = buildImageIngestMetadata(
-              productData.metadata as Record<string, unknown>,
-              imagePlan,
+            productData.metadata = applyImageApprovalHold(
+              buildImageIngestMetadata(
+                productData.metadata as Record<string, unknown>,
+                imagePlan,
+              ),
+              parentImages,
+              vendorId,
             );
             productData.metadata = JSON.stringify(productData.metadata);
           }
@@ -593,7 +599,10 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             // Eviction: delete any of this vendor's S3 objects that were on the
             // product before this upload but are no longer referenced, so
             // replacing an image never leaves an orphaned file in the bucket.
-            if (prevParentImages.length > 0) {
+            if (
+              prevParentImages.length > 0 &&
+              canEvictPreviousProductS3OnBulkSave(parentImages, vendorId)
+            ) {
               await cleanupRemovedProductS3Images(prevParentImages, parentImages, vendorId);
             }
           } else {

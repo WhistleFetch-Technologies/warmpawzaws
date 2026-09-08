@@ -47,6 +47,10 @@ import {
 } from '../../../utils/product-sku-resolve';
 import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
 import {
+  isProductImageReady,
+  SQL_EXCLUDE_PRODUCT_IMAGE_APPROVAL_HOLD,
+} from '../../../utils/product-image-approval-gate';
+import {
   calculateBestCartPromotion,
   calculateBestCartPromotionAsync,
   discountsWithinTolerance,
@@ -2086,7 +2090,8 @@ export function registerEcommerceEndpoints(app: Hono) {
            WHERE (
              p.status IS NULL
              OR LOWER(TRIM(p.status::text)) IN ('pending', 'pending_approval', 'submit_for_approval', 'submitted')
-           )`
+           )
+           AND ${SQL_EXCLUDE_PRODUCT_IMAGE_APPROVAL_HOLD}`
         ).catch(() => ({ rows: [{ c: 0 }] })),
         query(
           `SELECT COUNT(*)::int AS c FROM orders o
@@ -2430,7 +2435,8 @@ export function registerEcommerceEndpoints(app: Hono) {
         productsQuery += ` AND (
           p.status IS NULL
           OR LOWER(TRIM(p.status::text)) IN ('pending', 'pending_approval', 'submit_for_approval', 'submitted')
-        )`;
+        )
+        AND ${SQL_EXCLUDE_PRODUCT_IMAGE_APPROVAL_HOLD}`;
       } else if (status) {
         productsQuery += ` AND p.status = $${paramIndex}`;
         params.push(status);
@@ -2468,7 +2474,10 @@ export function registerEcommerceEndpoints(app: Hono) {
         normalized.status === 'active' && normalized.is_active;
 
       if (willBeActiveStorefront) {
-        const chk = await query('SELECT category_id FROM products WHERE id = $1', [productId]);
+        const chk = await query(
+          'SELECT category_id, images, metadata, vendor_id FROM products WHERE id = $1',
+          [productId],
+        );
         if (chk.rows.length === 0) {
           return c.json({ success: false, error: 'Product not found' }, 404);
         }
@@ -2479,6 +2488,21 @@ export function registerEcommerceEndpoints(app: Hono) {
               success: false,
               error:
                 'Cannot approve: product has no catalog category (category_id). Assign a category on the product before approving.',
+            },
+            400,
+          );
+        }
+        if (
+          !isProductImageReady(
+            chk.rows[0]?.images,
+            chk.rows[0]?.metadata,
+            chk.rows[0]?.vendor_id ? String(chk.rows[0].vendor_id) : undefined,
+          )
+        ) {
+          return c.json(
+            {
+              success: false,
+              error: 'Cannot approve: product images are still uploading or failed verification.',
             },
             400,
           );
@@ -2522,7 +2546,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const pending = await query(
-        `SELECT id, category_id, name
+        `SELECT id, category_id, name, images, metadata, vendor_id
          FROM products
          WHERE vendor_id = $1
            AND (
@@ -2546,6 +2570,15 @@ export function registerEcommerceEndpoints(app: Hono) {
             id: pid,
             name: String(row.name || 'Product'),
             reason: 'missing category_id',
+          });
+          continue;
+        }
+        if (!isProductImageReady(row.images, row.metadata, vendorId)) {
+          skipped++;
+          skippedProducts.push({
+            id: pid,
+            name: String(row.name || 'Product'),
+            reason: 'images not ready',
           });
           continue;
         }

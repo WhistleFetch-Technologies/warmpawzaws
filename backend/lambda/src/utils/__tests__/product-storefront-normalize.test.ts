@@ -115,6 +115,17 @@ describe('product-storefront-normalize', () => {
     });
     expect(out.images).toEqual(['https://cdn.example.com/ok.jpg']);
     expect(out.image_ingest_status).toBe('processing');
+    expect(out.approval_hold).toBeUndefined();
+  });
+
+  it('exposes approval_hold from metadata for vendor badges', () => {
+    const out = flattenProductForApiResponse({
+      id: 'p1',
+      images: ['https://cdn.example.com/ok.jpg'],
+      metadata: { approval_hold: 'images', image_ingest: { status: 'processing' } },
+    });
+    expect(out.approval_hold).toBe('images');
+    expect(out.image_ingest_status).toBe('processing');
   });
 
   it('fills empty images from Drive ingest file ids so catalog cards show photos', () => {

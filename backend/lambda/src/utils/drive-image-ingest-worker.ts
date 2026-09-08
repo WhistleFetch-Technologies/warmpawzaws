@@ -12,11 +12,20 @@ import {
 } from './bulk-drive-image-plan';
 import { parseProductMetadata } from './product-group-identity';
 import {
+  applyImageApprovalHold,
+  MAX_IMAGE_INGEST_ATTEMPTS,
+  nextImageIngestRetryAt,
+  readImageIngestAttempt,
+  shouldRetryImageIngest,
+} from './product-image-approval-gate';
+import {
   cleanupRemovedProductS3Images,
   deleteAllManagedProductImages,
 } from './product-s3-image';
+import { resolveUploadBucketForKey } from '../endpoints/constants/helper';
 import {
   DRIVE_IMAGE_INGEST_JOB,
+  invokeDriveImageIngestBackfill,
   invokeDriveImageIngestWorker,
   isDriveIngestHopAllowed,
   nextDriveIngestBatch,
@@ -45,6 +54,7 @@ export type DriveIngestDeps = {
   invokeNext?: typeof invokeDriveImageIngestWorker;
   deleteManaged?: typeof deleteAllManagedProductImages;
   cleanupRemoved?: typeof cleanupRemovedProductS3Images;
+  verifyKey?: (key: string) => Promise<boolean>;
 };
 
 async function defaultUploadKey(vendorId: string, buffer: Buffer, mime: string): Promise<string> {
@@ -101,12 +111,27 @@ async function defaultWriteImages(args: {
 function ingestStatus(
   remaining: string[],
   completedKeys: string[],
-  failedFileIds: string[],
 ): 'processing' | 'ready' | 'failed' {
   if (remaining.length > 0) return 'processing';
   if (completedKeys.length === 0) return 'failed';
-  if (failedFileIds.length > 0 && completedKeys.length > 0) return 'ready';
-  return completedKeys.length > 0 ? 'ready' : 'failed';
+  return 'ready';
+}
+
+function uniqueIds(ids: Array<string | undefined | null>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of ids) {
+    const id = String(raw ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+async function defaultVerifyKey(key: string): Promise<boolean> {
+  if (!String(key ?? '').trim()) return false;
+  return Boolean(await resolveUploadBucketForKey(key));
 }
 
 export async function runDriveIngestHop(
@@ -123,6 +148,7 @@ export async function runDriveIngestHop(
   const invokeNext = deps.invokeNext ?? invokeDriveImageIngestWorker;
   const deleteManaged = deps.deleteManaged ?? deleteAllManagedProductImages;
   const cleanupRemoved = deps.cleanupRemoved ?? cleanupRemovedProductS3Images;
+  const verifyKey = deps.verifyKey ?? defaultVerifyKey;
 
   const products = await loadProducts(vendorId, productIds);
   if (products.length === 0) {
@@ -146,7 +172,7 @@ export async function runDriveIngestHop(
     }
     try {
       const key = await uploadKey(vendorId, downloaded.buffer, downloaded.mime);
-      if (key) {
+      if (key && (await verifyKey(key))) {
         completedKeys.push(key);
         hopCreated.push(key);
       } else {
@@ -163,7 +189,21 @@ export async function runDriveIngestHop(
     return { status: 'deleted', nextHop: false };
   }
 
-  const status = ingestStatus(rest, completedKeys, failedFileIds);
+  const canContinue = isDriveIngestHopAllowed(hop + 1);
+  const retryFailed =
+    rest.length === 0 && failedFileIds.length > 0 && canContinue;
+  const nextRemaining = rest.length > 0 ? rest : retryFailed ? uniqueIds(failedFileIds) : [];
+  const status = ingestStatus(nextRemaining, completedKeys);
+  const fileIds = uniqueIds([
+    ...(event.fileIds ?? []),
+    ...(event.remainingFileIds ?? []),
+    ...failedFileIds,
+  ]);
+  const prevAttempt = Math.max(
+    Number(event.attempt ?? 0) || 0,
+    ...products.map((p) => readImageIngestAttempt(p.metadata)),
+  );
+  const attempt = status === 'failed' ? Math.max(1, prevAttempt + 1) : prevAttempt;
   const metadataByProduct: Record<string, Record<string, unknown>> = {};
   const prevS3All: string[] = [];
   const fallbackDisplay: string[] = [];
@@ -172,16 +212,26 @@ export async function runDriveIngestHop(
     prevS3All.push(...keptManagedS3Images(p.images, vendorId));
     fallbackDisplay.push(...keepDisplayableProductImages(p.images, vendorId));
     const meta = parseProductMetadata(p.metadata);
-    metadataByProduct[String(p.id)] = {
-      ...meta,
-      image_ingest: {
-        status,
-        source: 'drive_folder',
-        folderId: event.folderId ?? null,
-        pendingFileIds: rest,
-        failedFileIds,
-      },
+    const imageIngest: Record<string, unknown> = {
+      status,
+      source: 'drive_folder',
+      folderId: event.folderId ?? null,
+      fileIds,
+      pendingFileIds: nextRemaining,
+      failedFileIds,
+      attempt,
     };
+    if (status === 'failed') {
+      imageIngest.next_retry_at = nextImageIngestRetryAt(Number(imageIngest.attempt) || 1);
+    }
+    metadataByProduct[String(p.id)] = applyImageApprovalHold(
+      {
+        ...meta,
+        image_ingest: imageIngest,
+      },
+      completedKeys.length > 0 ? completedKeys : keepDisplayableProductImages(p.images, vendorId),
+      vendorId,
+    );
   }
 
   const persistImages =
@@ -215,14 +265,16 @@ export async function runDriveIngestHop(
     await cleanupRemoved(uniquePrev, completedKeys, vendorId);
   }
 
-  if (rest.length > 0 && isDriveIngestHopAllowed(hop + 1)) {
+  if (nextRemaining.length > 0 && canContinue) {
     await invokeNext({
       vendorId,
       productIds: liveIds,
       folderId: event.folderId,
-      remainingFileIds: rest,
+      remainingFileIds: nextRemaining,
       completedKeys,
-      failedFileIds,
+      failedFileIds: rest.length > 0 ? failedFileIds : [],
+      fileIds,
+      attempt: prevAttempt,
       hop: hop + 1,
     });
     return { status: 'processing', nextHop: true };
@@ -350,4 +402,25 @@ export async function processDriveImageIngestBackfillJob(
     });
   }
   return { enqueued: jobs.length };
+}
+
+/** Fire-and-forget retry for a vendor whose catalog still has image holds. */
+export async function maybeEnqueueDueImageIngestRetries(vendorId: string): Promise<void> {
+  const vid = String(vendorId ?? '').trim();
+  if (!vid) return;
+  const { query } = await import('../database/rds-connection');
+  const r = await query(
+    `SELECT metadata
+     FROM products
+     WHERE vendor_id = $1
+       AND (
+         COALESCE(metadata->>'approval_hold', '') = 'images'
+         OR COALESCE(metadata->'image_ingest'->>'status', '') IN ('processing', 'failed')
+       )
+     LIMIT ${MAX_IMAGE_INGEST_ATTEMPTS * 4}`,
+    [vid],
+  );
+  const due = (r.rows || []).some((row) => shouldRetryImageIngest(row.metadata));
+  if (!due) return;
+  await invokeDriveImageIngestBackfill({ vendorId: vid, limit: 50 });
 }

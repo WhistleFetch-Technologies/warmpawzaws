@@ -82,6 +82,8 @@ import {
   getVariantSuggestionsForCategory,
 } from '@warmpawz/shared-types';
 import { PRODUCT_STATUS } from '../../../utils/product-status-constants';
+import { applyImageApprovalHold } from '../../../utils/product-image-approval-gate';
+import { maybeEnqueueDueImageIngestRetries } from '../../../utils/drive-image-ingest-worker';
 import {
   applyProductSubcategoryClassification,
   resolveCanonicalParentCategory,
@@ -661,6 +663,10 @@ class GetVendorProductsHandler extends BaseHandler {
         }),
       );
 
+      void maybeEnqueueDueImageIngestRetries(resolvedVendorId).catch((err) => {
+        console.warn('[VendorProducts] image ingest retry enqueue failed:', (err as Error)?.message || err);
+      });
+
       return this.success({
         products: productsOut,
         total,
@@ -886,6 +892,16 @@ class CreateVendorProductHandler extends BaseHandler {
           ...((productData.metadata as Record<string, unknown>) ?? {}),
           product_group_id: pgid,
         };
+      }
+
+      if (hasMetadataCol) {
+        productData.metadata = applyImageApprovalHold(
+          {
+            ...(((productData.metadata as Record<string, unknown> | undefined) ?? {})),
+          },
+          imagesNorm ?? productData.images,
+          resolvedVendorId,
+        );
       }
 
       // Create product
@@ -1232,11 +1248,15 @@ class UpdateVendorProductHandler extends BaseHandler {
         if (hasMetadataCol) {
           const existingMetaRows = await query('SELECT metadata FROM products WHERE id = $1', [productId]);
           const existingMetadata = existingMetaRows.rows[0]?.metadata || {};
-          updateData.metadata = {
-            ...existingMetadata,
-            ...(body.images !== undefined && { images: normalizedImages }),
-            ...(body.delivery_regions !== undefined && { delivery_regions: normalizedDelivery }),
-          };
+          updateData.metadata = applyImageApprovalHold(
+            {
+              ...existingMetadata,
+              ...(body.images !== undefined && { images: normalizedImages }),
+              ...(body.delivery_regions !== undefined && { delivery_regions: normalizedDelivery }),
+            },
+            body.images !== undefined ? normalizedImages : prevRow.images,
+            resolvedVendorId,
+          );
         } else if (body.delivery_regions !== undefined && cols.has('specifications')) {
           const specRes = await query('SELECT specifications FROM products WHERE id = $1', [productId]);
           let base: Record<string, unknown> = {};

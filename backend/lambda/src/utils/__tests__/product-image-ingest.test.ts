@@ -1,9 +1,14 @@
 import { EventEmitter } from 'events';
 
 const uploadDisplayImage = jest.fn();
+const resolveUploadBucketForKey = jest.fn();
 
 jest.mock('../../services/image', () => ({
   uploadDisplayImage: (...args: unknown[]) => uploadDisplayImage(...args),
+}));
+
+jest.mock('../../endpoints/constants/helper', () => ({
+  resolveUploadBucketForKey: (...args: unknown[]) => resolveUploadBucketForKey(...args),
 }));
 
 // 1x1 red pixel PNG — small enough to be a realistic "fetched" image body.
@@ -36,6 +41,7 @@ describe('product-image-ingest', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resolveUploadBucketForKey.mockResolvedValue('warmpawz-test-uploads');
   });
 
   it('no-ops on an already-managed S3 URL without touching the network', async () => {
@@ -132,5 +138,25 @@ describe('product-image-ingest', () => {
     const result = await ingestExternalProductImageUrl(vendorId, url);
     expect(result).toBe(imageKey);
     expect(https.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the original URL when the uploaded key fails HeadObject', async () => {
+    const url = 'https://example.com/original.png';
+    uploadDisplayImage.mockResolvedValueOnce({
+      imageKey: `products/${vendorId}/missing.webp`,
+    });
+    resolveUploadBucketForKey.mockResolvedValueOnce(null);
+
+    mockHttpsGetOnce((respond) => {
+      const res = fakeResponse({ statusCode: 200, headers: { 'content-type': 'image/png' } });
+      process.nextTick(() => {
+        respond(res);
+        res.emit('data', Buffer.from(TINY_PNG_BASE64, 'base64'));
+        res.emit('end');
+      });
+    });
+
+    const result = await ingestExternalProductImageUrl(vendorId, url);
+    expect(result).toBe(url);
   });
 });
