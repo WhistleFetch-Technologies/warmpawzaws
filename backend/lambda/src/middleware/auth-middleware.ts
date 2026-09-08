@@ -54,6 +54,9 @@ const PUBLIC_PATTERNS = [
   /^\/public\//,
   // Allyticas ingest: allow guests; handler optionally parses JWT for server actor_id
   /^\/analytics\/v1\/events$/,
+  // Razorpay server-to-server webhook — HMAC is the auth boundary (no Warmpawz JWT).
+  // Canonical WPay route only. Do not expose /payments/razorpay/webhook or /razorpay/*.
+  /^\/razorpay\/webhook\/?$/,
 ];
 
 /**

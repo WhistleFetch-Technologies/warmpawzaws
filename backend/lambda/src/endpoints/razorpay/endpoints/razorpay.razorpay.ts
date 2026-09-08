@@ -70,6 +70,13 @@ import {
   finalizeCapturedPayment,
   recordRazorpayWebhookEvent,
 } from '../../../utils/payments/finalize-captured-payment';
+import {
+  getRawWebhookBody,
+  getRazorpayWebhookSignature,
+  parseRazorpayWebhookJson,
+  verifyRazorpayWebhookRawSignature,
+  webhookCorrelation,
+} from '../../../utils/payments/razorpay-webhook-hmac';
 import { ensurePostPaymentLifecycleNotifications } from '../../../utils/payment-lifecycle-notifications';
 import { notifyBookingCreatedIfNeeded } from '../../../utils/notification-idempotency';
 import { isHoldExpiryCancelReason } from '../../../utils/payments/payment-attempt';
@@ -1831,11 +1838,23 @@ class VerifyPaymentHandler extends BaseHandler {
   }
 }
 
-class RazorpayWebhookHandler extends BaseHandler {
+export class RazorpayWebhookHandler extends BaseHandler {
+  /**
+   * execute() always parseBody()s first. Invalid JSON must not 500 before HMAC.
+   */
+  protected parseBody(event: any): any {
+    try {
+      return super.parseBody(event);
+    } catch {
+      return {};
+    }
+  }
+
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const body = this.parseBody(context.event);
     const headers = this.getHeaders(context.event);
-    const webhookSignature = headers['x-razorpay-signature'];
+    const rawBody = getRawWebhookBody(context.event as { body?: string | null; isBase64Encoded?: boolean });
+    const webhookSignature = getRazorpayWebhookSignature(headers);
+    const eventIdHeader = headers['x-razorpay-event-id'] || headers['X-Razorpay-Event-Id'];
 
     let config;
     try {
@@ -1853,26 +1872,50 @@ class RazorpayWebhookHandler extends BaseHandler {
       return this.error('Razorpay not configured. Please configure in Platform Settings.', 400);
     }
 
-    // ✅ Verify webhook signature
-    const payload = JSON.stringify(body);
-    const expectedSignature = createHmac('sha256', config.webhookSecret)
-      .update(payload)
-      .digest('hex');
-
-    if (webhookSignature !== expectedSignature) {
-      return this.error('Invalid webhook signature', 401);
+    const hmac = verifyRazorpayWebhookRawSignature(rawBody, webhookSignature, config.webhookSecret);
+    if (!hmac.ok) {
+      console.warn('[RAZORPAY-WEBHOOK] signature rejected', {
+        reason: hmac.reason,
+        eventIdHeader: eventIdHeader || null,
+      });
+      return this.error(
+        hmac.reason === 'missing_signature' ? 'Missing webhook signature' : 'Invalid webhook signature',
+        401
+      );
     }
 
+    const parsed = parseRazorpayWebhookJson(rawBody);
+    if (!parsed.ok) {
+      console.warn('[RAZORPAY-WEBHOOK] malformed JSON after valid HMAC', {
+        eventIdHeader: eventIdHeader || null,
+      });
+      return this.error('Invalid JSON in webhook body', 400);
+    }
+
+    const body = parsed.body as any;
     const event = body.event;
     const payload_data = body.payload;
+    const correlation = webhookCorrelation(parsed.body);
+    console.log('[RAZORPAY-WEBHOOK] accepted', {
+      eventId: correlation.eventId || eventIdHeader || null,
+      eventType: correlation.eventType,
+      razorpayPaymentId: correlation.razorpayPaymentId,
+      razorpayOrderId: correlation.razorpayOrderId,
+    });
 
     // Handle different event types
     if (event === 'payment.captured') {
-      const paymentEntity = payload_data.payment.entity;
+      const paymentEntity = payload_data?.payment?.entity;
+      if (!paymentEntity?.id && !paymentEntity?.order_id) {
+        console.warn('[RAZORPAY-WEBHOOK] payment.captured missing payment id', {
+          eventId: correlation.eventId || eventIdHeader || null,
+        });
+        return this.error('Missing payment ID', 400);
+      }
       const razorpayPaymentId = paymentEntity.id;
       const razorpayOrderId = paymentEntity.order_id;
       const webhookEventId =
-        body.id || `payment.captured_${razorpayPaymentId || razorpayOrderId || ''}`;
+        body.id || eventIdHeader || `payment.captured_${razorpayPaymentId || razorpayOrderId || ''}`;
 
       let paymentRecord: any = null;
       let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null =
@@ -1930,6 +1973,14 @@ class RazorpayWebhookHandler extends BaseHandler {
           'payment.captured',
           fin.paymentId
         );
+        console.log('[RAZORPAY-WEBHOOK] payment.captured finalized', {
+          eventId: String(webhookEventId),
+          eventType: 'payment.captured',
+          razorpayPaymentId,
+          razorpayOrderId,
+          paymentId: fin.paymentId || null,
+          outcome: fin.outcome,
+        });
         if (fin.outcome === 'fulfilled' && fin.entityType === 'booking' && fin.entityId) {
           bookingStatusChange = {
             bookingId: String(fin.entityId),
@@ -2478,9 +2529,8 @@ export function registerRazorpayEndpoints(app: Hono) {
   });
 
   app.post('/razorpay/webhook', async (c) => {
-    // ✅ FIX: Parse body from Hono context FIRST
-    const requestBody = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEventWithBody(c.req, requestBody);
+    const rawBody = await c.req.text();
+    const event = createWebhookApiGatewayEvent(c.req, rawBody);
     const context = createLambdaContext();
     const result = await webhookHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -2721,6 +2771,34 @@ function createApiGatewayEventWithBody(req: any, parsedBody: any): any {
     body: parsedBody ? JSON.stringify(parsedBody) : null,
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
+    requestContext: {
+      requestId: randomUUID(),
+    },
+  };
+}
+
+/** Webhook HMAC must use the exact raw HTTP body — do not JSON.parse then JSON.stringify. */
+function createWebhookApiGatewayEvent(req: any, rawBody: string): any {
+  const signature =
+    (typeof req.header === 'function'
+      ? req.header('x-razorpay-signature') || req.header('X-Razorpay-Signature')
+      : undefined) || undefined;
+  const eventIdHeader =
+    (typeof req.header === 'function'
+      ? req.header('x-razorpay-event-id') || req.header('X-Razorpay-Event-Id')
+      : undefined) || undefined;
+  const headers: Record<string, string> = {};
+  if (signature) headers['x-razorpay-signature'] = String(signature);
+  if (eventIdHeader) headers['x-razorpay-event-id'] = String(eventIdHeader);
+  const url = typeof req.url === 'string' ? req.url : 'https://api.warmpawz.com/razorpay/webhook';
+  return {
+    httpMethod: req.method,
+    path: typeof req.path === 'string' ? req.path : '/razorpay/webhook',
+    headers,
+    body: rawBody,
+    isBase64Encoded: false,
+    pathParameters: typeof req.param === 'function' ? req.param() || {} : {},
+    queryStringParameters: Object.fromEntries(new URL(url, 'https://api.warmpawz.com').searchParams),
     requestContext: {
       requestId: randomUUID(),
     },

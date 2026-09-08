@@ -35,4 +35,18 @@ describe('isPublicEndpoint', () => {
     expect(isPublicEndpoint('/customer/banners', 'GET')).toBe(true);
     expect(isPublicEndpoint('/customer/banners/resolve-cta', 'GET')).toBe(true);
   });
+
+  it('allows the canonical Razorpay webhook without a Warmpawz JWT', () => {
+    expect(isPublicEndpoint('/razorpay/webhook', 'POST')).toBe(true);
+    expect(isPublicEndpoint('/razorpay/webhook/', 'POST')).toBe(true);
+  });
+
+  it('keeps other Razorpay and payment routes protected', () => {
+    expect(isPublicEndpoint('/payments/razorpay/webhook', 'POST')).toBe(false);
+    expect(isPublicEndpoint('/razorpay/verify-payment', 'POST')).toBe(false);
+    expect(isPublicEndpoint('/razorpay/create-order', 'POST')).toBe(false);
+    expect(isPublicEndpoint('/customer/warmpawz-pay/initiate', 'POST')).toBe(false);
+    expect(isPublicEndpoint('/customer/profile', 'GET')).toBe(false);
+    expect(isPublicEndpoint('/admin/payments', 'GET')).toBe(false);
+  });
 });
