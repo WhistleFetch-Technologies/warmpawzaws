@@ -301,9 +301,13 @@ export function BulkProductUpload({
       // Only push rows that passed server-side validation — falls back to raw
       // parsedProducts if for some reason validProducts wasn't populated.
       const productsToUpload = validProducts.length > 0 ? validProducts : parsedProducts;
-      const result = await vendorApiClient.post<{ results?: UploadResult }>(`/vendor/${vendorId}/products/bulk/upload`, {
-        products: productsToUpload,
-      });
+      const result = await vendorApiClient.post<{ results?: UploadResult }>(
+        `/vendor/${vendorId}/products/bulk/upload`,
+        {
+          products: productsToUpload,
+        },
+        { timeoutMs: 55000 },
+      );
 
       setUploadResult(result.results || null);
       setStep('result');

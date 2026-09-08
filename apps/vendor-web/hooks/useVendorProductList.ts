@@ -125,7 +125,7 @@ export function useVendorProductList({
           category,
           serverStatus,
         });
-        const data = await apiClient.get<VendorProductListResponse>(path);
+        const data = await apiClient.get<VendorProductListResponse>(path, { timeoutMs: 55000 });
 
         if (requestId !== requestIdRef.current) return;
 
@@ -134,6 +134,7 @@ export function useVendorProductList({
         const safeTotal = Number.isFinite(apiTotal) ? apiTotal : batch.length;
 
         setTotal(safeTotal);
+        setError(null);
 
         if (append) {
           setProducts((prev) => dedupeAppend(prev, batch));
@@ -146,10 +147,6 @@ export function useVendorProductList({
         if (requestId !== requestIdRef.current) return;
         console.error('Error loading vendor products:', err);
         setError(err instanceof Error ? err.message : 'Failed to load products');
-        if (!append) {
-          setProducts([]);
-          setTotal(0);
-        }
       } finally {
         if (requestId === requestIdRef.current) {
           setLoading(false);

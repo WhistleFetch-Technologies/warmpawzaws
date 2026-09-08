@@ -183,7 +183,7 @@ export class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {},
+    options: RequestInit & { timeoutMs?: number } = {},
     isRetry: boolean = false,
   ): Promise<T> {
     // Re-resolve base URL at call time so deploy-time runtime config always wins,
@@ -225,15 +225,15 @@ export class ApiClient {
       headers['X-UAT-Mode'] = 'true';
     }
     
-    // ✅ FIX: Add timeout to prevent requests from hanging indefinitely (30 seconds)
-    const REQUEST_TIMEOUT_MS = 30000;
+    const { timeoutMs: requestTimeoutMs, ...fetchOptions } = options;
+    const REQUEST_TIMEOUT_MS = requestTimeoutMs ?? 30000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     
     let response: Response;
     try {
       response = await fetch(url, {
-        ...options,
+        ...fetchOptions,
         headers,
         signal: controller.signal,
       });
@@ -433,8 +433,8 @@ export class ApiClient {
     return response.blob();
   }
 
-  async get<T>(endpoint: string): Promise<T> {
-    return this.request<T>(endpoint, { method: 'GET' });
+  async get<T>(endpoint: string, config?: { timeoutMs?: number }): Promise<T> {
+    return this.request<T>(endpoint, { method: 'GET', timeoutMs: config?.timeoutMs });
   }
 
   async post<T>(endpoint: string, data?: any, _config?: unknown): Promise<T> {
@@ -511,6 +511,9 @@ export class ApiClient {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
+      timeoutMs: typeof _config === 'object' && _config && 'timeoutMs' in _config
+        ? Number((_config as { timeoutMs?: number }).timeoutMs)
+        : undefined,
     });
   }
 

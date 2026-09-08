@@ -114,22 +114,104 @@ fs.writeFileSync(
 );
 console.log('Build manifest:', JSON.stringify(buildManifest));
 
-function zipWithPowerShell(sourcePattern, destinationPath, literalPath) {
-  const useLiteral = Boolean(literalPath);
-  const literalFlag = useLiteral ? '-LiteralPath' : '-Path';
-  const source = useLiteral ? literalPath : sourcePattern;
+/**
+ * Zip packaging: prefer `tar -a` (Windows bsdtar / libarchive) over PowerShell
+ * Compress-Archive, which fails on long nested paths (e.g. @grpc under firebase-admin).
+ * Falls back to `zip`, then Compress-Archive. Artifact layout unchanged for Lambda.
+ */
+function commandExists(cmd) {
+  try {
+    execSync(process.platform === 'win32' ? `where ${cmd}` : `command -v ${cmd}`, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function zipWithTar(cwd, destinationPath, entries) {
+  const dest = path.resolve(destinationPath);
+  if (fs.existsSync(dest)) fs.unlinkSync(dest);
+  const entryArgs = entries.map((e) => `"${e}"`).join(' ');
+  execSync(`tar -a -cf "${dest}" ${entryArgs}`, {
+    cwd,
+    stdio: 'inherit',
+    shell: true,
+  });
+}
+
+function zipWithZipCli(cwd, destinationPath, entries) {
+  const dest = path.resolve(destinationPath);
+  if (fs.existsSync(dest)) fs.unlinkSync(dest);
+  const entryArgs = entries.map((e) => `"${e}"`).join(' ');
+  execSync(`zip -r "${dest}" ${entryArgs}`, {
+    cwd,
+    stdio: 'inherit',
+    shell: true,
+  });
+}
+
+function zipWithPowerShell(sourcePath, destinationPath) {
+  const dest = path.resolve(destinationPath);
+  if (fs.existsSync(dest)) fs.unlinkSync(dest);
+  const src = String(sourcePath).replace(/'/g, "''");
+  const dst = dest.replace(/'/g, "''");
   execSync(
-    `powershell -Command "Compress-Archive ${literalFlag} '${String(source).replace(/'/g, "''")}' -DestinationPath '${destinationPath.replace(/'/g, "''")}' -Force"`,
+    `powershell -NoProfile -Command "Compress-Archive -LiteralPath '${src}' -DestinationPath '${dst}' -Force"`,
     { stdio: 'inherit' }
   );
 }
 
+function createZipFromDir(sourceDir, destinationPath) {
+  const entries = fs.readdirSync(sourceDir);
+  if (entries.length === 0) {
+    throw new Error(`Nothing to zip in ${sourceDir}`);
+  }
+  if (commandExists('tar')) {
+    console.log('  using tar -a (avoids Windows Compress-Archive path limits)');
+    zipWithTar(sourceDir, destinationPath, entries);
+    return;
+  }
+  if (commandExists('zip')) {
+    console.log('  using zip CLI');
+    zipWithZipCli(sourceDir, destinationPath, entries);
+    return;
+  }
+  console.log('  using PowerShell Compress-Archive (fallback)');
+  // -Path (not -LiteralPath) so wildcards expand; may fail on long paths.
+  const dest = path.resolve(destinationPath).replace(/'/g, "''");
+  const src = path.join(sourceDir, '*').replace(/'/g, "''");
+  if (fs.existsSync(path.resolve(destinationPath))) {
+    fs.unlinkSync(path.resolve(destinationPath));
+  }
+  execSync(
+    `powershell -NoProfile -Command "Compress-Archive -Path '${src}' -DestinationPath '${dest}' -Force"`,
+    { stdio: 'inherit' }
+  );
+}
+
+function createZipFromFile(filePath, destinationPath) {
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  if (commandExists('tar')) {
+    zipWithTar(dir, destinationPath, [base]);
+    return;
+  }
+  if (commandExists('zip')) {
+    zipWithZipCli(dir, destinationPath, [base]);
+    return;
+  }
+  zipWithPowerShell(filePath, destinationPath);
+}
+
 console.log('Creating api-handler.zip...');
-zipWithPowerShell(`${distDir}\\*`, apiZipPath);
+createZipFromDir(distDir, apiZipPath);
 
 if (fs.existsSync(loyaltyHandlerPath)) {
   console.log('Creating loyalty-consumer.zip...');
-  zipWithPowerShell(loyaltyHandlerPath, loyaltyZipPath, loyaltyHandlerPath);
+  createZipFromFile(loyaltyHandlerPath, loyaltyZipPath);
 }
 
 console.log('Lambda packaging complete.');

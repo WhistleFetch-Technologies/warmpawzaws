@@ -637,24 +637,16 @@ class GetVendorProductsHandler extends BaseHandler {
         rows.map(async (row: Record<string, unknown>) => {
           const base = await presignProductRowForDisplay(row, 'list');
           const pid = String(base.id ?? '');
-          let skus = skuMap.get(pid) ?? [];
-          const meta =
-            base.metadata && typeof base.metadata === 'object'
-              ? (base.metadata as Record<string, unknown>)
-              : null;
-          const legacyVariants =
-            meta && Array.isArray(meta.variants) ? (meta.variants as unknown[]) : null;
-          if (skus.length > 0 && legacyVariants) {
-            skus = mergeLegacyVariantImagesIntoSkus(skus, legacyVariants);
-          }
-          const skusPresigned = await presignProductSkusForDisplay(
-            skus.map((s) => ({
-              ...s,
-              images: normalizeImagesArray(s.images),
-            })) as Record<string, unknown>[],
-            'list',
-          );
-          base.skus = skusPresigned;
+          const skus = skuMap.get(pid) ?? [];
+          // Catalog cards only need parent thumb + stock. Skip SKU image HeadObject/presign.
+          base.skus = skus.map((s) => ({
+            id: s.id,
+            sku: s.sku,
+            stock: s.stock,
+            option_values: s.option_values,
+            price: s.price,
+            is_active: s.is_active,
+          }));
           base.has_variants = skus.length > 0;
           if (skus.length > 0) {
             base.stock = aggregateParentStock(skus);

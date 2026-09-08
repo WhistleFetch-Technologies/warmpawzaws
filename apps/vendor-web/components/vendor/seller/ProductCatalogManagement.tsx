@@ -68,6 +68,7 @@ interface Product {
   emoji?: string;
   is_active: boolean;
   image_ingest_status?: string | null;
+  approval_hold?: string | null;
 }
 
 function toServerStatus(selectedStatus: string): VendorProductServerStatus | undefined {
@@ -124,6 +125,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     total,
     loading,
     loadingMore,
+    error,
     hasMore,
     loadMore,
     refresh,
@@ -359,6 +361,8 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
       rejected: 'bg-red-100 text-red-700 border-red-200',
       inactive: 'bg-slate-200 text-slate-600 border-slate-300',
       out_of_stock: 'bg-orange-100 text-orange-700 border-orange-200',
+      photos_uploading: 'bg-sky-100 text-sky-700 border-sky-200',
+      photos_retrying: 'bg-orange-100 text-orange-800 border-orange-200',
     };
 
     const label = getVendorDisplayStatusLabel(status);
@@ -422,6 +426,20 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           Bulk Upload
         </button>
       </div>
+
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-800">
+          <p className="font-semibold">Could not load products</p>
+          <p className="mt-1 text-sm">{error}</p>
+          <button
+            type="button"
+            onClick={() => void handleRefresh()}
+            className="mt-3 text-sm font-semibold text-red-700 underline"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-lg shadow-slate-100/50 space-y-4">
@@ -536,15 +554,19 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           <div className="w-20 h-20 bg-gradient-to-br from-orange-100 to-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <Package className="w-10 h-10 text-orange-500" />
           </div>
-          <h3 className="text-xl font-semibold text-slate-900">No products found</h3>
+          <h3 className="text-xl font-semibold text-slate-900">
+            {error ? 'Products could not be loaded' : 'No products found'}
+          </h3>
           <p className="text-slate-500 mt-2 max-w-md mx-auto">
-            {total === 0
-              ? 'Start building your catalog by adding your first product.'
-              : selectedStatus === 'inactive'
-                ? 'No removed products. Items with past orders are archived here after you delete them.'
-                : 'Try adjusting your filters to find what you\'re looking for.'}
+            {error
+              ? 'The catalog request timed out or failed. Your products may still be saved — tap Try again.'
+              : total === 0
+                ? 'Start building your catalog by adding your first product.'
+                : selectedStatus === 'inactive'
+                  ? 'No removed products. Items with past orders are archived here after you delete them.'
+                  : 'Try adjusting your filters to find what you\'re looking for.'}
           </p>
-          {total === 0 && !loading && (
+          {total === 0 && !loading && !error && (
             <button
               onClick={() => setShowAddModal(true)}
               className="mt-6 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg shadow-orange-500/25 hover:shadow-xl transition-all"
@@ -782,9 +804,9 @@ function ProductCard({
           <span>{product.emoji || DEFAULT_PRODUCT_EMOJI}</span>
         )}
         <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
-          {product.image_ingest_status === 'processing' && (
+          {(displayStatus === 'photos_uploading' || displayStatus === 'photos_retrying') && (
             <span className="px-2 py-0.5 rounded-md bg-slate-700 text-white text-[10px] font-bold">
-              Photos processing
+              {getVendorDisplayStatusLabel(displayStatus)}
             </span>
           )}
           {pricing.discountPercent > 0 && (
