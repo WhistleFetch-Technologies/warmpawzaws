@@ -95,7 +95,7 @@ export const BYTE_BUDGETS: Record<
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MAX_IMAGE_DIMENSION = 20_000;
 
-export const PRODUCT_MAX_IMAGES = 8;
+export const PRODUCT_MAX_IMAGES = 15;
 export const FACILITY_MAX_PHOTOS = 20;
 
 /** Dedup applies only to these asset types (never cross-user profile reuse). */

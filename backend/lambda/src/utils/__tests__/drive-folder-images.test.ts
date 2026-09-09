@@ -22,7 +22,7 @@ describe('drive-folder-images parsing', () => {
 
   it('sorts by filename then caps at PRODUCT_MAX_IMAGES without error', () => {
     const entries: DriveFolderEntry[] = [];
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= PRODUCT_MAX_IMAGES + 5; i++) {
       const n = String(i).padStart(2, '0');
       entries.push({
         fileId: `1FileIdPadToTwentyChars${n}XXXX`,
@@ -33,7 +33,9 @@ describe('drive-folder-images parsing', () => {
     expect(truncated).toBe(true);
     expect(kept).toHaveLength(PRODUCT_MAX_IMAGES);
     expect(kept[0].filename).toBe('img-01.webp');
-    expect(kept[7].filename).toBe('img-08.webp');
+    expect(kept[PRODUCT_MAX_IMAGES - 1].filename).toBe(
+      `img-${String(PRODUCT_MAX_IMAGES).padStart(2, '0')}.webp`,
+    );
   });
 
   it('matches image extensions case-insensitively', () => {
