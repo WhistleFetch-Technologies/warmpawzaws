@@ -24,7 +24,8 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
-import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import { isSlotPastInIst } from '@/lib/available-slots-response';
+import { addIstCalendarDays, generateBookingDates } from '@/lib/wappt-booking-time';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
@@ -789,23 +790,7 @@ export function BoardingBookingRouter({
   const sittingSameDay = isPetSitting && !sittingMultiNight;
   const sameDayTimedSession = sittingSameDay || swimmingSameDay;
 
-  const generateDates = () => {
-    const dates = [];
-    const today = new Date();
-    for (let i = 0; i < 14; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      dates.push({
-        date: formatLocalDateYYYYMMDD(date),
-        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
-        dayNum: date.getDate(),
-        month: date.toLocaleDateString('en-US', { month: 'short' }),
-      });
-    }
-    return dates;
-  };
-
-  const [dates] = useState(generateDates());
+  const [dates] = useState(() => generateBookingDates(14));
 
   const formatTime12Hour = (time24: string) => {
     if (!time24) return '';
@@ -817,20 +802,6 @@ export function BoardingBookingRouter({
     if (hour === 12) return `12:${minute} PM`;
     if (hour < 12) return `${hour}:${minute} AM`;
     return `${hour - 12}:${minute} PM`;
-  };
-
-  const getIstNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const toDateKey = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-  const isTodayInIst = (dateStr: string) => {
-    if (!dateStr) return false;
-    return dateStr === toDateKey(getIstNow());
-  };
-
-  const getCurrentIstMinutes = () => {
-    const now = getIstNow();
-    return now.getHours() * 60 + now.getMinutes();
   };
 
   const SLOT_INTERVAL_MINUTES = 30;
@@ -965,9 +936,7 @@ export function BoardingBookingRouter({
   useEffect(() => {
     if (step !== 'datetime' || !isPetSitting || sittingSameDay || !checkInDate) return;
     if (checkOutDate && checkOutDate > checkInDate) return;
-    const next = new Date(checkInDate);
-    next.setDate(next.getDate() + 1);
-    setCheckOutDate(formatLocalDateYYYYMMDD(next));
+    setCheckOutDate(addIstCalendarDays(checkInDate, 1));
   }, [step, isPetSitting, sittingSameDay, checkInDate, checkOutDate]);
 
   /** Same-day visits: checkout stays on the selected calendar day; duration comes from start/end time. */
@@ -2183,10 +2152,7 @@ export function BoardingBookingRouter({
                       <label className="mb-2 block text-xs font-medium text-gray-600">Start time</label>
                       <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
                         {allHalfHourSlots.map((slotTime) => {
-                          const [h, m] = slotTime.split(':').map(Number);
-                          const slotMinutes = h * 60 + m;
-                          const istNowMinutes = getCurrentIstMinutes();
-                          const isPastIst = isTodayInIst(checkInDate) && slotMinutes < istNowMinutes;
+                          const isPastIst = isSlotPastInIst(checkInDate, slotTime);
                           const isSelected = checkInTime === slotTime;
                           return (
                             <button
@@ -2286,9 +2252,7 @@ export function BoardingBookingRouter({
                             !sittingSameDay &&
                             (!checkOutDate || new Date(d.date) >= new Date(checkOutDate))
                           ) {
-                            const nextDay = new Date(d.date);
-                            nextDay.setDate(nextDay.getDate() + 1);
-                            setCheckOutDate(formatLocalDateYYYYMMDD(nextDay));
+                            setCheckOutDate(addIstCalendarDays(d.date, 1));
                           }
                         }}
                         className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
@@ -2350,10 +2314,7 @@ export function BoardingBookingRouter({
                       <label className="mb-2 block text-xs font-medium text-gray-600">Check-in time</label>
                       <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
                         {allHalfHourSlots.map((slotTime) => {
-                          const [h, m] = slotTime.split(':').map(Number);
-                          const slotMinutes = h * 60 + m;
-                          const istNowMinutes = getCurrentIstMinutes();
-                          const isPastIst = isTodayInIst(checkInDate) && slotMinutes < istNowMinutes;
+                          const isPastIst = isSlotPastInIst(checkInDate, slotTime);
                           const isSelected = checkInTime === slotTime;
                           return (
                             <button

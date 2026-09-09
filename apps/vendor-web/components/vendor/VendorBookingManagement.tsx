@@ -11,6 +11,7 @@ import {
 import {
   fetchVendorEarningsSummary,
   resolveSessionVendorIdForEarnings,
+  schedulePeriodToEarningsApiPeriod,
 } from '@/lib/load-vendor-earnings-summary';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import {
@@ -555,7 +556,7 @@ export function VendorBookingManagement({
     if (activeTab === 'earnings') {
       loadEarningsData(true);
     }
-  }, [activeTab, vendorId, vendorData?.id]);
+  }, [activeTab, vendorId, vendorData?.id, schedulePeriod]);
   
   // Load payouts data when payouts tab is active
   useEffect(() => {
@@ -798,7 +799,10 @@ export function VendorBookingManagement({
     try {
       setEarningsLoading(true);
       setEarningsError(null);
-      const summary = await fetchVendorEarningsSummary(sessionId, { forceProfileRefresh });
+      const summary = await fetchVendorEarningsSummary(sessionId, {
+        forceProfileRefresh,
+        listPeriod: schedulePeriodToEarningsApiPeriod(schedulePeriod),
+      });
       const ledgerVendorId = summary.ledgerVendorId;
 
       console.log('💰 [VENDOR-UI] Earnings loaded (ledger)', ledgerVendorId, {
@@ -1852,25 +1856,49 @@ export function VendorBookingManagement({
                 {/* Earnings Summary */}
                 <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
                   <div className="grid grid-cols-3 gap-3 mb-3">
-                    <div className="bg-white p-3 rounded-lg text-center">
+                    <button
+                      type="button"
+                      onClick={() => setSchedulePeriod('today')}
+                      className={`p-3 rounded-lg text-center border ${
+                        schedulePeriod === 'today'
+                          ? 'bg-white border-[#FF8C42] ring-2 ring-[#FF8C42]/30'
+                          : 'bg-white/80 border-transparent'
+                      }`}
+                    >
                       <div className="text-2xl font-bold text-green-600">
                         ₹{(earningsData?.today || 0).toLocaleString('en-IN')}
                       </div>
                       <div className="text-xs text-gray-600">Today</div>
                       <div className="text-[10px] text-gray-500 mt-1 leading-tight">Credited today</div>
-                    </div>
-                    <div className="bg-white p-3 rounded-lg text-center">
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSchedulePeriod('week')}
+                      className={`p-3 rounded-lg text-center border ${
+                        schedulePeriod === 'week'
+                          ? 'bg-white border-[#FF8C42] ring-2 ring-[#FF8C42]/30'
+                          : 'bg-white/80 border-transparent'
+                      }`}
+                    >
                       <div className="text-2xl font-bold text-green-600">
                         ₹{(earningsData?.thisWeek || 0).toLocaleString('en-IN')}
                       </div>
                       <div className="text-xs text-gray-600">This Week</div>
-                    </div>
-                    <div className="bg-white p-3 rounded-lg text-center">
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSchedulePeriod('month')}
+                      className={`p-3 rounded-lg text-center border ${
+                        schedulePeriod === 'month'
+                          ? 'bg-white border-[#FF8C42] ring-2 ring-[#FF8C42]/30'
+                          : 'bg-white/80 border-transparent'
+                      }`}
+                    >
                       <div className="text-2xl font-bold text-green-600">
                         ₹{(earningsData?.thisMonth || 0).toLocaleString('en-IN')}
                       </div>
                       <div className="text-xs text-gray-600">This Month</div>
-                    </div>
+                    </button>
                   </div>
                   <div className="bg-white p-3 rounded-lg">
                     <div className="flex items-center justify-between mb-1">
@@ -1892,6 +1920,11 @@ export function VendorBookingManagement({
                 <div className="p-4">
                   <h3 className="font-semibold text-gray-900 mb-1">Recent Transactions</h3>
                   <p className="text-xs text-gray-500 mb-3">
+                    {schedulePeriod === 'today'
+                      ? 'Credited today (IST).'
+                      : schedulePeriod === 'week'
+                        ? 'Credited this week (IST).'
+                        : 'Credited this month (IST).'}{' '}
                     Amount payable to you, customer, status, and payment time.
                   </p>
                   {(!earningsData?.transactions || earningsData.transactions.length === 0) ? (

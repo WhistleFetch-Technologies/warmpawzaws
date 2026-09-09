@@ -152,6 +152,23 @@ function mapTransactionsFromEarningsApi(txSource: unknown[]): VendorEarningsTran
   });
 }
 
+export type VendorEarningsListPeriod = 'day' | 'week' | 'month';
+
+/** Bookings → Earnings Schedule toggle maps onto GET /vendor/:id/earnings period. */
+export function schedulePeriodToEarningsApiPeriod(
+  period: 'today' | 'week' | 'month'
+): VendorEarningsListPeriod {
+  return period === 'today' ? 'day' : period;
+}
+
+export function pickEarningsTransactionsForPeriod(
+  byPeriod: Record<VendorEarningsListPeriod | 'lifetime', unknown[]>,
+  listPeriod: VendorEarningsListPeriod
+): unknown[] {
+  const selected = byPeriod[listPeriod];
+  return Array.isArray(selected) ? selected : [];
+}
+
 async function fetchEarningsPeriod(
   vendorId: string,
   period: string
@@ -173,7 +190,7 @@ export function resolveSessionVendorIdForEarnings(
 
 export async function fetchVendorEarningsSummary(
   sessionVendorId: string,
-  options?: { forceProfileRefresh?: boolean }
+  options?: { forceProfileRefresh?: boolean; listPeriod?: VendorEarningsListPeriod }
 ): Promise<VendorEarningsSummary> {
   if (options?.forceProfileRefresh) {
     clearLedgerVendorIdCache();
@@ -205,12 +222,23 @@ export async function fetchVendorEarningsSummary(
   }
 
   const lifetime = pickEarnings(lifetimeRes);
+  const day = pickEarnings(todayRes);
   const week = pickEarnings(weekRes);
   const month = pickEarnings(monthRes);
 
-  const txFromLifetime = Array.isArray(lifetime.transactions) ? lifetime.transactions : [];
-  const txFromMonth = Array.isArray(month.transactions) ? month.transactions : [];
-  const txSource = txFromLifetime.length > 0 ? txFromLifetime : txFromMonth;
+  const byPeriod = {
+    day: Array.isArray(day.transactions) ? day.transactions : [],
+    week: Array.isArray(week.transactions) ? week.transactions : [],
+    month: Array.isArray(month.transactions) ? month.transactions : [],
+    lifetime: Array.isArray(lifetime.transactions) ? lifetime.transactions : [],
+  };
+  const txFromLifetime = byPeriod.lifetime;
+  const txFromMonth = byPeriod.month;
+  const txSource = options?.listPeriod
+    ? pickEarningsTransactionsForPeriod(byPeriod, options.listPeriod)
+    : txFromLifetime.length > 0
+      ? txFromLifetime
+      : txFromMonth;
 
   const dailyFromApi = week.dailyBreakdown || week.dailyEarnings;
   let dailyTrend: Array<{ day: string; amount: number }>;

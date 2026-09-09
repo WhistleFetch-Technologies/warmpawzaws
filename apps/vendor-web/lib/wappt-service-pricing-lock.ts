@@ -21,3 +21,8 @@ export function canVendorEditServicePrice(serviceStyle?: string | null): boolean
 export function shouldHideVendorServicePrice(serviceStyle?: string | null): boolean {
   return !canVendorEditServicePrice(serviceStyle);
 }
+
+/** Vendor service promotions are platform-owned while Warmpawz Pay + Appointments is active. */
+export function canVendorManageServicePromotions(): boolean {
+  return !isWarmpawzPay();
+}

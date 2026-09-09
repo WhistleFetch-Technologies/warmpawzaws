@@ -26,6 +26,7 @@ import {
 } from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
+import { canVendorManageServicePromotions } from '@/lib/wappt-service-pricing-lock';
 import PerformanceMonitor from '@/lib/performance-monitor';
 import { vendorNavigate } from '@/lib/vendor-route-nav';
 // Removed unused import: Analytics
@@ -1470,7 +1471,7 @@ export function VendorDashboard({
                     </button>
                   )}
 
-                {onNavigateToServicePromotions && CapabilityHelper.hasBooking(capabilities) && (
+                {onNavigateToServicePromotions && CapabilityHelper.hasBooking(capabilities) && canVendorManageServicePromotions() && (
                   <button
                     type="button"
                     onClick={onNavigateToServicePromotions}

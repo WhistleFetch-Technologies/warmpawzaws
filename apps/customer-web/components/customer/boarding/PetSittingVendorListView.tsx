@@ -11,7 +11,6 @@ import {
   resolveServiceHubVendorProfileKey,
 } from "../shared/ServiceHubVendorCard";
 import { ServiceDashboardHeader } from "../shared/ServiceDashboardHeader";
-import { StandardizedFooter } from "../shared/StandardizedFooter";
 import type { BoardingListVendor } from "@/lib/boarding-vendor-discovery-map";
 import { EMPTY_SERVICE_HEADER_STATS } from "@/lib/service-header-stats";
 import { findBoardingListVendorByProfileKey } from "@/lib/boarding-vendor-discovery-map";
@@ -191,7 +190,7 @@ function PetSittingVendorListViewInner({
         sheetToneClass="bg-gray-50"
       />
 
-      <div className="mx-auto max-w-customer px-4 pb-28 pt-4">
+      <div className="mx-auto max-w-customer px-4 pt-4 cw-scroll-pad-tabbar">
         {relaxedFilter && (
           <p className="mb-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             Showing all sitters we could match — expand for services and prices.
@@ -258,17 +257,6 @@ function PetSittingVendorListViewInner({
           </div>
         )}
       </div>
-
-      <StandardizedFooter
-        currentTab="home"
-        onTabChange={(tab) => {
-          if (tab === "home") router.push("/");
-          else if (tab === "bookings") router.push("/bookings");
-          else if (tab === "shop") router.push("/shop");
-          else if (tab === "profile") router.push("/profile");
-        }}
-        maxWidth="max-w-customer"
-      />
     </div>
   );
 }

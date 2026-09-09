@@ -38,6 +38,7 @@ import {
   evaluateProductCodeViaProductionMode,
 } from '../../../lib/services/promotion-code-validation-service';
 import { validateVendorPromotionTargeting } from '../../../utils/promotion-targeting-validation';
+import { rejectServicePromotionMutationIfWarmpawzPay } from '../shared/vendor-service-pricing-lock';
 import { validateCouponForAmount } from '../../../lib/services/platform-coupon-service';
 import { resolveCommercialCampaignDiscount } from '../../../utils/resolve-commercial-campaign';
 import {
@@ -259,6 +260,8 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
    */
   app.post("/vendor/:vendorId/service-promotions", async (c) => {
     try {
+      const locked = await rejectServicePromotionMutationIfWarmpawzPay();
+      if (locked) return c.json({ error: locked.error, code: locked.code }, 403);
       const { vendorId } = c.req.param();
       const body = await c.req.json();
 
@@ -354,6 +357,8 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
    */
   app.put("/vendor/:vendorId/service-promotions/:promoId", async (c) => {
     try {
+      const locked = await rejectServicePromotionMutationIfWarmpawzPay();
+      if (locked) return c.json({ error: locked.error, code: locked.code }, 403);
       const { vendorId, promoId } = c.req.param();
       const body = await c.req.json();
 
@@ -425,6 +430,8 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
    */
   app.delete("/vendor/:vendorId/service-promotions/:promoId", async (c) => {
     try {
+      const locked = await rejectServicePromotionMutationIfWarmpawzPay();
+      if (locked) return c.json({ error: locked.error, code: locked.code }, 403);
       const { vendorId, promoId } = c.req.param();
 
       await deleteRows('vendor_service_promotions', { id: promoId, vendor_id: vendorId });

@@ -41,3 +41,14 @@ export async function rejectVendorServicePriceChangeIfLocked(
     code: 'PRICING_LOCKED',
   };
 }
+
+export async function rejectServicePromotionMutationIfWarmpawzPay(): Promise<{
+  error: string;
+  code: string;
+} | null> {
+  if (!(await isWarmpawzPayActive())) return null;
+  return {
+    error: 'Service promotions cannot be changed while Warmpawz Pay + Appointments is active.',
+    code: 'PROMOTIONS_LOCKED',
+  };
+}

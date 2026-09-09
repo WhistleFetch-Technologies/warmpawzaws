@@ -3816,7 +3816,6 @@ export function CustomerHomeWrapper({
         phone={phone}
         vendorId={effectiveVendorId}
         serviceSlug={slug}
-        footerActiveTab="home"
         onBack={() => {
           backFromBannerOr(() => {
           if (problemFlowBoardingVendorId) {

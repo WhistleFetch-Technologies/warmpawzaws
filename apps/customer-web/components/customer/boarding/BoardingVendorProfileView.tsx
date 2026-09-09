@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
 import {
   Clock,
@@ -22,7 +21,6 @@ import { apiClient } from '@/lib/api-client';
 import { discoveryVendorList } from '@/lib/discovery-list';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
-import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { StarRating } from '../shared/StarRating';
 import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
 import {
@@ -52,8 +50,6 @@ export interface BoardingVendorProfileViewProps {
   serviceSlug?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: Record<string, unknown>) => void;
-  /** Bottom nav highlight in the customer app shell (avoid implying user is on Bookings). */
-  footerActiveTab?: 'home' | 'shop' | 'bookings' | 'profile';
 }
 
 interface MappedBoardingService extends Record<string, unknown> {
@@ -107,9 +103,7 @@ export function BoardingVendorProfileView({
   serviceSlug: serviceSlugProp,
   onBack,
   onNavigate,
-  footerActiveTab = 'home',
 }: BoardingVendorProfileViewProps) {
-  const router = useRouter();
   const contextSlug = normalizeBoardingServiceSlug(serviceSlugProp ?? null);
   const [loading, setLoading] = useState(true);
   const [vendor, setVendor] = useState<VendorInfo | null>(null);
@@ -595,17 +589,6 @@ export function BoardingVendorProfileView({
           )}
         </div>
       </div>
-
-      <StandardizedFooter
-        currentTab={footerActiveTab}
-        onTabChange={(tab) => {
-          if (tab === 'home') router.push('/');
-          else if (tab === 'bookings') router.push('/bookings');
-          else if (tab === 'shop') router.push('/shop');
-          else if (tab === 'profile') router.push('/profile');
-        }}
-        maxWidth="max-w-customer"
-      />
     </div>
   );
 }

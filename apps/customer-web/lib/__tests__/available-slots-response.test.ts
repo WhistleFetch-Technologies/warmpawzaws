@@ -1,5 +1,6 @@
 import {
   applyPastSlotGuard,
+  isSlotPastInIst,
   normalizeAvailableSlotsResponse,
   sanitizeNextAvailable,
   resolveNextAvailableLabel,
@@ -76,6 +77,20 @@ describe('applyPastSlotGuard', () => {
     const out = applyPastSlotGuard(slots, TODAY_0622, { now: NOW_1125_IST });
     expect(out[0].available).toBe(true);
     expect(out[0].isPast).toBeUndefined();
+  });
+});
+
+describe('boarding slot grid past-today (isSlotPastInIst)', () => {
+  it('greys a same-day boarding slot that already started in IST', () => {
+    expect(isSlotPastInIst(TODAY_0622, '11:00', { now: NOW_1125_IST })).toBe(true);
+  });
+
+  it('keeps a later same-day boarding slot bookable', () => {
+    expect(isSlotPastInIst(TODAY_0622, '12:00', { now: NOW_1125_IST })).toBe(false);
+  });
+
+  it('does not grey tomorrow boarding slots', () => {
+    expect(isSlotPastInIst(TOMORROW_YMD, '09:00', { now: NOW_22_IST })).toBe(false);
   });
 });
 

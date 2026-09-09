@@ -19,6 +19,7 @@ import {
   type TargetScopeId,
 } from '@warmpawz/promotion-management-ui';
 import { VendorCommercialCampaigns } from '@/components/vendor/campaigns/VendorCommercialCampaigns';
+import { canVendorManageServicePromotions } from '@/lib/wappt-service-pricing-lock';
 
 interface ServicePromotionsHubProps {
   vendorId: string;
@@ -100,6 +101,7 @@ export function ServicePromotionsHub({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { capabilities } = useVendorCapabilities(roleId);
+  const promotionsLocked = !canVendorManageServicePromotions();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -242,6 +244,9 @@ export function ServicePromotionsHub({
   );
 
   const savePromotion = async (form: PromotionWizardForm, _publish: boolean, editingId?: string) => {
+    if (promotionsLocked) {
+      throw new Error('Service promotions are managed by Warmpawz while Warmpawz Pay + Appointments is active.');
+    }
     const payload = wizardToVendorServicePayload(form, vendorId);
     if (editingId) {
       await apiClient.put(`/vendor/${vendorId}/service-promotions/${editingId}`, payload);
@@ -291,8 +296,20 @@ export function ServicePromotionsHub({
         </div>
       </div>
 
+      {promotionsLocked && (
+        <div className="mx-auto max-w-6xl px-4 pt-4">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Service promotions are managed by Warmpawz Appointments / Pay while Warmpawz Pay + Appointments mode is active. Contact platform admin for commercial terms.
+          </div>
+        </div>
+      )}
+
       {view === 'campaigns' ? (
         <VendorCommercialCampaigns vendorId={vendorId} surface="marketing" />
+      ) : promotionsLocked ? (
+        <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-slate-600">
+          Existing marketplace promotions are not applied to Warmpawz Pay or Appointments bookings.
+        </div>
       ) : (
         <PromotionDashboard
           scope={scope}

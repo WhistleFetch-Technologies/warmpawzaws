@@ -399,7 +399,7 @@ export function PetSitterServiceRouter({
   };
 
   return (
-    <div className="flex min-h-screen flex-col overflow-x-hidden bg-gray-50">
+    <div className="flex flex-col overflow-x-hidden bg-gray-50">
       <ServiceDashboardHeader
         fullWidth
         serviceName="Pet Sitting"
@@ -421,7 +421,7 @@ export function PetSitterServiceRouter({
       />
       <div
         ref={scrollRootRef}
-        className="relative z-[30] -mt-4 min-h-0 flex-1 touch-pan-y overflow-y-auto overflow-x-hidden rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]"
+        className="relative z-[30] -mt-4 min-h-0 flex-1 touch-pan-y overflow-y-auto overflow-x-hidden rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem] cw-scroll-pad-tabbar"
       >
         <div className="mx-auto w-full max-w-customer bg-white px-4 pt-5 pb-2">
           <div className="space-y-8">

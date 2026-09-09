@@ -21,7 +21,6 @@ import {
   ServiceHubVendorCard,
   resolveServiceHubVendorProfileKey,
 } from '../shared/ServiceHubVendorCard';
-import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { SpecializationHighlightChips } from '../specialization-detail/SpecializationHighlightChips';
@@ -358,23 +357,9 @@ export function OvernightSittingDetailView({
     },
   ];
 
-  const footerTabHandler = (tab: 'home' | 'shop' | 'bookings' | 'profile') => {
-    if (onNavigate) {
-      if (tab === 'home') router.push('/');
-      else if (tab === 'bookings') onNavigate('my-bookings');
-      else if (tab === 'shop') onNavigate('shop');
-      else if (tab === 'profile') onNavigate('profile');
-      return;
-    }
-    if (tab === 'home') router.push('/');
-    else if (tab === 'bookings') router.push('/bookings');
-    else if (tab === 'shop') router.push('/shop');
-    else if (tab === 'profile') router.push('/profile');
-  };
-
   return (
-    <div className="mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-customer flex-col overflow-x-hidden bg-white">
-      <div className="flex-1 px-4 pb-36 pt-4">
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-customer flex-col overflow-x-hidden bg-white">
+      <div className="flex-1 px-4 cw-header-safe-top cw-scroll-pad-tabbar-sticky-cta">
         <div className="mb-5 flex items-center gap-3">
           <Button
             variant="ghost"
@@ -644,7 +629,7 @@ export function OvernightSittingDetailView({
         </section>
       </div>
 
-      <div className="fixed bottom-[4.5rem] left-0 right-0 z-30 mx-auto max-w-customer px-4 pb-2">
+      <div className="cw-fixed-above-customer-tabbar fixed left-0 right-0 z-30 mx-auto max-w-customer px-4 pb-2">
         <button
           type="button"
           onClick={scrollToSitters}
@@ -654,11 +639,6 @@ export function OvernightSittingDetailView({
         </button>
       </div>
 
-      <StandardizedFooter
-        currentTab="home"
-        onTabChange={footerTabHandler}
-        maxWidth="max-w-customer"
-      />
     </div>
   );
 }

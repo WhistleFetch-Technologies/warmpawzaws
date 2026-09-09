@@ -1,5 +1,6 @@
 import {
   canVendorEditServicePrice,
+  canVendorManageServicePromotions,
   isPricingLockedServiceStyle,
   shouldHideVendorServicePrice,
 } from '../wappt-service-pricing-lock';
@@ -38,5 +39,15 @@ describe('wappt-service-pricing-lock', () => {
 
   it('normalizes at_vendor as locked style', () => {
     expect(isPricingLockedServiceStyle('at_vendor')).toBe(true);
+  });
+
+  it('blocks vendor service promotions when Warmpawz Pay is active', () => {
+    mockedIsWarmpawzPay.mockReturnValue(true);
+    expect(canVendorManageServicePromotions()).toBe(false);
+  });
+
+  it('allows vendor service promotions in marketplace mode', () => {
+    mockedIsWarmpawzPay.mockReturnValue(false);
+    expect(canVendorManageServicePromotions()).toBe(true);
   });
 });

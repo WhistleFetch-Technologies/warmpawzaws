@@ -6,6 +6,7 @@ import {
   stripVendorServicePriceFields,
   vendorServicePayloadHasPriceChange,
 } from '../helpers/is-warmpawz-pay-pricing-locked';
+import { rejectServicePromotionMutationIfWarmpawzPay } from '../../endpoints/vendor/shared/vendor-service-pricing-lock';
 import { getCommerceResolver } from '../di/commerce-switch-container';
 
 jest.mock('../di/commerce-switch-container', () => ({
@@ -71,5 +72,15 @@ describe('is-warmpawz-pay-pricing-locked', () => {
   it('vendorServicePayloadHasPriceChange detects price fields', () => {
     expect(vendorServicePayloadHasPriceChange({ isEnabled: true })).toBe(false);
     expect(vendorServicePayloadHasPriceChange({ customPrice: 100 })).toBe(true);
+  });
+
+  it('rejects service promotion mutations when Warmpawz Pay is active', async () => {
+    mockActiveModel('warmpawz_pay');
+    await expect(rejectServicePromotionMutationIfWarmpawzPay()).resolves.toEqual({
+      error: 'Service promotions cannot be changed while Warmpawz Pay + Appointments is active.',
+      code: 'PROMOTIONS_LOCKED',
+    });
+    mockActiveModel('marketplace');
+    await expect(rejectServicePromotionMutationIfWarmpawzPay()).resolves.toBeNull();
   });
 });
