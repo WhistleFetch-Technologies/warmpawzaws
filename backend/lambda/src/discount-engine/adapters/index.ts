@@ -23,5 +23,16 @@ export {
   isCommerceModelId,
   payBillRequestToDiscountContext,
   resolveDiscountCommerceModelFromSwitch,
+  wpayQuoteToDiscountContext,
 } from './commerce-context';
 export type { WarmpawzPaySurfaceRequest } from './commerce-context';
+export {
+  compareWpayPayBillShadow,
+  evaluateWpayPayBillShadow,
+  scheduleWpayPayBillShadow,
+} from './wpay-pay-bill-shadow';
+export type {
+  WpayPayBillShadowInput,
+  WpayShadowCategory,
+  WpayShadowComparison,
+} from './wpay-pay-bill-shadow';

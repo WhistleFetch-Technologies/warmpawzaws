@@ -1,4 +1,5 @@
 import { wpayConvenienceSettingsRepository } from '../../../warmpawz-pay/repositories/wpay-convenience-settings.repository';
+import { scheduleWpayPayBillShadow } from '../../../../discount-engine/adapters/wpay-pay-bill-shadow';
 import type { WpayVendorListDbRow } from '../repos/wpay-vendors-list.repo';
 import { resolveWpayVendorCommercialConfig } from './wpay-commercial-config';
 import {
@@ -29,11 +30,13 @@ export type WpayResolvedPayQuote = WpayWithholdQuoteResult | WpayTierQuoteResult
 export async function resolveWpayPayQuote(params: {
   vendorRow: WpayVendorListDbRow;
   quotedAmount: number;
+  customerId?: string;
   /** @deprecated Ignored — appointment credit unwired from Pay Bill. */
   appointmentFeeCredit?: number;
 }): Promise<WpayResolvedPayQuote> {
   const config = resolveWpayVendorCommercialConfig(params.vendorRow);
 
+  let resolved: WpayResolvedPayQuote;
   if (config.commercialModel === 'tier_commission') {
     const settings = await wpayConvenienceSettingsRepository.getConvenienceSettings();
     const quote = computeWpayCommercialQuote({
@@ -50,7 +53,7 @@ export async function resolveWpayPayQuote(params: {
       burnMode: settings.burnMode,
     });
 
-    return {
+    resolved = {
       commercialModel: 'tier_commission',
       quote,
       payableAmount: quote.payNowAmount,
@@ -59,22 +62,37 @@ export async function resolveWpayPayQuote(params: {
         tierName: config.tierName,
       }),
     };
+  } else {
+    const quote = computeWpayDiscountQuote(params.quotedAmount, config.discountPercent);
+    resolved = {
+      commercialModel: 'withhold',
+      quote,
+      payableAmount: quote.payableAmount,
+      metadata: {
+        commercialModel: 'withhold',
+        quotedOriginalAmount: quote.originalAmount,
+        quotedDiscountAmount: quote.discountAmount,
+        quotedDiscountPercent: quote.discountPercent,
+        billBase: quote.billBase,
+        appointmentFeeCredit: 0,
+        platformWithholdPercent: config.platformWithholdPercent,
+      },
+    };
   }
 
-  const quote = computeWpayDiscountQuote(params.quotedAmount, config.discountPercent);
+  try {
+    scheduleWpayPayBillShadow({
+      quotedAmount: params.quotedAmount,
+      vendorId: params.vendorRow.vendor_id,
+      customerId: params.customerId,
+      wpayDiscountAmount: resolved.quote.discountAmount,
+      wpayDiscountPercent: resolved.quote.discountPercent,
+    });
+  } catch (err) {
+    console.warn('[pbe-wpay-shadow] schedule failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
-  return {
-    commercialModel: 'withhold',
-    quote,
-    payableAmount: quote.payableAmount,
-    metadata: {
-      commercialModel: 'withhold',
-      quotedOriginalAmount: quote.originalAmount,
-      quotedDiscountAmount: quote.discountAmount,
-      quotedDiscountPercent: quote.discountPercent,
-      billBase: quote.billBase,
-      appointmentFeeCredit: 0,
-      platformWithholdPercent: config.platformWithholdPercent,
-    },
-  };
+  return resolved;
 }

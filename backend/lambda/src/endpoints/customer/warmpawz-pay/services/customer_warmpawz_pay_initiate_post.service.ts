@@ -51,6 +51,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     const resolved = await resolveWpayPayQuote({
       vendorRow,
       quotedAmount: originalAmount,
+      customerId,
     });
 
     const order = await createWpayRazorpayOrder({

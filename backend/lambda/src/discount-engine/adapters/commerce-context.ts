@@ -62,11 +62,12 @@ export type WarmpawzPaySurfaceRequest = {
   customerId?: string;
   amount: number;
   couponCode?: string;
+  metadata?: Record<string, unknown>;
 };
 
 /**
  * Pay Bill → DiscountContext for the same engine.
- * Not wired into quote/payment in Phase 1 — `wpay-discount.ts` still owns amounts.
+ * Mapper only — no %, D < C, burnMode, or payable math.
  */
 export function payBillRequestToDiscountContext(
   input: WarmpawzPaySurfaceRequest
@@ -81,7 +82,25 @@ export function payBillRequestToDiscountContext(
     customerId: input.customerId,
     amount: input.amount,
     couponCode,
+    metadata: input.metadata,
   };
+}
+
+/** WPay quote Q → DiscountContext. Amount is quoted Q, never payNow. */
+export function wpayQuoteToDiscountContext(input: {
+  quotedAmount: number;
+  vendorId?: string;
+  customerId?: string;
+  couponCode?: string;
+  metadata?: Record<string, unknown>;
+}): DiscountContext {
+  return payBillRequestToDiscountContext({
+    amount: input.quotedAmount,
+    vendorId: input.vendorId,
+    customerId: input.customerId,
+    couponCode: input.couponCode,
+    metadata: input.metadata,
+  });
 }
 
 /**

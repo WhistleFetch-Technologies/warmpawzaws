@@ -139,7 +139,7 @@ describe('discount commerce context (Phase 1 foundation)', () => {
     expect(ok.servicePayableAmount).toBe(900);
   });
 
-  it('does not wire WPay quote or Appointment booking to the new mappers', () => {
+  it('does not wire Appointment booking; WPay quote stays commercially authoritative', () => {
     const root = join(__dirname, '..', '..', '..');
     const quoteResolver = readFileSync(
       join(root, 'endpoints/customer/warmpawz-pay/shared/wpay-quote-resolver.ts'),
@@ -150,8 +150,8 @@ describe('discount commerce context (Phase 1 foundation)', () => {
       'utf8'
     );
     expect(quoteResolver).toContain('computeWpayCommercialQuote');
-    expect(quoteResolver).not.toContain('payBillRequestToDiscountContext');
-    expect(quoteResolver).not.toContain('getUnifiedDiscountResolver');
+    expect(quoteResolver).toContain('scheduleWpayPayBillShadow');
+    expect(quoteResolver).not.toContain('commitResolverUsageEntries');
     expect(bookingCreate).toContain('wapptAppointmentFee == null');
     expect(bookingCreate).not.toContain('appointmentRequestToDiscountContext');
   });
