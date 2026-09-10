@@ -2,30 +2,16 @@
  * @jest-environment jsdom
  */
 
-import { createElement, type ChangeEvent } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import type { AddressFromGeolocationResult } from '@/lib/address-from-geolocation';
+import { createElement } from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CustomerUserProfile } from '@/components/customer/CustomerUserProfile';
-
-const mockGeolocationResult: AddressFromGeolocationResult = {
-  addressLine1: '48 Church Street, Bengaluru',
-  city: 'Bengaluru',
-  state: 'Karnataka',
-  pincode: '560001',
-  latitude: 12.9716,
-  longitude: 77.5946,
-  coordinates: { lat: 12.9716, lng: 77.5946 },
-};
+import { apiClient } from '@/lib/api-client';
 
 jest.mock('@/lib/api-client', () => ({
   apiClient: {
     get: jest.fn().mockResolvedValue({ hasReferral: false }),
-    post: jest.fn(),
+    post: jest.fn().mockResolvedValue({ success: true }),
   },
-}));
-
-jest.mock('@/lib/app-review-demo-account', () => ({
-  isLoyaltyUiVisibleForAccount: () => false,
 }));
 
 jest.mock('@/lib/customer-id-storage', () => ({
@@ -33,47 +19,14 @@ jest.mock('@/lib/customer-id-storage', () => ({
   persistCustomerDatabaseId: jest.fn(),
 }));
 
-jest.mock('@/components/shared/EnhancedAddressAutocomplete', () => ({
-  EnhancedAddressAutocomplete: ({
-    value,
-    onChange,
-    placeholder,
-  }: {
-    value: string;
-    onChange: (address: string) => void;
-    placeholder?: string;
-  }) =>
-    createElement('input', {
-      'data-testid': 'address-autocomplete',
-      value,
-      placeholder,
-      onChange: (e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value),
-    }),
-}));
-
-jest.mock('@/components/shared/UseCurrentLocationButton', () => ({
-  UseCurrentLocationButton: ({
-    onSuccess,
-  }: {
-    onSuccess: (result: AddressFromGeolocationResult) => void;
-  }) =>
-    createElement(
-      'button',
-      {
-        type: 'button',
-        onClick: () => onSuccess(mockGeolocationResult),
-      },
-      'Use Current Location'
-    ),
-}));
-
-describe('CustomerUserProfile geolocation', () => {
+describe('CustomerUserProfile creation fields', () => {
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem('customerCountryCode', '+91');
+    jest.clearAllMocks();
   });
 
-  it('renders Use Current Location on profile creation address section', () => {
+  it('renders only optional photo, name, and login phone', () => {
     render(
       createElement(CustomerUserProfile, {
         session: { phone: '9876543210' },
@@ -81,25 +34,60 @@ describe('CustomerUserProfile geolocation', () => {
       })
     );
 
-    expect(screen.getByRole('button', { name: /use current location/i })).toBeTruthy();
-    expect(screen.getByTestId('address-autocomplete')).toBeTruthy();
+    expect(screen.getByText('Add Photo')).toBeTruthy();
+    expect(screen.getByText(/optional/i)).toBeTruthy();
+    expect(screen.getByPlaceholderText('John Doe')).toBeTruthy();
+    expect(screen.getByDisplayValue('9876543210')).toBeTruthy();
+    expect(screen.getByText('Phone number from your login')).toBeTruthy();
+
+    expect(screen.queryByPlaceholderText('john.doe@example.com')).toBeNull();
+    expect(screen.queryByPlaceholderText('Search address, landmark, city...')).toBeNull();
+    expect(screen.queryByPlaceholderText('e.g., A-101, Flat 12B')).toBeNull();
+    expect(screen.queryByPlaceholderText('e.g., 1st Floor')).toBeNull();
+    expect(screen.queryByPlaceholderText('Mumbai')).toBeNull();
+    expect(screen.queryByPlaceholderText('Maharashtra')).toBeNull();
+    expect(screen.queryByPlaceholderText('400001')).toBeNull();
+    expect(screen.queryByRole('button', { name: /use current location/i })).toBeNull();
+    expect(screen.queryByText(/referral code/i)).toBeNull();
   });
 
-  it('fills address, city, state, and pincode when current location succeeds', () => {
+  it('keeps login phone read-only', () => {
     render(
       createElement(CustomerUserProfile, {
-        session: { phone: '9876543210' },
+        session: { phone: '8552333155' },
         onComplete: jest.fn(),
       })
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /use current location/i }));
+    const phoneInput = screen.getByDisplayValue('8552333155') as HTMLInputElement;
+    expect(phoneInput.readOnly).toBe(true);
+  });
 
-    expect((screen.getByTestId('address-autocomplete') as HTMLInputElement).value).toBe(
-      '48 Church Street, Bengaluru'
+  it('posts first and last name from a single Name field', async () => {
+    const onComplete = jest.fn();
+    render(
+      createElement(CustomerUserProfile, {
+        session: { phone: '9876543210' },
+        onComplete,
+      })
     );
-    expect((screen.getByPlaceholderText('Mumbai') as HTMLInputElement).value).toBe('Bengaluru');
-    expect((screen.getByPlaceholderText('Maharashtra') as HTMLInputElement).value).toBe('Karnataka');
-    expect((screen.getByPlaceholderText('400001') as HTMLInputElement).value).toBe('560001');
+
+    fireEvent.change(screen.getByPlaceholderText('John Doe'), {
+      target: { value: 'John Doe' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /complete & continue/i }));
+
+    await waitFor(() => {
+      expect(apiClient.post).toHaveBeenCalledWith('/customer/profile', {
+        phone: '9876543210',
+        profile: {
+          firstName: 'John',
+          lastName: 'Doe',
+          phone: '9876543210',
+        },
+        journeyType: undefined,
+      });
+    });
+    expect(onComplete).toHaveBeenCalled();
   });
 });
