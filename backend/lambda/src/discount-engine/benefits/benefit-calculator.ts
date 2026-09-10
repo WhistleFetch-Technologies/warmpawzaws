@@ -2,6 +2,7 @@ import type { BenefitCalculator, BenefitContext, BenefitResult, BenefitStrategy 
 import {
   BogoBenefitStrategy,
   BundleBenefitStrategy,
+  CashbackBenefitStrategy,
   ComboBenefitStrategy,
   FlatBenefitStrategy,
   LoyaltyBenefitStrategy,
@@ -19,6 +20,7 @@ export class DefaultBenefitCalculator implements BenefitCalculator {
 
   constructor(strategies?: BenefitStrategy[]) {
     this.strategies = strategies ?? [
+      new CashbackBenefitStrategy(),
       new BogoBenefitStrategy(),
       new BundleBenefitStrategy(),
       new ComboBenefitStrategy(),

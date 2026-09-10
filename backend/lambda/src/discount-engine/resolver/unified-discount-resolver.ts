@@ -40,6 +40,10 @@ import type { DiscountContext } from '../models/discount-context';
 import type { AppliedDiscount, DiscountBenefitLine } from '../models/discount-result';
 import { emptyDiscountEngineResult } from '../models/discount-result';
 import { DiscountSource } from '../enums/discount-source';
+import {
+  partitionCashbackBenefitOutcomes,
+  sumCashbackAmount,
+} from '../benefits/cashback';
 
 const RESOLVER_VERSION = 'phase-8.0';
 const PRIORITY_VERSION = '1.0.0';
@@ -65,13 +69,16 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
       benefitResults,
     } = discovery;
 
+    const { discountBenefits, cashbackBenefits } =
+      partitionCashbackBenefitOutcomes(benefitResults);
+
     const runtimePolicy = loadRuntimePolicy(context.domain);
     const validation = getPolicyValidationEngine().validate(runtimePolicy);
 
-    let priorityPipeline = runPriorityPipeline(context, benefitResults);
+    let priorityPipeline = runPriorityPipeline(context, discountBenefits);
 
     if (isPriorityAuthoritative() && validation.isPublishable) {
-      const offerResolution = resolveOffers(context, benefitResults, runtimePolicy);
+      const offerResolution = resolveOffers(context, discountBenefits, runtimePolicy);
       priorityPipeline = {
         mode: getPriorityMode(),
         success: true,
@@ -84,7 +91,7 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
         executionTimeMs: discovery.discoveryTimeMs,
       };
     }
-    let stackBenefitResults = benefitResults;
+    let stackBenefitResults = discountBenefits;
     let appliedCandidates: DiscountCandidate[] = [...eligibleCandidates];
     let authoritative = false;
     let stackAuthoritative = false;
@@ -99,13 +106,13 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
         runtimePolicy,
         context
       );
-      const legacyMapped = mapSelectedToBenefitOutcomes(legacyStacked, benefitResults);
+      const legacyMapped = mapSelectedToBenefitOutcomes(legacyStacked, discountBenefits);
 
       if (isStackEnabled()) {
         stackDecision = getStackEngine().stack({
           context,
           selectedCandidates: priorityPipeline.mergedSelected,
-          benefitResults,
+          benefitResults: discountBenefits,
           runtimePolicy,
           policyFingerprint: runtimePolicy.policyFingerprint,
         });
@@ -114,15 +121,15 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
       if (isStackAuthoritative() && stackDecision) {
         const mapped = mapStackAppliedToBenefitOutcomes(
           stackDecision.applied,
-          benefitResults
+          discountBenefits
         );
-        if (mapped.length > 0 || benefitResults.length === 0) {
+        if (mapped.length > 0 || discountBenefits.length === 0) {
           stackBenefitResults = mapped;
           appliedCandidates = mapped.map((o) => o.candidate);
           authoritative = true;
           stackAuthoritative = true;
         }
-      } else if (legacyMapped.length > 0 || benefitResults.length === 0) {
+      } else if (legacyMapped.length > 0 || discountBenefits.length === 0) {
         stackBenefitResults = legacyMapped;
         appliedCandidates = legacyMapped.map((o) => o.candidate);
         authoritative = true;
@@ -159,11 +166,19 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
       metadata: { source: o.candidate.source },
     }));
 
-    const benefits: DiscountBenefitLine[] = stackBenefitResults.map((o) => ({
-      type: o.benefit.appliedBenefit,
-      amount: o.discountAmount,
-      description: o.candidate.name,
-    }));
+    const totalCashback = sumCashbackAmount(cashbackBenefits);
+    const benefits: DiscountBenefitLine[] = [
+      ...stackBenefitResults.map((o) => ({
+        type: o.benefit.appliedBenefit,
+        amount: o.discountAmount,
+        description: o.candidate.name,
+      })),
+      ...cashbackBenefits.map((o) => ({
+        type: 'cashback',
+        amount: Number(o.benefit.cashbackAmount) || 0,
+        description: o.candidate.name,
+      })),
+    ];
 
     const rejectedByLimit =
       (priorityPipeline.autoPhase?.rejectedByLimit.length ?? 0) +
@@ -244,6 +259,7 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
     return {
       ...base,
       totalSavings,
+      totalCashback,
       finalAmount,
       applied,
       benefits,
@@ -268,6 +284,13 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
         priority: priorityDiagnostics,
         stack: stackDiagnostics,
         settlement: settlementDiagnostics,
+        totalCashback,
+        cashback: {
+          status: totalCashback > 0 ? 'CASHBACK_ELIGIBLE' : 'CASHBACK_NOT_ELIGIBLE',
+          amount: totalCashback,
+          promotionIds: cashbackBenefits.map((o) => o.candidate.id),
+          committed: false,
+        },
       },
     };
   }

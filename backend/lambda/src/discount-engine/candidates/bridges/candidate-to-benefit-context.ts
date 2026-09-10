@@ -5,6 +5,7 @@ import type { BenefitContext, BenefitLineItem, BenefitResult } from '../../benef
 import {
   BOGO_BENEFIT_TYPE,
   BUNDLE_BENEFIT_TYPE,
+  CASHBACK_BENEFIT_TYPE,
   COMBO_BENEFIT_TYPE,
   FLAT_BENEFIT_TYPE,
   LOYALTY_BENEFIT_TYPE,
@@ -23,6 +24,7 @@ export interface CandidateBenefitRuntimeContext {
 
 function resolveBenefitStrategy(candidate: DiscountCandidate): string {
   const t = candidate.benefits.type;
+  if (t === 'cashback') return CASHBACK_BENEFIT_TYPE;
   if (t === 'buy_x_get_y') return BOGO_BENEFIT_TYPE;
   if (t === 'bundle') return BUNDLE_BENEFIT_TYPE;
   if (t === 'combo') return COMBO_BENEFIT_TYPE;
@@ -77,6 +79,7 @@ export function computeBenefitFromCandidate(
 
   const ctx = candidateToBenefitContext(candidate, runtime);
   const strategy = resolveBenefitStrategy(candidate);
+  if (strategy === CASHBACK_BENEFIT_TYPE) return 0;
   const calculator = getBenefitCalculator();
   const result =
     strategy === PERCENTAGE_BENEFIT_TYPE || strategy === FLAT_BENEFIT_TYPE
@@ -98,7 +101,10 @@ export function evaluateCandidateBenefit(
   const ctx = candidateToBenefitContext(candidate, runtime);
   const strategy = resolveBenefitStrategy(candidate);
   const calculator = getBenefitCalculator();
-  if (strategy === PERCENTAGE_BENEFIT_TYPE || strategy === FLAT_BENEFIT_TYPE) {
+  if (
+    strategy === PERCENTAGE_BENEFIT_TYPE ||
+    strategy === FLAT_BENEFIT_TYPE
+  ) {
     return calculator.calculate(ctx);
   }
   return calculator.calculateWithStrategy(ctx, strategy);

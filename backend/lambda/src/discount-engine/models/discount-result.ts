@@ -74,6 +74,8 @@ export interface DiscountEngineResult {
   originalAmount: number;
   totalSavings: number;
   finalAmount: number;
+  /** Reward entitlement — not included in totalSavings or finalAmount. */
+  totalCashback?: number;
   applied: AppliedDiscount[];
   benefits: DiscountBenefitLine[];
   settlement?: DiscountSettlementPreview;
@@ -86,6 +88,7 @@ export function emptyDiscountEngineResult(originalAmount: number): DiscountEngin
   return {
     originalAmount,
     totalSavings: 0,
+    totalCashback: 0,
     finalAmount: originalAmount,
     applied: [],
     benefits: [],

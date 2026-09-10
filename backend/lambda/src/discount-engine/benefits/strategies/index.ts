@@ -4,3 +4,4 @@ export { BogoBenefitStrategy, BOGO_BENEFIT_TYPE } from './bogo-benefit.strategy'
 export { BundleBenefitStrategy, BUNDLE_BENEFIT_TYPE } from './bundle-benefit.strategy';
 export { ComboBenefitStrategy, COMBO_BENEFIT_TYPE } from './combo-benefit.strategy';
 export { LoyaltyBenefitStrategy, LOYALTY_BENEFIT_TYPE } from './loyalty-benefit.strategy';
+export { CashbackBenefitStrategy, CASHBACK_BENEFIT_TYPE } from './cashback-benefit.strategy';

@@ -36,6 +36,8 @@ export interface BenefitResult {
   discountAmount: number;
   finalAmount: number;
   appliedBenefit: string;
+  /** Reward entitlement only — never subtracted from payable / GST / settlement. */
+  cashbackAmount?: number;
   calculationMetadata?: Record<string, unknown>;
 }
 
