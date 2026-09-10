@@ -1,7 +1,9 @@
+import type { CommerceModelId } from '../../commerce-switch/contracts/commerce-model';
 import type { DiscountDomain } from '../enums/discount-domain';
 import type { DiscountFunding } from '../enums/discount-funding';
 import type { DiscountOwner } from '../enums/discount-owner';
 import type { DiscountTrigger } from '../enums/discount-trigger';
+import type { DiscountTransactionType } from '../enums/discount-transaction-type';
 
 /** Line item within a cart, order, or booking context. */
 export interface DiscountContextItem {
@@ -41,12 +43,23 @@ export interface DiscountContextOrder {
 }
 
 /**
- * Unified input for all discount engine operations.
- * Adapters map this to legacy engine parameters.
+ * Canonical input to Discount Engine V2 — the single Promotion & Benefits Engine.
+ * `commerceModel` is a context dimension, not an engine selector.
  */
 export interface DiscountContext {
   domain: DiscountDomain;
   trigger: DiscountTrigger;
+
+  /**
+   * Which of the two commerce models this transaction belongs to.
+   * Production mappers always stamp this. Optional on ad-hoc test fixtures.
+   */
+  commerceModel?: CommerceModelId;
+  /**
+   * Transaction surface under that model.
+   * Appointment is `warmpawz_pay` + `appointment` — never a third CommerceModelId.
+   */
+  transactionType?: DiscountTransactionType;
 
   owner?: DiscountOwner;
   funding?: DiscountFunding;

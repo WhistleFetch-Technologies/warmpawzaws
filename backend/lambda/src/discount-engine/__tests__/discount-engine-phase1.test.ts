@@ -99,6 +99,8 @@ describe('discount-engine Phase 1', () => {
     expect(resolved.serviceIds).toEqual(['s1', 's2']);
     expect(resolved.customerId).toBe('c2');
     expect(context.booking?.bookingId).toBe('b99');
+    expect(context.commerceModel).toBe('marketplace');
+    expect(context.transactionType).toBe('booking');
   });
 
   it('ecommerce adapter delegates to vendor-promotion-engine without changing math', async () => {

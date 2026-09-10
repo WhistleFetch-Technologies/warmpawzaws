@@ -16,3 +16,12 @@ export {
   isEcommerceDomain,
 } from './context-mappers';
 export type { LegacyBookingCalculateRequest } from './context-mappers';
+export {
+  applyDiscountCommerceContext,
+  appointmentRequestToDiscountContext,
+  assertCommerceModelId,
+  isCommerceModelId,
+  payBillRequestToDiscountContext,
+  resolveDiscountCommerceModelFromSwitch,
+} from './commerce-context';
+export type { WarmpawzPaySurfaceRequest } from './commerce-context';

@@ -13,6 +13,7 @@ import {
   METADATA_PRELOADED_ROWS,
   METADATA_PRIOR_VENDOR_BOOKING_COUNT,
 } from '../resolver/context-runtime';
+import { applyDiscountCommerceContext } from './commerce-context';
 
 export const METADATA_PROMOTION_ROWS = 'promotionRows';
 /** Precomputed audience count — same responsibility as ads-recommendations before calculate. */
@@ -60,24 +61,29 @@ export function parseLegacyBookingCalculateRequest(
   };
 }
 
+/** Marketplace booking surface → same Discount Engine V2. */
 export function bookingCalculateRequestToDiscountContext(
   request: LegacyBookingCalculateRequest,
   options?: { trigger?: DiscountTrigger; couponCode?: string }
 ): DiscountContext {
-  return {
-    domain: DiscountDomain.SERVICE,
-    trigger: options?.trigger ?? DiscountTrigger.AUTO,
-    vendorId: request.vendorId,
-    customerId: request.customerId,
-    amount: request.amount,
-    couponCode: options?.couponCode,
-    booking: {
-      bookingId: request.bookingId,
-      serviceIds: request.serviceIds,
-      serviceCategory: request.serviceCategory,
-      serviceStyle: request.serviceStyle,
+  return applyDiscountCommerceContext(
+    {
+      domain: DiscountDomain.SERVICE,
+      trigger: options?.trigger ?? DiscountTrigger.AUTO,
+      vendorId: request.vendorId,
+      customerId: request.customerId,
+      amount: request.amount,
+      couponCode: options?.couponCode,
+      booking: {
+        bookingId: request.bookingId,
+        serviceIds: request.serviceIds,
+        serviceCategory: request.serviceCategory,
+        serviceStyle: request.serviceStyle,
+      },
     },
-  };
+    'marketplace',
+    'booking'
+  );
 }
 
 export function resolveBookingParamsToDiscountContext(
@@ -148,65 +154,78 @@ export function vendorPromoEvaluateToDiscountContext(
 ): DiscountContext {
   const trigger =
     ctx.manualCode || promo.code ? DiscountTrigger.CODE : DiscountTrigger.AUTO;
-  return {
-    domain: DiscountDomain.ECOMMERCE,
-    trigger,
-    vendorId: ctx.vendorId ?? promo.vendor_id,
-    customerId: ctx.customerId,
-    amount: items.reduce((s, i) => s + i.price * i.quantity, 0),
-    couponCode: ctx.manualCode ?? promo.code ?? undefined,
-    items: cartLinesToDiscountContextItems(items),
-    metadata: {
-      [METADATA_PRIOR_VENDOR_ORDER_COUNT]: ctx.priorVendorOrderCount,
-      [METADATA_EVALUATION_MODE]: 'full',
-      [METADATA_PRELOADED_ROWS]: [promo],
+  return applyDiscountCommerceContext(
+    {
+      domain: DiscountDomain.ECOMMERCE,
+      trigger,
+      vendorId: ctx.vendorId ?? promo.vendor_id,
+      customerId: ctx.customerId,
+      amount: items.reduce((s, i) => s + i.price * i.quantity, 0),
+      couponCode: ctx.manualCode ?? promo.code ?? undefined,
+      items: cartLinesToDiscountContextItems(items),
+      metadata: {
+        [METADATA_PRIOR_VENDOR_ORDER_COUNT]: ctx.priorVendorOrderCount,
+        [METADATA_EVALUATION_MODE]: 'full',
+        [METADATA_PRELOADED_ROWS]: [promo],
+      },
     },
-  };
+    'marketplace',
+    'cart'
+  );
 }
 
+/** Marketplace cart surface → same Discount Engine V2. */
 export function vendorCartPromotionsToDiscountContext(
   promotions: PromotionRow[],
   items: CartLineItem[],
   ctx: EvaluateContext = {}
 ): DiscountContext {
   const originalTotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
-  return {
-    domain: DiscountDomain.ECOMMERCE,
-    trigger: ctx.manualCode ? DiscountTrigger.CODE : DiscountTrigger.AUTO,
-    vendorId: ctx.vendorId,
-    customerId: ctx.customerId,
-    amount: originalTotal,
-    couponCode: ctx.manualCode,
-    items: cartLinesToDiscountContextItems(items),
-    metadata: {
-      [METADATA_PRIOR_VENDOR_ORDER_COUNT]: ctx.priorVendorOrderCount,
-      [METADATA_EVALUATION_MODE]: 'full',
-      [METADATA_PRELOADED_ROWS]: promotions,
+  return applyDiscountCommerceContext(
+    {
+      domain: DiscountDomain.ECOMMERCE,
+      trigger: ctx.manualCode ? DiscountTrigger.CODE : DiscountTrigger.AUTO,
+      vendorId: ctx.vendorId,
+      customerId: ctx.customerId,
+      amount: originalTotal,
+      couponCode: ctx.manualCode,
+      items: cartLinesToDiscountContextItems(items),
+      metadata: {
+        [METADATA_PRIOR_VENDOR_ORDER_COUNT]: ctx.priorVendorOrderCount,
+        [METADATA_EVALUATION_MODE]: 'full',
+        [METADATA_PRELOADED_ROWS]: promotions,
+      },
     },
-  };
+    'marketplace',
+    'cart'
+  );
 }
 
 export function servicePromotionEvaluateToDiscountContext(
   promo: ServicePromotionRow,
   ctx: ServiceEvaluateContext
 ): DiscountContext {
-  return {
-    domain: DiscountDomain.SERVICE,
-    trigger: promo.code ? DiscountTrigger.CODE : DiscountTrigger.AUTO,
-    vendorId: ctx.vendorId ?? promo.vendor_id,
-    customerId: ctx.customerId,
-    amount: ctx.bookingAmount,
-    couponCode: promo.code ?? undefined,
-    booking: {
-      serviceIds: ctx.serviceIds,
-      serviceStyle: ctx.serviceStyle,
+  return applyDiscountCommerceContext(
+    {
+      domain: DiscountDomain.SERVICE,
+      trigger: promo.code ? DiscountTrigger.CODE : DiscountTrigger.AUTO,
+      vendorId: ctx.vendorId ?? promo.vendor_id,
+      customerId: ctx.customerId,
+      amount: ctx.bookingAmount,
+      couponCode: promo.code ?? undefined,
+      booking: {
+        serviceIds: ctx.serviceIds,
+        serviceStyle: ctx.serviceStyle,
+      },
+      metadata: {
+        [METADATA_PRIOR_VENDOR_BOOKING_COUNT]: ctx.priorVendorBookingCount,
+        [METADATA_EVALUATION_MODE]: 'full',
+        [METADATA_PRELOADED_ROWS]: [promo],
+      },
     },
-    metadata: {
-      [METADATA_PRIOR_VENDOR_BOOKING_COUNT]: ctx.priorVendorBookingCount,
-      [METADATA_EVALUATION_MODE]: 'full',
-      [METADATA_PRELOADED_ROWS]: [promo],
-    },
-  };
+    'marketplace',
+    'booking'
+  );
 }
 
 export function couponValidateToDiscountContext(
@@ -224,29 +243,34 @@ export function couponValidateToDiscountContext(
   }
 ): DiscountContext {
   const serviceIds = options?.serviceIds?.map((id) => String(id).trim()).filter(Boolean);
-  return {
-    domain: options?.domain ?? DiscountDomain.ECOMMERCE,
-    trigger: DiscountTrigger.CODE,
-    owner: DiscountOwner.PLATFORM,
-    vendorId: options?.vendorId,
-    amount,
-    customerId: options?.customerId,
-    couponCode: String(coupon.code ?? ''),
-    booking:
-      serviceIds?.length || options?.serviceCategory
-        ? {
-            serviceIds: serviceIds?.length ? serviceIds : undefined,
-            serviceCategory: options?.serviceCategory,
-          }
-        : undefined,
-    metadata: {
-      [METADATA_COUPON_USAGE_COUNT]: options?.usageCount,
-      customerCouponUsageCount: options?.customerUsageCount,
-      maxUsesPerUser: options?.maxUsesPerUser ?? null,
-      [METADATA_PRELOADED_ROWS]: [coupon],
-      [METADATA_EVALUATION_MODE]: 'full',
+  const domain = options?.domain ?? DiscountDomain.ECOMMERCE;
+  return applyDiscountCommerceContext(
+    {
+      domain,
+      trigger: DiscountTrigger.CODE,
+      owner: DiscountOwner.PLATFORM,
+      vendorId: options?.vendorId,
+      amount,
+      customerId: options?.customerId,
+      couponCode: String(coupon.code ?? ''),
+      booking:
+        serviceIds?.length || options?.serviceCategory
+          ? {
+              serviceIds: serviceIds?.length ? serviceIds : undefined,
+              serviceCategory: options?.serviceCategory,
+            }
+          : undefined,
+      metadata: {
+        [METADATA_COUPON_USAGE_COUNT]: options?.usageCount,
+        customerCouponUsageCount: options?.customerUsageCount,
+        maxUsesPerUser: options?.maxUsesPerUser ?? null,
+        [METADATA_PRELOADED_ROWS]: [coupon],
+        [METADATA_EVALUATION_MODE]: 'full',
+      },
     },
-  };
+    'marketplace',
+    domain === DiscountDomain.SERVICE ? 'booking' : 'cart'
+  );
 }
 
 export function platformPromotionCodeToDiscountContext(
@@ -254,18 +278,23 @@ export function platformPromotionCodeToDiscountContext(
   amount: number,
   options?: { domain?: DiscountDomain; vendorId?: string; customerId?: string }
 ): DiscountContext {
-  return {
-    domain: options?.domain ?? DiscountDomain.ECOMMERCE,
-    trigger: DiscountTrigger.CODE,
-    owner: DiscountOwner.PLATFORM,
-    vendorId: options?.vendorId,
-    customerId: options?.customerId,
-    amount,
-    couponCode: String(promo.code ?? ''),
-    metadata: {
-      [METADATA_PRELOADED_ROWS]: [promo],
+  const domain = options?.domain ?? DiscountDomain.ECOMMERCE;
+  return applyDiscountCommerceContext(
+    {
+      domain,
+      trigger: DiscountTrigger.CODE,
+      owner: DiscountOwner.PLATFORM,
+      vendorId: options?.vendorId,
+      customerId: options?.customerId,
+      amount,
+      couponCode: String(promo.code ?? ''),
+      metadata: {
+        [METADATA_PRELOADED_ROWS]: [promo],
+      },
     },
-  };
+    'marketplace',
+    domain === DiscountDomain.SERVICE ? 'booking' : 'cart'
+  );
 }
 
 export function vendorServiceCodeToDiscountContext(
@@ -273,21 +302,25 @@ export function vendorServiceCodeToDiscountContext(
   amount: number,
   options?: { vendorId?: string; customerId?: string; serviceIds?: string[] }
 ): DiscountContext {
-  return {
-    domain: DiscountDomain.SERVICE,
-    trigger: DiscountTrigger.CODE,
-    owner: DiscountOwner.VENDOR,
-    vendorId: options?.vendorId ?? promo.vendor_id,
-    customerId: options?.customerId,
-    amount,
-    couponCode: promo.code ?? undefined,
-    booking: {
-      serviceIds: options?.serviceIds ?? [],
+  return applyDiscountCommerceContext(
+    {
+      domain: DiscountDomain.SERVICE,
+      trigger: DiscountTrigger.CODE,
+      owner: DiscountOwner.VENDOR,
+      vendorId: options?.vendorId ?? promo.vendor_id,
+      customerId: options?.customerId,
+      amount,
+      couponCode: promo.code ?? undefined,
+      booking: {
+        serviceIds: options?.serviceIds ?? [],
+      },
+      metadata: {
+        [METADATA_PRELOADED_ROWS]: [promo],
+      },
     },
-    metadata: {
-      [METADATA_PRELOADED_ROWS]: [promo],
-    },
-  };
+    'marketplace',
+    'booking'
+  );
 }
 
 export function contextItemsToCartLines(items: DiscountContextItem[]): CartLineItem[] {

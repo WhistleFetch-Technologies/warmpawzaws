@@ -49,6 +49,10 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
     private readonly discovery = getOfferDiscovery()
   ) {}
 
+  /**
+   * Single promotion resolve path for every commerce model.
+   * `context.commerceModel` is a dimension — do not branch to another engine.
+   */
   async resolve(context: DiscountContext): Promise<ResolverResult> {
     const started = Date.now();
     const discovery = await this.discovery.discover(context);
