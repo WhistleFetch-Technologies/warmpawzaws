@@ -105,7 +105,7 @@ export function wpayQuoteToDiscountContext(input: {
 
 /**
  * Appointment → DiscountContext for the same engine.
- * Not wired into booking create in Phase 1 — `wapptAppointmentFee` skip stays.
+ * Amount is the catalogue appointment fee. No SKU/service inventing.
  */
 export function appointmentRequestToDiscountContext(
   input: WarmpawzPaySurfaceRequest
@@ -120,5 +120,23 @@ export function appointmentRequestToDiscountContext(
     customerId: input.customerId,
     amount: input.amount,
     couponCode,
+    metadata: input.metadata,
   };
+}
+
+/** Catalogue appointment fee → DiscountContext. Mapper only — no discount math. */
+export function appointmentFeeToDiscountContext(input: {
+  appointmentFee: number;
+  vendorId?: string;
+  customerId?: string;
+  couponCode?: string;
+  metadata?: Record<string, unknown>;
+}): DiscountContext {
+  return appointmentRequestToDiscountContext({
+    amount: input.appointmentFee,
+    vendorId: input.vendorId,
+    customerId: input.customerId,
+    couponCode: input.couponCode,
+    metadata: input.metadata,
+  });
 }

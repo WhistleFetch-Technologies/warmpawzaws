@@ -18,6 +18,7 @@ export {
 export type { LegacyBookingCalculateRequest } from './context-mappers';
 export {
   applyDiscountCommerceContext,
+  appointmentFeeToDiscountContext,
   appointmentRequestToDiscountContext,
   assertCommerceModelId,
   isCommerceModelId,
@@ -36,3 +37,13 @@ export type {
   WpayShadowCategory,
   WpayShadowComparison,
 } from './wpay-pay-bill-shadow';
+export {
+  compareWapptAppointmentShadow,
+  evaluateWapptAppointmentShadow,
+  scheduleWapptAppointmentShadow,
+} from './wappt-appointment-shadow';
+export type {
+  WapptAppointmentShadowInput,
+  WapptShadowCategory,
+  WapptShadowComparison,
+} from './wappt-appointment-shadow';

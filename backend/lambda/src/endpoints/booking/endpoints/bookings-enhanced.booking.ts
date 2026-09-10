@@ -105,6 +105,7 @@ import {
   WAPPT_BOOKING_MODE,
   WAPPT_DISPLAY_SERVICE_NAME,
 } from '../../warmpawz-appointments/shared/wappt-booking-preflight';
+import { scheduleWapptAppointmentShadow } from '../../../discount-engine/adapters/wappt-appointment-shadow';
 import { normalizeWapptHubCategory } from '../../warmpawz-appointments/shared/wappt-policy.constants';
 import {
   boardingBilled24hUnits,
@@ -1358,6 +1359,24 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               msg
             );
             resolvedBookingPromotions = null;
+          }
+        }
+
+        if (wapptAppointmentFee != null) {
+          try {
+            scheduleWapptAppointmentShadow({
+              appointmentFee: wapptAppointmentFee,
+              vendorId: vendorId ? String(vendorId) : undefined,
+              customerId: customerId ? String(customerId) : undefined,
+              couponCode:
+                body.couponCode ?? body.coupon_code
+                  ? String(body.couponCode ?? body.coupon_code).trim()
+                  : undefined,
+            });
+          } catch (err) {
+            console.warn('[pbe-wappt-shadow] schedule failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
         }
 

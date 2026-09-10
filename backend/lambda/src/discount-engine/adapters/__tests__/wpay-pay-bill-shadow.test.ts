@@ -254,7 +254,7 @@ describe('WPay Pay Bill shadow (Phase 2)', () => {
     expect(verify).not.toContain('scheduleWpayPayBillShadow');
     expect(verify).not.toContain('evaluateWpayPayBillShadow');
     expect(bookingCreate).toContain('wapptAppointmentFee == null');
-    expect(bookingCreate).not.toContain('appointmentRequestToDiscountContext');
+    expect(bookingCreate).toContain('scheduleWapptAppointmentShadow');
     expect(shadow).not.toContain('commitResolverUsageEntries');
     expect(shadow).not.toContain('class WPayPromotionEngine');
     expect(shadow).not.toContain('class AppointmentPromotionEngine');
