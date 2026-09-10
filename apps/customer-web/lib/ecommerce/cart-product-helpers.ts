@@ -23,6 +23,12 @@ export function shopProductToCartItem(product: ShopProduct, quantity = 1): CartI
       ...(product.vendor_shipping_origin_pincode
         ? { vendor_shipping_origin_pincode: product.vendor_shipping_origin_pincode }
         : {}),
+      ...(product.lead_time_min_days != null
+        ? { lead_time_min_days: Number(product.lead_time_min_days) }
+        : {}),
+      ...(product.lead_time_max_days != null
+        ? { lead_time_max_days: Number(product.lead_time_max_days) }
+        : {}),
       category_id: product.category_id,
       stock: product.stock ?? 99,
       ...(product.delivery_regions?.length

@@ -21,6 +21,8 @@ export type WarmpawzCartProductSnapshot = {
   vendor_state?: string;
   vendor_pincode?: string;
   vendor_shipping_origin_pincode?: string;
+  lead_time_min_days?: number | null;
+  lead_time_max_days?: number | null;
   category_id?: string;
   stock: number;
   /** City names; empty/undefined = ships everywhere */

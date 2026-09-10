@@ -1059,8 +1059,42 @@ export function ProductFormModal({
             )}
           </div>
 
-          {/* Delivery regions */}
+          {/* Delivery lead time + regions */}
           <div className="border-t border-slate-200 pt-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">
+                Lead time (days)
+              </label>
+              <p className="text-xs text-slate-500 mt-1">
+                Extra days before courier. Leave empty for standard 2–5 day delivery.
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1" htmlFor="lead-time-min">
+                    Min days
+                  </label>
+                  <IntegerInput
+                    id="lead-time-min"
+                    value={form.leadTimeMinDays}
+                    onChange={(leadTimeMinDays) => setForm({ ...form, leadTimeMinDays })}
+                    placeholder="e.g. 35"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1" htmlFor="lead-time-max">
+                    Max days
+                  </label>
+                  <IntegerInput
+                    id="lead-time-max"
+                    value={form.leadTimeMaxDays}
+                    onChange={(leadTimeMaxDays) => setForm({ ...form, leadTimeMaxDays })}
+                    placeholder="e.g. 42"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
             <label className="block text-sm font-medium text-slate-700 flex items-center gap-2">
               <MapPin className="w-4 h-4" />
               Delivery Regions (cities)

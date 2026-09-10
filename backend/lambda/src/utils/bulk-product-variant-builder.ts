@@ -59,6 +59,8 @@ export type BulkProductGroup = {
     delivery_regions?: unknown;
     product_specifications?: string | null;
     listing_ownership?: string | null;
+    lead_time_min_days?: unknown;
+    lead_time_max_days?: unknown;
   };
   variants: BulkVariantRow[];
   rowNums: number[];
@@ -169,6 +171,8 @@ function parentFieldsFromBulkRow(row: BulkVariantRow): BulkProductGroup['parent'
     delivery_regions: row.delivery_regions ?? null,
     product_specifications: trimStr(row.product_specifications),
     listing_ownership: trimStr(row.listing_ownership),
+    lead_time_min_days: row.lead_time_min_days ?? null,
+    lead_time_max_days: row.lead_time_max_days ?? null,
   };
 }
 

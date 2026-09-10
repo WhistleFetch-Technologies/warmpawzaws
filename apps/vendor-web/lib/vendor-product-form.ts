@@ -11,6 +11,8 @@ import {
   RESERVED_SPEC_KEYS,
   MAX_VARIANT_ATTRIBUTES,
   MAX_SKUS_PER_PRODUCT,
+  parseLeadTimeDayValue,
+  parseLeadTimePair,
   type VariantPresetSuggestion,
 } from '@warmpawz/shared-types';
 
@@ -116,6 +118,9 @@ export type ProductFormState = {
   heightCm: string;
   petTypeInput: string;
   manufacturingDetails: string;
+  /** Extra days before courier. Empty = standard 2–5 day delivery. */
+  leadTimeMinDays: string;
+  leadTimeMaxDays: string;
 };
 
 export type SimpleSkuDraft = {
@@ -153,6 +158,8 @@ export type VendorProductPayload = {
     barcode?: string | null;
   }>;
   delivery_regions: string[] | null;
+  lead_time_min_days?: number | null;
+  lead_time_max_days?: number | null;
   listing_ownership?: 'own_brand' | 'third_party';
   metadata?: {
     variant_axes?: Array<{ key: string; label: string; preset?: VariantAxisPreset }>;
@@ -297,6 +304,11 @@ function appendProductExtrasToPayload(
   const specs = specificationsObjectFromForm(form, customSpecs);
   if (Object.keys(specs).length > 0) payload.specifications = specs;
   if (simpleBarcode?.trim()) payload.barcode = simpleBarcode.trim();
+  const lead = parseLeadTimePair(form.leadTimeMinDays, form.leadTimeMaxDays);
+  if (lead.ok) {
+    payload.lead_time_min_days = lead.min;
+    payload.lead_time_max_days = lead.max;
+  }
 }
 
 const PRESET_AXIS_LABELS: Record<string, { label: string; preset: VariantAxisPreset }> = {
@@ -595,7 +607,14 @@ export function initialProductFormState(
     manufacturingDetails: String(
       specs.manufacturing_details ?? product?.manufacturing_details ?? '',
     ),
+    leadTimeMinDays: leadTimeDayForForm(product?.lead_time_min_days),
+    leadTimeMaxDays: leadTimeDayForForm(product?.lead_time_max_days),
   };
+}
+
+function leadTimeDayForForm(raw: unknown): string {
+  const n = parseLeadTimeDayValue(raw);
+  return n == null ? '' : String(n);
 }
 
 export function initialSimpleSkuFromProduct(
@@ -733,6 +752,9 @@ export function validateProductForm(input: ValidateProductFormInput): string | n
   if (!GST_SLABS.includes(gstNum as (typeof GST_SLABS)[number])) {
     return 'Tax (GST %) is required — choose 0, 5, 12, 18, or 28';
   }
+
+  const lead = parseLeadTimePair(form.leadTimeMinDays, form.leadTimeMaxDays);
+  if (!lead.ok) return lead.error;
 
   const basePrice = parseFloat(String(form.basePrice ?? '').trim());
 

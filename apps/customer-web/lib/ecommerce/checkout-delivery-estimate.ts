@@ -15,6 +15,8 @@ function vendorGeoFromSnapshot(
     state: product.vendor_state,
     pincode: product.vendor_pincode,
     shippingOriginPincode: product.vendor_shipping_origin_pincode,
+    leadTimeMinDays: product.lead_time_min_days,
+    leadTimeMaxDays: product.lead_time_max_days,
   };
 }
 
@@ -28,6 +30,8 @@ export function deliverySlaVendorFromCartItem(item: CartItem): DeliverySlaVendor
     state: legacy.vendor_state as string | undefined,
     pincode: legacy.vendor_pincode as string | undefined,
     shippingOriginPincode: legacy.vendor_shipping_origin_pincode as string | undefined,
+    leadTimeMinDays: legacy.lead_time_min_days as number | undefined,
+    leadTimeMaxDays: legacy.lead_time_max_days as number | undefined,
   };
 }
 

@@ -20,6 +20,8 @@ export interface ShopProduct {
   vendor_state?: string;
   vendor_pincode?: string;
   vendor_shipping_origin_pincode?: string;
+  lead_time_min_days?: number | null;
+  lead_time_max_days?: number | null;
   is_active: boolean;
   delivery_regions?: string[];
   has_variants?: boolean;

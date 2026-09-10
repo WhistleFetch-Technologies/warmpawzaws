@@ -78,6 +78,39 @@ describe('filterProductPayloadToColumns', () => {
   });
 });
 
+describe('applyVendorProductExtrasToPayload lead time', () => {
+  const cols = new Set(['lead_time_min_days', 'lead_time_max_days']);
+
+  it('persists a valid min/max pair', () => {
+    const payload: Record<string, unknown> = {};
+    applyVendorProductExtrasToPayload(
+      payload,
+      { lead_time_min_days: 35, lead_time_max_days: 42 },
+      cols,
+    );
+    expect(payload.lead_time_min_days).toBe(35);
+    expect(payload.lead_time_max_days).toBe(42);
+  });
+
+  it('clears lead time when both values are empty', () => {
+    const payload: Record<string, unknown> = {};
+    applyVendorProductExtrasToPayload(
+      payload,
+      { lead_time_min_days: '', lead_time_max_days: '' },
+      cols,
+    );
+    expect(payload.lead_time_min_days).toBeNull();
+    expect(payload.lead_time_max_days).toBeNull();
+  });
+
+  it('does not persist a one-sided pair', () => {
+    const payload: Record<string, unknown> = { name: 'Bed' };
+    applyVendorProductExtrasToPayload(payload, { lead_time_min_days: 35 }, cols);
+    expect(payload.lead_time_min_days).toBeUndefined();
+    expect(payload.lead_time_max_days).toBeUndefined();
+  });
+});
+
 describe('applyVendorProductExtrasToPayload brand fallback', () => {
   it('stores brand in specifications when products.brand column is missing', () => {
     const payload: Record<string, unknown> = {};

@@ -105,6 +105,8 @@ interface Product {
   vendor_state?: string;
   vendor_pincode?: string;
   vendor_shipping_origin_pincode?: string;
+  lead_time_min_days?: number | null;
+  lead_time_max_days?: number | null;
   brand?: string;
   material?: string;
   dimensions?: { length: number; width: number; height: number; weight: number };
@@ -308,6 +310,8 @@ export default function ProductDetailClient() {
         city: undefined,
         pincode: product.vendor_pincode,
         shippingOriginPincode: product.vendor_shipping_origin_pincode,
+        leadTimeMinDays: product.lead_time_min_days,
+        leadTimeMaxDays: product.lead_time_max_days,
       },
       {
         pincode: activeCustomerPincode,
@@ -673,6 +677,12 @@ export default function ProductDetailClient() {
       ...(product.vendor_pincode ? { vendor_pincode: product.vendor_pincode } : {}),
       ...(product.vendor_shipping_origin_pincode
         ? { vendor_shipping_origin_pincode: product.vendor_shipping_origin_pincode }
+        : {}),
+      ...(product.lead_time_min_days != null
+        ? { lead_time_min_days: Number(product.lead_time_min_days) }
+        : {}),
+      ...(product.lead_time_max_days != null
+        ? { lead_time_max_days: Number(product.lead_time_max_days) }
         : {}),
       ...(product.category_id ? { category_id: product.category_id } : {}),
       stock: displayStock,
@@ -1229,6 +1239,11 @@ export default function ProductDetailClient() {
                         {deliveryEstimate.deliverByLabel}
                       </p>
                       <p className="text-sm text-slate-500">{deliveryEstimate.label}</p>
+                      {Number(product?.lead_time_max_days) >= 14 && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          Includes vendor preparation time.
+                        </p>
+                      )}
                     </>
                   ) : activeCustomerPincode ? null : (
                     <p className="text-sm text-slate-500 mt-0.5">

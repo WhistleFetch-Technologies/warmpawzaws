@@ -39,7 +39,7 @@ import {
   validateEcommerceProductInput,
 } from '../utils/product-ecommerce-validation';
 import { syncProductSkus } from '../utils/product-sku-service';
-import { resolveVendorPetTypeInput } from '@warmpawz/shared-types';
+import { parseLeadTimePair, resolveVendorPetTypeInput } from '@warmpawz/shared-types';
 import {
   groupBulkRows,
   buildSkuInputsFromGroup,
@@ -264,6 +264,14 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           if (isNaN(w) || w < 0) push('weight', 'Weight must be a number ≥ 0', product.weight);
         }
 
+        const leadParsed = parseLeadTimePair(
+          product.lead_time_min_days,
+          product.lead_time_max_days,
+        );
+        if (!leadParsed.ok) {
+          push('lead_time_min_days', leadParsed.error, product.lead_time_min_days);
+        }
+
         // ── Build the cleaned product if no errors ──────────────────────
         if (rowErrors.length === 0 && validation.ok) {
           const { normalized } = validation;
@@ -315,6 +323,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             })(),
             manufacturing_details: product.manufacturing_details?.trim() || null,
             delivery_regions: product.delivery_regions ?? null,
+            lead_time_min_days: leadParsed.ok ? leadParsed.min : null,
+            lead_time_max_days: leadParsed.ok ? leadParsed.max : null,
             listing_ownership: product.listing_ownership?.trim() || null,
           });
         }
@@ -817,6 +827,9 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'pettypeother': 'pet_type_other',
         'listingownership': 'listing_ownership',
         'productownership': 'listing_ownership',
+        'leadtimemindays': 'lead_time_min_days',
+        'leadtimemaxdays': 'lead_time_max_days',
+        'deliveryregions': 'delivery_regions',
         'isactive': 'is_active',
         'active': 'is_active',
         'status': 'is_active',

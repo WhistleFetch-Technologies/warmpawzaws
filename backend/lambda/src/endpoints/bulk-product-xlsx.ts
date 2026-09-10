@@ -1,5 +1,5 @@
 /**
- * XLSX bulk product template — unified 27-column layout for vendor product upload.
+ * XLSX bulk product template — unified 29-column layout for vendor product upload.
  * Single sheet (NPI), inline dropdowns, one demo row.
  *
  * Required (`*`): Title, Brand, Category, Quantity, Image, Price, Tax, HSN
@@ -22,7 +22,7 @@ export { getBulkProductTitle };
 export const SHEET_NAME = 'NPI';
 export const VARIANT_GUIDE_SHEET_NAME = 'Variant Guide';
 
-/** 27 columns. Compulsory ones carry a `*` suffix. */
+/** 29 columns. Compulsory ones carry a `*` suffix. */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Title*',
   'Description',
@@ -43,6 +43,8 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'HSN*',
   'Manufacturing Details',
   'Delivery Regions',
+  'Lead Time Min (days)',
+  'Lead Time Max (days)',
   'Product Group ID',
   'Variant Attribute 1',
   'Variant Value 1',
@@ -93,13 +95,13 @@ const THIN_BORDER: Partial<ExcelJS.Borders> = {
 const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill }> = [
   {
     start: 1,
-    end: 19,
+    end: 21,
     title: `Product Details (max ${MAX_BULK_PRODUCT_ROWS} rows per file)`,
     fill: YELLOW,
   },
   {
-    start: 20,
-    end: 27,
+    start: 22,
+    end: 29,
     title: 'Same Product Group ID = one product (variants). Listing Ownership required for ownership-model sellers.',
     fill: TAN,
   },
@@ -144,6 +146,8 @@ function buildSampleRow(sampleCategory: string): string[] {
     '12%',
     '42010000',
     'Country of Origin: India',
+    '',
+    '',
     '',
     '',
     '',
@@ -222,6 +226,10 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     if (h === 'Delivery Regions') {
       cell.note = 'Optional. Comma-separated city names. Empty = ships everywhere.';
     }
+    if (h === 'Lead Time Min (days)' || h === 'Lead Time Max (days)') {
+      cell.note =
+        'Optional extra days before courier. Both blank = standard 2–5 day delivery. Both required if either is set. Integers 0–365, min ≤ max.';
+    }
     if (h === 'Brand*') {
       cell.note = 'Required. Enter your product brand name.';
     }
@@ -262,7 +270,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
   addInlineDropdown(ws, `${CATEGORY}3:${CATEGORY}500`, categories);
   addInlineDropdown(ws, `${PET_TYPE}3:${PET_TYPE}500`, STATIC_PET_TYPES);
   addInlineDropdown(ws, `${TAX}3:${TAX}500`, STATIC_TAX_LABELS);
-  addInlineDropdown(ws, `${colLetter(27)}3:${colLetter(27)}500`, ['Own brand', 'Third party']);
+  addInlineDropdown(ws, `${colLetter(29)}3:${colLetter(29)}500`, ['Own brand', 'Third party']);
 
   addVariantGuideSheet(wb);
 
@@ -381,6 +389,10 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   hsn: 'hsn_code',
   manufacturingdetails: 'manufacturing_details',
   deliveryregions: 'delivery_regions',
+  leadtimemindays: 'lead_time_min_days',
+  lead_time_min_days: 'lead_time_min_days',
+  leadtimemaxdays: 'lead_time_max_days',
+  lead_time_max_days: 'lead_time_max_days',
   productgroupid: 'product_group_id',
   variantattribute1: 'variant_attr_1',
   variantvalue1: 'variant_value_1',
@@ -551,6 +563,12 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     }
     if (bag.delivery_regions?.trim()) {
       product.delivery_regions = parseDeliveryRegionsCsv(bag.delivery_regions);
+    }
+    if (bag.lead_time_min_days?.trim()) {
+      product.lead_time_min_days = bag.lead_time_min_days.trim();
+    }
+    if (bag.lead_time_max_days?.trim()) {
+      product.lead_time_max_days = bag.lead_time_max_days.trim();
     }
     if (bag.product_group_id?.trim()) product.product_group_id = bag.product_group_id.trim();
     if (bag.colour?.trim()) product.colour = bag.colour.trim();

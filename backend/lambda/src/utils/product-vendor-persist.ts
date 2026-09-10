@@ -5,6 +5,7 @@
 import { query } from '../database/rds-connection';
 import {
   normalizeDeliveryRegionsList,
+  parseLeadTimePair,
   parseOptionalPositiveNumber,
   parseSpecificationsCsv,
   resolveVendorPetTypeInput,
@@ -56,6 +57,8 @@ export type VendorProductExtrasInput = {
   specifications_csv?: unknown;
   barcode?: unknown;
   delivery_regions?: unknown;
+  lead_time_min_days?: unknown;
+  lead_time_max_days?: unknown;
 };
 
 function nestedSpecificationsObject(
@@ -290,6 +293,21 @@ export function applyVendorProductExtrasToPayload(
     payload.metadata = buildMetadataWithDeliveryRegions(currentMeta, input.delivery_regions);
   }
 
+  if (
+    cols.has('lead_time_min_days') &&
+    cols.has('lead_time_max_days')
+  ) {
+    const hasLeadInput =
+      input.lead_time_min_days !== undefined || input.lead_time_max_days !== undefined;
+    if (!partial || hasLeadInput) {
+      const parsed = parseLeadTimePair(input.lead_time_min_days, input.lead_time_max_days);
+      if (parsed.ok) {
+        payload.lead_time_min_days = parsed.min;
+        payload.lead_time_max_days = parsed.max;
+      }
+    }
+  }
+
   if ((!partial || input.brand !== undefined) && brandTrimmed) {
     if (cols.has('brand')) {
       payload.brand = brandTrimmed;
@@ -321,5 +339,7 @@ export function vendorExtrasFromBulkRow(row: Record<string, unknown>): VendorPro
     specifications_csv: row.specifications_csv ?? row.product_specifications,
     barcode: row.barcode,
     delivery_regions: row.delivery_regions,
+    lead_time_min_days: row.lead_time_min_days,
+    lead_time_max_days: row.lead_time_max_days,
   };
 }

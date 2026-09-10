@@ -38,6 +38,8 @@ const baseForm: ProductFormState = {
   heightCm: '',
   petTypeInput: '',
   manufacturingDetails: '',
+  leadTimeMinDays: '',
+  leadTimeMaxDays: '',
 };
 
 describe('vendor-product-form', () => {
@@ -224,6 +226,41 @@ describe('vendor-product-form', () => {
     expect(payload.specifications?.pet_type).toBe('dog');
     expect(payload.specifications?.Material).toBe('Cotton');
     expect(payload.delivery_regions).toEqual(['Mumbai', 'Pune']);
+  });
+
+  it('buildVendorProductPayload includes lead time days', () => {
+    const payload = buildVendorProductPayload({
+      form: { ...baseForm, leadTimeMinDays: '35', leadTimeMaxDays: '42' },
+      mode: 'simple',
+      variants: [],
+      simpleSku: { price: '450', stock: '10', images: ['https://img/a.jpg'], barcode: '' },
+      variantAxes: presetVariantAxes('size'),
+      sellerId: 'vendor-1',
+      stripImageUrl: strip,
+    });
+    expect(payload.lead_time_min_days).toBe(35);
+    expect(payload.lead_time_max_days).toBe(42);
+  });
+
+  it('validateProductForm rejects one-sided lead time', () => {
+    const err = validateProductForm({
+      form: { ...baseForm, leadTimeMinDays: '35', leadTimeMaxDays: '' },
+      mode: 'simple',
+      variants: [],
+      simpleSku: { price: '450', stock: '10', images: ['a'], barcode: '' },
+      variantAxes: presetVariantAxes('size'),
+    });
+    expect(err).toMatch(/both required/i);
+  });
+
+  it('initialProductFormState hydrates lead time days', () => {
+    const form = initialProductFormState({
+      name: 'Bed',
+      lead_time_min_days: 35,
+      lead_time_max_days: 42,
+    });
+    expect(form.leadTimeMinDays).toBe('35');
+    expect(form.leadTimeMaxDays).toBe('42');
   });
 
   it('initialProductFormState prefills GST from numeric API values', () => {
