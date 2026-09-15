@@ -134,45 +134,38 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
   }
 
   return (
-    <div className="p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Commission & Earnings</h1>
-        <p className="text-slate-500 mt-1">Track your commissions and calculate net earnings</p>
-      </div>
-
-      <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-orange-400 rounded-2xl p-8 text-white shadow-xl shadow-orange-500/20">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="p-4 bg-white/20 rounded-xl">
-                <Percent className="w-8 h-8" />
-              </div>
-              <div>
-                <p className="text-orange-100 text-sm">Your Commission Rate</p>
-                <p className="text-5xl font-bold mt-1">
-                  {formatCommissionRateDisplay(
-                    analytics.commissionRate,
-                    analytics.commissionConfigured
-                  )}
-                </p>
-                <p className="text-orange-100 text-sm mt-2">
-                  {commissionConfigured
-                    ? rateSourceLabel ?? 'Platform fee on each shop sale'
-                    : 'Shop commission is not configured yet'}
-                </p>
-              </div>
+    <div className="space-y-3 p-1 sm:space-y-6 sm:p-6 lg:p-8">
+      <div className="rounded-xl bg-gradient-to-r from-orange-500 via-amber-500 to-orange-400 p-3 text-white shadow-lg shadow-orange-500/20 sm:rounded-2xl sm:p-6 lg:p-8">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <div className="shrink-0 rounded-lg bg-white/20 p-2 sm:rounded-xl sm:p-4">
+              <Percent className="h-5 w-5 sm:h-8 sm:w-8" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] text-orange-100 sm:text-sm">Your commission rate</p>
+              <p className="text-2xl font-bold sm:text-5xl">
+                {formatCommissionRateDisplay(
+                  analytics.commissionRate,
+                  analytics.commissionConfigured
+                )}
+              </p>
+              <p className="mt-0.5 truncate text-[11px] text-orange-100 sm:mt-2 sm:text-sm">
+                {commissionConfigured
+                  ? rateSourceLabel ?? 'Platform fee on each shop sale'
+                  : 'Shop commission is not configured yet'}
+              </p>
             </div>
           </div>
-          <div className="text-right space-y-4">
+          <div className="hidden shrink-0 space-y-3 text-right sm:block">
             <div>
-              <p className="text-orange-100 text-sm">Total Revenue</p>
-              <p className="text-3xl font-bold">
+              <p className="text-sm text-orange-100">Total Revenue</p>
+              <p className="text-2xl font-bold lg:text-3xl">
                 ₹{safeNum(analytics.totalRevenue).toLocaleString('en-IN')}
               </p>
             </div>
             <div>
-              <p className="text-orange-100 text-sm">Net Earnings</p>
-              <p className="text-3xl font-bold text-emerald-300">
+              <p className="text-sm text-orange-100">Net Earnings</p>
+              <p className="text-2xl font-bold text-emerald-300 lg:text-3xl">
                 ₹{safeNum(analytics.netEarnings).toLocaleString('en-IN')}
               </p>
             </div>
@@ -181,11 +174,11 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
       </div>
 
       {!commissionConfigured && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 sm:gap-3 sm:rounded-2xl sm:p-5">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 sm:h-5 sm:w-5" />
           <div>
-            <p className="font-medium text-amber-900">Commission not configured</p>
-            <p className="text-sm text-amber-800 mt-1">
+            <p className="text-sm font-medium text-amber-900">Commission not configured</p>
+            <p className="mt-1 text-xs text-amber-800 sm:text-sm">
               Your shop commission rate has not been set up yet. Order earnings and the calculator
               below will update once WarmPawz configures your commission model.
             </p>
@@ -193,54 +186,54 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-emerald-100 rounded-xl">
-              <Wallet className="w-6 h-6 text-emerald-600" />
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 sm:gap-4">
+        <div className="rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="rounded-lg bg-emerald-100 p-1.5 sm:rounded-xl sm:p-3">
+              <Wallet className="h-4 w-4 text-emerald-600 sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <p className="text-sm text-slate-500">Total Revenue</p>
-              <p className="text-2xl font-bold text-slate-900">
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-500 sm:text-sm">Total Revenue</p>
+              <p className="text-base font-bold text-slate-900 sm:text-2xl">
                 ₹{safeNum(analytics.totalRevenue).toLocaleString('en-IN')}
               </p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-orange-100 rounded-xl">
-              <IndianRupee className="w-6 h-6 text-orange-600" />
+        <div className="rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="rounded-lg bg-orange-100 p-1.5 sm:rounded-xl sm:p-3">
+              <IndianRupee className="h-4 w-4 text-orange-600 sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <p className="text-sm text-slate-500">Commission Paid</p>
-              <p className="text-2xl font-bold text-orange-600">
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-500 sm:text-sm">Commission Paid</p>
+              <p className="text-base font-bold text-orange-600 sm:text-2xl">
                 ₹{safeNum(analytics.totalCommission).toLocaleString('en-IN')}
               </p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-100 rounded-xl">
-              <TrendingUp className="w-6 h-6 text-blue-600" />
+        <div className="rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="rounded-lg bg-blue-100 p-1.5 sm:rounded-xl sm:p-3">
+              <TrendingUp className="h-4 w-4 text-blue-600 sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <p className="text-sm text-slate-500">Net Earnings</p>
-              <p className="text-2xl font-bold text-blue-600">
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-500 sm:text-sm">Net Earnings</p>
+              <p className="text-base font-bold text-blue-600 sm:text-2xl">
                 ₹{safeNum(analytics.netEarnings).toLocaleString('en-IN')}
               </p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-purple-100 rounded-xl">
-              <PiggyBank className="w-6 h-6 text-purple-600" />
+        <div className="rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="rounded-lg bg-purple-100 p-1.5 sm:rounded-xl sm:p-3">
+              <PiggyBank className="h-4 w-4 text-purple-600 sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <p className="text-sm text-slate-500">Pending Payout</p>
-              <p className="text-2xl font-bold text-purple-600">
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-500 sm:text-sm">Pending Payout</p>
+              <p className="text-base font-bold text-purple-600 sm:text-2xl">
                 ₹{safeNum(analytics.pendingPayout).toLocaleString('en-IN')}
               </p>
             </div>
@@ -248,57 +241,57 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-3 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl">
-            <Calculator className="w-6 h-6 text-orange-600" />
+      <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm sm:rounded-2xl sm:p-6">
+        <div className="mb-3 flex items-center gap-2 sm:mb-6 sm:gap-3">
+          <div className="rounded-lg bg-gradient-to-br from-orange-100 to-amber-100 p-2 sm:rounded-xl sm:p-3">
+            <Calculator className="h-4 w-4 text-orange-600 sm:h-6 sm:w-6" />
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">Earnings Calculator</h2>
-            <p className="text-sm text-slate-500">Calculate your earnings for any sale amount</p>
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-slate-900 sm:text-lg">Earnings Calculator</h2>
+            <p className="text-[11px] text-slate-500 sm:text-sm">See net earnings for a sale amount</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="space-y-4">
-            <label className="block text-sm font-medium text-slate-700">Sale Amount (₹)</label>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 sm:gap-8">
+          <div className="space-y-2 sm:space-y-4">
+            <label className="block text-xs font-medium text-slate-700 sm:text-sm">Sale Amount (₹)</label>
             <div className="relative">
-              <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <IndianRupee className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 sm:left-4 sm:h-5 sm:w-5" />
               <input
                 type="number"
                 min="0"
                 value={simulatedSale}
                 onChange={(e) => setSimulatedSale(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 text-2xl font-bold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-lg font-bold focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 sm:rounded-xl sm:py-4 sm:pl-12 sm:pr-4 sm:text-2xl"
               />
             </div>
-            <p className="text-sm text-slate-500">
+            <p className="text-[11px] text-slate-500 sm:text-sm">
               Enter the sale amount including GST to see your earnings breakdown
             </p>
           </div>
 
-          <div className="bg-gradient-to-br from-slate-50 to-orange-50/30 rounded-xl p-6 space-y-4">
-            <div className="flex items-center justify-between py-2">
+          <div className="space-y-2 rounded-xl bg-gradient-to-br from-slate-50 to-orange-50/30 p-3 text-sm sm:space-y-4 sm:p-6">
+            <div className="flex items-center justify-between py-1 sm:py-2">
               <span className="text-slate-600">Sale Amount</span>
               <span className="font-bold text-slate-900">
                 ₹{breakdown.saleAmount.toLocaleString('en-IN')}
               </span>
             </div>
             {gstRate > 0 && (
-              <div className="flex items-center justify-between py-2 border-b border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-200 py-1 sm:py-2">
                 <span className="text-slate-600">GST ({gstRate}%)</span>
                 <span className="font-medium text-purple-600">
                   - ₹{breakdown.gstAmount.toFixed(2)}
                 </span>
               </div>
             )}
-            <div className="flex items-center justify-between py-2">
+            <div className="flex items-center justify-between py-1 sm:py-2">
               <span className="text-slate-600">Base Amount</span>
               <span className="font-medium text-slate-900">
                 ₹{breakdown.baseAmount.toFixed(2)}
               </span>
             </div>
-            <div className="flex items-center justify-between py-2 border-b border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-200 py-1 sm:py-2">
               <span className="text-slate-600">
                 Platform Commission
                 {commissionConfigured && commissionRate > 0 ? ` (${commissionRate}%)` : ''}
@@ -309,9 +302,9 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
                   : '—'}
               </span>
             </div>
-            <div className="flex items-center justify-between py-3 bg-emerald-100 rounded-xl px-4 -mx-2">
-              <span className="font-semibold text-emerald-900">Your Net Earnings</span>
-              <span className="text-2xl font-bold text-emerald-600">
+            <div className="flex items-center justify-between rounded-lg bg-emerald-100 px-3 py-2 sm:rounded-xl sm:px-4 sm:py-3">
+              <span className="text-xs font-semibold text-emerald-900 sm:text-sm">Your Net Earnings</span>
+              <span className="text-base font-bold text-emerald-600 sm:text-2xl">
                 ₹{breakdown.netEarnings.toFixed(2)}
               </span>
             </div>
@@ -320,47 +313,47 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
       </div>
 
       {analytics.tiers.length > 0 && (
-        <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-6 text-white">
-          <h3 className="text-lg font-semibold mb-4">Commission Tier Benefits</h3>
+        <div className="rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 p-3 text-white sm:rounded-2xl sm:p-6">
+          <h3 className="mb-3 text-sm font-semibold sm:mb-4 sm:text-lg">Commission Tier Benefits</h3>
           <div
-            className={`grid grid-cols-1 gap-4 ${
+            className={`grid grid-cols-2 gap-2 sm:gap-4 ${
               analytics.tiers.length >= 3
                 ? 'md:grid-cols-3'
                 : analytics.tiers.length === 2
                   ? 'md:grid-cols-2'
-                  : ''
+                  : 'grid-cols-1'
             }`}
           >
             {analytics.tiers.map((tier, index) => (
               <div
                 key={`${tier.name}-${tier.level}`}
-                className={`rounded-xl p-4 ${
+                className={`rounded-lg p-2.5 sm:rounded-xl sm:p-4 ${
                   tier.isCurrent ? 'bg-orange-500/30 ring-2 ring-orange-400' : 'bg-white/10'
                 }`}
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">{TIER_MEDALS[index] ?? '⭐'}</span>
-                  <span className="font-semibold">{tier.name}</span>
+                <div className="mb-1 flex flex-wrap items-center gap-1.5 sm:mb-2 sm:gap-2">
+                  <span className="text-base sm:text-2xl">{TIER_MEDALS[index] ?? '⭐'}</span>
+                  <span className="text-xs font-semibold sm:text-sm">{tier.name}</span>
                   {tier.isCurrent && (
-                    <span className="text-xs bg-orange-400 text-white px-2 py-0.5 rounded-full">
+                    <span className="rounded-full bg-orange-400 px-1.5 py-0.5 text-[10px] text-white sm:text-xs">
                       Current
                     </span>
                   )}
                 </div>
                 <p
-                  className={`text-3xl font-bold ${
+                  className={`text-xl font-bold sm:text-3xl ${
                     tier.isCurrent ? 'text-orange-400' : 'text-slate-300'
                   }`}
                 >
                   {tier.commissionRate}%
                 </p>
-                <p className="text-slate-400 text-sm mt-2">
+                <p className="mt-1 text-[11px] text-slate-400 sm:mt-2 sm:text-sm">
                   {formatRevenueRange(tier.minMonthlyRevenue, tier.maxMonthlyRevenue)}
                 </p>
               </div>
             ))}
           </div>
-          <p className="text-slate-400 text-sm mt-4">
+          <p className="mt-3 text-[11px] text-slate-400 sm:mt-4 sm:text-sm">
             Your commission rate automatically improves as your sales grow!
           </p>
         </div>

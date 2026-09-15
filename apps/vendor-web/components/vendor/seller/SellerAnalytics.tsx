@@ -279,7 +279,7 @@ export function SellerAnalytics({ sellerId }: SellerAnalyticsProps) {
     a.orders.current > 0 ? Math.round(a.revenue.current / a.orders.current) : 0;
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="space-y-4 p-1 sm:space-y-6 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Analytics & Insights</h1>
@@ -319,16 +319,16 @@ export function SellerAnalytics({ sellerId }: SellerAnalyticsProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-xl shadow-lg">
-              <IndianRupee className="w-6 h-6 text-white" />
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-2 lg:grid-cols-4 sm:gap-6">
+        <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm sm:rounded-2xl sm:p-6">
+          <div className="mb-2 flex items-center justify-between sm:mb-4">
+            <div className="rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 p-2 shadow-md sm:rounded-xl sm:p-3">
+              <IndianRupee className="h-4 w-4 text-white sm:h-6 sm:w-6" />
             </div>
             <ChangeBadge change={a.revenue.change} />
           </div>
-          <p className="text-sm text-slate-500">Total Revenue</p>
-          <p className="text-3xl font-bold text-slate-900 mt-1">
+          <p className="text-[11px] text-slate-500 sm:text-sm">Total Revenue</p>
+          <p className="mt-0.5 text-lg font-bold text-slate-900 sm:mt-1 sm:text-3xl">
             ₹{a.revenue.current.toLocaleString()}
           </p>
           <p className="text-xs text-slate-400 mt-2">
@@ -336,37 +336,37 @@ export function SellerAnalytics({ sellerId }: SellerAnalyticsProps) {
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl shadow-lg">
-              <ShoppingCart className="w-6 h-6 text-white" />
+        <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm sm:rounded-2xl sm:p-6">
+          <div className="mb-2 flex items-center justify-between sm:mb-4">
+            <div className="rounded-lg bg-gradient-to-br from-blue-500 to-indigo-500 p-2 shadow-md sm:rounded-xl sm:p-3">
+              <ShoppingCart className="h-4 w-4 text-white sm:h-6 sm:w-6" />
             </div>
             <ChangeBadge change={a.orders.change} />
           </div>
-          <p className="text-sm text-slate-500">Total Orders</p>
-          <p className="text-3xl font-bold text-slate-900 mt-1">{a.orders.current}</p>
+          <p className="text-[11px] text-slate-500 sm:text-sm">Total Orders</p>
+          <p className="mt-0.5 text-lg font-bold text-slate-900 sm:mt-1 sm:text-3xl">{a.orders.current}</p>
           <p className="text-xs text-slate-400 mt-2">vs {a.orders.previous} prior period</p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-gradient-to-br from-purple-500 to-violet-500 rounded-xl shadow-lg">
-              <PackageCheck className="w-6 h-6 text-white" />
+        <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm sm:rounded-2xl sm:p-6">
+          <div className="mb-2 flex items-center justify-between sm:mb-4">
+            <div className="rounded-lg bg-gradient-to-br from-purple-500 to-violet-500 p-2 shadow-md sm:rounded-xl sm:p-3">
+              <PackageCheck className="h-4 w-4 text-white sm:h-6 sm:w-6" />
             </div>
           </div>
-          <p className="text-sm text-slate-500">Active Products</p>
-          <p className="text-3xl font-bold text-slate-900 mt-1">{a.products.active}</p>
+          <p className="text-[11px] text-slate-500 sm:text-sm">Active Products</p>
+          <p className="mt-0.5 text-lg font-bold text-slate-900 sm:mt-1 sm:text-3xl">{a.products.active}</p>
           <p className="text-xs text-slate-400 mt-2">Listed in your catalog</p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-gradient-to-br from-orange-500 to-amber-500 rounded-xl shadow-lg">
-              <Users className="w-6 h-6 text-white" />
+        <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm sm:rounded-2xl sm:p-6">
+          <div className="mb-2 flex items-center justify-between sm:mb-4">
+            <div className="rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 p-2 shadow-md sm:rounded-xl sm:p-3">
+              <Users className="h-4 w-4 text-white sm:h-6 sm:w-6" />
             </div>
           </div>
-          <p className="text-sm text-slate-500">Customers</p>
-          <p className="text-3xl font-bold text-slate-900 mt-1">{a.customers.unique}</p>
+          <p className="text-[11px] text-slate-500 sm:text-sm">Customers</p>
+          <p className="mt-0.5 text-lg font-bold text-slate-900 sm:mt-1 sm:text-3xl">{a.customers.unique}</p>
           <p className="text-xs text-slate-400 mt-2">Unique buyers in this period</p>
         </div>
       </div>
@@ -439,7 +439,7 @@ export function SellerAnalytics({ sellerId }: SellerAnalyticsProps) {
 
       <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-6 text-white">
         <h3 className="font-semibold text-lg mb-4">Performance Summary</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
           <div className="bg-white/10 rounded-xl p-4">
             <p className="text-slate-400 text-sm">Avg. Order Value</p>
             <p className="text-2xl font-bold mt-1">₹{avgOrderValue.toLocaleString()}</p>

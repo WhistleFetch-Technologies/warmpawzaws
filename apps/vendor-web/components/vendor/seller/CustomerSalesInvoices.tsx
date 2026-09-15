@@ -158,10 +158,10 @@ export function CustomerSalesInvoices({ sellerId, sellerData }: CustomerSalesInv
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[400px]">
+      <div className="flex h-full min-h-[200px] items-center justify-center sm:min-h-[400px]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 border-t-orange-500 mx-auto" />
-          <p className="mt-4 text-slate-500">Loading invoices...</p>
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500 sm:h-16 sm:w-16" />
+          <p className="mt-3 text-sm text-slate-500 sm:mt-4">Loading invoices...</p>
         </div>
       </div>
     );
@@ -173,23 +173,25 @@ export function CustomerSalesInvoices({ sellerId, sellerData }: CustomerSalesInv
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Customer Sales Invoices</h2>
-          <p className="text-slate-500 mt-1 text-sm">Tax invoices issued to your customers on completed orders</p>
+    <div className="space-y-3 sm:space-y-6">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-slate-900 sm:text-xl">Customer sales</h2>
+          <p className="mt-0.5 hidden text-sm text-slate-500 sm:block">
+            Tax invoices issued to your customers on completed orders
+          </p>
         </div>
-        <div className="relative">
+        <div className="relative shrink-0">
           <button
             type="button"
             onClick={() => setShowExportPicker((v) => !v)}
-            className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg shadow-orange-500/25 hover:shadow-xl transition-all"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 px-3 py-2 text-xs font-semibold text-white sm:rounded-xl sm:px-5 sm:py-3 sm:text-sm"
           >
-            <Download className="w-5 h-5" />
-            Export Report
+            <Download className="h-4 w-4 sm:h-5 sm:w-5" />
+            Export
           </button>
           {showExportPicker && (
-            <div className="absolute right-0 top-full mt-2 z-20 bg-white border border-slate-200 rounded-xl shadow-lg p-4 w-72">
+            <div className="absolute right-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-lg">
               <p className="text-sm font-medium text-slate-700 mb-2">GSTR-1 export month</p>
               <input
                 type="month"
@@ -219,174 +221,216 @@ export function CustomerSalesInvoices({ sellerId, sellerData }: CustomerSalesInv
         </div>
       </div>
 
-      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-6 text-white shadow-xl">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <div className="p-4 bg-white/20 rounded-xl">
-              <Building className="w-8 h-8" />
+      <div className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 p-3 text-white shadow-lg sm:rounded-2xl sm:p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+            <div className="shrink-0 rounded-lg bg-white/20 p-2 sm:rounded-xl sm:p-4">
+              <Building className="h-5 w-5 sm:h-8 sm:w-8" />
             </div>
-            <div>
-              <p className="text-indigo-200 text-sm">Business GSTIN</p>
-              <p className="text-2xl font-bold mt-1">{gstin || 'Not Registered'}</p>
-              <p className="text-indigo-200 text-sm mt-1">{businessName}</p>
+            <div className="min-w-0">
+              <p className="text-[11px] text-indigo-200 sm:text-sm">Business GSTIN</p>
+              <p className="truncate text-sm font-bold sm:text-2xl">{gstin || 'Not Registered'}</p>
+              <p className="truncate text-[11px] text-indigo-200 sm:text-sm">{businessName}</p>
             </div>
           </div>
-          <div className="text-right">
+          <div className="shrink-0 text-right">
             {summary.totalInvoices > 0 && effectiveRate != null ? (
               <>
-                <p className="text-indigo-200 text-sm">Effective GST (from invoices)</p>
-                <p className="text-4xl font-bold mt-1">{effectiveRate}%</p>
-                <p className="text-indigo-200 text-sm mt-1">
-                  {hasIgst && !hasCgstSgst
-                    ? 'IGST on inter-state sales'
-                    : hasCgstSgst
-                      ? 'CGST + SGST on intra-state sales'
-                      : 'Mixed rates by product/service'}
-                </p>
+                <p className="text-[11px] text-indigo-200 sm:text-sm">Effective GST</p>
+                <p className="text-xl font-bold sm:text-4xl">{effectiveRate}%</p>
               </>
             ) : (
-              <>
-                <p className="text-indigo-200 text-sm">GST rates</p>
-                <p className="text-lg font-semibold mt-1">Admin configured per HSN / category</p>
-                <p className="text-indigo-200 text-sm mt-1">Shown on each invoice when generated</p>
-              </>
+              <p className="max-w-[9rem] text-[11px] text-indigo-100 sm:max-w-none sm:text-sm">
+                GST rates set per HSN / category
+              </p>
             )}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-100 rounded-xl">
-              <FileText className="w-6 h-6 text-blue-600" />
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 sm:gap-4">
+        <div className="rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="rounded-lg bg-blue-100 p-1.5 sm:rounded-xl sm:p-3">
+              <FileText className="h-4 w-4 text-blue-600 sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <p className="text-sm text-slate-500">Total Invoices</p>
-              <p className="text-2xl font-bold text-slate-900">{summary.totalInvoices}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-emerald-100 rounded-xl">
-              <IndianRupee className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Total Revenue</p>
-              <p className="text-2xl font-bold text-emerald-600">{formatMoney(summary.totalAmount)}</p>
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-500 sm:text-sm">Total Invoices</p>
+              <p className="text-base font-bold text-slate-900 sm:text-2xl">{summary.totalInvoices}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-purple-100 rounded-xl">
-              <Receipt className="w-6 h-6 text-purple-600" />
+        <div className="rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="rounded-lg bg-emerald-100 p-1.5 sm:rounded-xl sm:p-3">
+              <IndianRupee className="h-4 w-4 text-emerald-600 sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <p className="text-sm text-slate-500">Total GST Collected</p>
-              <p className="text-2xl font-bold text-purple-600">{formatMoney(summary.totalTax)}</p>
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-500 sm:text-sm">Total Revenue</p>
+              <p className="text-base font-bold text-emerald-600 sm:text-2xl">{formatMoney(summary.totalAmount)}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-amber-100 rounded-xl">
-              <Calendar className="w-6 h-6 text-amber-600" />
+        <div className="rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="rounded-lg bg-purple-100 p-1.5 sm:rounded-xl sm:p-3">
+              <Receipt className="h-4 w-4 text-purple-600 sm:h-6 sm:w-6" />
             </div>
-            <div>
-              <p className="text-sm text-slate-500">Taxable Value</p>
-              <p className="text-2xl font-bold text-amber-600">{formatMoney(summary.totalSubtotal)}</p>
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-500 sm:text-sm">Total GST Collected</p>
+              <p className="text-base font-bold text-purple-600 sm:text-2xl">{formatMoney(summary.totalTax)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="rounded-lg bg-amber-100 p-1.5 sm:rounded-xl sm:p-3">
+              <Calendar className="h-4 w-4 text-amber-600 sm:h-6 sm:w-6" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-500 sm:text-sm">Taxable Value</p>
+              <p className="text-base font-bold text-amber-600 sm:text-2xl">{formatMoney(summary.totalSubtotal)}</p>
             </div>
           </div>
         </div>
       </div>
 
       {(hasCgstSgst || hasIgst) && (
-        <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200">
-          <h3 className="font-semibold text-slate-900 mb-4">GST collected (from your invoices)</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 p-3 sm:rounded-2xl sm:p-6">
+          <h3 className="mb-2 text-xs font-semibold text-slate-900 sm:mb-4 sm:text-base">GST collected</h3>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4 sm:gap-4">
             {hasCgstSgst && (
               <>
-                <div className="bg-white rounded-xl p-4 border border-slate-200">
-                  <p className="text-sm text-slate-500">CGST</p>
-                  <p className="text-xl font-bold text-slate-900">{formatMoney(summary.totalCGST)}</p>
+                <div className="rounded-lg border border-slate-200 bg-white p-2.5 sm:rounded-xl sm:p-4">
+                  <p className="text-[11px] text-slate-500 sm:text-sm">CGST</p>
+                  <p className="text-sm font-bold text-slate-900 sm:text-xl">{formatMoney(summary.totalCGST)}</p>
                 </div>
-                <div className="bg-white rounded-xl p-4 border border-slate-200">
-                  <p className="text-sm text-slate-500">SGST</p>
-                  <p className="text-xl font-bold text-slate-900">{formatMoney(summary.totalSGST)}</p>
+                <div className="rounded-lg border border-slate-200 bg-white p-2.5 sm:rounded-xl sm:p-4">
+                  <p className="text-[11px] text-slate-500 sm:text-sm">SGST</p>
+                  <p className="text-sm font-bold text-slate-900 sm:text-xl">{formatMoney(summary.totalSGST)}</p>
                 </div>
               </>
             )}
             {hasIgst && (
-              <div className="bg-white rounded-xl p-4 border border-slate-200">
-                <p className="text-sm text-slate-500">IGST</p>
-                <p className="text-xl font-bold text-slate-900">{formatMoney(summary.totalIGST)}</p>
+              <div className="rounded-lg border border-slate-200 bg-white p-2.5 sm:rounded-xl sm:p-4">
+                <p className="text-[11px] text-slate-500 sm:text-sm">IGST</p>
+                <p className="text-sm font-bold text-slate-900 sm:text-xl">{formatMoney(summary.totalIGST)}</p>
               </div>
             )}
-            <div className="bg-white rounded-xl p-4 border border-slate-200">
-              <p className="text-sm text-slate-500">Total tax</p>
-              <p className="text-xl font-bold text-orange-600">{formatMoney(summary.totalTax)}</p>
+            <div className="rounded-lg border border-slate-200 bg-white p-2.5 sm:rounded-xl sm:p-4">
+              <p className="text-[11px] text-slate-500 sm:text-sm">Total tax</p>
+              <p className="text-sm font-bold text-orange-600 sm:text-xl">{formatMoney(summary.totalTax)}</p>
             </div>
           </div>
         </div>
       )}
 
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 sm:left-4 sm:h-5 sm:w-5" />
         <input
           type="text"
-          placeholder="Search by invoice number or customer..."
+          placeholder="Search invoice or customer..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+          className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 sm:rounded-xl sm:py-3 sm:pl-12 sm:pr-4"
         />
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm sm:rounded-2xl">
         {filteredInvoices.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FileText className="w-8 h-8 text-slate-400" />
+          <div className="p-8 text-center sm:p-12">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 sm:mb-4 sm:h-16 sm:w-16">
+              <FileText className="h-6 w-6 text-slate-400 sm:h-8 sm:w-8" />
             </div>
-            <p className="text-slate-600 font-medium">No customer sales invoices yet</p>
-            <p className="text-sm text-slate-400 mt-1 max-w-md mx-auto">
+            <p className="text-sm font-medium text-slate-600 sm:text-base">No customer sales invoices yet</p>
+            <p className="mx-auto mt-1 max-w-md text-xs text-slate-400 sm:text-sm">
               Invoices are created when orders are delivered. Complete an order in Orders, or ask
               your customer to download their invoice from My Orders.
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px]">
+          <>
+            <div className="divide-y divide-slate-100 md:hidden">
+              {filteredInvoices.map((invoice) => (
+                <div key={invoice.id} className="flex items-center gap-2 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-mono text-xs font-medium text-slate-900">
+                      {invoice.invoiceNumber}
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                      {formatDate(invoice.date)} · {invoice.customerName || '—'}
+                    </p>
+                    <p className="mt-0.5 text-xs">
+                      <span className="font-semibold text-slate-900">{formatMoney(invoice.total)}</span>
+                      <span className="text-purple-600"> · GST {formatMoney(invoice.tax)}</span>
+                    </p>
+                  </div>
+                  <div className="flex shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedInvoice(invoice)}
+                      className="rounded-lg p-2 text-blue-600 hover:bg-blue-50"
+                      title="View"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePrint(invoice)}
+                      disabled={downloadingId === invoice.id}
+                      className="rounded-lg p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      title="Print"
+                    >
+                      {downloadingId === invoice.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Printer className="h-4 w-4" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(invoice)}
+                      disabled={downloadingId === invoice.id}
+                      className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+                      title="Download"
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+            <table className="w-full">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="text-left p-4 font-semibold text-slate-600 text-sm">Invoice #</th>
-                  <th className="text-left p-4 font-semibold text-slate-600 text-sm">Date</th>
-                  <th className="text-left p-4 font-semibold text-slate-600 text-sm">Customer</th>
-                  <th className="text-right p-4 font-semibold text-slate-600 text-sm">Amount</th>
-                  <th className="text-right p-4 font-semibold text-slate-600 text-sm">GST</th>
-                  <th className="text-right p-4 font-semibold text-slate-600 text-sm">Total</th>
-                  <th className="text-center p-4 font-semibold text-slate-600 text-sm">Actions</th>
+                  <th className="text-left p-3 font-semibold text-slate-600 text-sm">Invoice #</th>
+                  <th className="text-left p-3 font-semibold text-slate-600 text-sm">Date</th>
+                  <th className="text-left p-3 font-semibold text-slate-600 text-sm">Customer</th>
+                  <th className="text-right p-3 font-semibold text-slate-600 text-sm">Amount</th>
+                  <th className="text-right p-3 font-semibold text-slate-600 text-sm">GST</th>
+                  <th className="text-right p-3 font-semibold text-slate-600 text-sm">Total</th>
+                  <th className="text-center p-3 font-semibold text-slate-600 text-sm">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredInvoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-4 font-mono font-medium text-slate-900 text-sm">
+                    <td className="p-3 font-mono font-medium text-slate-900 text-sm">
                       {invoice.invoiceNumber}
                     </td>
-                    <td className="p-4 text-slate-600 text-sm">{formatDate(invoice.date)}</td>
-                    <td className="p-4 text-slate-600 text-sm">{invoice.customerName || '—'}</td>
-                    <td className="p-4 text-right text-slate-900 text-sm">
+                    <td className="p-3 text-slate-600 text-sm">{formatDate(invoice.date)}</td>
+                    <td className="p-3 text-slate-600 text-sm">{invoice.customerName || '—'}</td>
+                    <td className="p-3 text-right text-slate-900 text-sm">
                       {formatMoney(invoice.subtotal)}
                     </td>
-                    <td className="p-4 text-right text-purple-600 font-medium text-sm">
+                    <td className="p-3 text-right text-purple-600 font-medium text-sm">
                       {formatMoney(invoice.tax)}
                     </td>
-                    <td className="p-4 text-right font-bold text-slate-900 text-sm">
+                    <td className="p-3 text-right font-bold text-slate-900 text-sm">
                       {formatMoney(invoice.total)}
                     </td>
-                    <td className="p-4">
+                    <td className="p-3">
                       <div className="flex justify-center gap-2">
                         <button
                           type="button"
@@ -424,13 +468,14 @@ export function CustomerSalesInvoices({ sellerId, sellerData }: CustomerSalesInv
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </div>
 
       {selectedInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4">
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-4 shadow-xl sm:p-6">
             <button
               type="button"
               onClick={() => setSelectedInvoice(null)}
@@ -438,7 +483,7 @@ export function CustomerSalesInvoices({ sellerId, sellerData }: CustomerSalesInv
             >
               <X className="w-5 h-5" />
             </button>
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Invoice details</h3>
+            <h3 className="mb-3 pr-8 text-base font-bold text-slate-900 sm:mb-4 sm:text-lg">Invoice details</h3>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <dt className="text-slate-500">Invoice #</dt>
@@ -489,7 +534,7 @@ export function CustomerSalesInvoices({ sellerId, sellerData }: CustomerSalesInv
                 handleDownload(selectedInvoice);
                 setSelectedInvoice(null);
               }}
-              className="mt-6 w-full py-3 bg-orange-500 text-white rounded-xl font-semibold hover:bg-orange-600"
+              className="mt-4 w-full rounded-xl bg-orange-500 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 sm:mt-6 sm:py-3"
             >
               Download invoice
             </button>

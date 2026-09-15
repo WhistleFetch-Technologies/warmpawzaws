@@ -70,26 +70,16 @@ export const SELLER_HUB_NAVIGATION: {
   icon: typeof LayoutDashboard;
   description: string;
 }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'Overview & stats' },
-  { id: 'products', label: 'Products', icon: Package, description: 'Manage catalog' },
-  {
-    id: 'inventory',
-    label: 'Inventory',
-    icon: Boxes,
-    description: 'Stock management — levels and quantities',
-  },
-  { id: 'orders', label: 'Orders', icon: ShoppingCart, description: 'Order processing' },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'Overview' },
+  { id: 'products', label: 'Products', icon: Package, description: 'Catalog' },
+  { id: 'inventory', label: 'Inventory', icon: Boxes, description: 'Stock levels' },
+  { id: 'orders', label: 'Orders', icon: ShoppingCart, description: 'Process orders' },
   { id: 'invoices', label: 'GST Invoices', icon: FileText, description: 'Tax invoices' },
-  { id: 'commission', label: 'Commission', icon: IndianRupee, description: 'Earnings & fees' },
-  { id: 'promotions', label: 'Promotions', icon: Tag, description: 'Offers & discounts' },
-  { id: 'campaigns', label: 'Campaigns', icon: Megaphone, description: 'Campaign participation' },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3, description: 'Performance data' },
-  {
-    id: 'settings',
-    label: 'Settings',
-    icon: Settings,
-    description: 'Manage your account and store settings',
-  },
+  { id: 'commission', label: 'Commission', icon: IndianRupee, description: 'Earnings' },
+  { id: 'promotions', label: 'Promotions', icon: Tag, description: 'Offers' },
+  { id: 'campaigns', label: 'Campaigns', icon: Megaphone, description: 'Campaigns' },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3, description: 'Performance' },
+  { id: 'settings', label: 'Settings', icon: Settings, description: 'Account' },
 ];
 
 interface SellerHubSidebarProps {
@@ -120,9 +110,11 @@ export function SellerHubSidebar({
 
   return (
     <aside
-      className={`${
-        sidebarOpen ? 'w-72' : 'w-20'
-      } flex flex-col border-r border-orange-100/50 bg-white/80 shadow-lg backdrop-blur-xl transition-all duration-300`}
+      className={`fixed inset-y-0 left-0 z-40 flex h-full w-72 flex-col border-r border-orange-100/50 bg-white/80 shadow-lg backdrop-blur-xl transition-all duration-300 ${
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
+      } lg:pointer-events-auto lg:static lg:z-auto lg:translate-x-0 ${
+        sidebarOpen ? 'lg:w-72' : 'lg:w-20'
+      }`}
     >
       <div className="flex h-20 items-center justify-between border-b border-orange-100/50 px-4">
         {sidebarOpen ? (

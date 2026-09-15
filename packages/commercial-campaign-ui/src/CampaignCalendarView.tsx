@@ -56,7 +56,7 @@ export function CampaignCalendarView({
   for (let d = 1; d <= days; d++) cells.push({ day: d });
 
   return (
-    <div className="space-y-3 rounded-xl border bg-white p-4">
+    <div className="space-y-2 overflow-x-auto rounded-xl border bg-white p-2.5 sm:space-y-3 sm:p-4">
       <div className="flex items-center justify-between">
         <button
           type="button"
@@ -87,7 +87,7 @@ export function CampaignCalendarView({
           return (
             <div
               key={`${monthKey(cursor)}-${idx}`}
-              className={`min-h-[72px] rounded border p-1 text-left ${
+              className={`min-h-[44px] rounded border p-0.5 text-left sm:min-h-[72px] sm:p-1 ${
                 cell.day ? 'bg-slate-50' : 'border-transparent bg-transparent'
               }`}
             >

@@ -445,11 +445,11 @@ export function ProductFormModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-4"
       onClick={() => void handleClose()}
     >
       <div
-        className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+        className="max-h-[100dvh] w-[min(42rem,calc(100vw-1rem))] overflow-y-auto rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 border-b border-slate-100 bg-white p-6 flex items-center justify-between">
@@ -471,7 +471,7 @@ export function ProductFormModal({
               <Package className="w-5 h-5 text-orange-500" />
               Basic Information
             </h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-2">Product Name *</label>
                 <input
@@ -619,7 +619,7 @@ export function ProductFormModal({
           {/* Physical & specs */}
           <div className="space-y-4 border-t border-slate-200 pt-6">
             <h3 className="font-semibold text-slate-900">Weight & Dimensions</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Weight (kg)</label>
                 <DecimalInput
@@ -684,7 +684,7 @@ export function ProductFormModal({
                 </button>
               </div>
               {customSpecs.map((row) => (
-                <div key={row.id} className="grid grid-cols-5 gap-2">
+                <div key={row.id} className="grid grid-cols-1 gap-2 sm:grid-cols-5">
                   <input
                     value={row.key}
                     onChange={(e) =>
@@ -693,7 +693,7 @@ export function ProductFormModal({
                       )
                     }
                     placeholder="Key"
-                    className="col-span-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className="col-span-1 px-3 py-2 border border-slate-200 rounded-lg text-sm sm:col-span-2"
                   />
                   <input
                     value={row.value}
@@ -703,7 +703,7 @@ export function ProductFormModal({
                       )
                     }
                     placeholder="Value"
-                    className="col-span-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className="col-span-1 px-3 py-2 border border-slate-200 rounded-lg text-sm sm:col-span-2"
                   />
                   <button
                     type="button"
@@ -732,7 +732,7 @@ export function ProductFormModal({
                 </span>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {productMode === 'simple' && (
                 <>
                   <div>
@@ -964,7 +964,7 @@ export function ProductFormModal({
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         {variantAxes.map((axis) => (
                           <div key={axis.key}>
                             <label className="block text-xs text-slate-600 mb-1">{axis.label} *</label>
@@ -1068,7 +1068,7 @@ export function ProductFormModal({
               <p className="text-xs text-slate-500 mt-1">
                 Extra days before courier. Leave empty for standard 2–5 day delivery.
               </p>
-              <div className="mt-2 grid grid-cols-2 gap-3">
+              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs text-slate-600 mb-1" htmlFor="lead-time-min">
                     Min days
@@ -1127,7 +1127,7 @@ export function ProductFormModal({
                   }
                 }}
                 placeholder="Type city name, press Enter to add"
-                className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm min-w-[180px]"
+                className="min-w-0 flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm sm:min-w-[180px]"
               />
               <button
                 type="button"

@@ -268,48 +268,53 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[400px]">
+      <div className="flex h-full min-h-[200px] items-center justify-center sm:min-h-[400px]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
-          <p className="mt-4 text-slate-500">Loading orders...</p>
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500 sm:h-16 sm:w-16"></div>
+          <p className="mt-3 text-sm text-slate-500 sm:mt-4">Loading orders...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Order Management</h1>
-          <p className="text-slate-500 mt-1">Process and track customer orders</p>
+    <div className="space-y-3 p-1 sm:space-y-6 sm:p-6 lg:p-8">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-sm font-bold text-slate-900 sm:text-2xl">Orders</h1>
+          <p className="mt-0.5 hidden text-sm text-slate-500 sm:block">Process and track customer orders</p>
         </div>
         <button
           onClick={loadOrders}
           disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs hover:bg-slate-50 disabled:opacity-50 sm:rounded-xl sm:px-4 sm:text-sm"
         >
-          <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </button>
       </div>
 
-      {/* Status Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:mx-0 sm:gap-2 sm:px-0 sm:pb-2">
         {ORDER_STATUSES.map(status => (
           <button
             key={status.id}
             onClick={() => setSelectedStatus(status.id)}
-            className={`px-4 py-2 rounded-xl font-medium whitespace-nowrap transition-all ${
+            className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm ${
               selectedStatus === status.id
-                ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg'
-                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md'
+                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
             }`}
           >
-            {status.label}
+            {status.id === 'all' ? (
+              <>
+                <span className="sm:hidden">All</span>
+                <span className="hidden sm:inline">{status.label}</span>
+              </>
+            ) : (
+              status.label
+            )}
             {status.id !== 'all' && (
-              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+              <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] sm:ml-2 sm:px-2 sm:text-xs ${
                 selectedStatus === status.id ? 'bg-white/20' : 'bg-slate-100'
               }`}>
                 {statusCounts[status.id] || 0}
@@ -319,86 +324,77 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
         ))}
       </div>
 
-      {/* Search */}
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 sm:left-4 sm:h-5 sm:w-5" />
         <input
           type="text"
-          placeholder="Search by order ID, number, or customer name..."
+          placeholder="Search order or customer..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+          className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 sm:rounded-xl sm:py-3 sm:pl-12 sm:pr-4"
         />
       </div>
 
       {/* Orders List */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm sm:rounded-2xl">
         {filteredOrders.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <ShoppingCart className="w-8 h-8 text-slate-400" />
+          <div className="p-8 text-center sm:p-12">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 sm:mb-4 sm:h-16 sm:w-16">
+              <ShoppingCart className="h-6 w-6 text-slate-400 sm:h-8 sm:w-8" />
             </div>
-            <p className="text-slate-600 font-medium">No orders found</p>
-            <p className="text-sm text-slate-400 mt-1">Orders will appear here when customers purchase</p>
+            <p className="text-sm font-medium text-slate-600 sm:text-base">No orders found</p>
+            <p className="mt-1 text-xs text-slate-400 sm:text-sm">Orders will appear here when customers purchase</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
             {filteredOrders.map(order => {
               const orderStatus = order.status || order.order_status || 'pending';
+              const money = resolveVendorOrderMoney(order);
               return (
                 <div
                   key={order.id}
-                  className="p-5 hover:bg-slate-50 transition-colors cursor-pointer"
+                  className="cursor-pointer px-3 py-2.5 hover:bg-slate-50 sm:p-5"
                   onClick={() => setSelectedOrder(order)}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-xl ${getStatusColor(orderStatus)}`}>
-                        {getStatusIcon(orderStatus)}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-900">
-                          {order.order_number || `Order #${(order.id || '').slice(-8)}`}
-                        </p>
-                        <p className="text-sm text-slate-500 flex items-center gap-2 mt-1">
-                          <User className="w-3.5 h-3.5" />
+                  <div className="flex items-center gap-2 sm:gap-4">
+                    <div className={`shrink-0 rounded-lg p-1.5 sm:rounded-xl sm:p-3 ${getStatusColor(orderStatus)}`}>
+                      {getStatusIcon(orderStatus)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-slate-900 sm:text-base">
+                        {order.order_number || `Order #${(order.id || '').slice(-8)}`}
+                      </p>
+                      <p className="mt-0.5 truncate text-[11px] text-slate-500 sm:mt-1 sm:flex sm:items-center sm:gap-2 sm:text-sm">
+                        <span className="inline-flex items-center gap-1">
+                          <User className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                           {order.customer_name || 'Customer'}
-                          <span className="text-slate-300">•</span>
-                          <Clock className="w-3.5 h-3.5" />
-                          {new Date(order.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right flex items-center gap-4">
-                      <div>
-                        {(() => {
-                          const money = resolveVendorOrderMoney(order);
-                          return (
-                            <>
-                              <p className="font-bold text-slate-900 text-lg tabular-nums">
-                                {formatInrAmount(money.vendorGoodsAmount)}
-                              </p>
-                              <p className="text-[11px] text-slate-500">
-                                {money.isVendorFunded ? 'After your promo' : 'Your catalog'}
-                              </p>
-                            </>
-                          );
-                        })()}
-                        <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(orderStatus)}`}>
-                          {getStatusIcon(orderStatus)}
-                          {orderStatus}
                         </span>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-slate-400" />
+                        <span className="hidden text-slate-300 sm:inline">•</span>
+                        <span className="ml-1 inline-flex items-center gap-1 sm:ml-0">
+                          <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                          {new Date(order.created_at).toLocaleDateString()}
+                        </span>
+                      </p>
                     </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-bold tabular-nums text-slate-900 sm:text-lg">
+                        {formatInrAmount(money.vendorGoodsAmount)}
+                      </p>
+                      <p className="hidden text-[11px] text-slate-500 sm:block">
+                        {money.isVendorFunded ? 'After your promo' : 'Your catalog'}
+                      </p>
+                      <span className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize sm:mt-1 sm:px-3 sm:py-1 sm:text-xs ${getStatusColor(orderStatus)}`}>
+                        {orderStatus}
+                      </span>
+                    </div>
+                    <ChevronRight className="hidden h-5 w-5 shrink-0 text-slate-400 sm:block" />
                   </div>
-                  
-                  {/* Tracking info for shipped orders */}
+
                   {orderStatus === 'shipped' && order.tracking_number && (
-                    <div className="mt-3 flex items-center gap-2 text-sm text-purple-600 bg-purple-50 px-3 py-2 rounded-lg">
-                      <Truck className="w-4 h-4" />
-                      <span>Tracking: {order.tracking_number}</span>
-                      {order.delivery_partner && <span>• {order.delivery_partner}</span>}
+                    <div className="mt-2 flex items-center gap-1.5 truncate rounded-lg bg-purple-50 px-2 py-1.5 text-[11px] text-purple-600 sm:mt-3 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm">
+                      <Truck className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+                      <span className="truncate">Tracking: {order.tracking_number}</span>
+                      {order.delivery_partner && <span className="hidden truncate sm:inline">• {order.delivery_partner}</span>}
                     </div>
                   )}
                 </div>
@@ -410,35 +406,34 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
 
       {/* Order Detail Modal */}
       {selectedOrder && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="shrink-0 border-b border-slate-100 bg-white p-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:max-h-[100dvh] sm:w-[min(42rem,calc(100vw-1rem))] sm:rounded-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white p-4 sm:p-6">
+              <div className="min-w-0 pr-2">
+                <h2 className="truncate text-base font-bold text-slate-900 sm:text-xl">
                   {selectedOrder.order_number || `Order #${selectedOrder.id?.slice(-8)}`}
                 </h2>
-                <p className="text-sm text-slate-500 mt-1">
+                <p className="mt-0.5 text-xs text-slate-500 sm:mt-1 sm:text-sm">
                   Placed on {new Date(selectedOrder.created_at).toLocaleDateString()}
                 </p>
               </div>
               <button 
                 onClick={() => setSelectedOrder(null)}
-                className="p-2 hover:bg-slate-100 rounded-xl"
+                className="rounded-xl p-2 hover:bg-slate-100"
               >
-                <XCircle className="w-5 h-5 text-slate-500" />
+                <XCircle className="h-5 w-5 text-slate-500" />
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
-              {/* Current Status */}
-              <div className="p-4 bg-slate-50 rounded-xl">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className={`p-3 rounded-xl ${getStatusColor(selectedOrder.status || selectedOrder.order_status)}`}>
+            <div className="space-y-4 p-4 sm:space-y-6 sm:p-6">
+              <div className="rounded-xl bg-slate-50 p-3 sm:p-4">
+                <div className="mb-3 flex items-center gap-2 sm:mb-4 sm:gap-3">
+                  <div className={`rounded-lg p-2 sm:rounded-xl sm:p-3 ${getStatusColor(selectedOrder.status || selectedOrder.order_status)}`}>
                     {getStatusIcon(selectedOrder.status || selectedOrder.order_status)}
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-900">Current Status</p>
-                    <p className="text-sm text-slate-500 capitalize">{selectedOrder.status || selectedOrder.order_status}</p>
+                    <p className="text-sm font-semibold text-slate-900 sm:text-base">Current Status</p>
+                    <p className="text-xs capitalize text-slate-500 sm:text-sm">{selectedOrder.status || selectedOrder.order_status}</p>
                   </div>
                 </div>
 
@@ -470,7 +465,7 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                       key={transition.next}
                       onClick={() => handleStatusAction(selectedOrder.id, transition.next, transition.requiresTracking)}
                       disabled={updating}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 ${
+                      className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all disabled:opacity-50 sm:rounded-xl sm:px-4 sm:text-sm ${
                         transition.next === 'cancelled' 
                           ? 'bg-red-100 text-red-700 hover:bg-red-200'
                           : 'bg-gradient-to-r from-orange-500 to-amber-500 text-white hover:shadow-lg'
@@ -494,29 +489,29 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
               </div>
 
               {/* Customer Info */}
-              <div className="space-y-3">
-                <h3 className="font-semibold text-slate-900">Customer Details</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                    <User className="w-5 h-5 text-slate-400" />
-                    <div>
-                      <p className="text-xs text-slate-500">Name</p>
-                      <p className="font-medium text-slate-900">{selectedOrder.customer_name || 'N/A'}</p>
+              <div className="space-y-2 sm:space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900 sm:text-base">Customer Details</h3>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-4">
+                  <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-2.5 sm:gap-3 sm:p-3">
+                    <User className="h-4 w-4 text-slate-400 sm:h-5 sm:w-5" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-slate-500 sm:text-xs">Name</p>
+                      <p className="truncate text-sm font-medium text-slate-900">{selectedOrder.customer_name || 'N/A'}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                    <Phone className="w-5 h-5 text-slate-400" />
-                    <div>
-                      <p className="text-xs text-slate-500">Phone</p>
-                      <p className="font-medium text-slate-900">{selectedOrder.customer_phone || selectedOrder.shipping_phone || 'N/A'}</p>
+                  <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-2.5 sm:gap-3 sm:p-3">
+                    <Phone className="h-4 w-4 text-slate-400 sm:h-5 sm:w-5" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-slate-500 sm:text-xs">Phone</p>
+                      <p className="truncate text-sm font-medium text-slate-900">{selectedOrder.customer_phone || selectedOrder.shipping_phone || 'N/A'}</p>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
-                  <MapPin className="w-5 h-5 text-slate-400 mt-0.5" />
-                  <div>
-                    <p className="text-xs text-slate-500">Shipping Address</p>
-                    <p className="font-medium text-slate-900">
+                <div className="flex items-start gap-2 rounded-xl bg-slate-50 p-2.5 sm:gap-3 sm:p-3">
+                  <MapPin className="mt-0.5 h-4 w-4 text-slate-400 sm:h-5 sm:w-5" />
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-slate-500 sm:text-xs">Shipping Address</p>
+                    <p className="text-sm font-medium text-slate-900">
                       {selectedOrder.shipping_address}
                       {selectedOrder.shipping_city && `, ${selectedOrder.shipping_city}`}
                       {selectedOrder.shipping_state && `, ${selectedOrder.shipping_state}`}
@@ -526,33 +521,31 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                 </div>
               </div>
 
-              {/* Order Items */}
-              <div className="space-y-3">
-                <h3 className="font-semibold text-slate-900">Order Items</h3>
+              <div className="space-y-2 sm:space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900 sm:text-base">Order Items</h3>
                 {selectedOrder.items && selectedOrder.items.length > 0 ? (
                   <div className="space-y-2">
                     {selectedOrder.items.map((item: any, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{item.emoji || '📦'}</span>
-                          <div>
-                            <p className="font-medium text-slate-900">{item.product_name || item.name}</p>
-                            <p className="text-sm text-slate-500">Qty: {item.quantity}</p>
+                      <div key={idx} className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 p-2.5 sm:p-3">
+                        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                          <span className="text-lg sm:text-2xl">{item.emoji || '📦'}</span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-slate-900">{item.product_name || item.name}</p>
+                            <p className="text-xs text-slate-500 sm:text-sm">Qty: {item.quantity}</p>
                           </div>
                         </div>
-                        <p className="font-bold text-slate-900 tabular-nums">
+                        <p className="shrink-0 text-sm font-bold tabular-nums text-slate-900 sm:text-base">
                           {formatInrAmount(vendorOrderItemCatalogTotal(item))}
                         </p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-500 italic">Order items not available</p>
+                  <p className="text-sm italic text-slate-500">Order items not available</p>
                 )}
               </div>
 
-              {/* Vendor settlement money — catalog base; platform promo does not cut vendor goods */}
-              <VendorOrderMoneySummary order={selectedOrder} />
+              <VendorOrderMoneySummary order={selectedOrder} className="p-3 text-sm sm:p-4" />
             </div>
           </div>
         </div>
@@ -560,21 +553,21 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
 
       {/* Cancel Order Modal */}
       {showCancelModal && selectedOrder && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl">
-            <div className="p-6 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <XCircle className="w-5 h-5 text-red-600" />
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-100 p-4 sm:p-6">
+              <h3 className="flex items-center gap-2 text-base font-bold text-slate-900 sm:text-lg">
+                <XCircle className="h-5 w-5 text-red-600" />
                 Cancel Order
               </h3>
-              <p className="text-sm text-slate-500 mt-1">
+              <p className="mt-1 text-xs text-slate-500 sm:text-sm">
                 Tell the customer why you are cancelling this order. They will see this message.
               </p>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="space-y-3 p-4 sm:space-y-4 sm:p-6">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label className="mb-1 block text-sm font-medium text-slate-700">
                   Reason for cancellation *
                 </label>
                 <textarea
@@ -582,7 +575,7 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                   onChange={(e) => setCancellationReason(e.target.value)}
                   placeholder="e.g. Item out of stock, unable to ship to this pincode..."
                   rows={4}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 resize-none"
+                  className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 sm:px-4 sm:py-3"
                 />
               </div>
 
@@ -594,13 +587,13 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
               )}
             </div>
 
-            <div className="p-6 border-t border-slate-100 flex gap-3">
+            <div className="flex gap-2 border-t border-slate-100 p-4 sm:gap-3 sm:p-6">
               <button
                 onClick={() => {
                   setShowCancelModal(false);
                   setCancellationReason('');
                 }}
-                className="flex-1 px-4 py-3 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:py-3"
               >
                 Back
               </button>
@@ -609,7 +602,7 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                   updateOrderStatus(selectedOrder.id, 'cancelled', cancellationReason.trim())
                 }
                 disabled={!cancellationReason.trim() || updating}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:py-3"
               >
                 {updating ? (
                   <RefreshCcw className="w-4 h-4 animate-spin" />
@@ -625,17 +618,17 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
 
       {/* Shipping Modal */}
       {showShippingModal && selectedOrder && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl">
-            <div className="p-6 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Truck className="w-5 h-5 text-purple-600" />
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-100 p-4 sm:p-6">
+              <h3 className="flex items-center gap-2 text-base font-bold text-slate-900 sm:text-lg">
+                <Truck className="h-5 w-5 text-purple-600" />
                 Shipping Details
               </h3>
-              <p className="text-sm text-slate-500 mt-1">Enter tracking information for this order</p>
+              <p className="mt-1 text-xs text-slate-500 sm:text-sm">Enter tracking information for this order</p>
             </div>
             
-            <div className="p-6 space-y-4">
+            <div className="space-y-4 p-4 sm:p-6">
               <VendorShipmentDetailsForm
                 values={shipmentForm}
                 onChange={setShipmentForm}
@@ -644,21 +637,21 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
               />
             </div>
             
-            <div className="p-6 border-t border-slate-100 flex gap-3">
+            <div className="flex gap-2 border-t border-slate-100 p-4 sm:gap-3 sm:p-6">
               <button
                 onClick={() => {
                   setShowShippingModal(false);
                   setShipmentForm(EMPTY_SHIPMENT_FORM);
                   setShipmentFormShowErrors(false);
                 }}
-                className="flex-1 px-4 py-3 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:py-3"
               >
                 Cancel
               </button>
               <button
                 onClick={() => markOrderAsShipped(selectedOrder.id, shipmentForm)}
                 disabled={updating}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 sm:py-3"
               >
                 {updating ? (
                   <RefreshCcw className="w-4 h-4 animate-spin" />

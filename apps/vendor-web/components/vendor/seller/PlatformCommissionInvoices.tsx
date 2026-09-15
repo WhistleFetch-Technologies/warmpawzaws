@@ -60,10 +60,10 @@ function DisabledState({ reason }: { reason: PlatformTaxUnavailableReason }) {
         : 'Platform tax API is not available. Try again later.';
 
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
-      <div className="rounded-2xl border border-orange-100 bg-orange-50 px-8 py-10 max-w-lg">
-        <FileText className="mx-auto h-12 w-12 text-orange-500 mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900">Platform tax documents</h2>
+    <div className="flex flex-col items-center justify-center px-3 py-8 text-center sm:px-6 sm:py-12">
+      <div className="max-w-lg rounded-xl border border-orange-100 bg-orange-50 px-4 py-6 sm:rounded-2xl sm:px-8 sm:py-10">
+        <FileText className="mx-auto mb-3 h-8 w-8 text-orange-500 sm:mb-4 sm:h-12 sm:w-12" />
+        <h2 className="text-base font-semibold text-slate-900 sm:text-xl">Platform tax documents</h2>
         <p className="mt-2 text-orange-700 font-medium">Not available</p>
         <p className="mt-1 text-slate-600 text-sm">{detail}</p>
       </div>
@@ -155,10 +155,10 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
 
   if (apiStatus && !apiStatus.available) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3 sm:space-y-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Platform (WarmPawz) documents</h2>
-          <p className="text-slate-500 mt-1 text-sm">
+          <h2 className="text-sm font-bold text-slate-900 sm:text-xl">Platform documents</h2>
+          <p className="mt-0.5 hidden text-sm text-slate-500 sm:block">
             GST tax invoices and credit notes issued by WarmPawz for platform commission and fees
           </p>
         </div>
@@ -176,65 +176,119 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Platform (WarmPawz) documents</h2>
-          <p className="text-slate-500 mt-1 text-sm">
+    <div className="space-y-3 sm:space-y-6">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-slate-900 sm:text-xl">Platform documents</h2>
+          <p className="mt-0.5 hidden text-sm text-slate-500 sm:block">
             Commission and platform fee tax invoices issued by WarmPawz to your business
           </p>
         </div>
         <button
           type="button"
           onClick={load}
-          className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:text-sm"
         >
-          <RefreshCcw className="w-4 h-4" />
+          <RefreshCcw className="h-4 w-4" />
           Refresh
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm sm:rounded-2xl">
         {documents.length === 0 ? (
-          <div className="p-12 text-center">
-            <AlertCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-600 font-medium">No platform invoices issued yet</p>
-            <p className="text-sm text-slate-400 mt-1 max-w-md mx-auto">
+          <div className="p-8 text-center sm:p-12">
+            <AlertCircle className="mx-auto mb-3 h-8 w-8 text-slate-300 sm:h-10 sm:w-10" />
+            <p className="text-sm font-medium text-slate-600 sm:text-base">No platform invoices issued yet</p>
+            <p className="mx-auto mt-1 max-w-md text-xs text-slate-400 sm:text-sm">
               WarmPawz will issue tax documents for platform commission after admin settlement /
               billing runs for your account.
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px]">
+          <>
+            <div className="divide-y divide-slate-100 md:hidden">
+              {documents.map((doc) => (
+                <div key={doc.id} className="flex items-center gap-2 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-mono text-xs font-medium text-slate-900">
+                      {doc.invoiceNumber || doc.id.slice(0, 8)}
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                      {formatPeriod(doc.periodFrom, doc.periodTo)} · {docTypeLabel(doc.documentType)}
+                    </p>
+                    <p className="mt-0.5 text-xs">
+                      <span className="font-semibold">{formatMoney(doc.totalAmount)}</span>
+                      <span className="text-purple-600"> · GST {formatMoney(doc.gstAmount)}</span>
+                      <span
+                        className={`ml-1 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                          doc.status === 'ISSUED'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : doc.status === 'VOID'
+                              ? 'bg-slate-100 text-slate-600'
+                              : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {doc.status}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="flex shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleView(doc)}
+                      disabled={detailLoading}
+                      className="rounded-lg p-2 text-blue-600 hover:bg-blue-50"
+                      title="View"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadDocument(doc)}
+                      disabled={downloadingId === doc.id || doc.status !== 'ISSUED'}
+                      className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
+                      title="Download document"
+                    >
+                      {downloadingId === doc.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+            <table className="w-full">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="text-left p-4 text-sm font-semibold text-slate-600">Document</th>
-                  <th className="text-left p-4 text-sm font-semibold text-slate-600">Period</th>
-                  <th className="text-left p-4 text-sm font-semibold text-slate-600">Type</th>
-                  <th className="text-right p-4 text-sm font-semibold text-slate-600">Taxable</th>
-                  <th className="text-right p-4 text-sm font-semibold text-slate-600">GST</th>
-                  <th className="text-right p-4 text-sm font-semibold text-slate-600">Total</th>
-                  <th className="text-center p-4 text-sm font-semibold text-slate-600">Status</th>
-                  <th className="text-center p-4 text-sm font-semibold text-slate-600">Actions</th>
+                  <th className="text-left p-3 text-sm font-semibold text-slate-600">Document</th>
+                  <th className="text-left p-3 text-sm font-semibold text-slate-600">Period</th>
+                  <th className="text-left p-3 text-sm font-semibold text-slate-600">Type</th>
+                  <th className="text-right p-3 text-sm font-semibold text-slate-600">Taxable</th>
+                  <th className="text-right p-3 text-sm font-semibold text-slate-600">GST</th>
+                  <th className="text-right p-3 text-sm font-semibold text-slate-600">Total</th>
+                  <th className="text-center p-3 text-sm font-semibold text-slate-600">Status</th>
+                  <th className="text-center p-3 text-sm font-semibold text-slate-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {documents.map((doc) => (
                   <tr key={doc.id} className="hover:bg-slate-50">
-                    <td className="p-4 font-mono text-sm">{doc.invoiceNumber || doc.id.slice(0, 8)}</td>
-                    <td className="p-4 text-sm text-slate-600">
+                    <td className="p-3 font-mono text-sm">{doc.invoiceNumber || doc.id.slice(0, 8)}</td>
+                    <td className="p-3 text-sm text-slate-600">
                       {formatPeriod(doc.periodFrom, doc.periodTo)}
                     </td>
-                    <td className="p-4 text-sm">{docTypeLabel(doc.documentType)}</td>
-                    <td className="p-4 text-right text-sm">{formatMoney(doc.taxableAmount)}</td>
-                    <td className="p-4 text-right text-sm text-purple-600">
+                    <td className="p-3 text-sm">{docTypeLabel(doc.documentType)}</td>
+                    <td className="p-3 text-right text-sm">{formatMoney(doc.taxableAmount)}</td>
+                    <td className="p-3 text-right text-sm text-purple-600">
                       {formatMoney(doc.gstAmount)}
                     </td>
-                    <td className="p-4 text-right text-sm font-semibold">
+                    <td className="p-3 text-right text-sm font-semibold">
                       {formatMoney(doc.totalAmount)}
                     </td>
-                    <td className="p-4 text-center">
+                    <td className="p-3 text-center">
                       <span
                         className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
                           doc.status === 'ISSUED'
@@ -247,7 +301,7 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
                         {doc.status}
                       </span>
                     </td>
-                    <td className="p-4">
+                    <td className="p-3">
                       <div className="flex justify-center gap-2">
                         <button
                           type="button"
@@ -277,7 +331,8 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -288,8 +343,8 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
       )}
 
       {selectedDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4">
+          <div className="relative max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:p-6">
             <button
               type="button"
               onClick={() => setSelectedDoc(null)}
@@ -297,7 +352,7 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
             >
               <X className="w-5 h-5" />
             </button>
-            <h3 className="text-lg font-bold text-slate-900 mb-4">
+            <h3 className="mb-3 pr-8 text-base font-bold text-slate-900 sm:mb-4 sm:text-lg">
               {docTypeLabel(selectedDoc.documentType)}
             </h3>
             <dl className="space-y-2 text-sm mb-4">
@@ -336,7 +391,7 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
                   handleDownloadDocument(selectedDoc);
                   setSelectedDoc(null);
                 }}
-                className="mt-6 w-full py-3 bg-orange-500 text-white rounded-xl font-semibold"
+                className="mt-4 w-full rounded-xl bg-orange-500 py-2.5 text-sm font-semibold text-white sm:mt-6 sm:py-3"
               >
                 Download document
               </button>

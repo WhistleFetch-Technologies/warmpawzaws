@@ -234,8 +234,8 @@ export function CommercialCampaignHub({
 
   if (!loading && error && mode && !mode.enabled) {
     return (
-      <div className={`mx-auto max-w-3xl px-6 py-12 ${className}`}>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+      <div className={`mx-auto max-w-3xl px-3 py-6 sm:px-6 sm:py-12 ${className}`}>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 sm:p-6">
           <p className="font-semibold">Commercial Campaign Engine disabled</p>
           <p className="mt-1">{error}</p>
         </div>
@@ -244,29 +244,29 @@ export function CommercialCampaignHub({
   }
 
   return (
-    <div className={`flex min-h-screen flex-col bg-slate-50/50 ${className}`}>
+    <div className={`flex min-h-0 flex-col bg-slate-50/50 ${className}`}>
       <div className="sticky top-0 z-10 border-b bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-orange-100 p-2">
-              <Megaphone className="h-6 w-6 text-orange-600" aria-hidden />
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <div className="shrink-0 rounded-lg bg-orange-100 p-1.5 sm:p-2">
+              <Megaphone className="h-4 w-4 text-orange-600 sm:h-6 sm:w-6" aria-hidden />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">{heading}</h1>
-              <p className="text-sm text-slate-500">{sub}</p>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold text-slate-900 sm:text-2xl">{heading}</h1>
+              <p className="truncate text-[11px] text-slate-500 sm:text-sm">{sub}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {mode ? (
-              <span className="rounded border px-2 py-0.5 font-mono text-xs">{mode.mode}</span>
+              <span className="hidden rounded border px-2 py-0.5 font-mono text-xs sm:inline">{mode.mode}</span>
             ) : null}
             <button
               type="button"
-              className="inline-flex items-center rounded border px-3 py-1.5 text-sm"
+              className="inline-flex items-center rounded border px-2.5 py-1.5 text-xs sm:px-3 sm:text-sm"
               onClick={() => void reload()}
               disabled={loading}
             >
-              <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
             {!readOnly ? (
@@ -286,7 +286,7 @@ export function CommercialCampaignHub({
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-6 py-6">
+      <div className="mx-auto w-full max-w-6xl flex-1 space-y-3 px-3 py-3 sm:space-y-6 sm:px-6 sm:py-6">
         {error && mode?.enabled ? (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             {error}
@@ -318,16 +318,16 @@ export function CommercialCampaignHub({
           loading ? (
             <p className="text-sm text-slate-500">Loading campaigns…</p>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 sm:gap-4">
               {[
                 ['Total', stats.total],
                 ['Running', stats.running],
                 ['Scheduled', stats.scheduled],
                 ['Draft', stats.draft],
               ].map(([label, value]) => (
-                <div key={String(label)} className="rounded-xl border bg-white p-4">
-                  <p className="text-xs text-slate-500">{label}</p>
-                  <p className="mt-1 text-2xl font-semibold">{value}</p>
+                <div key={String(label)} className="rounded-lg border bg-white p-2.5 sm:rounded-xl sm:p-4">
+                  <p className="text-[11px] text-slate-500 sm:text-xs">{label}</p>
+                  <p className="mt-0.5 text-lg font-semibold sm:mt-1 sm:text-2xl">{value}</p>
                 </div>
               ))}
             </div>
@@ -347,7 +347,7 @@ export function CommercialCampaignHub({
           <div className={tab === 'dashboard' ? 'mt-6 space-y-3' : 'space-y-3'}>
             {tab === 'campaigns' ? (
               <input
-                className="max-w-xs rounded border px-3 py-2 text-sm"
+                className="w-full max-w-xs rounded-lg border px-3 py-2 text-sm"
                 placeholder="Search campaigns…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -355,7 +355,38 @@ export function CommercialCampaignHub({
             ) : (
               <h3 className="text-sm font-semibold text-slate-800">Campaigns</h3>
             )}
-            <div className="overflow-x-auto rounded-xl border bg-white">
+            <div className="overflow-hidden rounded-xl border bg-white">
+              <div className="divide-y divide-slate-100 md:hidden">
+                {(tab === 'dashboard' ? filtered.slice(0, 8) : filtered).map((c) => {
+                  const health = resolveHealth(c);
+                  const role = ownershipLabel(c);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="flex w-full items-start gap-2 px-3 py-2.5 text-left"
+                      onClick={() => setSelectedId(c.id)}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-900">{c.name}</p>
+                        <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                          {formatSchedule(c)} · {c.funding.type}
+                          {role ? ` · ${role}` : ''}
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <CampaignStatusBadge status={c.status} />
+                          <CampaignHealthBadge status={health.status} />
+                        </div>
+                      </div>
+                      <span className="shrink-0 pt-0.5 text-xs font-medium text-orange-700">View</span>
+                    </button>
+                  );
+                })}
+                {!filtered.length && !loading ? (
+                  <p className="px-3 py-8 text-center text-sm text-slate-500">No campaigns yet</p>
+                ) : null}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                   <tr>
@@ -420,6 +451,7 @@ export function CommercialCampaignHub({
                   ) : null}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         ) : null}
@@ -427,11 +459,11 @@ export function CommercialCampaignHub({
 
       {/* Details drawer — read-only for participants */}
       {selectedId && detail ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-          <div className="flex h-full w-full max-w-xl flex-col overflow-hidden bg-white shadow-xl">
-            <div className="flex items-start justify-between border-b px-5 py-4">
-              <div>
-                <h2 className="text-lg font-semibold">{detail.name}</h2>
+        <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/30 sm:items-stretch">
+          <div className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:h-full sm:max-h-none sm:rounded-none">
+            <div className="flex items-start justify-between gap-3 border-b px-4 py-3 sm:px-5 sm:py-4">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold sm:text-lg">{detail.name}</h2>
                 <div className="mt-1 flex flex-wrap gap-2">
                   <CampaignStatusBadge status={detail.status} />
                   <CampaignHealthBadge status={resolveHealth(detail).status} />
@@ -442,11 +474,11 @@ export function CommercialCampaignHub({
                   ) : null}
                 </div>
               </div>
-              <button type="button" className="text-slate-500" onClick={() => setSelectedId(null)}>
+              <button type="button" className="shrink-0 text-sm text-slate-500" onClick={() => setSelectedId(null)}>
                 Close
               </button>
             </div>
-            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 text-sm">
+            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm sm:px-5 sm:py-4">
               {validationWarn.length ? (
                 <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                   {validationWarn.map((w) => (
@@ -470,7 +502,7 @@ export function CommercialCampaignHub({
                 </div>
                 <div>
                   <p className="text-slate-500">Campaign owner</p>
-                  <p>{detail.vendorId ? detail.vendorId : 'Platform'}</p>
+                  <p className="break-all">{detail.vendorId ? detail.vendorId : 'Platform'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">Goal</p>
@@ -489,7 +521,7 @@ export function CommercialCampaignHub({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded border p-2">
                     <p className="text-xs text-slate-500">Orders</p>
-                    <p className="text-lg font-semibold">{Number(kpis?.orders ?? 0)}</p>
+                    <p className="text-base font-semibold sm:text-lg">{Number(kpis?.orders ?? 0)}</p>
                   </div>
                   <div className="rounded border p-2">
                     <p className="text-xs text-slate-500">Revenue</p>

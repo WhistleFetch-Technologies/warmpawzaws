@@ -25,16 +25,17 @@ import { vendorNotificationUnreadCount } from '@/components/vendor/dashboard/hel
 import { apiClient } from '@/lib/api-client';
 import { restoreVendorSessionIfRefreshable } from '@/lib/session-utils';
 import { isSellerStrict } from '@/components/vendor/landingPage/constants/helpers';
-import { Bell, HelpCircle, RefreshCcw } from 'lucide-react';
+import { Bell, HelpCircle, Menu, RefreshCcw, X } from 'lucide-react';
 
 const NOTIFICATION_POLL_MS = 60_000;
+const SELLER_DESKTOP_MQ = '(min-width: 1024px)';
 
 export default function SellerPage() {
   const router = useRouter();
   const [vendorData, setVendorData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SellerHubTab>('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
@@ -61,6 +62,21 @@ export default function SellerPage() {
 
   useEffect(() => {
     loadVendorData();
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia(SELLER_DESKTOP_MQ);
+    const syncSidebar = () => setSidebarOpen(mq.matches);
+    syncSidebar();
+    mq.addEventListener('change', syncSidebar);
+    return () => mq.removeEventListener('change', syncSidebar);
+  }, []);
+
+  const handleTabChange = useCallback((tab: SellerHubTab) => {
+    setActiveTab(tab);
+    if (!window.matchMedia(SELLER_DESKTOP_MQ).matches) {
+      setSidebarOpen(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -136,7 +152,17 @@ export default function SellerPage() {
   const activeNav = SELLER_HUB_NAVIGATION.find((n) => n.id === activeTab);
 
   const headerActions = useMemo(() => {
-    const actions: ReactNode[] = [];
+    const actions: ReactNode[] = [
+      <button
+        key="seller-menu"
+        type="button"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100 lg:hidden"
+        aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+        onClick={() => setSidebarOpen((open) => !open)}
+      >
+        {sidebarOpen ? <X className="h-5 w-5 text-slate-600" /> : <Menu className="h-5 w-5 text-slate-600" />}
+      </button>,
+    ];
     if (activeTab === 'settings') {
       actions.push(
         <Button
@@ -192,7 +218,7 @@ export default function SellerPage() {
       </button>
     );
     return actions;
-  }, [activeTab, notificationUnreadCount, vendorId, settingsSaving]);
+  }, [activeTab, notificationUnreadCount, vendorId, settingsSaving, sidebarOpen]);
 
   if (loading) {
     return (
@@ -244,10 +270,18 @@ export default function SellerPage() {
   }
 
   return (
-    <div className="flex h-[100dvh] min-h-0 bg-gradient-to-br from-slate-50 to-orange-50/30">
+    <div className="flex h-[100dvh] min-h-0 overflow-x-hidden bg-gradient-to-br from-slate-50 to-orange-50/30">
+      {sidebarOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          aria-label="Close navigation"
+          onClick={() => setSidebarOpen(false)}
+        />
+      ) : null}
       <SellerHubSidebar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
         vendorData={vendorData}
@@ -263,10 +297,10 @@ export default function SellerPage() {
           actions={headerActions}
         />
         <main className="vendor-app-column mx-auto min-h-0 w-full flex-1 overflow-y-auto">
-          <div className="px-4 py-4 sm:px-6 sm:py-6">
+          <div className="px-2 py-2 sm:px-4 sm:py-4">
             <SellerHubMainPanels
               activeTab={activeTab}
-              onTabChange={setActiveTab}
+              onTabChange={handleTabChange}
               vendorData={vendorData}
               settingsRef={settingsRef}
               inventoryRef={inventoryRef}
