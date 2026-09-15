@@ -218,7 +218,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     }
     if (h === 'Image (1000X1000px)*') {
       cell.note =
-        'Either comma-separated direct image file URLs, or one Google Drive folder link per row (that folder’s images only). Size/color rows of the same product may use different folders. Do not reuse one folder across different products. Prefer stable CDN links when possible.';
+        'Either comma-separated direct image file URLs, or one Google Drive folder link per row (that folder’s images only). First URL is the shop cover. For a Drive folder, name files 01-…, 02-… (zero-pad); folder view / date order is ignored. Same filenames in different folders are OK. Size/color rows of the same product may use different folders — first image on that row is that variant’s cover; the listing variant’s first image is the shop card. Do not reuse one folder across different products. Prefer stable CDN links when possible.';
     }
     if (h === 'Product Specifications') {
       cell.note = 'Optional. Format: Material:Cotton, Size:Medium';

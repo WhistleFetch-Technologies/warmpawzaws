@@ -1,5 +1,6 @@
 import { expandBulkRowImages } from '../expand-bulk-row-images';
 import { createDriveFolderListCache, type DriveFolderListResult } from '../drive-folder-images';
+import { PRODUCT_MAX_IMAGES } from '../../services/image/image-types';
 
 const VENDOR = 'vendor-test-uuid';
 
@@ -247,6 +248,6 @@ describe('expandBulkRowImages', () => {
     });
     expect(result.errors).toHaveLength(0);
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0].message).toMatch(/first 8/i);
+    expect(result.warnings[0].message).toMatch(new RegExp(`first ${PRODUCT_MAX_IMAGES}`, 'i'));
   });
 });

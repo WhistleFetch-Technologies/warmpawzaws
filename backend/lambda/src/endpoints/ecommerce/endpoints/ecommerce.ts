@@ -40,7 +40,6 @@ import {
 import {
   buildVariationAxes,
   mapSkusToCustomerVariations,
-  buildGalleryImageUnion,
   normalizeImagesArray,
   mergeLegacyVariantImagesIntoSkus,
   applyStorefrontSkuPricingFields,
@@ -345,12 +344,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       const variation_axes = buildVariationAxes(skusRaw);
       const variations = mapSkusToCustomerVariations(skusRaw, variation_axes);
       const parentImages = normalizeImagesArray(product.images);
-      const galleryImages = buildGalleryImageUnion(parentImages, skusRaw);
-      const galleryPresigned = normalizeImagesArray(
-        await presignProductImagesJsonb(galleryImages.length > 0 ? galleryImages : parentImages),
-      );
-
-      product.images = galleryPresigned;
+      product.images = normalizeImagesArray(await presignProductImagesJsonb(parentImages));
       if (skusRaw.length > 0) {
         Object.assign(product, applyStorefrontSkuPricingFields(product, skusRaw));
         product.variations = variations;

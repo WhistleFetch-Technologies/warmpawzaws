@@ -38,6 +38,15 @@ describe('drive-folder-images parsing', () => {
     );
   });
 
+  it('sorts unpadded numbers naturally so 2 comes before 10', () => {
+    const { kept } = filterSortCapDriveEntries([
+      { fileId: '1FileTenTwentyCharsXXXXXX', filename: 'img-10.webp' },
+      { fileId: '1FileTwoTwentyCharsXXXXXX', filename: 'img-2.webp' },
+      { fileId: '1FileOneTwentyCharsXXXXXX', filename: 'img-01.webp' },
+    ]);
+    expect(kept.map((e) => e.filename)).toEqual(['img-01.webp', 'img-2.webp', 'img-10.webp']);
+  });
+
   it('matches image extensions case-insensitively', () => {
     const { kept } = filterSortCapDriveEntries([
       { fileId: '1JpegFileIdTwentyCharsXXX', filename: 'A.JPEG' },

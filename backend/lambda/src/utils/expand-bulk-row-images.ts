@@ -14,6 +14,7 @@ import {
 import { getBulkProductTitle } from './product-ecommerce-validation';
 import { resolveBulkGroupKey } from './product-group-identity';
 import { normalizeProductGroupKey } from './bulk-product-variant-builder';
+import { PRODUCT_MAX_IMAGES } from '../services/image/image-types';
 
 export type ExpandBulkImageError = {
   row: number;
@@ -38,7 +39,7 @@ const CONFLICT_MESSAGE =
   'This Drive folder is used on more than one product. Use one folder per product (or per variant row of the same product), or paste comma-separated file URLs.';
 
 const TRUNCATION_WARNING =
-  'This Drive folder has more than 8 images; only the first 8 (by filename) were kept.';
+  `This Drive folder has more than ${PRODUCT_MAX_IMAGES} images; only the first ${PRODUCT_MAX_IMAGES} (by filename) were kept.`;
 
 type RowRef = Record<string, unknown> & { rowNum?: number };
 

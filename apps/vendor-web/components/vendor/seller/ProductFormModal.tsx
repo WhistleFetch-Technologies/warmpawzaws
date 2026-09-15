@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Plus, Trash2, X, Upload, IndianRupee, Package, Image as ImageIcon, MapPin,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
@@ -55,6 +56,7 @@ import {
   removePendingProductImageByUrl,
   uploadProductImage,
 } from '@/lib/product-image-upload';
+import { moveArrayItem } from '@/lib/product-image-order';
 
 function stripAwsPresignFromProductImageUrl(url: string): string {
   try {
@@ -67,6 +69,69 @@ function stripAwsPresignFromProductImageUrl(url: string): string {
     /* ignore */
   }
   return url;
+}
+
+function SequenceProductImage({
+  src,
+  index,
+  count,
+  compact,
+  onMoveLeft,
+  onMoveRight,
+  onRemove,
+}: {
+  src: string;
+  index: number;
+  count: number;
+  compact?: boolean;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  onRemove: () => void;
+}) {
+  const box = compact ? 'h-20 w-20' : 'h-24 w-24';
+  return (
+    <div className={`relative ${box} flex-shrink-0`}>
+      <div className={`${box} overflow-hidden rounded-xl border-2 border-slate-200 bg-slate-50`}>
+        <img src={src} alt="" className="h-full w-full object-cover" />
+      </div>
+      <span className="absolute left-1 top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900/80 px-1 text-[10px] font-semibold text-white">
+        {index + 1}
+      </span>
+      {index === 0 ? (
+        <span className="absolute left-1 top-7 z-10 rounded bg-orange-500 px-1 py-0.5 text-[9px] font-semibold uppercase leading-none text-white">
+          Cover
+        </span>
+      ) : null}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white"
+        aria-label="Remove image"
+      >
+        <X className="h-3 w-3" />
+      </button>
+      <div className="absolute inset-x-1 bottom-1 z-10 flex justify-between gap-1">
+        <button
+          type="button"
+          disabled={index === 0}
+          onClick={onMoveLeft}
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow disabled:opacity-30"
+          aria-label="Move image left"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          disabled={index === count - 1}
+          onClick={onMoveRight}
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow disabled:opacity-30"
+          aria-label="Move image right"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 type ProductFormModalProps = {
@@ -258,6 +323,18 @@ export function ProductFormModal({
     setVariants((prev) =>
       prev.map((v) =>
         v.id === variantId ? { ...v, images: v.images.filter((_, i) => i !== imgIdx) } : v,
+      ),
+    );
+  };
+
+  const moveSimpleImage = (from: number, to: number) => {
+    setSimpleSku((prev) => ({ ...prev, images: moveArrayItem(prev.images, from, to) }));
+  };
+
+  const moveVariantImage = (variantId: string, from: number, to: number) => {
+    setVariants((prev) =>
+      prev.map((v) =>
+        v.id === variantId ? { ...v, images: moveArrayItem(v.images, from, to) } : v,
       ),
     );
   };
@@ -838,18 +915,20 @@ export function ProductFormModal({
                 <ImageIcon className="w-5 h-5 text-orange-500" />
                 Product Images *
               </h3>
-              <div className="flex items-center gap-4 flex-wrap">
+              <p className="text-xs text-slate-500">
+                First image is the shop cover. Extra uploads are added at the end.
+              </p>
+              <div className="flex items-end gap-4 flex-wrap">
                 {simpleSku.images.map((image, index) => (
-                  <div key={index} className="relative w-24 h-24 border-2 border-slate-200 rounded-xl overflow-hidden">
-                    <img src={image} alt="" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => void removeSimpleImageAt(index)}
-                      className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
+                  <SequenceProductImage
+                    key={`${index}-${image.slice(0, 48)}`}
+                    src={image}
+                    index={index}
+                    count={simpleSku.images.length}
+                    onMoveLeft={() => moveSimpleImage(index, index - 1)}
+                    onMoveRight={() => moveSimpleImage(index, index + 1)}
+                    onRemove={() => void removeSimpleImageAt(index)}
+                  />
                 ))}
                 <TouchFilePicker
                   onFileChange={handleSimpleImageUpload}
@@ -1025,20 +1104,23 @@ export function ProductFormModal({
                         </div>
                         <div className="col-span-2">
                           <label className="block text-xs text-slate-600 mb-1">Variant images *</label>
-                          <div className="flex flex-wrap gap-2 mb-2">
+                          <p className="text-[11px] text-slate-500 mb-2">
+                            First image on this variant is what customers see for this size/color.
+                          </p>
+                          <div className="flex flex-wrap items-end gap-2 mb-2">
                             {variant.images.map((img, imgIdx) => (
-                              <div key={imgIdx} className="relative h-16 w-16 rounded-lg overflow-hidden border border-slate-200">
-                                <img src={img} alt="" className="h-full w-full object-cover" />
-                                <button
-                                  type="button"
-                                  onClick={() => void removeVariantImageAt(variant.id, imgIdx)}
-                                  className="absolute top-0 right-0 bg-red-500 text-white rounded-bl p-0.5"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </div>
+                              <SequenceProductImage
+                                key={`${variant.id}-${imgIdx}-${img.slice(0, 32)}`}
+                                src={img}
+                                index={imgIdx}
+                                count={variant.images.length}
+                                compact
+                                onMoveLeft={() => moveVariantImage(variant.id, imgIdx, imgIdx - 1)}
+                                onMoveRight={() => moveVariantImage(variant.id, imgIdx, imgIdx + 1)}
+                                onRemove={() => void removeVariantImageAt(variant.id, imgIdx)}
+                              />
                             ))}
-                            <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 hover:border-orange-500">
+                            <label className="flex h-20 w-20 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 hover:border-orange-500">
                               <Upload className="w-4 h-4 text-slate-400" />
                               <span className="text-[10px] text-slate-500">Add</span>
                               <input

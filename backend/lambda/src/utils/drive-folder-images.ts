@@ -150,9 +150,9 @@ export function filterSortCapDriveEntries(
   const pool = named.length > 0 ? named : images.filter((e) => !e.filename);
 
   pool.sort((a, b) => {
-    const fa = (a.filename || a.fileId).toLowerCase();
-    const fb = (b.filename || b.fileId).toLowerCase();
-    return fa < fb ? -1 : fa > fb ? 1 : 0;
+    const fa = a.filename || a.fileId;
+    const fb = b.filename || b.fileId;
+    return fa.localeCompare(fb, undefined, { numeric: true, sensitivity: 'base' });
   });
 
   const truncated = pool.length > maxImages;

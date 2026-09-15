@@ -104,6 +104,7 @@ describe('product-ecommerce-validation', () => {
   });
 
   it('parseProductImageList splits comma-separated URLs', () => {
+    // First token is the shop cover; order is preserved (not sorted).
     expect(
       parseProductImageList('https://a.com/1.jpg, https://b.com/2.jpg'),
     ).toEqual(['https://a.com/1.jpg', 'https://b.com/2.jpg']);
