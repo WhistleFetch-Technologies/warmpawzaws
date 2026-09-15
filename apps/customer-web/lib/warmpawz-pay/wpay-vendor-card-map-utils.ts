@@ -17,10 +17,13 @@ export function resolveWpayVendorCardRating(
   return { average: numericRating, reviewCount: count };
 }
 
-/** Marketing copy for admin catalogue % — not the exact applied quote line. */
+/** Display-only Pay Bill pill. Quote / checkout still use admin catalogue %. */
+export const WPAY_MARKETING_DISCOUNT_LABEL = 'Upto 15% discount';
+
+/** Marketing copy when a catalogue offer exists — not the applied quote percent. */
 export function formatWpayCatalogueDiscountLabel(discountPercent: number): string | undefined {
   if (!(discountPercent > 0)) return undefined;
-  return `Upto ${discountPercent}%`;
+  return WPAY_MARKETING_DISCOUNT_LABEL;
 }
 
 /** Pay Hub / WPay list discount pill — shared label format. */

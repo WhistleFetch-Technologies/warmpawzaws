@@ -38,10 +38,10 @@ describe('formatWpayCatalogueDiscountLabel', () => {
     expect(formatWpayCatalogueDiscountLabel(-5)).toBeUndefined();
   });
 
-  it('formats admin catalogue percent as Upto X%', () => {
-    expect(formatWpayCatalogueDiscountLabel(10)).toBe('Upto 10%');
-    expect(formatWpayCatalogueDiscountLabel(8)).toBe('Upto 8%');
-    expect(formatWpayCatalogueDiscountLabel(8.5)).toBe('Upto 8.5%');
+  it('uses the hardcoded marketing line for any positive catalogue percent', () => {
+    expect(formatWpayCatalogueDiscountLabel(10)).toBe('Upto 15% discount');
+    expect(formatWpayCatalogueDiscountLabel(8)).toBe('Upto 15% discount');
+    expect(formatWpayCatalogueDiscountLabel(20)).toBe('Upto 15% discount');
   });
 });
 
@@ -51,8 +51,9 @@ describe('buildWpayDiscountBadges', () => {
     expect(buildWpayDiscountBadges(-5)).toBeUndefined();
   });
 
-  it('returns discount badge with shared label format', () => {
-    expect(buildWpayDiscountBadges(20)).toEqual([{ label: 'Upto 20%', tone: 'discount' }]);
+  it('returns the hardcoded marketing badge when a catalogue offer exists', () => {
+    expect(buildWpayDiscountBadges(20)).toEqual([{ label: 'Upto 15% discount', tone: 'discount' }]);
+    expect(buildWpayDiscountBadges(8)).toEqual([{ label: 'Upto 15% discount', tone: 'discount' }]);
   });
 });
 
