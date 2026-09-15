@@ -17,12 +17,19 @@ export function resolveWpayVendorCardRating(
   return { average: numericRating, reviewCount: count };
 }
 
+/** Marketing copy for admin catalogue % — not the exact applied quote line. */
+export function formatWpayCatalogueDiscountLabel(discountPercent: number): string | undefined {
+  if (!(discountPercent > 0)) return undefined;
+  return `Upto ${discountPercent}%`;
+}
+
 /** Pay Hub / WPay list discount pill — shared label format. */
 export function buildWpayDiscountBadges(
   discountPercent: number,
 ): WarmpawzPayVendorCardBadge[] | undefined {
-  if (!(discountPercent > 0)) return undefined;
-  return [{ label: `${discountPercent}% OFF`, tone: 'discount' }];
+  const label = formatWpayCatalogueDiscountLabel(discountPercent);
+  if (!label) return undefined;
+  return [{ label, tone: 'discount' }];
 }
 
 /** Discovery-style dual CTA wiring — labels and handlers from parent. */

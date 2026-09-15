@@ -13,6 +13,7 @@ import { previewWpayCommercialQuote, previewWpayQuote } from '@/lib/warmpawz-pay
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
 import { buildWpaySuccessPath } from '@/lib/warmpawz-pay/wpay-success-href';
 import { consumeRestoredWpayPayBillAmount } from '@/lib/warmpawz-pay/wpay-guest-journey';
+import { formatWpayCatalogueDiscountLabel } from '@/lib/warmpawz-pay/wpay-vendor-card-map-utils';
 import { handleWpayPageBack } from '@/lib/go-back-or-replace';
 import {
   emitGuestAuthAnalytics,
@@ -242,7 +243,9 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
             ) : null}
             {vendor.discountPercent > 0 ? (
               <div className="mt-3 rounded-xl border border-green-100 bg-green-50 p-3 text-sm">
-                <p className="font-semibold text-green-800">{vendor.offerLabel}</p>
+                <p className="font-semibold text-green-800">
+                  {formatWpayCatalogueDiscountLabel(vendor.discountPercent)}
+                </p>
                 {vendor.maxDiscountAmount != null ? (
                   <p className="text-xs text-green-700">Upto {formatInr(vendor.maxDiscountAmount)}</p>
                 ) : null}

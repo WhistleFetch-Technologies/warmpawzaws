@@ -1,6 +1,7 @@
 import {
   buildWpayDiscountBadges,
   buildWpayVendorCardActions,
+  formatWpayCatalogueDiscountLabel,
   normalizeWpayVendorCardAddress,
   resolveWpayVendorCardRating,
 } from '../wpay-vendor-card-map-utils';
@@ -31,6 +32,19 @@ describe('normalizeWpayVendorCardAddress', () => {
   });
 });
 
+describe('formatWpayCatalogueDiscountLabel', () => {
+  it('returns undefined when discount is zero or negative', () => {
+    expect(formatWpayCatalogueDiscountLabel(0)).toBeUndefined();
+    expect(formatWpayCatalogueDiscountLabel(-5)).toBeUndefined();
+  });
+
+  it('formats admin catalogue percent as Upto X%', () => {
+    expect(formatWpayCatalogueDiscountLabel(10)).toBe('Upto 10%');
+    expect(formatWpayCatalogueDiscountLabel(8)).toBe('Upto 8%');
+    expect(formatWpayCatalogueDiscountLabel(8.5)).toBe('Upto 8.5%');
+  });
+});
+
 describe('buildWpayDiscountBadges', () => {
   it('returns undefined when discount is zero or negative', () => {
     expect(buildWpayDiscountBadges(0)).toBeUndefined();
@@ -38,7 +52,7 @@ describe('buildWpayDiscountBadges', () => {
   });
 
   it('returns discount badge with shared label format', () => {
-    expect(buildWpayDiscountBadges(20)).toEqual([{ label: '20% OFF', tone: 'discount' }]);
+    expect(buildWpayDiscountBadges(20)).toEqual([{ label: 'Upto 20%', tone: 'discount' }]);
   });
 });
 
