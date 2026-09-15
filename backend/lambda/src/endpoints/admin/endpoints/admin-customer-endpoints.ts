@@ -5,6 +5,10 @@ import type { Hono } from 'hono';
 import { query, select, update } from '../../../database/rds-connection';
 import { requireAdminAuth } from './admin.controller';
 import { createCustomerPortalCode, consumeCustomerPortalCodeAndBuildPayload } from '../../../lib/services/admin/customer-portal-session-service';
+import {
+  customerAdminDisplayLocation,
+  type SavedAddressOverlay,
+} from './customer-admin-display-location';
 
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -14,45 +18,31 @@ function normalizeIsActive(value: unknown): boolean {
   return false;
 }
 
-/**
- * Primary address line from `customers.address` — aligned with GET /customer/profile
- * (string = full line; object = formatted_address or street / addressLine1).
- */
-function primaryCustomerAddressText(cust: Record<string, unknown> | null | undefined): string {
-  if (!cust) return '';
-  const raw = cust.address;
-  if (raw == null || raw === '') return '';
-  if (typeof raw === 'string') {
-    const t = raw.trim();
-    if (!t) return '';
-    if (t.startsWith('{') || t.startsWith('[')) {
-      try {
-        const o = JSON.parse(t) as Record<string, unknown>;
-        return primaryCustomerAddressText({ ...cust, address: o });
-      } catch {
-        return t;
-      }
-    }
-    return t;
+async function savedAddressesByCustomerId(
+  customerIds: string[],
+): Promise<Map<string, SavedAddressOverlay>> {
+  const map = new Map<string, SavedAddressOverlay>();
+  const ids = customerIds.filter(Boolean);
+  if (!ids.length) return map;
+  const result = await query(
+    `SELECT DISTINCT ON (customer_id)
+        customer_id::text AS customer_id,
+        address_line1,
+        city,
+        state,
+        pincode,
+        latitude,
+        longitude
+     FROM customer_addresses
+     WHERE customer_id = ANY($1::uuid[])
+     ORDER BY customer_id, is_default DESC NULLS LAST, updated_at DESC NULLS LAST`,
+    [ids],
+  );
+  for (const row of result.rows || []) {
+    const id = String((row as { customer_id?: string }).customer_id || '');
+    if (id) map.set(id, row as SavedAddressOverlay);
   }
-  if (typeof raw === 'object') {
-    const o = raw as Record<string, unknown>;
-    const formatted = String(o.formatted_address || o.formattedAddress || '').trim();
-    if (formatted) return formatted;
-    const street = String(o.street || o.addressLine1 || o.line1 || '').trim();
-    if (street) return street;
-  }
-  return '';
-}
-
-/** Full location for admin lists: prefer stored address line, then city/state/pincode. */
-function customerAdminDisplayLocation(cust: Record<string, unknown>): string {
-  const line = primaryCustomerAddressText(cust);
-  if (line) return line;
-  const city = String(cust.city ?? '').trim();
-  const state = String(cust.state ?? '').trim();
-  const pincode = String(cust.pincode ?? '').trim();
-  return [city, state, pincode].filter(Boolean).join(', ') || '';
+  return map;
 }
 
 async function gate(c: any) {
@@ -242,6 +232,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       });
 
       list = list.slice(0, limit);
+      const savedById = await savedAddressesByCustomerId(list.map((cust: { id?: string }) => String(cust.id || '')));
 
       const mapped = list.map((cust: any) => ({
         id: cust.id,
@@ -249,7 +240,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
         ownerName: cust.full_name || '',
         tier: 'Standard',
         city: cust.city || '',
-        location: customerAdminDisplayLocation(cust),
+        location: customerAdminDisplayLocation(cust, savedById.get(String(cust.id))),
         category: 'customer',
         rating: 0,
         vendorType: 'solo',
@@ -289,6 +280,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
         });
       }
       list = list.slice(0, limit);
+      const savedById = await savedAddressesByCustomerId(list.map((cust: { id?: string }) => String(cust.id || '')));
 
       const mapped = list.map((cust: any) => ({
         id: cust.id,
@@ -303,7 +295,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
         tier: 'Standard',
         isActive: false,
         vendorType: 'solo',
-        location: customerAdminDisplayLocation(cust) || null,
+        location: customerAdminDisplayLocation(cust, savedById.get(String(cust.id))) || null,
         city: cust.city || '',
         completedBookingsCount: 0,
         totalRevenue: 0,
@@ -829,7 +821,10 @@ export function registerAdminCustomerEndpoints(app: Hono) {
           city: cust.city,
           state: cust.state,
           pincode: cust.pincode,
-          location: customerAdminDisplayLocation(cust),
+          location: customerAdminDisplayLocation(
+            cust,
+            (await savedAddressesByCustomerId([customerId])).get(customerId),
+          ),
           status: cust.is_active === false ? 'inactive' : 'active',
         },
       });

@@ -246,8 +246,27 @@ export async function executecustomerProfilePost(c: Context) {
 
       if (hasGeoPayload) {
         const geo = deriveLatLngFromProfileData(profileData as ProfileAddressSyncPayload);
-        updateData.latitude = geo.latitude;
-        updateData.longitude = geo.longitude;
+        const deviceFill = String(body.locationSource || '') === 'device';
+        if (deviceFill) {
+          const existingRows = await customer_profile_postRepo.selectCustomerById(customerId as string);
+          const existing = (existingRows?.[0] || {}) as Record<string, unknown>;
+          const hasLat = existing.latitude != null && Number.isFinite(Number(existing.latitude));
+          const hasLng = existing.longitude != null && Number.isFinite(Number(existing.longitude));
+          if (!hasLat && geo.latitude != null) updateData.latitude = geo.latitude;
+          if (!hasLng && geo.longitude != null) updateData.longitude = geo.longitude;
+          if (!String(existing.city || '').trim() && profileData.city) {
+            updateData.city = profileData.city;
+          }
+          if (!String(existing.state || '').trim() && profileData.state) {
+            updateData.state = String(profileData.state).replace(/\s*\d{6}\s*$/, '').trim();
+          }
+          if (!String(existing.pincode || '').trim() && profileData.pincode) {
+            updateData.pincode = profileData.pincode;
+          }
+        } else {
+          updateData.latitude = geo.latitude;
+          updateData.longitude = geo.longitude;
+        }
       } else if (updateData.address || updateData.pincode) {
         // Server-side geocode when frontend didn't supply coordinates
         try {

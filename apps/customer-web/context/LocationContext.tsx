@@ -32,6 +32,7 @@ import {
   type PersistedLocationV1,
 } from '@/lib/location-storage';
 import { LOCATION_UPDATED_EVENT } from '@/lib/customer-discovery-coords';
+import { persistDeviceLocationToProfile } from '@/lib/persist-device-location';
 
 function emitLocationUpdated(): void {
   if (typeof window === 'undefined') return;
@@ -152,6 +153,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       source: next.source,
       permissionState: next.permissionStatus,
     });
+    persistDeviceLocationToProfile(next);
   }, []);
 
   const applyCoords = useCallback(
