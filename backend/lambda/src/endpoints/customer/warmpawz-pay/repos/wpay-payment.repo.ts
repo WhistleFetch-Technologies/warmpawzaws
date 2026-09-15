@@ -1,4 +1,5 @@
 import { query } from '../../../../database/rds-connection';
+import { decodeWpayTxnCursor, encodeWpayTxnCursor } from '../shared/wpay-txn-cursor';
 
 export type WpayPaymentRow = {
   id: string;
@@ -190,12 +191,10 @@ export async function dbWpayTransactionsPage(params: {
   const values: unknown[] = [customerId, limit + 1];
   let cursorSql = '';
   if (cursor) {
-    const parts = cursor.split('|');
-    const paidAt = parts[0];
-    const paymentId = parts[1];
-    if (paidAt && paymentId) {
+    const decoded = decodeWpayTxnCursor(cursor);
+    if (decoded) {
       cursorSql = `AND (p.completed_at, p.id) < ($3::timestamptz, $4::uuid)`;
-      values.push(paidAt, paymentId);
+      values.push(decoded.paidAt, decoded.paymentId);
     }
   }
 
@@ -226,7 +225,7 @@ export async function dbWpayTransactionsPage(params: {
   const rows = result.rows as WpayTransactionDbRow[];
   if (rows.length > limit) {
     const last = rows[limit - 1];
-    const nextCursor = `${last.paid_at}|${last.payment_id}`;
+    const nextCursor = encodeWpayTxnCursor(last.paid_at, last.payment_id);
     return { rows: rows.slice(0, limit), nextCursor };
   }
   return { rows, nextCursor: null };
