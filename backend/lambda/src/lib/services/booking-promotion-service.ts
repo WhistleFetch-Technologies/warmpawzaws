@@ -41,6 +41,7 @@ import {
   parsePromotionServicesList,
   platformPromoMatchesBookingContext,
 } from '../../utils/platform-promotion-matching';
+import { evaluatePromotions } from '../../discount-engine/promo-engine';
 
 export type ResolveBookingPromotionsParams = {
   vendorId: string;
@@ -340,13 +341,56 @@ export async function resolveBookingDiscountQuote(
       })
     );
     // #endregion
+    await attachPromoEnginePending(unified, params);
     return unified;
   }
 
-  return mapLegacyBookingToUnifiedResponse(booking, runtimePolicy, {
+  const legacyUnified = mapLegacyBookingToUnifiedResponse(booking, runtimePolicy, {
     displayPromotionsOnly: params.displayPromotionsOnly,
     legacyCouponRejections: await buildLegacyCouponRejections(booking, params),
   });
+  await attachPromoEnginePending(legacyUnified, params);
+  return legacyUnified;
+}
+
+/** Non-blocking: evaluate engine for pending cashback; never credits wallet. */
+async function attachPromoEnginePending(
+  unified: UnifiedResolverResponse,
+  params: ResolveBookingPromotionsParams
+): Promise<void> {
+  if (!params.customerId) return;
+  try {
+    const result = await evaluatePromotions({
+      user_id: params.customerId,
+      transaction: {
+        type: 'BOOKING',
+        service_category: params.serviceCategory
+          ? String(params.serviceCategory).toUpperCase()
+          : undefined,
+        service_type: params.serviceStyle,
+        vendor_id: params.vendorId,
+        amount: params.amount,
+      },
+    });
+    unified.promoEngine = {
+      evaluationId: result.evaluation_id,
+      pendingCashback: result.summary.cashback,
+      engineDiscount: result.summary.discount,
+      eligible: result.eligible,
+    };
+    if (result.summary.cashback > 0) {
+      unified.displayMessages = [
+        ...(unified.displayMessages || []),
+        {
+          type: 'info',
+          code: 'PROMO_ENGINE_PENDING_CASHBACK',
+          message: `Earn ₹${result.summary.cashback} cashback after completion (credited on payment confirm)`,
+        },
+      ];
+    }
+  } catch (err) {
+    console.warn('[promo-engine] evaluate skipped:', err instanceof Error ? err.message : err);
+  }
 }
 
 async function buildLegacyCouponRejections(

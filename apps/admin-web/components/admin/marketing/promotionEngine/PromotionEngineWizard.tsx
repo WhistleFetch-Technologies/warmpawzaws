@@ -58,7 +58,7 @@ export function PromotionEngineWizard({
     const next = applyBasicsToDraft(working, working.basics);
     onSaveDraft(next);
     setDirty(false);
-    toast.success('Draft saved locally — Abhi CRUD will persist this');
+    toast.success('Draft saved');
     onClose();
   };
 

@@ -97,6 +97,13 @@ export interface UnifiedResolverResponse {
   winningPromotion?: UnifiedResolverAppliedOffer | null;
   /** When true, caller requested promos-only (no coupon input). */
   displayPromotionsOnly?: boolean;
+  /** Promo Engine v1 evaluate (pending cashback — not credited until commit) */
+  promoEngine?: {
+    evaluationId?: string;
+    pendingCashback?: number;
+    engineDiscount?: number;
+    eligible?: boolean;
+  };
 }
 
 function mapSourceKey(source: DiscountSource, owner: DiscountOwner): string {

@@ -1,6 +1,6 @@
 # Warmpawz Promotion, Discount & Cashback Engine — Master Execution Plan
 
-**Status:** Phase 1 (Bindu) landed on `feature/promo-engine-v1` — Abhi Phase 2 is unblocked. See §14.  
+**Status:** Phase 2 (Abhi) landed on `feature/promo-engine-v1` — Bindu Phase 3 unblocked. See §14–§15.  
 **Environment for migrations & first deploy:** **dev only**  
 **Loyalty & Rewards:** remains independent — do not merge into this engine  
 **Wallet:** remains the cashback ledger/store  
@@ -469,7 +469,7 @@ feature/promo-engine-v1
 
 **Branch:** `feature/promo-engine-v1` (there is no `feature/promotion-ui`; all engine work stays here).  
 **Owner just finished:** Bindu (Phase 1).  
-**Next owner:** **Abhi (Phase 2)** — then Bindu Phase 3.
+**Phase 2 (Abhi) — landed 2026-09-17** — see §15.
 
 ### What Bindu shipped
 
@@ -500,20 +500,11 @@ $env:ENVIRONMENT='dev'; node scripts/run-migration-1111-1114-rds-data-api-dev.js
 Verified on `warmpawz-dev-cluster`: 8 engine/behaviour tables + 7 `wallet_transactions` cashback columns.  
 **Index note:** `1113` uses `(wallet_id, cashback_status, expires_at)` — live `wallet_transactions` has no `customer_id`. Do **not** apply on prod.
 
-### Abhi — pick up next (Phase 2)
+### Abhi Phase 2 — status
 
-Read HLD SoT + this plan §5. Work only on `feature/promo-engine-v1`.
+**Done (2026-09-17).** See §15. Bindu may start Phase 3 against live CRUD.
 
-1. **CRUD APIs** under `/admin/promo-engine/promotions` (+ rules, status PATCH, soft-delete → `ARCHIVED`). Map UI drafts to `promo_engine_*` tables. Swap `lib/promo-engine/local-store.ts` for a real client.
-2. **Engine modules** in `backend/lambda/src/discount-engine/`: eligibility DSL, DISCOUNT + CASHBACK benefits, stacking, usage/budget, evaluate / commit / reverse.
-3. **Behaviour service:** upsert `customer_behaviour_profiles` on SERVICE_COMPLETED / ORDER_COMPLETED; optional consume `customer_behaviour_events`.
-4. **Wallet:** on **commit only**, credit `wallet_transactions` with `source=PROMOTION`, `promotion_id`, `remaining_amount`, `expires_at`, `cashback_status`, `redeem_scope`. Never credit on evaluate.
-5. **Wire** `booking-promotion-service` + ecom cart calculate: return discount + **pending** cashback.
-6. After APIs exist, Bindu returns for **Phase 3** (Audience/Journey UI + Review/Activate). You then do **Phase 4** (Benefits, Limits, Simulator, customer earn-preview).
-
-**Do not:** new design system, loyalty merge, hard-coded visit if/else, credit wallet on evaluate, invent a second admin chrome.
-
-### Bindu — Phase 3 (after Abhi CRUD is callable)
+### Bindu — Phase 3 (CRUD is callable)
 
 - Finish Audience & rules + live IF/THEN rail
 - Review + Activate (call `PATCH …/status`)
@@ -522,7 +513,25 @@ Read HLD SoT + this plan §5. Work only on `feature/promo-engine-v1`.
 
 ### Praveen
 
-Phase 1 smoke: open Admin → Promotion Center → **Promotion Engine** → empty list → Create → Basics → Save draft (local). After RDS apply, confirm tables exist. Full P1–P12 waits for Phase 2+.
+Phase 2 smoke: `POST /promo-engine/evaluate` (no wallet write) → `POST /promo-engine/commit` (credits CB once) → second commit idempotent. Admin list via `/admin/promo-engine/promotions`. Full P1–P12 after deploy.
+
+---
+
+## 15. Phase 2 complete — Abhi (2026-09-17)
+
+| Item | Where |
+|------|--------|
+| DSL eligibility + explain | `discount-engine/promo-engine/dsl/` |
+| Benefits + stacking | `benefits/`, `stacking/` |
+| CRUD / evaluate / commit / reverse / behaviour | `services/` + `repos/` |
+| HTTP | `endpoints/promo-engine.endpoints.ts` (registered in `handler/index.ts`) |
+| Admin API client + Hub | `apps/admin-web/lib/promo-engine/api-client.ts`, `PromotionEngineHub.tsx` |
+| Booking quote pending CB | `booking-promotion-service` → `unified.promoEngine` (evaluate only) |
+| Unit tests | `promo-engine/**/__tests__` (DSL + benefits/stack) |
+
+**Still deferred to Phase 4 / later:** Benefits/Limits/Simulator UI polish, ecom cart commit/reverse hooks, customer earn-preview UI, Redis cache.
+
+**Next:** Bindu Phase 3 → Abhi Phase 4 → dev deploy (Phase 5).
 
 ---
 

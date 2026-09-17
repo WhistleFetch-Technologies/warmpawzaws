@@ -1,50 +1,91 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  draftsToListItems,
-  loadPromoEngineDrafts,
-  newPromoEngineDraft,
-  upsertPromoEngineDraft,
-} from '@/lib/promo-engine/local-store';
+  createPromoEnginePromotion,
+  fetchPromoEngineDetail,
+  fetchPromoEngineList,
+  patchPromoEngineStatus,
+  updatePromoEnginePromotion,
+} from '@/lib/promo-engine/api-client';
+import { newPromoEngineDraft } from '@/lib/promo-engine/local-store';
 import { canTransition } from '@/lib/promo-engine/status';
-import type { PromoEngineDraft, PromoEngineStatus } from '@/lib/promo-engine/types';
+import type { PromoEngineDraft, PromoEngineListItem, PromoEngineStatus } from '@/lib/promo-engine/types';
 import { PromotionEngineList } from './PromotionEngineList';
 import { PromotionEngineWizard } from './PromotionEngineWizard';
 
 export function PromotionEngineHub() {
-  const [drafts, setDrafts] = useState<PromoEngineDraft[]>([]);
+  const [rows, setRows] = useState<PromoEngineListItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editing, setEditing] = useState<PromoEngineDraft | null>(null);
+  const [apiAvailable, setApiAvailable] = useState(true);
 
-  useEffect(() => {
-    setDrafts(loadPromoEngineDrafts());
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await fetchPromoEngineList();
+      setRows(list);
+      setApiAvailable(true);
+    } catch (err) {
+      console.warn('[promo-engine] list failed', err);
+      setApiAvailable(false);
+      setRows([]);
+      toast.error('Promotion Engine API unavailable — deploy Lambda with Phase 2 endpoints');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const rows = useMemo(() => draftsToListItems(drafts), [drafts]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   const openCreate = () => {
     setEditing(newPromoEngineDraft());
     setWizardOpen(true);
   };
 
-  const openEdit = (id: string) => {
-    const found = drafts.find((d) => d.id === id) ?? null;
-    setEditing(found);
-    setWizardOpen(true);
+  const openEdit = async (id: string) => {
+    try {
+      const detail = await fetchPromoEngineDetail(id);
+      setEditing(detail);
+      setWizardOpen(true);
+    } catch {
+      toast.error('Failed to load promotion');
+    }
   };
 
-  const handleSave = (draft: PromoEngineDraft) => {
-    setDrafts(upsertPromoEngineDraft(draft));
+  const handleSave = async (draft: PromoEngineDraft) => {
+    try {
+      const exists = rows.some((r) => r.id === draft.id);
+      if (exists && apiAvailable) {
+        await updatePromoEnginePromotion(draft);
+      } else if (apiAvailable) {
+        // Server assigns UUID — create then refresh
+        await createPromoEnginePromotion(draft);
+      } else {
+        toast.error('API unavailable');
+        return;
+      }
+      toast.success('Promotion saved');
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Save failed');
+    }
   };
 
-  const handleStatus = (id: string, status: PromoEngineStatus) => {
-    const current = drafts.find((d) => d.id === id);
+  const handleStatus = async (id: string, status: PromoEngineStatus) => {
+    const current = rows.find((d) => d.id === id);
     if (!current || !canTransition(current.status, status)) return;
-    const next = { ...current, status, updatedAt: new Date().toISOString() };
-    setDrafts(upsertPromoEngineDraft(next));
-    toast.success(`Status set to ${status} (local only until Abhi PATCH /status)`);
+    try {
+      await patchPromoEngineStatus(id, status);
+      toast.success(`Status set to ${status}`);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Status update failed');
+    }
   };
 
   return (
@@ -52,15 +93,16 @@ export function PromotionEngineHub() {
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-gray-900">Promotion Engine</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Journey / visit rules, discount + cashback. Phase 1: list + Basics wizard. Persistence is
-          local until Abhi ships <code>/admin/promo-engine</code> CRUD.
+          Journey / visit rules, discount + cashback. Persisted via{' '}
+          <code>/admin/promo-engine</code>
+          {loading ? ' · loading…' : apiAvailable ? '' : ' · API offline'}.
         </p>
       </div>
       <PromotionEngineList
         rows={rows}
         onCreate={openCreate}
-        onEdit={openEdit}
-        onStatusChange={handleStatus}
+        onEdit={(id) => void openEdit(id)}
+        onStatusChange={(id, status) => void handleStatus(id, status)}
       />
       <PromotionEngineWizard
         open={wizardOpen}
@@ -69,7 +111,7 @@ export function PromotionEngineHub() {
           setWizardOpen(false);
           setEditing(null);
         }}
-        onSaveDraft={handleSave}
+        onSaveDraft={(d) => void handleSave(d)}
       />
     </div>
   );

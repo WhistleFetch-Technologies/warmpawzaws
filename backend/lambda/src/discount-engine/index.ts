@@ -29,3 +29,4 @@ export type { DiscountBenefit as ContractDiscountBenefit } from './contracts/dis
 export type { PriorityEngine as PriorityEngineContract } from './contracts/priority-engine';
 export * from './analytics';
 export * from './campaign';
+export * as promoEngine from './promo-engine';
