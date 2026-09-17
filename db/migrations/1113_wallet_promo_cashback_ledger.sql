@@ -25,8 +25,9 @@ ALTER TABLE wallet_transactions
 ALTER TABLE wallet_transactions
   ADD COLUMN IF NOT EXISTS redeem_scope JSONB NULL;
 
+-- Live wallet_transactions is keyed by wallet_id (001 schema), not customer_id.
 CREATE INDEX IF NOT EXISTS idx_wallet_transactions_promo_cashback
-  ON wallet_transactions (customer_id, cashback_status, expires_at)
+  ON wallet_transactions (wallet_id, cashback_status, expires_at)
   WHERE source = 'PROMOTION';
 
 CREATE INDEX IF NOT EXISTS idx_wallet_transactions_promotion_id

@@ -440,7 +440,7 @@ No prod deploy / no prod migrations in this plan.
 
 ## 12. Definition of done (dev)
 
-- [x] Migrations 1111–1114 on feature branch (apply on **dev** RDS still required — see §14)
+- [x] Migrations 1111–1114 on feature branch and applied on **dev** RDS (Data API, 2026-09-17)
 - [ ] Admin: create winback promo via wizard → ACTIVE  
 - [ ] Simulator: Rahul-style context → ELIGIBLE with explain PASS lines  
 - [ ] Booking evaluate → discount + pending CB; wallet unchanged  
@@ -491,18 +491,14 @@ feature/promo-engine-v1
 
 **Tests:** `cd apps/admin-web && npx jest lib/__tests__/promo-engine-draft.test.ts lib/__tests__/promo-engine-journey-templates.test.ts`
 
-### Dev RDS (Bindu still owns apply)
-
-Commit/push of these files comes first. Then, **dev only**:
+### Dev RDS — applied 2026-09-17 via Data API
 
 ```bash
-ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1111_promotion_engine_core.sql
-ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1112_customer_behaviour_profiles.sql
-ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1113_wallet_promo_cashback_ledger.sql
-ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1114_promotion_engine_eval_audit.sql
+$env:ENVIRONMENT='dev'; node scripts/run-migration-1111-1114-rds-data-api-dev.js
 ```
 
-Do **not** apply on prod. After apply, tick §12 first checkbox fully.
+Verified on `warmpawz-dev-cluster`: 8 engine/behaviour tables + 7 `wallet_transactions` cashback columns.  
+**Index note:** `1113` uses `(wallet_id, cashback_status, expires_at)` — live `wallet_transactions` has no `customer_id`. Do **not** apply on prod.
 
 ### Abhi — pick up next (Phase 2)
 
