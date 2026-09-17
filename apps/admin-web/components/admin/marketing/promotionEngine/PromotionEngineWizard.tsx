@@ -97,23 +97,23 @@ export function PromotionEngineWizard({
   return (
     <Dialog open={open} onOpenChange={(v: boolean) => !v && handleClose()}>
       <DialogContent
-        className={`flex max-h-[90vh] flex-col overflow-hidden p-0 ${step === 1 ? 'max-w-5xl' : 'max-w-3xl'}`}
+        className="flex h-[min(94vh,56rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)] sm:max-w-6xl"
       >
-        <DialogHeader className="border-b px-6 py-4">
+        <DialogHeader className="shrink-0 border-b px-4 py-4 text-left sm:px-8">
           <DialogTitle>Promotion Engine wizard</DialogTitle>
           <p className="text-sm text-slate-500">
             Step {step + 1} of {STEPS.length}: {STEPS[step]}
           </p>
-          <div className="mt-2 flex flex-wrap gap-1">
+          <div className="mt-3 flex flex-wrap gap-2">
             {STEPS.map((label, i) => (
-              <Badge key={label} variant={i === step ? 'default' : 'outline'} className="text-[10px]">
+              <Badge key={label} variant={i === step ? 'default' : 'outline'} className="text-xs">
                 {label}
               </Badge>
             ))}
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
           {step === 0 ? (
             <BasicsStep
               basics={working.basics}
@@ -153,7 +153,7 @@ export function PromotionEngineWizard({
           {step === 4 ? <ReviewStep draft={working} /> : null}
         </div>
 
-        <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-white px-6 py-3">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-white px-4 py-4 sm:px-8">
           <Button type="button" variant="ghost" disabled={step === 0 || saving} onClick={() => setStep((s) => s - 1)}>
             <ChevronLeft className="mr-1 h-4 w-4" aria-hidden />
             Back

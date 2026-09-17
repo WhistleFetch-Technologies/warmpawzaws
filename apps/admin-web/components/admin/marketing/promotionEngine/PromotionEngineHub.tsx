@@ -117,8 +117,8 @@ export function PromotionEngineHub() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-      <div className="mb-4">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900">Promotion Engine</h2>
         <p className="mt-1 text-sm text-gray-500">
           Journey / visit rules, discount + cashback. Persisted via{' '}

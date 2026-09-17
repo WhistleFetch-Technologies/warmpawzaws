@@ -5,7 +5,6 @@ import type {
   PromoEngineDraft,
   ServiceCategory,
 } from './types';
-import { SERVICE_CATEGORIES } from './types';
 
 export const TEMPLATES_NEEDING_N: JourneyTemplateId[] = ['nth', 'first_n', 'every_nth', 'gte_n', 'between'];
 export const TEMPLATES_NEEDING_M: JourneyTemplateId[] = ['between'];
@@ -24,7 +23,7 @@ export function defaultAudienceState(draft?: PromoEngineDraft): AudienceBuilderS
   const fromBasics = draft?.basics.serviceCategories[0];
   const fromCondition = extractServiceCategory(draft?.conditionJson);
   return {
-    serviceCategory: fromBasics || fromCondition || 'GROOMING',
+    serviceCategory: fromBasics || fromCondition || '',
     template: 'winback_30d',
     n: 3,
     m: 5,
@@ -40,10 +39,8 @@ export function extractServiceCategory(
   if (!group) return undefined;
   for (const node of group.conditions) {
     if ('field' in node && node.field === 'transaction.service_category') {
-      const value = String(node.value);
-      if ((SERVICE_CATEGORIES as readonly string[]).includes(value)) {
-        return value as ServiceCategory;
-      }
+      const value = String(node.value ?? '').trim();
+      if (value) return value;
     }
   }
   return undefined;
@@ -79,9 +76,11 @@ export function applyAudienceToDraft(
   state: AudienceBuilderState,
 ): PromoEngineDraft {
   const conditionJson = buildAudienceCondition(state);
-  const services = draft.basics.serviceCategories.includes(state.serviceCategory)
+  const services = !state.serviceCategory
     ? draft.basics.serviceCategories
-    : [state.serviceCategory, ...draft.basics.serviceCategories];
+    : draft.basics.serviceCategories.includes(state.serviceCategory)
+      ? draft.basics.serviceCategories
+      : [state.serviceCategory, ...draft.basics.serviceCategories];
   return {
     ...draft,
     ruleType: 'CUSTOMER_JOURNEY',
@@ -92,6 +91,11 @@ export function applyAudienceToDraft(
 }
 
 export function validateAudience(draft: PromoEngineDraft): string[] {
+  const service =
+    draft.basics.serviceCategories[0] || extractServiceCategory(draft.conditionJson);
+  if (!service) {
+    return ['Pick a catalogue service so the rule can match bookings'];
+  }
   if (!draft.conditionJson.conditions.length) {
     return ['Pick a journey template so the rule has WHEN conditions'];
   }

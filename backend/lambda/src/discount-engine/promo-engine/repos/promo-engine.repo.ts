@@ -144,7 +144,7 @@ export async function dbUpdatePromotion(
       data[k] = v;
     }
   }
-  const rows = await update('promo_engine_promotions', data, { id });
+  const rows = await update('promo_engine_promotions', { id }, data);
   if (!rows.length) return null;
   return mapPromotion(rows[0] as Record<string, unknown>);
 }
@@ -169,6 +169,7 @@ export async function dbUpsertPrimaryRule(opts: {
     const id = existing[0].id;
     const rows = await update(
       'promo_engine_rules',
+      { id },
       {
         condition_json: JSON.stringify(opts.condition_json),
         benefit_json: JSON.stringify(opts.benefit_json),
@@ -176,7 +177,6 @@ export async function dbUpsertPrimaryRule(opts: {
         priority: opts.priority ?? existing[0].priority,
         updated_at: new Date().toISOString(),
       },
-      { id }
     );
     return mapRule(rows[0] as Record<string, unknown>);
   }
@@ -213,6 +213,7 @@ export async function dbUpsertLimits(
   if (existing) {
     await update(
       'promo_engine_limits',
+      { promotion_id: promotionId },
       {
         per_user: limits.per_user ?? existing.per_user,
         per_transaction: limits.per_transaction ?? existing.per_transaction,
@@ -221,7 +222,6 @@ export async function dbUpsertLimits(
         budget_limit: limits.budget_limit ?? existing.budget_limit,
         updated_at: new Date().toISOString(),
       },
-      { promotion_id: promotionId }
     );
     return;
   }
@@ -348,12 +348,12 @@ export async function dbUpsertBehaviour(opts: {
   if (existing) {
     await update(
       'customer_behaviour_profiles',
+      { user_id: opts.userId },
       {
         overall: JSON.stringify(opts.overall),
         services: JSON.stringify(opts.services),
         updated_at: new Date().toISOString(),
       },
-      { user_id: opts.userId }
     );
     return;
   }

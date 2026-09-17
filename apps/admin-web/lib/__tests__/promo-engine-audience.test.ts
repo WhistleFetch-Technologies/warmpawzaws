@@ -48,7 +48,7 @@ describe('applyAudienceToDraft + validate', () => {
 
   it('rejects empty audience', () => {
     expect(validateAudience(createEmptyDraft('x'))).toEqual([
-      'Pick a journey template so the rule has WHEN conditions',
+      'Pick a catalogue service so the rule can match bookings',
     ]);
   });
 });

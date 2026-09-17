@@ -12,13 +12,13 @@ import {
 } from '@warmpawz/ui';
 import {
   FUNDING_TYPES,
-  SERVICE_CATEGORIES,
   STACKING_POLICIES,
   type PromoEngineBasics,
   type PromoFundingType,
-  type ServiceCategory,
   type StackingPolicy,
 } from '@/lib/promo-engine/types';
+import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
+import { ServiceCategoryChips } from '../ServiceCategoryChips';
 
 export function BasicsStep({
   basics,
@@ -27,20 +27,21 @@ export function BasicsStep({
   basics: PromoEngineBasics;
   onChange: (next: PromoEngineBasics) => void;
 }) {
+  const { categories, loading, error } = useCatalogServiceCategories();
   const patch = (partial: Partial<PromoEngineBasics>) => onChange({ ...basics, ...partial });
 
-  const toggleService = (service: ServiceCategory) => {
-    const has = basics.serviceCategories.includes(service);
+  const toggleService = (slug: string) => {
+    const has = basics.serviceCategories.includes(slug);
     patch({
       serviceCategories: has
-        ? basics.serviceCategories.filter((s) => s !== service)
-        : [...basics.serviceCategories, service],
+        ? basics.serviceCategories.filter((s) => s !== slug)
+        : [...basics.serviceCategories, slug],
     });
   };
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-6">
+      <div className="grid gap-5 sm:grid-cols-2">
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="promo-engine-name">Promotion name</Label>
           <Input
@@ -48,6 +49,7 @@ export function BasicsStep({
             value={basics.name}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ name: e.target.value })}
             placeholder="Grooming Win Back"
+            className="min-h-11"
           />
         </div>
         <div className="space-y-2">
@@ -57,6 +59,7 @@ export function BasicsStep({
             value={basics.code}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ code: e.target.value })}
             placeholder="PROMO-GRM-001"
+            className="min-h-11"
           />
         </div>
         <div className="space-y-2">
@@ -70,6 +73,7 @@ export function BasicsStep({
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               patch({ priority: Number(e.target.value) })
             }
+            className="min-h-11"
           />
         </div>
         <div className="space-y-2">
@@ -79,6 +83,7 @@ export function BasicsStep({
             type="datetime-local"
             value={basics.startAt}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ startAt: e.target.value })}
+            className="min-h-11"
           />
         </div>
         <div className="space-y-2">
@@ -88,6 +93,7 @@ export function BasicsStep({
             type="datetime-local"
             value={basics.endAt}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ endAt: e.target.value })}
+            className="min-h-11"
           />
         </div>
         <div className="space-y-2">
@@ -96,7 +102,7 @@ export function BasicsStep({
             value={basics.fundingType}
             onValueChange={(v: string) => patch({ fundingType: v as PromoFundingType })}
           >
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="min-h-11 bg-white">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -114,7 +120,7 @@ export function BasicsStep({
             value={basics.stackingPolicy}
             onValueChange={(v: string) => patch({ stackingPolicy: v as StackingPolicy })}
           >
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="min-h-11 bg-white">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -129,7 +135,7 @@ export function BasicsStep({
       </div>
 
       {basics.fundingType === 'SHARED' ? (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="promo-engine-wp-split">Warmpawz %</Label>
             <Input
@@ -146,6 +152,7 @@ export function BasicsStep({
                   },
                 })
               }
+              className="min-h-11"
             />
           </div>
           <div className="space-y-2">
@@ -164,6 +171,7 @@ export function BasicsStep({
                   },
                 })
               }
+              className="min-h-11"
             />
           </div>
         </div>
@@ -178,33 +186,27 @@ export function BasicsStep({
             patch({ commercialCampaignId: e.target.value })
           }
           placeholder="UUID from Campaigns tab"
+          className="min-h-11"
         />
         <p className="text-xs text-slate-500">
           Links this engine promo to an existing commercial campaign. Leave empty if none.
         </p>
       </div>
 
-      <div className="space-y-2">
-        <Label>Service categories (candidate filter)</Label>
-        <div className="flex flex-wrap gap-2">
-          {SERVICE_CATEGORIES.map((service) => {
-            const selected = basics.serviceCategories.includes(service);
-            return (
-              <button
-                key={service}
-                type="button"
-                onClick={() => toggleService(service)}
-                className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                  selected
-                    ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {service}
-              </button>
-            );
-          })}
+      <div className="space-y-3">
+        <div>
+          <Label>Services</Label>
+          <p className="mt-1 text-xs text-slate-500">
+            From Admin → Catalogue → Categories. Stored as category slugs.
+          </p>
         </div>
+        <ServiceCategoryChips
+          categories={categories}
+          selected={basics.serviceCategories}
+          loading={loading}
+          error={error}
+          onToggle={toggleService}
+        />
       </div>
     </div>
   );

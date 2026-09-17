@@ -23,16 +23,8 @@ export type StackingPolicy = (typeof STACKING_POLICIES)[number];
 export const FUNDING_TYPES = ['WARMPAWZ', 'VENDOR', 'SHARED'] as const;
 export type PromoFundingType = (typeof FUNDING_TYPES)[number];
 
-export const SERVICE_CATEGORIES = [
-  'GROOMING',
-  'VET',
-  'TRAINING',
-  'BOARDING',
-  'WALKING',
-  'ECOMMERCE',
-] as const;
-
-export type ServiceCategory = (typeof SERVICE_CATEGORIES)[number];
+/** Catalogue category slug from Admin → Catalogue → Categories. */
+export type ServiceCategory = string;
 
 export const RULE_TYPES = ['GENERIC', 'CUSTOMER_JOURNEY'] as const;
 export type PromoRuleType = (typeof RULE_TYPES)[number];

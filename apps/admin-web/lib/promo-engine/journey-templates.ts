@@ -28,14 +28,22 @@ export const JOURNEY_TEMPLATE_LABELS: Record<JourneyTemplateId, string> = {
   winback_30d: 'Winback 30 days',
 };
 
+function behaviourKey(service: ServiceCategory): string {
+  return (
+    String(service)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'service'
+  );
+}
+
 function visitField(service: ServiceCategory): string {
-  const key = service.toLowerCase();
-  return `user.${key}_visit_count`;
+  return `user.${behaviourKey(service)}_visit_count`;
 }
 
 function daysSinceField(service: ServiceCategory): string {
-  const key = service.toLowerCase();
-  return `user.days_since_last_${key}`;
+  return `user.days_since_last_${behaviourKey(service)}`;
 }
 
 function categoryCondition(service: ServiceCategory) {

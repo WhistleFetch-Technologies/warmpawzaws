@@ -23,12 +23,9 @@ import {
   type JourneyTemplateId,
 } from '@/lib/promo-engine/journey-templates';
 import { describeBenefits, describeConditionGroup } from '@/lib/promo-engine/plain-language';
-import {
-  SERVICE_CATEGORIES,
-  type PromoEngineCondition,
-  type PromoEngineDraft,
-  type ServiceCategory,
-} from '@/lib/promo-engine/types';
+import { matchCatalogSlug } from '@/lib/promo-engine/catalog-categories';
+import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
+import type { PromoEngineCondition, PromoEngineDraft } from '@/lib/promo-engine/types';
 
 const EXTRA_FIELDS = [
   { id: 'user.grooming_visit_count', label: 'Grooming visit count' },
@@ -48,6 +45,8 @@ export function AudienceStep({
   draft: PromoEngineDraft;
   onChange: (next: PromoEngineDraft) => void;
 }) {
+  const { categories, loading: categoriesLoading, error: categoriesError } =
+    useCatalogServiceCategories();
   const [state, setState] = useState<AudienceBuilderState>(() => defaultAudienceState(draft));
   const [builderDirty, setBuilderDirty] = useState(false);
 
@@ -74,32 +73,47 @@ export function AudienceStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed empty drafts once
   }, []);
 
+  useEffect(() => {
+    if (!categories.length) return;
+    const mapped = matchCatalogSlug(state.serviceCategory, categories);
+    if (mapped && mapped !== state.serviceCategory) {
+      patchState({ serviceCategory: mapped });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- align once catalogue slugs load
+  }, [categories]);
+
   const updateExtra = (index: number, partial: Partial<PromoEngineCondition>) => {
     const extras = state.extras.map((row, i) => (i === index ? { ...row, ...partial } : row));
     patchState({ extras });
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
+      <div className="min-w-0 space-y-5">
+        <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Service</Label>
             <Select
-              value={state.serviceCategory}
-              onValueChange={(v: string) => patchState({ serviceCategory: v as ServiceCategory })}
+              value={state.serviceCategory || undefined}
+              onValueChange={(v: string) => patchState({ serviceCategory: v })}
             >
-              <SelectTrigger className="bg-white">
-                <SelectValue />
+              <SelectTrigger className="min-h-11 bg-white">
+                <SelectValue placeholder={categoriesLoading ? 'Loading…' : 'Select catalogue service'} />
               </SelectTrigger>
               <SelectContent>
-                {SERVICE_CATEGORIES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
+                {categories.map((s) => (
+                  <SelectItem key={s.slug} value={s.slug}>
+                    {s.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {categoriesError ? <p className="text-xs text-red-600">{categoriesError}</p> : null}
+            {!categoriesLoading && !categories.length ? (
+              <p className="text-xs text-slate-500">
+                No catalogue categories. Add them in Admin → Catalogue → Categories.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="promo-engine-package">Package (optional)</Label>
@@ -110,11 +124,12 @@ export function AudienceStep({
                 patchState({ packageName: e.target.value })
               }
               placeholder="Full Groom"
+              className="min-h-11"
             />
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label>Journey template</Label>
           <div className="flex flex-wrap gap-2">
             {JOURNEY_TEMPLATE_IDS.map((id) => {
@@ -124,7 +139,7 @@ export function AudienceStep({
                   key={id}
                   type="button"
                   onClick={() => patchState({ template: id as JourneyTemplateId })}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                  className={`min-h-10 rounded-full border px-3.5 py-2 text-sm font-medium ${
                     selected
                       ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
@@ -176,7 +191,7 @@ export function AudienceStep({
             value={state.groupOperator}
             onValueChange={(v: string) => patchState({ groupOperator: v as 'AND' | 'OR' })}
           >
-            <SelectTrigger className="w-40 bg-white">
+            <SelectTrigger className="min-h-11 w-full max-w-xs bg-white">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -205,7 +220,7 @@ export function AudienceStep({
             <p className="text-xs text-slate-500">Optional. Template already includes the journey WHEN clause.</p>
           ) : (
             state.extras.map((row, index) => (
-              <div key={`${row.field}-${index}`} className="grid gap-2 sm:grid-cols-[1fr_90px_1fr_auto]">
+              <div key={`${row.field}-${index}`} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1fr)_auto]">
                 <Select value={row.field} onValueChange={(v: string) => updateExtra(index, { field: v })}>
                   <SelectTrigger className="bg-white">
                     <SelectValue />
@@ -255,7 +270,7 @@ export function AudienceStep({
         </div>
       </div>
 
-      <aside className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 text-sm">
+      <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 text-sm xl:sticky xl:top-0">
         <p className="text-xs font-semibold uppercase tracking-wide text-[#FF8C42]">Promotion model</p>
         <div>
           <p className="text-xs font-semibold text-slate-500">IF</p>

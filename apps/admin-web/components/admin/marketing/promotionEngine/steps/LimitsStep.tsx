@@ -20,10 +20,10 @@ export function LimitsStep({
   };
 
   return (
-    <div className="space-y-4">
-      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-900">Usage limits</h3>
-        <div className="grid gap-3 sm:grid-cols-2">
+    <div className="space-y-6">
+      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+        <h3 className="text-base font-semibold text-slate-900">Usage limits</h3>
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label>Per user</Label>
             <Input
@@ -87,8 +87,8 @@ export function LimitsStep({
         </div>
       </section>
 
-      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-900">Stacking</h3>
+      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+        <h3 className="text-base font-semibold text-slate-900">Stacking</h3>
         <Label>Stacking policy</Label>
         <Select
           value={draft.basics.stackingPolicy}

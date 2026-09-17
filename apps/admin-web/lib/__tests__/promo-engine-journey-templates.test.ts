@@ -44,6 +44,17 @@ describe('compileJourneyTemplate', () => {
     ]);
   });
 
+  it('compiles catalogue slugs with hyphens into behaviour keys', () => {
+    const group = compileJourneyTemplate({
+      template: 'first',
+      serviceCategory: 'vet-care',
+    });
+    expect(group.conditions).toEqual([
+      { field: 'transaction.service_category', operator: '=', value: 'vet-care' },
+      { field: 'user.vet_care_visit_count', operator: '=', value: 0 },
+    ]);
+  });
+
   it('compiles every Nth with modulo payload', () => {
     const group = compileJourneyTemplate({
       template: 'every_nth',

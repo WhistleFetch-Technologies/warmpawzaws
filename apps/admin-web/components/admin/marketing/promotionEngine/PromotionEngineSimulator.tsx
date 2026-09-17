@@ -4,14 +4,15 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@warmpawz/ui';
 import { evaluatePromoEngine } from '@/lib/promo-engine/api-client';
-import { SERVICE_CATEGORIES } from '@/lib/promo-engine/types';
+import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
 
 /**
  * Admin rule evaluation simulator — POST /promo-engine/evaluate only (never commit).
  */
 export function PromotionEngineSimulator() {
+  const { categories, loading: categoriesLoading } = useCatalogServiceCategories();
   const [userId, setUserId] = useState('demo-user');
-  const [service, setService] = useState('GROOMING');
+  const [service, setService] = useState('');
   const [amount, setAmount] = useState(1500);
   const [groomingVisits, setGroomingVisits] = useState(5);
   const [daysSince, setDaysSince] = useState(45);
@@ -22,7 +23,13 @@ export function PromotionEngineSimulator() {
     null
   );
 
+  const selectedService = service || categories[0]?.slug || '';
+
   const run = async () => {
+    if (!selectedService) {
+      toast.error('No catalogue service available');
+      return;
+    }
     setBusy(true);
     try {
       const last = new Date(Date.now() - daysSince * 86400000).toISOString();
@@ -30,7 +37,7 @@ export function PromotionEngineSimulator() {
         user_id: userId,
         transaction: {
           type: 'BOOKING',
-          service_category: service,
+          service_category: selectedService,
           amount,
         },
         behaviour_override: {
@@ -56,7 +63,7 @@ export function PromotionEngineSimulator() {
   };
 
   return (
-    <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4">
+    <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="text-base font-semibold text-slate-900">Rule evaluation simulator</h3>
@@ -69,13 +76,17 @@ export function PromotionEngineSimulator() {
         </Button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="space-y-3">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-4">
           <div>
             <Label>Customer id</Label>
-            <Input value={userId} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserId(e.target.value)} />
+            <Input
+              className="min-h-11"
+              value={userId}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserId(e.target.value)}
+            />
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label>Grooming visits</Label>
               <Input
@@ -117,17 +128,20 @@ export function PromotionEngineSimulator() {
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label>Service</Label>
-              <Select value={service} onValueChange={setService}>
-                <SelectTrigger className="bg-white">
-                  <SelectValue />
+              <Select
+                value={selectedService || undefined}
+                onValueChange={setService}
+              >
+                <SelectTrigger className="min-h-11 bg-white">
+                  <SelectValue placeholder={categoriesLoading ? 'Loading…' : 'Select catalogue service'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {SERVICE_CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  {categories.map((c) => (
+                    <SelectItem key={c.slug} value={c.slug}>
+                      {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
