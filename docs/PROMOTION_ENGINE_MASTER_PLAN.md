@@ -6,7 +6,12 @@
 **Wallet:** remains the cashback ledger/store  
 **UI constraint:** reuse existing Admin Promotion Center patterns/styling; Figma is UX/flow reference only — **no new design system / no greenfield component library**
 
+**Source of truth (product / contracts / DSL / examples):** [`docs/PROMOTION_ENGINE_HLD.md`](./PROMOTION_ENGINE_HLD.md)  
+**Figma:** [Promotion Engine wireframes](https://www.figma.com/proto/bdLIYhcbseibOrjzFIBDVH/Warmpawz-Promotion-Engine-%E2%80%94-UI-UX-Wireframes?node-id=2-370&p=f&t=ObcZOMlHR9Re9TyR-1&scaling=min-zoom&content-scaling=fixed&page-id=0%3A1)
+
 Related seating map: prior chat plan *Promo Engine UI Seats*. Existing surfaces: [`PromotionCenterHub.tsx`](apps/admin-web/components/admin/marketing/PromotionCenterHub.tsx), [`discount-engine/`](backend/lambda/src/discount-engine/), commercial campaigns (`1046` / `1071`), booking quote via [`booking-promotion-service`](backend/lambda/src/lib/services/booking-promotion-service.ts).
+
+> Agents: read **HLD** for *what* to build; read **this master plan** for *how / who / when* on `feature/promo-engine-v1`.
 
 ---
 
@@ -15,7 +20,7 @@ Related seating map: prior chat plan *Promo Engine UI Seats*. Existing surfaces:
 1. **Never credit cashback on evaluate** — only on **commit** after payment/booking confirmation.
 2. **No hard-coded visit/winback if-else** in booking or order services — all logic in the engine via condition DSL.
 3. **Idempotent commit** — key = `promotion_id + transaction_id + benefit_id` (or evaluation_id + benefit_id).
-4. **Additive, idempotent migrations only** — numbered after current tip **1108**; apply with `ENVIRONMENT=dev node scripts/run-migration-rds-node.js <file>.sql` only when the owning phase says so.
+4. **Additive, idempotent migrations only** — numbered **1111–1114** on this branch (see §4); apply with `ENVIRONMENT=dev node scripts/run-migration-rds-node.js <file>.sql` only when the owning phase says so.
 5. **Sequential handoff:** Bindu → Abhi → Bindu → majority complete → **dev deploy** → Praveen continuous/periodic gates throughout.
 6. **Do not** put journey/rule builder under `/loyalty`.
 7. **Do not** invent a second admin skin — match Policy Center / Campaign Builder form density, tabs, orange accent already used in Promotion Center.
@@ -421,15 +426,15 @@ No prod deploy / no prod migrations in this plan.
 
 ### Bindu agent prompt seed
 
-> Read `docs/PROMOTION_ENGINE_MASTER_PLAN.md`. Work only on `feature/promo-engine-v1` (branched from `feature-guest-user`). Phase 1: author migrations 1111–1114 (idempotent), apply on **dev** only after commit to feature branch. Add Promotion Center tab `engine` with list + Basics wizard shell using **existing** admin styles. Do not implement evaluate/commit. Hand off to Abhi when migrations applied and list loads empty state.
+> Read `docs/PROMOTION_ENGINE_HLD.md` (SoT) and `docs/PROMOTION_ENGINE_MASTER_PLAN.md`. Work only on `feature/promo-engine-v1` (branched from `feature-guest-user`). Phase 1: author migrations 1111–1114 (idempotent), apply on **dev** only after commit to feature branch. Add Promotion Center tab `engine` with list + Basics wizard shell using **existing** admin styles. Do not implement evaluate/commit. Hand off to Abhi when migrations applied and list loads empty state.
 
 ### Abhi agent prompt seed
 
-> Read `docs/PROMOTION_ENGINE_MASTER_PLAN.md`. Work only on `feature/promo-engine-v1`. After Bindu Phase 1: implement promo-engine CRUD + DSL eligibility + cashback benefit + evaluate/commit/reverse + behaviour profile updates + wallet ledger columns usage. Wire booking-promotion-service. Then Phase 4 UI: Benefits, Limits, Simulator + customer earn-preview. Reuse admin components; no new design system. Never credit wallet on evaluate.
+> Read `docs/PROMOTION_ENGINE_HLD.md` (SoT) and `docs/PROMOTION_ENGINE_MASTER_PLAN.md`. Work only on `feature/promo-engine-v1`. After Bindu Phase 1: implement promo-engine CRUD + DSL eligibility + cashback benefit + evaluate/commit/reverse + behaviour profile updates + wallet ledger columns usage. Wire booking-promotion-service. Then Phase 4 UI: Benefits, Limits, Simulator + customer earn-preview. Reuse admin components; no new design system. Never credit wallet on evaluate.
 
 ### Praveen agent prompt seed
 
-> Read `docs/PROMOTION_ENGINE_MASTER_PLAN.md` §8. After each phase, run the relevant acceptance rows P1–P12 against **dev**. Report pass/fail with evaluation_id / booking ids. Block Phase 5 deploy if P7 (idempotency) or P1 (no credit on evaluate) fail.
+> Read `docs/PROMOTION_ENGINE_HLD.md` §10–15, §26–28 and `docs/PROMOTION_ENGINE_MASTER_PLAN.md` §8. After each phase, run the relevant acceptance rows P1–P12 against **dev**. Report pass/fail with evaluation_id / booking ids. Block Phase 5 deploy if P7 (idempotency) or P1 (no credit on evaluate) fail.
 
 ---
 
