@@ -661,6 +661,33 @@ app.post('/promotions/calculate-cart', async (c) => {
     const originalTotal = vendorAutoResult.originalTotal;
     const discountedTotal = Math.max(0, originalTotal - winningDiscount);
 
+    let promoEngine: Record<string, unknown> | undefined;
+    if (customerId) {
+      try {
+        const { evaluatePromotions } = await import('../discount-engine/promo-engine');
+        const engineResult = await evaluatePromotions({
+          user_id: String(customerId),
+          transaction: {
+            type: 'ECOMMERCE',
+            service_category: 'ECOMMERCE',
+            vendor_id: vendorId ? String(vendorId) : undefined,
+            amount: originalTotal,
+          },
+        });
+        promoEngine = {
+          evaluationId: engineResult.evaluation_id,
+          pendingCashback: engineResult.summary.cashback,
+          engineDiscount: engineResult.summary.discount,
+          eligible: engineResult.eligible,
+        };
+      } catch (engineErr) {
+        console.warn(
+          '[promotions/calculate-cart] promo-engine evaluate skipped:',
+          engineErr instanceof Error ? engineErr.message : engineErr
+        );
+      }
+    }
+
     return c.json({
       success: true,
       originalTotal,
@@ -675,6 +702,7 @@ app.post('/promotions/calculate-cart', async (c) => {
       discountedTotal,
       totalSavings: winningDiscount,
       promotionSource: promotionSource ?? null,
+      promoEngine: promoEngine ?? null,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
