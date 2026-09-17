@@ -1,6 +1,6 @@
 # Warmpawz Promotion, Discount & Cashback Engine — Master Execution Plan
 
-**Status:** Execution reference for Cursor agents (Bindu / Abhi / Praveen)  
+**Status:** Phase 1 (Bindu) landed on `feature/promo-engine-v1` — Abhi Phase 2 is unblocked. See §14.  
 **Environment for migrations & first deploy:** **dev only**  
 **Loyalty & Rewards:** remains independent — do not merge into this engine  
 **Wallet:** remains the cashback ledger/store  
@@ -440,7 +440,7 @@ No prod deploy / no prod migrations in this plan.
 
 ## 12. Definition of done (dev)
 
-- [ ] Migrations 1111–1114 on feature branch and applied on **dev** RDS  
+- [x] Migrations 1111–1114 on feature branch (apply on **dev** RDS still required — see §14)
 - [ ] Admin: create winback promo via wizard → ACTIVE  
 - [ ] Simulator: Rahul-style context → ELIGIBLE with explain PASS lines  
 - [ ] Booking evaluate → discount + pending CB; wallet unchanged  
@@ -460,6 +460,73 @@ feature/promo-engine-v1
 ```
 
 **Base:** `feature-guest-user` (synced). All promo-engine work lands only on this branch until merge. Do not open parallel promo branches off `develop` for this effort.
+
+---
+
+---
+
+## 14. Phase 1 complete — Bindu handover to Abhi (2026-09-17)
+
+**Branch:** `feature/promo-engine-v1` (there is no `feature/promotion-ui`; all engine work stays here).  
+**Owner just finished:** Bindu (Phase 1).  
+**Next owner:** **Abhi (Phase 2)** — then Bindu Phase 3.
+
+### What Bindu shipped
+
+| Item | Status | Where |
+|------|--------|-------|
+| `1111_promotion_engine_core.sql` | Authored (idempotent) | `db/migrations/1111_promotion_engine_core.sql` |
+| `1112_customer_behaviour_profiles.sql` | Authored (+ thin `customer_behaviour_events`) | `db/migrations/1112_customer_behaviour_profiles.sql` |
+| `1113_wallet_promo_cashback_ledger.sql` | Authored (additive wallet columns) | `db/migrations/1113_wallet_promo_cashback_ledger.sql` |
+| `1114_promotion_engine_eval_audit.sql` | Authored | `db/migrations/1114_promotion_engine_eval_audit.sql` |
+| Promotion Center tab `engine` | Live | `PromotionCenterHub.tsx` → `?tab=engine` |
+| Promotions list (search / status / service / type / empty state) | Live | `promotionEngine/PromotionEngineList.tsx` |
+| Wizard step 1 Basics | Live | name, code, dates, priority, funding, stacking, campaign UUID, service chips |
+| Wizard steps 2–5 | Shells only | Audience (Phase 3), Benefits/Limits (Phase 4), Review (Phase 3) |
+| Journey template → DSL compiler | Live + unit tests | `apps/admin-web/lib/promo-engine/journey-templates.ts` |
+| Status lifecycle buttons | Local-only | Pause / Activate / Archive via `lib/promo-engine/status.ts` |
+| Evaluate / commit / reverse | **Not started** (Abhi) | Do not implement from this UI |
+
+**Persistence:** list + drafts use `localStorage` key `warmpawz.promo-engine.drafts.v1` so the tab loads an **empty state** on a clean browser. Replace this with `/admin/promo-engine` CRUD.
+
+**Tests:** `cd apps/admin-web && npx jest lib/__tests__/promo-engine-draft.test.ts lib/__tests__/promo-engine-journey-templates.test.ts`
+
+### Dev RDS (Bindu still owns apply)
+
+Commit/push of these files comes first. Then, **dev only**:
+
+```bash
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1111_promotion_engine_core.sql
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1112_customer_behaviour_profiles.sql
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1113_wallet_promo_cashback_ledger.sql
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1114_promotion_engine_eval_audit.sql
+```
+
+Do **not** apply on prod. After apply, tick §12 first checkbox fully.
+
+### Abhi — pick up next (Phase 2)
+
+Read HLD SoT + this plan §5. Work only on `feature/promo-engine-v1`.
+
+1. **CRUD APIs** under `/admin/promo-engine/promotions` (+ rules, status PATCH, soft-delete → `ARCHIVED`). Map UI drafts to `promo_engine_*` tables. Swap `lib/promo-engine/local-store.ts` for a real client.
+2. **Engine modules** in `backend/lambda/src/discount-engine/`: eligibility DSL, DISCOUNT + CASHBACK benefits, stacking, usage/budget, evaluate / commit / reverse.
+3. **Behaviour service:** upsert `customer_behaviour_profiles` on SERVICE_COMPLETED / ORDER_COMPLETED; optional consume `customer_behaviour_events`.
+4. **Wallet:** on **commit only**, credit `wallet_transactions` with `source=PROMOTION`, `promotion_id`, `remaining_amount`, `expires_at`, `cashback_status`, `redeem_scope`. Never credit on evaluate.
+5. **Wire** `booking-promotion-service` + ecom cart calculate: return discount + **pending** cashback.
+6. After APIs exist, Bindu returns for **Phase 3** (Audience/Journey UI + Review/Activate). You then do **Phase 4** (Benefits, Limits, Simulator, customer earn-preview).
+
+**Do not:** new design system, loyalty merge, hard-coded visit if/else, credit wallet on evaluate, invent a second admin chrome.
+
+### Bindu — Phase 3 (after Abhi CRUD is callable)
+
+- Finish Audience & rules + live IF/THEN rail
+- Review + Activate (call `PATCH …/status`)
+- Polish list filters against real API data
+- Keep using `compileJourneyTemplate`
+
+### Praveen
+
+Phase 1 smoke: open Admin → Promotion Center → **Promotion Engine** → empty list → Create → Basics → Save draft (local). After RDS apply, confirm tables exist. Full P1–P12 waits for Phase 2+.
 
 ---
 

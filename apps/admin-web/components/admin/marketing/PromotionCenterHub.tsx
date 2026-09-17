@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BarChart3, Megaphone, Scale, Store, Tag } from 'lucide-react';
+import { BarChart3, Megaphone, Scale, Sparkles, Store, Tag } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { AdminPromotionHub } from './AdminPromotionHub';
 import { VendorPromotionsOverview } from './VendorPromotionsOverview';
 import { PolicyCenter } from './policyCenter/PolicyCenter';
 import { MarketingAnalyticsHub } from './analytics/MarketingAnalyticsHub';
 import { CommercialCampaignHub } from './campaigns/CommercialCampaignHub';
+import { PromotionEngineHub } from './promotionEngine/PromotionEngineHub';
 
 const TABS = [
   { id: 'platform', label: 'Platform Promotions & Coupons', icon: Tag },
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'policy', label: 'Policy Center', icon: Scale },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'campaigns', label: 'Campaigns', icon: Megaphone },
+  { id: 'engine', label: 'Promotion Engine', icon: Sparkles },
 ] as const;
 
 type PromotionCenterTabId = (typeof TABS)[number]['id'];
@@ -51,7 +53,7 @@ export function PromotionCenterHub() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Promotion Center</h1>
               <p className="mt-1 text-sm text-gray-500">
-                Platform offers, vendor promotions, policy rules, analytics, and campaigns
+                Platform offers, vendor promotions, policy rules, analytics, campaigns, and engine
               </p>
             </div>
             <div className="rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
@@ -107,6 +109,7 @@ export function PromotionCenterHub() {
             <CommercialCampaignHub surface="marketing" />
           </div>
         ) : null}
+        {activeTab === 'engine' ? <PromotionEngineHub /> : null}
       </main>
     </div>
   );
