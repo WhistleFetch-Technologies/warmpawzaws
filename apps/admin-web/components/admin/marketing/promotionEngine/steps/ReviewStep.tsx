@@ -1,43 +1,66 @@
 'use client';
 
 import type { PromoEngineDraft } from '@/lib/promo-engine/types';
+import {
+  describeBenefits,
+  describeConditionGroup,
+  describeRedeemScope,
+} from '@/lib/promo-engine/plain-language';
 import { PromotionEngineStatusBadge } from '../PromotionEngineStatusBadge';
 
 export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
   const { basics } = draft;
   return (
-    <div className="space-y-3 rounded-xl border bg-slate-50 p-4 text-sm">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="font-medium text-slate-800">Review — Bindu Phase 3 will expand WHEN/THEN/REDEEM</p>
+        <p className="font-medium text-slate-800">Review & activate</p>
         <PromotionEngineStatusBadge status={draft.status} />
       </div>
-      <p>
-        <strong>Name:</strong> {basics.name || '—'}
-      </p>
-      <p>
-        <strong>Code:</strong> {basics.code || '—'}
-      </p>
-      <p>
-        <strong>Priority:</strong> {basics.priority}
-      </p>
-      <p>
-        <strong>Window:</strong> {basics.startAt || '—'} → {basics.endAt || '—'}
-      </p>
-      <p>
-        <strong>Funding:</strong> {basics.fundingType}
-        {basics.fundingType === 'SHARED'
-          ? ` (${basics.fundingSplit.warmpawzPercent}/${basics.fundingSplit.vendorPercent})`
-          : ''}
-      </p>
-      <p>
-        <strong>Stacking:</strong> {basics.stackingPolicy}
-      </p>
-      <p>
-        <strong>Services:</strong> {basics.serviceCategories.join(', ') || '—'}
-      </p>
-      <p className="text-xs text-slate-500">
-        Activate stays disabled until Phase 3 + Abhi CRUD. Save draft from the footer.
-      </p>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ReviewBlock title="WHEN" body={describeConditionGroup(draft.conditionJson)} />
+        <ReviewBlock title="THEN" body={describeBenefits(draft.benefitJson)} />
+        <ReviewBlock title="REDEEM" body={describeRedeemScope(draft.benefitJson)} />
+        <ReviewBlock
+          title="STACK"
+          body={`${basics.stackingPolicy.replace(/_/g, ' ')} · priority ${basics.priority}`}
+        />
+        <ReviewBlock
+          title="LIMITS"
+          body="Per-user / budget / daily caps land in Abhi Phase 4"
+        />
+        <ReviewBlock
+          title="FUNDING"
+          body={
+            basics.fundingType === 'SHARED'
+              ? `SHARED ${basics.fundingSplit.warmpawzPercent}/${basics.fundingSplit.vendorPercent}`
+              : basics.fundingType
+          }
+        />
+      </div>
+
+      <div className="rounded-xl border border-[#FF8C42]/30 bg-orange-50/50 p-4 text-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-[#FF8C42]">Engine model</p>
+        <p className="mt-2">
+          <strong>IF</strong> {describeConditionGroup(draft.conditionJson)}
+        </p>
+        <p className="mt-1">
+          <strong>THEN</strong> {describeBenefits(draft.benefitJson)}
+        </p>
+        <p className="mt-2 text-xs text-slate-500">
+          {basics.name || 'Untitled'} · {basics.startAt || 'no start'} → {basics.endAt || 'no end'} ·{' '}
+          {basics.serviceCategories.join(', ') || 'no service'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ReviewBlock({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-xl border bg-slate-50 p-3 text-sm">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mt-1 text-slate-800">{body}</p>
     </div>
   );
 }

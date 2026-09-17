@@ -1,6 +1,6 @@
 # Warmpawz Promotion, Discount & Cashback Engine — Master Execution Plan
 
-**Status:** Phase 2 (Abhi) landed on `feature/promo-engine-v1` — Bindu Phase 3 unblocked. See §14–§15.  
+**Status:** Phase 3 (Bindu) landed on `feature/promo-engine-v1` — Abhi Phase 4 is unblocked. See §14–§16.  
 **Environment for migrations & first deploy:** **dev only**  
 **Loyalty & Rewards:** remains independent — do not merge into this engine  
 **Wallet:** remains the cashback ledger/store  
@@ -441,7 +441,7 @@ No prod deploy / no prod migrations in this plan.
 ## 12. Definition of done (dev)
 
 - [x] Migrations 1111–1114 on feature branch and applied on **dev** RDS (Data API, 2026-09-17)
-- [ ] Admin: create winback promo via wizard → ACTIVE  
+- [x] Admin: create winback promo via wizard → ACTIVE (UI + `PATCH /status`; needs deployed Phase 2 Lambda)  
 - [ ] Simulator: Rahul-style context → ELIGIBLE with explain PASS lines  
 - [ ] Booking evaluate → discount + pending CB; wallet unchanged  
 - [ ] Commit → usage row + wallet CB with expiry + redeem_scope  
@@ -506,10 +506,7 @@ Verified on `warmpawz-dev-cluster`: 8 engine/behaviour tables + 7 `wallet_transa
 
 ### Bindu — Phase 3 (CRUD is callable)
 
-- Finish Audience & rules + live IF/THEN rail
-- Review + Activate (call `PATCH …/status`)
-- Polish list filters against real API data
-- Keep using `compileJourneyTemplate`
+Completed — see §16.
 
 ### Praveen
 
@@ -532,6 +529,44 @@ Phase 2 smoke: `POST /promo-engine/evaluate` (no wallet write) → `POST /promo-
 **Still deferred to Phase 4 / later:** Benefits/Limits/Simulator UI polish, ecom cart commit/reverse hooks, customer earn-preview UI, Redis cache.
 
 **Next:** Bindu Phase 3 → Abhi Phase 4 → dev deploy (Phase 5).
+
+---
+
+## 16. Phase 3 complete — Bindu handover to Abhi (2026-09-17)
+
+**Branch:** `feature/promo-engine-v1`  
+**Owner just finished:** Bindu (Phase 3).  
+**Next owner:** **Abhi (Phase 4)**.
+
+### What Bindu shipped
+
+| Item | Status | Where |
+|------|--------|-------|
+| Audience & journey builder | Live | service, package, template chips, N/M, AND/OR extras |
+| Journey templates → DSL | Live | still `compileJourneyTemplate` + `lib/promo-engine/audience.ts` |
+| Plain-language preview | Live | `lib/promo-engine/plain-language.ts` |
+| IF/THEN rail | Live | right column on Audience step |
+| Review WHEN/THEN/REDEEM/STACK/LIMITS + engine strip | Live | `steps/ReviewStep.tsx` |
+| Activate | Live | Review footer → save CRUD then `PATCH …/status` `ACTIVE` |
+| List filters | Polished | search/status/service hit `/admin/promo-engine/promotions`; type stays client-side |
+| Benefits / Limits / Simulator | **Not started** (Abhi Phase 4) | shells unchanged |
+
+**Tests:**  
+`cd apps/admin-web && npx jest lib/__tests__/promo-engine-draft.test.ts lib/__tests__/promo-engine-journey-templates.test.ts lib/__tests__/promo-engine-plain-language.test.ts lib/__tests__/promo-engine-audience.test.ts`
+
+### Abhi — pick up next (Phase 4)
+
+1. Wizard **Benefits** step: discount %/₹ + max, cashback %/₹, redeem-scope chips, expiry days, customer preview card. Persist via existing `benefitJson` on create/update.
+2. Wizard **Limits** step: per user / daily / campaign / budget + stacking toggles → `promo_engine_limits`.
+3. **Simulator** (admin): customer context → `POST /promo-engine/evaluate` → PASS/FAIL + payable. Never credit wallet.
+4. **Customer checkout** earn-preview from `unified.promoEngine.pendingCashback` + redeem-scope; wallet apply respects scope.
+5. Ecom cart commit/reverse hooks if not already wired.
+
+**Do not:** new design system, credit on evaluate, loyalty merge.
+
+### Praveen
+
+After **dev Lambda + admin-web deploy** (Phase 5): Admin → Promotion Center → Promotion Engine → Create winback (Grooming + Winback 30 days) → Review → Activate. Then P1–P12 on evaluate/commit.
 
 ---
 

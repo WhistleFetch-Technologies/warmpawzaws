@@ -21,11 +21,17 @@ export function PromotionEngineHub() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editing, setEditing] = useState<PromoEngineDraft | null>(null);
   const [apiAvailable, setApiAvailable] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [listFilters, setListFilters] = useState({ query: '', status: 'all', service: 'all' });
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (filters = listFilters) => {
     setLoading(true);
     try {
-      const list = await fetchPromoEngineList();
+      const list = await fetchPromoEngineList({
+        status: filters.status,
+        service: filters.service,
+        q: filters.query,
+      });
       setRows(list);
       setApiAvailable(true);
     } catch (err) {
@@ -36,11 +42,14 @@ export function PromotionEngineHub() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [listFilters]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    const handle = window.setTimeout(() => {
+      void refresh(listFilters);
+    }, listFilters.query ? 350 : 0);
+    return () => window.clearTimeout(handle);
+  }, [listFilters, refresh]);
 
   const openCreate = () => {
     setEditing(newPromoEngineDraft());
@@ -57,22 +66,40 @@ export function PromotionEngineHub() {
     }
   };
 
+  const persist = async (draft: PromoEngineDraft): Promise<PromoEngineDraft> => {
+    if (!apiAvailable) throw new Error('API unavailable');
+    const exists = rows.some((r) => r.id === draft.id);
+    return exists ? updatePromoEnginePromotion(draft) : createPromoEnginePromotion(draft);
+  };
+
   const handleSave = async (draft: PromoEngineDraft) => {
+    setSaving(true);
     try {
-      const exists = rows.some((r) => r.id === draft.id);
-      if (exists && apiAvailable) {
-        await updatePromoEnginePromotion(draft);
-      } else if (apiAvailable) {
-        // Server assigns UUID — create then refresh
-        await createPromoEnginePromotion(draft);
-      } else {
-        toast.error('API unavailable');
-        return;
-      }
+      await persist(draft);
       toast.success('Promotion saved');
+      setWizardOpen(false);
+      setEditing(null);
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleActivate = async (draft: PromoEngineDraft) => {
+    setSaving(true);
+    try {
+      const saved = await persist(draft);
+      await patchPromoEngineStatus(saved.id, 'ACTIVE');
+      toast.success('Promotion activated');
+      setWizardOpen(false);
+      setEditing(null);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Activate failed');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -100,18 +127,24 @@ export function PromotionEngineHub() {
       </div>
       <PromotionEngineList
         rows={rows}
+        loading={loading}
         onCreate={openCreate}
         onEdit={(id) => void openEdit(id)}
         onStatusChange={(id, status) => void handleStatus(id, status)}
+        onFiltersChange={(next) => {
+          setListFilters(next);
+        }}
       />
       <PromotionEngineWizard
         open={wizardOpen}
         draft={editing}
+        saving={saving}
         onClose={() => {
           setWizardOpen(false);
           setEditing(null);
         }}
         onSaveDraft={(d) => void handleSave(d)}
+        onActivate={(d) => void handleActivate(d)}
       />
     </div>
   );

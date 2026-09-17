@@ -32,20 +32,32 @@ const PAGE_SIZE = 10;
 
 export function PromotionEngineList({
   rows,
+  loading = false,
   onCreate,
   onEdit,
   onStatusChange,
+  onFiltersChange,
 }: {
   rows: PromoEngineListItem[];
+  loading?: boolean;
   onCreate: () => void;
   onEdit: (id: string) => void;
   onStatusChange: (id: string, status: PromoEngineStatus) => void;
+  onFiltersChange?: (filters: { query: string; status: string; service: string }) => void;
 }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [service, setService] = useState('all');
   const [type, setType] = useState('all');
   const [page, setPage] = useState(0);
+
+  const emitFilters = (next: { query?: string; status?: string; service?: string }) => {
+    onFiltersChange?.({
+      query: next.query ?? query,
+      status: next.status ?? status,
+      service: next.service ?? service,
+    });
+  };
 
   const filtered = useMemo(
     () => filterPromoEngineRows(rows, { query, status, service, type }),
@@ -65,6 +77,7 @@ export function PromotionEngineList({
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
               setQuery(e.target.value);
               setPage(0);
+              emitFilters({ query: e.target.value });
             }}
             className="max-w-xs"
             aria-label="Search engine promotions"
@@ -74,6 +87,7 @@ export function PromotionEngineList({
             onValueChange={(v: string) => {
               setStatus(v);
               setPage(0);
+              emitFilters({ status: v });
             }}
           >
             <SelectTrigger className="w-40 bg-white">
@@ -93,6 +107,7 @@ export function PromotionEngineList({
             onValueChange={(v: string) => {
               setService(v);
               setPage(0);
+              emitFilters({ service: v });
             }}
           >
             <SelectTrigger className="w-40 bg-white">
@@ -150,9 +165,11 @@ export function PromotionEngineList({
             {pageRows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-10 text-center text-slate-500">
-                  {rows.length === 0
-                    ? 'No engine promotions yet. Create a draft, or wait for Abhi CRUD to load from RDS.'
-                    : 'No promotions match your filters'}
+                  {loading
+                    ? 'Loading promotions…'
+                    : rows.length === 0
+                      ? 'No engine promotions yet. Create one to start.'
+                      : 'No promotions match your filters'}
                 </TableCell>
               </TableRow>
             ) : (

@@ -12,6 +12,7 @@ import {
 } from '@warmpawz/ui';
 import { ChevronLeft, ChevronRight, Save } from 'lucide-react';
 import { applyBasicsToDraft, validateBasicsDraft } from '@/lib/promo-engine/draft';
+import { validateAudience } from '@/lib/promo-engine/audience';
 import { createEmptyDraft, type PromoEngineDraft } from '@/lib/promo-engine/types';
 import { BasicsStep } from './steps/BasicsStep';
 import { AudienceStep } from './steps/AudienceStep';
@@ -24,13 +25,17 @@ const STEPS = ['Basics', 'Audience', 'Benefits', 'Limits', 'Review'] as const;
 export function PromotionEngineWizard({
   open,
   draft,
+  saving = false,
   onClose,
   onSaveDraft,
+  onActivate,
 }: {
   open: boolean;
   draft: PromoEngineDraft | null;
+  saving?: boolean;
   onClose: () => void;
-  onSaveDraft: (draft: PromoEngineDraft) => void;
+  onSaveDraft: (draft: PromoEngineDraft) => void | Promise<void>;
+  onActivate: (draft: PromoEngineDraft) => void | Promise<void>;
 }) {
   const [step, setStep] = useState(0);
   const [working, setWorking] = useState<PromoEngineDraft>(draft ?? createEmptyDraft('draft'));
@@ -48,18 +53,34 @@ export function PromotionEngineWizard({
     onClose();
   };
 
-  const saveDraft = () => {
+  const prepared = () => applyBasicsToDraft(working, working.basics);
+
+  const saveDraft = async () => {
     const errors = validateBasicsDraft(working.basics);
     if (errors.length) {
       toast.error(errors[0]);
       setStep(0);
       return;
     }
-    const next = applyBasicsToDraft(working, working.basics);
-    onSaveDraft(next);
+    await onSaveDraft(prepared());
     setDirty(false);
-    toast.success('Draft saved');
-    onClose();
+  };
+
+  const activate = async () => {
+    const basicsErrors = validateBasicsDraft(working.basics);
+    if (basicsErrors.length) {
+      toast.error(basicsErrors[0]);
+      setStep(0);
+      return;
+    }
+    const audienceErrors = validateAudience(working);
+    if (audienceErrors.length) {
+      toast.error(audienceErrors[0]);
+      setStep(1);
+      return;
+    }
+    await onActivate(prepared());
+    setDirty(false);
   };
 
   const goNext = () => {
@@ -75,7 +96,9 @@ export function PromotionEngineWizard({
 
   return (
     <Dialog open={open} onOpenChange={(v: boolean) => !v && handleClose()}>
-      <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col overflow-hidden p-0">
+      <DialogContent
+        className={`flex max-h-[90vh] flex-col overflow-hidden p-0 ${step === 1 ? 'max-w-5xl' : 'max-w-3xl'}`}
+      >
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>Promotion Engine wizard</DialogTitle>
           <p className="text-sm text-slate-500">
@@ -100,30 +123,38 @@ export function PromotionEngineWizard({
               }}
             />
           ) : null}
-          {step === 1 ? <AudienceStep /> : null}
+          {step === 1 ? (
+            <AudienceStep
+              draft={working}
+              onChange={(next) => {
+                setWorking(next);
+                setDirty(true);
+              }}
+            />
+          ) : null}
           {step === 2 ? <BenefitsStep /> : null}
           {step === 3 ? <LimitsStep /> : null}
           {step === 4 ? <ReviewStep draft={working} /> : null}
         </div>
 
         <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-white px-6 py-3">
-          <Button type="button" variant="ghost" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>
+          <Button type="button" variant="ghost" disabled={step === 0 || saving} onClick={() => setStep((s) => s - 1)}>
             <ChevronLeft className="mr-1 h-4 w-4" aria-hidden />
             Back
           </Button>
           <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={saveDraft}>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => void saveDraft()}>
               <Save className="mr-1 h-4 w-4" aria-hidden />
               Save draft
             </Button>
             {step < STEPS.length - 1 ? (
-              <Button type="button" onClick={goNext}>
+              <Button type="button" disabled={saving} onClick={goNext}>
                 Next
                 <ChevronRight className="ml-1 h-4 w-4" aria-hidden />
               </Button>
             ) : (
-              <Button type="button" disabled title="Activate lands in Bindu Phase 3 after Abhi CRUD">
-                Activate (Phase 3)
+              <Button type="button" disabled={saving} onClick={() => void activate()}>
+                Activate
               </Button>
             )}
           </div>

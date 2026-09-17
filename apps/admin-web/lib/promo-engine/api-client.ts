@@ -18,10 +18,10 @@ export async function fetchPromoEngineList(filters?: {
   if (filters?.service && filters.service !== 'all') params.set('service', filters.service);
   if (filters?.q) params.set('q', filters.q);
   const q = params.toString() ? `?${params}` : '';
-  const res = await apiClient.get<{ success?: boolean; promotions?: PromoEngineListItem[] }>(
+  const res = await apiClient.get<{ success?: boolean; promotions?: Array<Record<string, unknown>> }>(
     `${BASE}${q}`
   );
-  return res.promotions ?? [];
+  return (res.promotions ?? []).map(mapApiListItem);
 }
 
 export async function fetchPromoEngineDetail(id: string): Promise<PromoEngineDraft | null> {
@@ -69,6 +69,23 @@ function draftToApiBody(draft: PromoEngineDraft): Record<string, unknown> {
     conditionJson: draft.conditionJson,
     benefitJson: draft.benefitJson,
     ruleType: draft.ruleType,
+  };
+}
+
+function mapApiListItem(p: Record<string, unknown>): PromoEngineListItem {
+  const services = (p.serviceCategories || p.service_categories || []) as PromoEngineListItem['serviceCategories'];
+  return {
+    id: String(p.id),
+    name: String(p.name || 'Untitled'),
+    code: String(p.code || ''),
+    status: (p.status as PromoEngineStatus) || 'DRAFT',
+    serviceCategories: Array.isArray(services) ? services : [],
+    ruleType: (p.ruleType || p.rule_type || 'GENERIC') as PromoEngineListItem['ruleType'],
+    fundingType: (p.fundingType || p.funding_type || 'WARMPAWZ') as PromoEngineListItem['fundingType'],
+    usageCount: Number(p.usageCount ?? p.usage_count ?? 0),
+    startAt: String(p.startAt || p.start_at || ''),
+    endAt: String(p.endAt || p.end_at || ''),
+    updatedAt: String(p.updatedAt || p.updated_at || ''),
   };
 }
 
