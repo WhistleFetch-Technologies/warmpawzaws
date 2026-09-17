@@ -90,7 +90,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
         });
 
         if (result.success && (result.imageKey || result.publicUrl)) {
-          const keyOrUrl = result.imageKey || result.fileName || result.publicUrl;
+          const keyOrUrl = result.imageKey || result.fileName || result.publicUrl || '';
           const previewUrl = result.url || result.publicUrl || keyOrUrl;
           setPhoto(keyOrUrl);
           setPhotoPreview(previewUrl || '');
