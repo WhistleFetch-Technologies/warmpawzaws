@@ -14,6 +14,7 @@ import { canTransition } from '@/lib/promo-engine/status';
 import type { PromoEngineDraft, PromoEngineListItem, PromoEngineStatus } from '@/lib/promo-engine/types';
 import { PromotionEngineList } from './PromotionEngineList';
 import { PromotionEngineWizard } from './PromotionEngineWizard';
+import { PromotionEngineSimulator } from './PromotionEngineSimulator';
 
 export function PromotionEngineHub() {
   const [rows, setRows] = useState<PromoEngineListItem[]>([]);
@@ -146,6 +147,7 @@ export function PromotionEngineHub() {
         onSaveDraft={(d) => void handleSave(d)}
         onActivate={(d) => void handleActivate(d)}
       />
+      <PromotionEngineSimulator />
     </div>
   );
 }

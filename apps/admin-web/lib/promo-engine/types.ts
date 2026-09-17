@@ -82,6 +82,13 @@ export interface PromoEngineDraft {
   conditionJson: PromoEngineConditionGroup;
   benefitJson: PromoEngineBenefit[];
   ruleType: PromoRuleType;
+  limits?: {
+    perUser?: number | null;
+    perTransaction?: number | null;
+    dailyLimit?: number | null;
+    campaignLimit?: number | null;
+    budgetLimit?: number | null;
+  };
   createdAt: string;
   updatedAt: string;
 }

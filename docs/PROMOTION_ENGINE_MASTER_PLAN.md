@@ -1,6 +1,6 @@
 # Warmpawz Promotion, Discount & Cashback Engine — Master Execution Plan
 
-**Status:** Phase 3 (Bindu) landed on `feature/promo-engine-v1` — Abhi Phase 4 is unblocked. See §14–§16.  
+**Status:** Phase 3 (Bindu) landed — Abhi **Phase 4** must cover **all earnable checkouts** (§17). See §14–§17.  
 **Environment for migrations & first deploy:** **dev only**  
 **Loyalty & Rewards:** remains independent — do not merge into this engine  
 **Wallet:** remains the cashback ledger/store  
@@ -526,9 +526,9 @@ Phase 2 smoke: `POST /promo-engine/evaluate` (no wallet write) → `POST /promo-
 | Booking quote pending CB | `booking-promotion-service` → `unified.promoEngine` (evaluate only) |
 | Unit tests | `promo-engine/**/__tests__` (DSL + benefits/stack) |
 
-**Still deferred to Phase 4 / later:** Benefits/Limits/Simulator UI polish, ecom cart commit/reverse hooks, customer earn-preview UI, Redis cache.
+**Still deferred after Phase 2:** see §17 for Phase 4 checkout matrix (C1–C8). Redis cache remains non-goal.
 
-**Next:** Bindu Phase 3 → Abhi Phase 4 → dev deploy (Phase 5).
+**Next:** Abhi Phase 4 (§17 slices 4a–4f) → Phase 5 deploy.
 
 ---
 
@@ -556,17 +556,68 @@ Phase 2 smoke: `POST /promo-engine/evaluate` (no wallet write) → `POST /promo-
 
 ### Abhi — pick up next (Phase 4)
 
+See **§17** for the full earnable-checkout DoD (not just booking).
+
 1. Wizard **Benefits** step: discount %/₹ + max, cashback %/₹, redeem-scope chips, expiry days, customer preview card. Persist via existing `benefitJson` on create/update.
 2. Wizard **Limits** step: per user / daily / campaign / budget + stacking toggles → `promo_engine_limits`.
 3. **Simulator** (admin): customer context → `POST /promo-engine/evaluate` → PASS/FAIL + payable. Never credit wallet.
-4. **Customer checkout** earn-preview from `unified.promoEngine.pendingCashback` + redeem-scope; wallet apply respects scope.
-5. Ecom cart commit/reverse hooks if not already wired.
+4. **Customer earn-preview + redeem** on every earnable checkout in §17.
+5. **Commit on pay success / reverse on refund** for each §17 row (not evaluate-only).
 
 **Do not:** new design system, credit on evaluate, loyalty merge.
 
 ### Praveen
 
-After **dev Lambda + admin-web deploy** (Phase 5): Admin → Promotion Center → Promotion Engine → Create winback (Grooming + Winback 30 days) → Review → Activate. Then P1–P12 on evaluate/commit.
+After **dev Lambda + admin-web + customer-web deploy** (Phase 5): Admin winback Activate, then §17 matrix P-rows on **dev**.
+
+---
+
+## 17. Phase 4 DoD — all earnable checkouts (testable)
+
+**Product ask:** By end of Phase 4 (+ Phase 5 deploy), Praveen can test earn (and redeem where scoped) on **every** customer pay surface that should participate in the Promotion Engine — not only classic service booking.
+
+### 17.1 Checkout matrix
+
+| ID | Surface | Customer UI entry | Quote / pay today | Engine `transaction.type` | Phase 2 evaluate? | Phase 4 must ship |
+|----|---------|-------------------|-------------------|---------------------------|-------------------|-------------------|
+| C1 | Service booking (groom/vet/train/board/walk, at-home/center) | `UniversalBookingRouter` / `VetBookingRouter` → `UniversalPaymentPage` | `POST /promotions/calculate-booking` → create booking + Razorpay | `BOOKING` | Yes (`promoEngine` on quote) | Earn-preview UI; **commit** on pay confirm; **reverse** on refund |
+| C2 | Tele / video consult | `TeleConsultationRouter` → same payment page | Same calculate-booking when quote path used | `BOOKING` | Yes if quote hits calculate-booking | Prove tele uses C1 path end-to-end; same commit/reverse |
+| C3 | Warmpawz Appointments (wappt) | wappt discovery → booking routers → `UniversalPaymentPage` | Same as C1 | `BOOKING` | Yes (shared) | Same as C1; category from appointment vertical |
+| C4 | Shop / ecommerce | `EcommerceCartScreen` → `/checkout` | `POST /promotions/calculate-cart` → ecommerce order + Razorpay | `ORDER` / `ECOMMERCE` | **No** | Evaluate on calculate-cart; earn-preview; commit on order paid; reverse on shop refund; redeem-scope on wallet when ecom wallet on |
+| C5 | Warmpawz Pay (bill pay) | `app/warmpawz-pay/**` | `POST /customer/warmpawz-pay/initiate` + `/verify` (catalogue % + fees — separate today) | `WPAY` | **No** | Evaluate on initiate/quote; earn-preview on pay sheet; commit on verify; reverse on wpay refund; **stacking policy vs catalogue discount** documented |
+| C6 | Package purchase | `PackageBookingPage` | `/packages/quote`, purchase endpoints | `BOOKING` or `PACKAGE` | Partial / none | Evaluate on quote; commit on purchase success |
+| C7 | Meal plan order | UniversalPayment meal branches | `/meal/orders/*` | `ORDER` / `MEAL` | **No** | Same pattern as C4 or defer to Phase 4.1 with explicit note |
+| C8 | Wallet redeem (spend CB) | `CustomerWalletApply` on UniversalPayment; wallet page | Wallet debit APIs | n/a (redeem) | Credit only on commit (not wired to pay) | After commit, filter usable CB by `redeem_scope` ∩ current category |
+
+**Fees (delivery / convenience / platform / WPay fees):** not separate earn checkouts. Engine **order_value / amount** = service or merchandise subtotal **before** non-discountable fees unless product later opts in. Document in simulator copy.
+
+### 17.2 Testable definition (per row)
+
+For each of C1–C6 (C7 if in scope):
+
+1. Admin can Activate a promo whose conditions match that surface.  
+2. Quote/initiate returns `evaluation_id` + discount and/or **pending** cashback (**no** wallet write).  
+3. Customer UI shows earn-preview (amount + redeem scope + expiry).  
+4. Successful payment calls **commit** once (idempotent).  
+5. Refund/cancel calls **reverse**.  
+6. Praveen records pass/fail on **dev** after Phase 5 deploy.
+
+### 17.3 Phase 4 work slices (Abhi)
+
+| Slice | Deliverable |
+|-------|-------------|
+| **4a Admin** | Benefits + Limits wizard steps + Simulator panel |
+| **4b Booking family** | C1+C2+C3 earn-preview UI + commit on verify + reverse on refund |
+| **4c Ecom** | C4 evaluate on calculate-cart + UI + commit/reverse |
+| **4d WPay** | C5 evaluate/commit/reverse + UI (decide stack vs catalogue %) |
+| **4e Package (± meal)** | C6 (and C7 if time) |
+| **4f Redeem** | C8 redeem-scope on wallet apply |
+
+**Phase 5 deploy** only when **4a + 4b + 4c** are green minimum; **4d WPay** is required for the “all earnable checkouts” product ask before calling Phase 4 **done**. C7 may ship in a fast follow if meal is low traffic.
+
+### 17.4 Explicit non-goals still
+
+- Redis cache, Rule Library product, loyalty merge, FREE_*/VOUCHER benefits, prod migrate/deploy.
 
 ---
 

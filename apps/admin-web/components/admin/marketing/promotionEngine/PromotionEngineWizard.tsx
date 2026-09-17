@@ -132,8 +132,24 @@ export function PromotionEngineWizard({
               }}
             />
           ) : null}
-          {step === 2 ? <BenefitsStep /> : null}
-          {step === 3 ? <LimitsStep /> : null}
+          {step === 2 ? (
+            <BenefitsStep
+              draft={working}
+              onChange={(next) => {
+                setWorking(next);
+                setDirty(true);
+              }}
+            />
+          ) : null}
+          {step === 3 ? (
+            <LimitsStep
+              draft={working}
+              onChange={(next) => {
+                setWorking(next);
+                setDirty(true);
+              }}
+            />
+          ) : null}
           {step === 4 ? <ReviewStep draft={working} /> : null}
         </div>
 

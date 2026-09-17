@@ -62,6 +62,20 @@ export async function patchPromoEngineStatus(
   await apiClient.patch(`${BASE}/${id}/status`, { status });
 }
 
+export async function evaluatePromoEngine(body: {
+  user_id: string;
+  transaction: Record<string, unknown>;
+  behaviour_override?: Record<string, unknown>;
+}): Promise<{
+  eligible: boolean;
+  evaluation_id: string;
+  benefits: Array<{ benefit_type: string; amount: number; promotion_id: string }>;
+  summary: { gross_amount: number; discount: number; payable: number; cashback: number };
+  explain?: { failures?: unknown[]; matched_promotions?: string[] };
+}> {
+  return apiClient.post('/promo-engine/evaluate', body);
+}
+
 function draftToApiBody(draft: PromoEngineDraft): Record<string, unknown> {
   return {
     status: draft.status,
@@ -69,6 +83,15 @@ function draftToApiBody(draft: PromoEngineDraft): Record<string, unknown> {
     conditionJson: draft.conditionJson,
     benefitJson: draft.benefitJson,
     ruleType: draft.ruleType,
+    limits: draft.limits
+      ? {
+          per_user: draft.limits.perUser ?? null,
+          per_transaction: draft.limits.perTransaction ?? null,
+          daily_limit: draft.limits.dailyLimit ?? null,
+          campaign_limit: draft.limits.campaignLimit ?? null,
+          budget_limit: draft.limits.budgetLimit ?? null,
+        }
+      : undefined,
   };
 }
 
@@ -108,7 +131,36 @@ function mapApiPromotionToDraft(p: Record<string, unknown>): PromoEngineDraft {
       ({ operator: 'AND', conditions: [] } as PromoEngineDraft['conditionJson']),
     benefitJson: (p.benefitJson as PromoEngineDraft['benefitJson']) || [],
     ruleType: (p.ruleType as PromoEngineDraft['ruleType']) || 'GENERIC',
+    limits: mapLimits(p.limits),
     createdAt: String(p.created_at || p.createdAt || new Date().toISOString()),
     updatedAt: String(p.updated_at || p.updatedAt || new Date().toISOString()),
+  };
+}
+
+function mapLimits(raw: unknown): PromoEngineDraft['limits'] | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const l = raw as Record<string, unknown>;
+  return {
+    perUser: l.per_user != null ? Number(l.per_user) : l.perUser != null ? Number(l.perUser) : null,
+    perTransaction:
+      l.per_transaction != null
+        ? Number(l.per_transaction)
+        : l.perTransaction != null
+          ? Number(l.perTransaction)
+          : null,
+    dailyLimit:
+      l.daily_limit != null ? Number(l.daily_limit) : l.dailyLimit != null ? Number(l.dailyLimit) : null,
+    campaignLimit:
+      l.campaign_limit != null
+        ? Number(l.campaign_limit)
+        : l.campaignLimit != null
+          ? Number(l.campaignLimit)
+          : null,
+    budgetLimit:
+      l.budget_limit != null
+        ? Number(l.budget_limit)
+        : l.budgetLimit != null
+          ? Number(l.budgetLimit)
+          : null,
   };
 }
