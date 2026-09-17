@@ -372,11 +372,14 @@ async function attachPromoEnginePending(
         amount: params.amount,
       },
     });
+    const cashbackBenefit = (result.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
     unified.promoEngine = {
       evaluationId: result.evaluation_id,
       pendingCashback: result.summary.cashback,
       engineDiscount: result.summary.discount,
       eligible: result.eligible,
+      redeemScope: cashbackBenefit?.redeem_scope || [],
+      expiryDays: cashbackBenefit?.expiry_days ?? null,
     };
     if (result.summary.cashback > 0) {
       unified.displayMessages = [
@@ -833,7 +836,6 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
     if (!booking) return;
 
     const discountTotal = parseFloat(String(booking.discount_amount ?? 0)) || 0;
-    if (discountTotal <= 0) return;
 
     let vendorPromotionId: string | null = null;
     let platformPromotionId: string | null = null;
@@ -850,6 +852,29 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
       platformDiscount = parseFloat(String(meta.platformDiscount ?? 0)) || 0;
       promotionType = meta.promotionType ? String(meta.promotionType) : null;
     }
+
+    const engineEvalId =
+      meta?.evaluationId != null
+        ? String(meta.evaluationId)
+        : meta?.evaluation_id != null
+          ? String(meta.evaluation_id)
+          : null;
+
+    // Always attempt promo-engine commit when evaluation was stored (cashback-only OK).
+    if (engineEvalId) {
+      try {
+        const { safeCommitPromotion } = await import('../../discount-engine/promo-engine');
+        await safeCommitPromotion({
+          evaluationId: engineEvalId,
+          transactionId: String(bookingId),
+          userId: booking.customer_id ? String(booking.customer_id) : null,
+        });
+      } catch (engineErr) {
+        console.warn('[recordBookingPromotionUsageFromBooking] engine commit:', engineErr);
+      }
+    }
+
+    if (discountTotal <= 0) return;
 
     if (!vendorPromotionId && !platformPromotionId) {
       const finMeta = parseJsonMetaFromNotes(notes, 'wp_financial_meta');
@@ -972,6 +997,7 @@ export function buildBookingPromotionNotesMeta(meta: {
   winningOffer?: Record<string, unknown>;
   fundingType?: string;
   policyFingerprint?: string;
+  evaluationId?: string;
 }): string {
   return `wp_promo_meta:${JSON.stringify(meta)}`;
 }

@@ -188,6 +188,7 @@ export type BookingCreateDiscountPayload = {
   couponCode?: string;
   vendorPromotionId?: string;
   platformPromotionId?: string;
+  evaluationId?: string;
 };
 
 /** Fields for POST /bookings/create — derived only from the latest quote. */
@@ -196,22 +197,29 @@ export function buildBookingCreateDiscountPayload(
   couponCode?: string | null
 ): BookingCreateDiscountPayload | null {
   const derived = deriveBookingDiscountFromQuote(quote, { couponCode });
-  if (!derived || derived.totalSavings <= 0) return null;
+  const evaluationId = quote?.promoEngine?.evaluationId
+    ? String(quote.promoEngine.evaluationId)
+    : undefined;
+
+  if ((!derived || derived.totalSavings <= 0) && !evaluationId) return null;
 
   const payload: BookingCreateDiscountPayload = {
-    discountAmount: derived.promotionDiscount,
+    discountAmount: derived?.promotionDiscount ?? 0,
   };
-  if (derived.couponDiscount > 0) {
+  if (derived && derived.couponDiscount > 0) {
     payload.couponDiscount = derived.couponDiscount;
   }
-  if (derived.couponCode) {
+  if (derived?.couponCode) {
     payload.couponCode = derived.couponCode;
   }
-  if (derived.vendorPromotionId) {
+  if (derived?.vendorPromotionId) {
     payload.vendorPromotionId = derived.vendorPromotionId;
   }
-  if (derived.platformPromotionId) {
+  if (derived?.platformPromotionId) {
     payload.platformPromotionId = derived.platformPromotionId;
+  }
+  if (evaluationId) {
+    payload.evaluationId = evaluationId;
   }
   return payload;
 }

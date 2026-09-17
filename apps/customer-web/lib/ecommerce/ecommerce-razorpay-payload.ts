@@ -7,12 +7,14 @@ export type RazorpayEcommerceCreateOrderPayload = {
   orderId: string;
   amount: number;
   customerId: string;
+  evaluationId?: string;
 };
 
 export function buildRazorpayEcommerceCreateOrderPayload(
   orderId: string,
   amount: number,
-  customerId: string | null | undefined
+  customerId: string | null | undefined,
+  evaluationId?: string | null
 ): RazorpayEcommerceCreateOrderPayload {
   const oid = String(orderId || '').trim();
   const cid = customerId != null ? String(customerId).trim() : '';
@@ -25,12 +27,16 @@ export function buildRazorpayEcommerceCreateOrderPayload(
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error('Invalid payment amount');
   }
-  return {
+  const payload: RazorpayEcommerceCreateOrderPayload = {
     type: 'ecommerce_order',
     orderId: oid,
     amount,
     customerId: cid,
   };
+  if (evaluationId) {
+    payload.evaluationId = String(evaluationId);
+  }
+  return payload;
 }
 
 /** Extract shop order UUID from /ecommerce/orders or legacy order create responses. */

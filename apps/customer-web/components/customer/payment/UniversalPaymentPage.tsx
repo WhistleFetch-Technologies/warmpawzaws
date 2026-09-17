@@ -28,6 +28,10 @@ import { PaymentBookingSummarySection } from './PaymentBookingSummarySection';
 import { paymentPageBgClass, paymentSecondaryCardClass } from './payment-page-styles';
 import { PriceBreakdown } from '@/components/customer/pricing/PriceBreakdown';
 import {
+  PromoEarnPreview,
+  readPromoEngineFromQuote,
+} from '@/components/customer/promo-engine/PromoEarnPreview';
+import {
   buildCheckoutPriceLines,
   checkoutTotalSavings,
 } from '@/lib/pricing/checkout-price-breakdown';
@@ -1360,7 +1364,15 @@ export function UniversalPaymentPage({
 
       // Load wallet balance
       try {
-        const walletRes = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
+        const walletRes = await apiClient.get<any>(
+          `/customer/wallet?phone=${encodeURIComponent(customerPhone)}${
+            category || initialPromotionIntent?.serviceCategory
+              ? `&serviceCategory=${encodeURIComponent(
+                  String(category || initialPromotionIntent?.serviceCategory || '')
+                )}`
+              : ''
+          }`
+        );
         if (walletRes.wallet) {
           setWallet(walletRes.wallet);
           const bal = Number(walletRes.wallet.balance ?? 0);
@@ -2033,7 +2045,14 @@ export function UniversalPaymentPage({
         ? Math.max(0, resolvedMealPayTotal - finalTax - razorpayOfferDiscount)
         : Math.max(0, totalAfterDiscounts - finalTax - razorpayOfferDiscount);
   const walletAmount =
-    walletDebitAllowed && useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
+    walletDebitAllowed && useWallet && wallet
+      ? Math.min(
+          Number(
+            (wallet as { spendableBalance?: number }).spendableBalance ?? wallet.balance
+          ) || 0,
+          walletCapBase
+        )
+      : 0;
 
   // If subscription covers this booking, final amount is 0
   const computedFinalAmount = subscriptionCovered
@@ -4262,6 +4281,10 @@ export function UniversalPaymentPage({
             </p>
           )}
           <PriceBreakdown lines={checkoutPriceLines} title="Price details" />
+          <PromoEarnPreview
+            className="mt-3"
+            data={readPromoEngineFromQuote(discountQuote)}
+          />
           {checkoutSavingsTotal > 0 && (
             <p className="text-sm text-green-600 mt-3 px-1">
               You save ₹{checkoutSavingsTotal.toFixed(2)} on this {type}!

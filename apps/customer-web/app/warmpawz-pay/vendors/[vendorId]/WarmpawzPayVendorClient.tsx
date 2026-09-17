@@ -25,6 +25,12 @@ import { VendorHeroPhotoCarousel } from '@/components/customer/shared/VendorHero
 import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
 import { StarRating } from '@/components/customer/shared/StarRating';
 import {
+  PromoEarnPreview,
+  type PromoEngineEarnPreviewData,
+} from '@/components/customer/promo-engine/PromoEarnPreview';
+import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -52,6 +58,8 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [showWaitForConfirmDialog, setShowWaitForConfirmDialog] = useState(false);
+  const [promoEnginePreview, setPromoEnginePreview] =
+    useState<PromoEngineEarnPreviewData | null>(null);
 
   useEffect(() => {
     if (!resolvedVendorId) return;
@@ -116,7 +124,54 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     if (billAmount <= 0) return;
     setPayError(null);
     setQuoteReady(true);
-  }, [billAmount]);
+    // Soft earn-preview (no wallet credit) — same evaluate API as admin simulator
+    if (!resolvedVendorId) {
+      setPromoEnginePreview(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const userId =
+          getResolvedCustomerId() ||
+          (typeof window !== 'undefined'
+            ? localStorage.getItem('customerId') || localStorage.getItem('customer_id')
+            : null);
+        if (!userId) {
+          setPromoEnginePreview(null);
+          return;
+        }
+        const ev = await apiClient.post<{
+          evaluation_id?: string;
+          eligible?: boolean;
+          summary?: { cashback?: number; discount?: number };
+          benefits?: Array<{
+            benefit_type?: string;
+            redeem_scope?: string[];
+            expiry_days?: number;
+          }>;
+        }>('/promo-engine/evaluate', {
+          user_id: userId,
+          transaction: {
+            type: 'WPAY',
+            service_category: 'WPAY',
+            vendor_id: resolvedVendorId,
+            amount: billAmount,
+          },
+        });
+        const cb = (ev?.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
+        setPromoEnginePreview({
+          evaluationId: ev?.evaluation_id,
+          pendingCashback: ev?.summary?.cashback ?? 0,
+          engineDiscount: ev?.summary?.discount ?? 0,
+          eligible: ev?.eligible,
+          redeemScope: cb?.redeem_scope || [],
+          expiryDays: cb?.expiry_days ?? null,
+        });
+      } catch {
+        setPromoEnginePreview(null);
+      }
+    })();
+  }, [billAmount, resolvedVendorId]);
 
   const runPaymentCheckout = useCallback(async () => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
@@ -334,6 +389,11 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                 <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
                   You save {formatInr(quote.discountAmount)} with this offer!
                 </p>
+                {promoEnginePreview ? (
+                  <div className="mt-2">
+                    <PromoEarnPreview data={promoEnginePreview} />
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

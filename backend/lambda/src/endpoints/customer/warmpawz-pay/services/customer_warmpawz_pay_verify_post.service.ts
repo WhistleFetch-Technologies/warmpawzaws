@@ -155,6 +155,26 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
     await tryAccrueWpaySettlement(completed);
     tryNotifyWpayVendor(paymentId);
 
+    // Promo Engine commit (cashback) — best-effort; never block verify
+    try {
+      const evalId =
+        meta && (meta.evaluationId || meta.evaluation_id)
+          ? String(meta.evaluationId || meta.evaluation_id)
+          : null;
+      const { safeCommitPromotion } = await import('../../../../discount-engine/promo-engine');
+      await safeCommitPromotion({
+        evaluationId: evalId,
+        transactionId: paymentId,
+        paymentId: razorpayPaymentId || null,
+        userId: customerId,
+      });
+    } catch (peErr) {
+      console.warn(
+        '[customer/warmpawz-pay/verify] promo-engine commit skipped:',
+        peErr instanceof Error ? peErr.message : peErr
+      );
+    }
+
     return c.json({
       success: true,
       paymentId,

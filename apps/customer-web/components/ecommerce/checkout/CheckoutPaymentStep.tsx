@@ -7,6 +7,11 @@ import { useCheckout } from '@/context/CheckoutProvider';
 import { CartPromotionSelect } from '@/components/ecommerce/cart/CartPromotionSelect';
 import { apiClient } from '@/lib/api-client';
 import { parseCartLineKey } from '@/lib/product-sku-client';
+import {
+  PromoEarnPreview,
+  type PromoEngineEarnPreviewData,
+} from '@/components/customer/promo-engine/PromoEarnPreview';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 function formatINR(amount: number): string {
   return `₹${amount.toFixed(2)}`;
@@ -18,6 +23,8 @@ function formatINR(amount: number): string {
  * Flip to true to restore the wallet toggle here.
  */
 const ECOM_WALLET_ENABLED = false;
+
+export const PROMO_ENGINE_ECOM_KEY = 'promo_engine_ecom_preview';
 
 export function CheckoutPaymentStep() {
   const {
@@ -35,14 +42,79 @@ export function CheckoutPaymentStep() {
 
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [walletEnabled, setWalletEnabled] = useState(false);
+  const [promoEngine, setPromoEngine] = useState<PromoEngineEarnPreviewData | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(PROMO_ENGINE_ECOM_KEY);
+      if (raw) setPromoEngine(JSON.parse(raw) as PromoEngineEarnPreviewData);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Refresh promo-engine evaluate for earn-preview (and stash evaluationId for create-order)
+  useEffect(() => {
+    if (!cart.length) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const customerId = getResolvedCustomerId();
+        const res = await apiClient.post<{
+          promoEngine?: PromoEngineEarnPreviewData | null;
+        }>('/promotions/calculate-cart', {
+          ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
+          customerId: customerId || undefined,
+          items: cart.map((item) => {
+            const productId =
+              parseCartLineKey(item.id).productId ||
+              (item.warmpawzLine?.product?.id != null
+                ? String(item.warmpawzLine.product.id)
+                : item.id);
+            return {
+              productId,
+              id: productId,
+              quantity: item.quantity,
+              price: item.price,
+              categoryId: item.categoryId || item.category,
+              category: item.categoryId || item.category,
+            };
+          }),
+        });
+        if (cancelled) return;
+        const pe = res?.promoEngine ?? null;
+        setPromoEngine(pe);
+        if (pe?.evaluationId) {
+          sessionStorage.setItem(PROMO_ENGINE_ECOM_KEY, JSON.stringify(pe));
+        }
+      } catch {
+        /* non-blocking */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cart, primaryVendorId]);
 
   // Fetch wallet balance on mount
   useEffect(() => {
     if (!ECOM_WALLET_ENABLED || !phone) return;
     apiClient
-      .get<{ balance?: number; data?: { balance?: number } }>(`/customer/wallet?phone=${encodeURIComponent(phone)}`)
+      .get<{
+        balance?: number;
+        data?: { balance?: number };
+        wallet?: { balance?: number; spendableBalance?: number };
+      }>(`/customer/wallet?phone=${encodeURIComponent(phone)}&serviceCategory=ECOMMERCE`)
       .then((res) => {
-        const bal = parseFloat(String(res?.balance ?? res?.data?.balance ?? '0'));
+        const bal = parseFloat(
+          String(
+            res?.wallet?.spendableBalance ??
+              res?.wallet?.balance ??
+              res?.balance ??
+              res?.data?.balance ??
+              '0'
+          )
+        );
         setWalletBalance(isNaN(bal) ? 0 : bal);
       })
       .catch(() => setWalletBalance(0));
@@ -102,6 +174,8 @@ export function CheckoutPaymentStep() {
         }
         onRemove={removeCoupon}
       />
+
+      <PromoEarnPreview data={promoEngine} />
 
       {/* Wallet balance section (hidden while ECOM_WALLET_ENABLED is false) */}
       {ECOM_WALLET_ENABLED && walletBalance != null && walletBalance > 0 && (

@@ -292,10 +292,29 @@ class GetWalletByPhoneHandler extends BaseHandler {
     const loyaltyCredits = transactions.filter(t => t.isLoyaltyConversion || t.source === 'loyalty_points');
     const totalLoyaltyCredits = loyaltyCredits.reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
+    const serviceCategory =
+      context.event.queryStringParameters?.serviceCategory ||
+      context.event.queryStringParameters?.service_category ||
+      null;
+    let spendable = parseFloat(wallet.balance);
+    let lockedPromoCashback = 0;
+    try {
+      const { computeSpendableWalletBalance } = await import(
+        '../discount-engine/promo-engine'
+      );
+      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+      spendable = scoped.spendable;
+      lockedPromoCashback = scoped.lockedPromoCashback;
+    } catch {
+      // columns may not exist yet — fall back to full balance
+    }
+
     return this.success({
       wallet: {
         customerId: wallet.customer_id,
         balance: parseFloat(wallet.balance),
+        spendableBalance: spendable,
+        lockedPromoCashback,
         currency: wallet.currency || 'INR',
         lastUpdated: wallet.updated_at,
         recentTransactions: transactions,
@@ -849,6 +868,8 @@ class DebitWalletHandler extends BaseHandler {
     const customerId = context.event.pathParameters?.customerId;
     const body = this.parseBody(context.event);
     const { amount, referenceType, referenceId, description, idempotencyKey } = body;
+    const serviceCategory =
+      body.serviceCategory || body.service_category || body.redeemCategory || null;
     const requestId = context.event.requestContext?.requestId;
 
     if (!customerId) {
@@ -860,6 +881,22 @@ class DebitWalletHandler extends BaseHandler {
     // Validate amount
     if (typeof amount !== 'number' || amount <= 0) {
       return this.error('Amount must be a positive number', 400);
+    }
+
+    // Redeem-scope gate (promo cashback locked to other categories)
+    try {
+      const { computeSpendableWalletBalance } = await import(
+        '../discount-engine/promo-engine'
+      );
+      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+      if (amount > scoped.spendable + 0.009) {
+        return this.error(
+          `Insufficient spendable balance for this category (spendable ₹${scoped.spendable.toFixed(2)}, locked promo ₹${scoped.lockedPromoCashback.toFixed(2)})`,
+          400
+        );
+      }
+    } catch {
+      // proceed with raw balance if helper unavailable
     }
 
     // ✅ TEMPORAL FIX: Check idempotency
@@ -929,6 +966,22 @@ class DebitWalletHandler extends BaseHandler {
             description || null,
           ]
         );
+
+        try {
+          const { consumePromoCashbackForDebit } = await import(
+            '../discount-engine/promo-engine'
+          );
+          await consumePromoCashbackForDebit(client, {
+            customerId,
+            amount,
+            serviceCategory,
+          });
+        } catch (consumeErr) {
+          console.warn(
+            '[WALLET] consumePromoCashbackForDebit skipped:',
+            consumeErr instanceof Error ? consumeErr.message : consumeErr
+          );
+        }
 
         return {
           wallet: updatedWallet,

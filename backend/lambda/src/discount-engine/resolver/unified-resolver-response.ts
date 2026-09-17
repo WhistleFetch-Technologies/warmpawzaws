@@ -103,6 +103,8 @@ export interface UnifiedResolverResponse {
     pendingCashback?: number;
     engineDiscount?: number;
     eligible?: boolean;
+    redeemScope?: string[];
+    expiryDays?: number | null;
   };
 }
 

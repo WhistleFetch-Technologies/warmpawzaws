@@ -119,6 +119,66 @@ function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** Promo Engine evaluate/commit helpers for package purchases (Phase 4e / C6). */
+async function evaluatePackagePromoEngine(opts: {
+  customerId: string;
+  vendorId?: string;
+  amount: number;
+  serviceCategory?: string;
+}): Promise<Record<string, unknown> | null> {
+  try {
+    const { safeEvaluatePromotions } = await import('../discount-engine/promo-engine');
+    const ev = await safeEvaluatePromotions({
+      user_id: opts.customerId,
+      transaction: {
+        type: 'PACKAGE',
+        service_category: opts.serviceCategory || 'PACKAGE',
+        vendor_id: opts.vendorId,
+        amount: opts.amount,
+      },
+    });
+    if (!ev?.evaluation_id) return null;
+    const cashbackBenefit = (ev.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
+    return {
+      evaluationId: ev.evaluation_id,
+      pendingCashback: ev.summary.cashback,
+      engineDiscount: ev.summary.discount,
+      eligible: ev.eligible,
+      redeemScope: cashbackBenefit?.redeem_scope || [],
+      expiryDays: cashbackBenefit?.expiry_days ?? null,
+    };
+  } catch (err) {
+    console.warn(
+      '[package-purchase] promo-engine evaluate skipped:',
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+async function commitPackagePromoEngine(opts: {
+  evaluationId?: string | null;
+  transactionId: string;
+  paymentId?: string | null;
+  customerId?: string | null;
+}): Promise<void> {
+  if (!opts.evaluationId) return;
+  try {
+    const { safeCommitPromotion } = await import('../discount-engine/promo-engine');
+    await safeCommitPromotion({
+      evaluationId: opts.evaluationId,
+      transactionId: opts.transactionId,
+      paymentId: opts.paymentId || null,
+      userId: opts.customerId || null,
+    });
+  } catch (err) {
+    console.warn(
+      '[package-purchase] promo-engine commit skipped:',
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
 async function debitWalletForPackagePurchase(
   customerId: string,
   amountToDebit: number,
@@ -1881,6 +1941,21 @@ export function registerPackageBookingEndpoints(app: Hono) {
         },
       };
 
+      const packagePromoEngine = await evaluatePackagePromoEngine({
+        customerId,
+        vendorId: String(comp.vendorId || ''),
+        amount: Number(pricing?.basePrice ?? grossTotal) || 0,
+        serviceCategory: String(
+          (comp as { businessServiceType?: string }).businessServiceType ||
+            pricing?.businessServiceType ||
+            'PACKAGE'
+        ).toUpperCase(),
+      });
+      const packageEvaluationId =
+        packagePromoEngine?.evaluationId != null
+          ? String(packagePromoEngine.evaluationId)
+          : null;
+
       const buildOrderResponse = (
         order: { orderId: string; keyId: string; amount: number; currency: string; paymentId: string }
       ) => ({
@@ -1908,6 +1983,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
           : null,
         walletApplied,
         payableAfterWallet,
+        promoEngine: packagePromoEngine,
         policy: {
           cancellationPolicy: policy.cancellationPolicy,
           refundPolicy: policy.refundPolicy,
@@ -1972,6 +2048,12 @@ export function registerPackageBookingEndpoints(app: Hono) {
             catalogPackageId,
             parentBookingId
           );
+          await commitPackagePromoEngine({
+            evaluationId: packageEvaluationId,
+            transactionId: String((purchase as Record<string, unknown>).id || catalogPackageId),
+            paymentId: walletPaymentId || null,
+            customerId,
+          });
           if (idempotencyKey) {
             await storeIdempotencyKey(
               idempotencyKey,
@@ -2125,6 +2207,12 @@ export function registerPackageBookingEndpoints(app: Hono) {
             paymentId: paymentIdForExisting,
             petId: petIdForBooking,
           });
+          await commitPackagePromoEngine({
+            evaluationId: packageEvaluationId,
+            transactionId: String((purchase as Record<string, unknown>).id || catId),
+            paymentId: paymentIdForExisting,
+            customerId,
+          });
           return c.json(
             purchaseJson(purchase as Record<string, unknown>, catId, parentBookingId)
           );
@@ -2187,6 +2275,12 @@ export function registerPackageBookingEndpoints(app: Hono) {
           catalogPackageId,
           paymentId: String(payRow.id),
           petId: petIdForBooking,
+        });
+        await commitPackagePromoEngine({
+          evaluationId: packageEvaluationId,
+          transactionId: String((purchase as Record<string, unknown>).id || catalogPackageId),
+          paymentId: String(payRow.id),
+          customerId,
         });
         return c.json(
           purchaseJson(purchase as Record<string, unknown>, catalogPackageId, parentBookingId)

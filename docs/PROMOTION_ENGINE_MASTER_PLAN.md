@@ -1,6 +1,6 @@
 # Warmpawz Promotion, Discount & Cashback Engine — Master Execution Plan
 
-**Status:** Phase 3 (Bindu) landed — Abhi **Phase 4** must cover **all earnable checkouts** (§17). See §14–§17.  
+**Status:** Phase 4 (Abhi) complete on `feature/promo-engine-v1` — see §18. Phase 5 = dev deploy + Praveen P-matrix.  
 **Environment for migrations & first deploy:** **dev only**  
 **Loyalty & Rewards:** remains independent — do not merge into this engine  
 **Wallet:** remains the cashback ledger/store  
@@ -536,7 +536,7 @@ Phase 2 smoke: `POST /promo-engine/evaluate` (no wallet write) → `POST /promo-
 
 **Branch:** `feature/promo-engine-v1`  
 **Owner just finished:** Bindu (Phase 3).  
-**Next owner:** **Abhi (Phase 4)**.
+**Next owner:** **Praveen (Phase 5 smoke)** after Abhi deploys; Bindu optional polish.
 
 ### What Bindu shipped
 
@@ -618,6 +618,24 @@ For each of C1–C6 (C7 if in scope):
 ### 17.4 Explicit non-goals still
 
 - Redis cache, Rule Library product, loyalty merge, FREE_*/VOUCHER benefits, prod migrate/deploy.
+
+---
+
+## 18. Phase 4 complete — Abhi (2026-09-17)
+
+| Slice | Status | Where |
+|-------|--------|--------|
+| **4a Admin** | Done (earlier) | Benefits/Limits wizard + Simulator |
+| **4b Booking family** | Done | Earn-preview on `UniversalPaymentPage`; create stores `evaluationId`; commit on pay usage; reverse on cancel |
+| **4c Ecom** | Done | `calculate-cart` + checkout earn-preview; Razorpay notes + verify commit; shop cancel reverse |
+| **4d WPay** | Done | Evaluate on initiate (cashback stacks; catalogue % owns payable); commit on verify; UI earn-preview on Get Discount |
+| **4e Package** | Done | Evaluate on purchase order; commit on wallet/Razorpay finalize |
+| **4f Redeem** | Done | `spendableBalance` + debit gate by `redeem_scope` ∩ category; FIFO consume |
+| **C7 Meals** | Deferred | Phase 4.1 / fast-follow (explicit) |
+
+**WPay stacking policy (locked for v1):** catalogue discount remains the only reduction to Razorpay payable; promo-engine evaluates on bill amount and credits **cashback on commit only** (engine discount not applied to WPay payable).
+
+**Next:** Phase 5 — deploy Lambda + admin-web + customer-web to **dev**, then Praveen §17 P-rows.
 
 ---
 

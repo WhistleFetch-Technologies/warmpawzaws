@@ -537,6 +537,36 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           customerId: customerIdFinal,
           vendorId: vendorIdFinal || '',
         };
+        const bodyEval =
+          (body as { evaluationId?: string; promoEngineEvaluationId?: string }).evaluationId ||
+          (body as { promoEngineEvaluationId?: string }).promoEngineEvaluationId;
+        if (bodyEval) {
+          notes.evaluationId = String(bodyEval);
+        } else if (customerIdFinal) {
+          // Re-evaluate if client omitted evaluationId (cashback-only carts)
+          try {
+            const { safeEvaluatePromotions } = await import(
+              '../../../discount-engine/promo-engine'
+            );
+            const ev = await safeEvaluatePromotions({
+              user_id: String(customerIdFinal),
+              transaction: {
+                type: 'ECOMMERCE',
+                service_category: 'ECOMMERCE',
+                vendor_id: vendorIdFinal ? String(vendorIdFinal) : undefined,
+                amount: Number(amount) || 0,
+              },
+            });
+            if (ev?.evaluation_id) {
+              notes.evaluationId = String(ev.evaluation_id);
+            }
+          } catch (peErr) {
+            console.warn(
+              '[RAZORPAY] ecom promo-engine evaluate skipped:',
+              peErr instanceof Error ? peErr.message : peErr
+            );
+          }
+        }
       } else if (isDiagnosticsOrder) {
         // ✅ FIX: Resolve customerId from phone number if needed
         if (customerId) {
@@ -1415,6 +1445,32 @@ class VerifyPaymentHandler extends BaseHandler {
           if (payment.vendor_id) {
             ecommerceVendorIdForCommission = String(payment.vendor_id);
           }
+
+          // Promo Engine commit for shop orders (evaluation_id from payment notes)
+          Promise.resolve()
+            .then(async () => {
+              const notesObj =
+                payment.notes && typeof payment.notes === 'object'
+                  ? (payment.notes as Record<string, unknown>)
+                  : {};
+              const evalId =
+                notesObj.evaluationId ||
+                notesObj.evaluation_id ||
+                notesObj.promoEngineEvaluationId ||
+                null;
+              const { safeCommitPromotion } = await import(
+                '../../../discount-engine/promo-engine'
+              );
+              await safeCommitPromotion({
+                evaluationId: evalId ? String(evalId) : null,
+                transactionId: String(ecommerceOrderId),
+                paymentId: razorpay_payment_id ? String(razorpay_payment_id) : null,
+                userId: payment.customer_id ? String(payment.customer_id) : null,
+              });
+            })
+            .catch((err) =>
+              console.warn('[PAYMENT-VERIFY] ecom promo-engine commit failed:', err)
+            );
 
           return {
             success: true,

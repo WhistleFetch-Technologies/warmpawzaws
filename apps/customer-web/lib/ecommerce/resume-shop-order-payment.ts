@@ -129,7 +129,17 @@ export async function resumeShopOrderPayment(options: ResumeShopOrderPaymentOpti
   const razorpayPayload = buildRazorpayEcommerceCreateOrderPayload(
     orderId,
     payableAmount,
-    customerId
+    customerId,
+    (() => {
+      try {
+        const raw = sessionStorage.getItem('promo_engine_ecom_preview');
+        if (!raw) return null;
+        const pe = JSON.parse(raw) as { evaluationId?: string };
+        return pe.evaluationId || null;
+      } catch {
+        return null;
+      }
+    })()
   );
 
   let razorpayOrder: {

@@ -79,6 +79,15 @@ export interface UnifiedResolverResponse {
   platformPromotionId?: string;
   winningPromotion?: UnifiedResolverAppliedOffer | null;
   displayPromotionsOnly?: boolean;
+  /** Promo Engine v1 — pending until payment commit */
+  promoEngine?: {
+    evaluationId?: string;
+    pendingCashback?: number;
+    engineDiscount?: number;
+    eligible?: boolean;
+    redeemScope?: string[];
+    expiryDays?: number | null;
+  };
   /** Legacy aliases */
   originalAmount?: number;
   vendorDiscountAmount?: number;

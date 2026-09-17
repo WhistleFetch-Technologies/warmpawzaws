@@ -674,11 +674,16 @@ app.post('/promotions/calculate-cart', async (c) => {
             amount: originalTotal,
           },
         });
+        const cashbackBenefit = (engineResult.benefits || []).find(
+          (b) => b.benefit_type === 'CASHBACK'
+        );
         promoEngine = {
           evaluationId: engineResult.evaluation_id,
           pendingCashback: engineResult.summary.cashback,
           engineDiscount: engineResult.summary.discount,
           eligible: engineResult.eligible,
+          redeemScope: cashbackBenefit?.redeem_scope || [],
+          expiryDays: cashbackBenefit?.expiry_days ?? null,
         };
       } catch (engineErr) {
         console.warn(

@@ -726,6 +726,23 @@ export async function cancelPaidShopOrder(
 
     void notifyShopOrderStatusChangeAsync(input.orderId, previousStatus, reason);
 
+    // Promo Engine reverse (cashback) — best-effort on cancel/refund
+    try {
+      const { safeReversePromotion } = await import(
+        '../../discount-engine/promo-engine'
+      );
+      await safeReversePromotion({
+        transactionId: String(input.orderId),
+        userId: customerId || null,
+        reason: reason || 'shop_order_cancelled',
+      });
+    } catch (peErr) {
+      console.warn(
+        '[shop-order-refund] promo-engine reverse skipped:',
+        peErr instanceof Error ? peErr.message : peErr
+      );
+    }
+
     return {
       success: true,
       orderId: input.orderId,

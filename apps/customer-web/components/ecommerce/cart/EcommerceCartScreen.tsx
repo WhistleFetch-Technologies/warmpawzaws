@@ -182,6 +182,14 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             promotionSource?: 'vendor' | 'admin';
           };
           promotionSource?: 'vendor' | 'admin' | null;
+          promoEngine?: {
+            evaluationId?: string;
+            pendingCashback?: number;
+            engineDiscount?: number;
+            eligible?: boolean;
+            redeemScope?: string[];
+            expiryDays?: number | null;
+          } | null;
         }>('/promotions/calculate-cart', {
           ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
           customerId: getResolvedCustomerId() || undefined,
@@ -201,6 +209,16 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
           });
         } else {
           setAutoPromo(null);
+        }
+        if (res?.promoEngine?.evaluationId) {
+          try {
+            sessionStorage.setItem(
+              'promo_engine_ecom_preview',
+              JSON.stringify(res.promoEngine)
+            );
+          } catch {
+            /* ignore */
+          }
         }
       } catch {
         if (!cancelled) setAutoPromo(null);

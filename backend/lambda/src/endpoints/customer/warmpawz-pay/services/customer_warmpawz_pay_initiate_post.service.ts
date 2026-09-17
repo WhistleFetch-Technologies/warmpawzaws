@@ -53,13 +53,56 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       quotedAmount: originalAmount,
     });
 
+    // Promo Engine: evaluate on bill amount. Catalogue % remains payable authority;
+    // engine cashback credits on verify only (does not change Razorpay amount).
+    let promoEngine: Record<string, unknown> | null = null;
+    try {
+      const { safeEvaluatePromotions } = await import(
+        '../../../../discount-engine/promo-engine'
+      );
+      const ev = await safeEvaluatePromotions({
+        user_id: customerId,
+        transaction: {
+          type: 'WPAY',
+          service_category: 'WPAY',
+          vendor_id: vendorId,
+          amount: originalAmount,
+        },
+      });
+      if (ev?.evaluation_id) {
+        const cashbackBenefit = (ev.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
+        promoEngine = {
+          evaluationId: ev.evaluation_id,
+          pendingCashback: ev.summary.cashback,
+          engineDiscount: ev.summary.discount,
+          eligible: ev.eligible,
+          redeemScope: cashbackBenefit?.redeem_scope || [],
+          expiryDays: cashbackBenefit?.expiry_days ?? null,
+          stackingNote:
+            'WPay catalogue discount controls payable; promo-engine cashback stacks on commit only',
+        };
+      }
+    } catch (peErr) {
+      console.warn(
+        '[customer/warmpawz-pay/initiate] promo-engine evaluate skipped:',
+        peErr instanceof Error ? peErr.message : peErr
+      );
+    }
+
+    const quoteMetadata = {
+      ...resolved.metadata,
+      ...(promoEngine?.evaluationId
+        ? { evaluationId: String(promoEngine.evaluationId), promoEngine }
+        : {}),
+    };
+
     const order = await createWpayRazorpayOrder({
       customerId,
       vendorId,
       payableAmount: resolved.payableAmount,
       bookingId: null,
       clientRequestId: clientRequestId || null,
-      quoteMetadata: resolved.metadata,
+      quoteMetadata,
     });
 
     if (resolved.commercialModel === 'tier_commission') {
@@ -84,6 +127,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         convenienceGstAmount: q.convenienceGstAmount,
         payableAmount: q.payNowAmount,
         bookingId: null,
+        promoEngine,
       });
     }
 
@@ -103,6 +147,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       discountAmount: q.discountAmount,
       payableAmount: q.payableAmount,
       bookingId: null,
+      promoEngine,
     });
   } catch (error: unknown) {
     if (error instanceof WpayCommercialValidationError) {

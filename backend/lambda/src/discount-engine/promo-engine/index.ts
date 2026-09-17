@@ -7,6 +7,15 @@ export { commitPromotion } from './services/commit.service';
 export { reversePromotion } from './services/reverse.service';
 export { recordBehaviourCompletion, normalizeServiceKey } from './services/behaviour.service';
 export {
+  safeCommitPromotion,
+  safeReversePromotion,
+  safeEvaluatePromotions,
+} from './services/lifecycle-hooks';
+export {
+  computeSpendableWalletBalance,
+  consumePromoCashbackForDebit,
+} from './services/wallet-redeem-scope.service';
+export {
   createPromotionFromDraft,
   updatePromotionFromDraft,
   patchPromotionStatus,

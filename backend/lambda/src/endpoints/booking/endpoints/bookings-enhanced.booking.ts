@@ -1742,10 +1742,41 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               fundingType: winningFundingType,
               policyFingerprint: resolvedBookingPromotions.settlement?.policyFingerprint,
             }
-          : null;
+          : ({} as Record<string, unknown>);
 
-        if (promoNotesPayload) {
-          const promoMeta = buildBookingPromotionNotesMeta(promoNotesPayload);
+        // Persist promo-engine evaluation_id for commit-on-pay (cashback).
+        let engineEvaluationId =
+          body.evaluationId || body.evaluation_id || body.promoEngineEvaluationId || null;
+        if (!engineEvaluationId && bookingData.customer_id) {
+          try {
+            const { safeEvaluatePromotions } = await import(
+              '../../../discount-engine/promo-engine'
+            );
+            const ev = await safeEvaluatePromotions({
+              user_id: String(bookingData.customer_id),
+              transaction: {
+                type: 'BOOKING',
+                service_category: body.serviceCategory || body.service_category || undefined,
+                vendor_id: bookingData.vendor_id ? String(bookingData.vendor_id) : undefined,
+                amount: Number(bookingData.total_amount || bookingData.base_price || 0),
+              },
+            });
+            if (ev?.evaluation_id) engineEvaluationId = ev.evaluation_id;
+          } catch (evErr) {
+            console.warn('[BOOKING-CREATE] promo-engine evaluate skipped:', evErr);
+          }
+        }
+        if (engineEvaluationId) {
+          (promoNotesPayload as { evaluationId?: string }).evaluationId = String(engineEvaluationId);
+        }
+
+        if (
+          promoNotesPayload &&
+          (Object.keys(promoNotesPayload).length > 0 || engineEvaluationId)
+        ) {
+          const promoMeta = buildBookingPromotionNotesMeta(
+            promoNotesPayload as Parameters<typeof buildBookingPromotionNotesMeta>[0]
+          );
           bookingData.notes = bookingData.notes
             ? `${bookingData.notes} | ${promoMeta}`
             : promoMeta;
@@ -4144,6 +4175,18 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
           console.warn('[CANCEL] Failed to send vendor cancellation notification:', notifErr);
           // Non-critical — don't fail the cancellation
         }
+      }
+
+      // Promo Engine reverse (cashback) — best-effort
+      try {
+        const { safeReversePromotion } = await import('../../../discount-engine/promo-engine');
+        await safeReversePromotion({
+          transactionId: String(bookingId),
+          userId: currentBooking.customer_id ? String(currentBooking.customer_id) : null,
+          reason: reason || 'booking_cancelled',
+        });
+      } catch (revErr) {
+        console.warn('[CANCEL] promo-engine reverse skipped:', revErr);
       }
 
       return this.success({
