@@ -30,7 +30,17 @@ export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
         />
         <ReviewBlock
           title="LIMITS"
-          body="Per-user / budget / daily caps land in Abhi Phase 4"
+          body={
+            [
+              draft.limits?.perUser != null ? `${draft.limits.perUser} / user` : null,
+              draft.limits?.perTransaction != null ? `${draft.limits.perTransaction} / txn` : null,
+              draft.limits?.dailyLimit != null ? `${draft.limits.dailyLimit} / day` : null,
+              draft.limits?.campaignLimit != null ? `${draft.limits.campaignLimit} campaign` : null,
+              draft.limits?.budgetLimit != null ? `₹${draft.limits.budgetLimit} budget` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ') || 'No usage or budget caps'
+          }
         />
         <ReviewBlock
           title="FUNDING"

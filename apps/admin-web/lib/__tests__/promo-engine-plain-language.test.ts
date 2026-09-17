@@ -20,9 +20,9 @@ describe('describeConditionGroup', () => {
 });
 
 describe('describeBenefits / redeem', () => {
-  it('notes missing benefits for Phase 4', () => {
-    expect(describeBenefits([])).toContain('Phase 4');
-    expect(describeRedeemScope([])).toContain('Phase 4');
+  it('notes missing benefits until the Benefits step is filled', () => {
+    expect(describeBenefits([])).toContain('Benefits step');
+    expect(describeRedeemScope([])).toContain('no redeem restriction');
   });
 
   it('formats discount and cashback', () => {

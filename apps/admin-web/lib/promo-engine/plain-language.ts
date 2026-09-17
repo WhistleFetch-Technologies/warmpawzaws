@@ -72,7 +72,7 @@ export function describeConditionGroup(group: PromoEngineConditionGroup): string
 }
 
 export function describeBenefits(benefits: PromoEngineBenefit[]): string {
-  if (!benefits.length) return 'Benefits not set yet (Abhi Phase 4)';
+  if (!benefits.length) return 'No discount or cashback yet — set them on the Benefits step';
   return benefits
     .map((b) => {
       const mode = b.mode === 'PERCENT' ? '%' : '';
@@ -87,6 +87,6 @@ export function describeBenefits(benefits: PromoEngineBenefit[]): string {
 
 export function describeRedeemScope(benefits: PromoEngineBenefit[]): string {
   const scopes = benefits.flatMap((b) => b.redeemScope ?? []);
-  if (!scopes.length) return 'Not set yet (Abhi Phase 4)';
+  if (!scopes.length) return 'Any catalogue service (no redeem restriction)';
   return [...new Set(scopes)].join(', ');
 }
