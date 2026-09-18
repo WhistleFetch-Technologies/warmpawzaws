@@ -553,11 +553,17 @@ app.post('/promotions/calculate-cart', async (c) => {
         const { evaluatePromotions } = await import('../discount-engine/promo-engine');
         const engineResult = await evaluatePromotions({
           user_id: String(customerId),
+          persist: true,
           transaction: {
             type: 'ECOMMERCE',
             service_category: 'ecommerce',
             vendor_id: vendorId ? String(vendorId) : undefined,
             amount: originalTotal,
+            lines: cartLines.map((line) => ({
+              id: line.productId || line.id,
+              service_category: 'ecommerce',
+              amount: (Number(line.price) || 0) * (Number(line.quantity) || 1),
+            })),
           },
         });
         const cashbackBenefit = (engineResult.benefits || []).find(

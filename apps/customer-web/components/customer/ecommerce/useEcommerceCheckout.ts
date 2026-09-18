@@ -112,6 +112,17 @@ export function buildEcommerceOrderPayload(
     igstAmount: igst,
     discountAmount: pricing.discount,
     totalAmount: pricing.total,
+    evaluationId: (() => {
+      if (typeof window === 'undefined') return undefined;
+      try {
+        const raw = sessionStorage.getItem('promo_engine_ecom_preview');
+        if (!raw) return undefined;
+        const pe = JSON.parse(raw) as { evaluationId?: string };
+        return pe.evaluationId || undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
     couponCode,
     promotionId: hasPromotionDiscount ? promotionId : undefined,
     // Explicit source so the backend validates strictly against ONE table (vendor_promotions

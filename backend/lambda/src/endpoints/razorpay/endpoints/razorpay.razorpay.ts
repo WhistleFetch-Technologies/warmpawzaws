@@ -1453,11 +1453,25 @@ class VerifyPaymentHandler extends BaseHandler {
                 payment.notes && typeof payment.notes === 'object'
                   ? (payment.notes as Record<string, unknown>)
                   : {};
-              const evalId =
+              let evalId =
                 notesObj.evaluationId ||
                 notesObj.evaluation_id ||
                 notesObj.promoEngineEvaluationId ||
                 null;
+              if (!evalId) {
+                const { query: q } = await import('../../../database/rds-connection');
+                const metaRows = await q(
+                  `SELECT metadata FROM orders WHERE id = $1::uuid LIMIT 1`,
+                  [ecommerceOrderId],
+                );
+                const meta = metaRows.rows?.[0]?.metadata;
+                const parsed =
+                  meta && typeof meta === 'string' ? JSON.parse(meta) : meta;
+                evalId =
+                  parsed?.evaluationId ||
+                  parsed?.promoEngine?.evaluationId ||
+                  null;
+              }
               const { safeCommitPromotion } = await import(
                 '../../../discount-engine/promo-engine'
               );

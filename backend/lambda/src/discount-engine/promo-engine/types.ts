@@ -113,6 +113,12 @@ export interface CustomerBehaviourProfile {
   updated_at?: string;
 }
 
+export interface EvaluateTransactionLine {
+  id?: string;
+  service_category?: string;
+  amount: number;
+}
+
 export interface EvaluateTransaction {
   type?: string;
   service_category?: string;
@@ -123,6 +129,8 @@ export interface EvaluateTransaction {
   amount?: number;
   package?: string;
   quantity?: number;
+  /** Optional line items for SERVICE_LEVEL / CATEGORY_LEVEL stacking. */
+  lines?: EvaluateTransactionLine[];
   [key: string]: unknown;
 }
 
@@ -131,6 +139,8 @@ export interface EvaluateRequest {
   transaction: EvaluateTransaction;
   /** Optional override for simulator */
   behaviour_override?: Partial<CustomerBehaviourProfile>;
+  /** Persist evaluation row for commit. Default true. Display quotes should pass false. */
+  persist?: boolean;
 }
 
 export interface ConditionExplainFailure {

@@ -8,6 +8,7 @@ export {
 export { calculateBenefits } from './benefits/calculate-benefits';
 export { resolveStack } from './stacking/resolve-stack';
 export { evaluatePromotions, loadBehaviourProfile } from './services/evaluate.service';
+export { loadEvaluateSnapshot, evaluateAgainstSnapshot } from './services/evaluate-snapshot';
 export { commitPromotion } from './services/commit.service';
 export { reversePromotion } from './services/reverse.service';
 export { recordBehaviourCompletion, normalizeServiceKey } from './services/behaviour.service';

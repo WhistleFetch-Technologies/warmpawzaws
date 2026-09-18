@@ -1048,6 +1048,38 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
+      const requestedEvaluationId = String(
+        orderData.evaluationId || orderData.evaluation_id || '',
+      ).trim();
+      let engineEvaluationId: string | null = null;
+      try {
+        const { resolveEcommerceEngineDiscount } = await import(
+          '../shared/resolve-ecommerce-engine-discount'
+        );
+        const engine = await resolveEcommerceEngineDiscount({
+          customerId: customerId ? String(customerId) : null,
+          evaluationId: requestedEvaluationId,
+          amount: subtotal,
+          vendorId: firstVendorId ? String(firstVendorId) : null,
+          lines: cartLines.map((line) => ({
+            id: line.productId,
+            service_category: 'ecommerce',
+            amount: (Number(line.price) || 0) * (Number(line.quantity) || 1),
+          })),
+        });
+        engineEvaluationId = engine.evaluationId;
+        if (engine.discount > serverPromoDiscount) {
+          serverPromoDiscount = engine.discount;
+          promotionSource = 'admin';
+          appliedPromotionId = engine.evaluationId ?? appliedPromotionId;
+        }
+      } catch (engineErr) {
+        console.warn(
+          '[ecommerce/orders] promo-engine resolve skipped:',
+          engineErr instanceof Error ? engineErr.message : engineErr,
+        );
+      }
+
       if (Number(bodyDiscount) > 0) {
         if (
           serverPromoDiscount === 0 ||
@@ -1166,7 +1198,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
       const totalAmount = recomputedTotal;
 
-      // Wallet redemption validation
+      // Wallet redemption validation (Admin redeem_scope on promo cashback)
       let effectiveWalletApplied = 0;
       if (walletAmountApplied > 0) {
         if (walletAmountApplied > totalAmount + 0.01) {
@@ -1175,15 +1207,16 @@ export function registerEcommerceEndpoints(app: Hono) {
         if (!customerId) {
           return c.json({ error: 'Customer account required to use wallet balance' }, 400);
         }
-        const walletRow = await query(
-          `SELECT COALESCE(balance, 0)::numeric AS balance FROM customer_wallets WHERE customer_id = $1::uuid`,
-          [customerId]
-        ).catch(() => ({ rows: [] as any[] }));
-        const walletBalance = parseFloat(String(walletRow.rows[0]?.balance ?? '0'));
-        if (walletBalance < walletAmountApplied) {
+        const { computeSpendableWalletBalance } = await import(
+          '../../../discount-engine/promo-engine'
+        );
+        const scoped = await computeSpendableWalletBalance(String(customerId), 'ecommerce');
+        if (scoped.spendable < walletAmountApplied) {
           return c.json(
-            { error: `Insufficient wallet balance. Available: ₹${walletBalance.toFixed(2)}` },
-            400
+            {
+              error: `Insufficient spendable wallet. Available: ₹${scoped.spendable.toFixed(2)} (locked promo ₹${scoped.lockedPromoCashback.toFixed(2)})`,
+            },
+            400,
           );
         }
         effectiveWalletApplied = Math.min(walletAmountApplied, totalAmount);
@@ -1215,6 +1248,9 @@ export function registerEcommerceEndpoints(app: Hono) {
         promotionId: appliedPromotionId,
         promotionSource,
         couponCode: couponCode || null,
+        ...(engineEvaluationId
+          ? { evaluationId: engineEvaluationId, promoEngine: { evaluationId: engineEvaluationId } }
+          : {}),
       };
 
       const pmLower = String(paymentMethod || 'online').toLowerCase();
@@ -1375,22 +1411,15 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       // Deduct wallet balance and record transaction (non-fatal if table unavailable)
       if (effectiveWalletApplied > 0 && customerId) {
-        try {
-          await query(
-            `UPDATE customer_wallets
-             SET balance = GREATEST(0, balance - $1::numeric), updated_at = NOW()
-             WHERE customer_id = $2::uuid`,
-            [effectiveWalletApplied, customerId]
-          );
-          await query(
-            `INSERT INTO wallet_transactions
-               (customer_id, transaction_type, amount, description, reference_type, reference_id, created_at)
-             VALUES ($1::uuid, 'debit', $2, $3, 'order', $4::uuid, NOW())
-             ON CONFLICT DO NOTHING`,
-            [customerId, effectiveWalletApplied, `Applied to order ${orderNumber}`, orderId]
-          );
-        } catch (walletErr: any) {
-          console.warn('[ecommerce/orders] wallet deduction failed (non-fatal):', walletErr?.message);
+        const { debitEcommerceWallet } = await import('../shared/debit-ecommerce-wallet');
+        const debit = await debitEcommerceWallet({
+          customerId: String(customerId),
+          amount: effectiveWalletApplied,
+          orderId,
+          orderNumber,
+        });
+        if (!debit.ok) {
+          return c.json({ error: debit.error }, 400);
         }
       }
 

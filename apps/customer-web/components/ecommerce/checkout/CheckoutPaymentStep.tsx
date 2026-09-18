@@ -22,7 +22,7 @@ function formatINR(amount: number): string {
  * Meal plans / subscriptions keep their own wallet flow (UniversalPaymentPage) — untouched.
  * Flip to true to restore the wallet toggle here.
  */
-const ECOM_WALLET_ENABLED = false;
+const ECOM_WALLET_ENABLED = true;
 
 export const PROMO_ENGINE_ECOM_KEY = 'promo_engine_ecom_preview';
 

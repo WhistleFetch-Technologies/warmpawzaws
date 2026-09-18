@@ -67,12 +67,13 @@ export async function normalizeBookingServiceIds(
 }
 
 async function evaluateEngine(
-  params: ResolveBookingPromotionsParams
+  params: ResolveBookingPromotionsParams & { displayPromotionsOnly?: boolean }
 ): Promise<EvaluateResult | null> {
   if (!params.customerId) return null;
   try {
     return await evaluatePromotions({
       user_id: params.customerId,
+      persist: params.displayPromotionsOnly === true ? false : true,
       transaction: {
         type: 'BOOKING',
         service_category: params.serviceCategory
@@ -240,8 +241,6 @@ export type BookingDiscountQuoteBatchResult = {
   error?: string;
 };
 
-const BATCH_ITEM_CONCURRENCY = 8;
-
 export async function resolveBookingDiscountQuoteBatch(params: {
   vendorId: string;
   customerId?: string;
@@ -250,36 +249,60 @@ export async function resolveBookingDiscountQuoteBatch(params: {
   const { vendorId, customerId, items } = params;
   if (items.length === 0) return [];
 
-  const results: BookingDiscountQuoteBatchResult[] = new Array(items.length);
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < items.length) {
-      const index = cursor++;
-      const item = items[index];
-      try {
-        const quote = await resolveBookingDiscountQuote({
-          vendorId,
-          customerId,
-          serviceIds: item.serviceIds,
+  if (!customerId) {
+    return items.map((item) => ({
+      key: item.key,
+      quote: buildUnifiedQuoteFromEngine({ amount: item.amount, result: null }),
+    }));
+  }
+
+  const {
+    loadEvaluateSnapshot,
+    evaluateAgainstSnapshot,
+    loadBehaviourProfile,
+  } = await import('../../discount-engine/promo-engine');
+  const now = new Date();
+  const behaviour = await loadBehaviourProfile(customerId);
+  const snapshot = await loadEvaluateSnapshot({
+    userId: customerId,
+    now,
+    behaviour,
+  });
+
+  return items.map((item) => {
+    try {
+      const body = evaluateAgainstSnapshot(
+        snapshot,
+        {
+          user_id: customerId,
+          persist: false,
+          transaction: {
+            type: 'BOOKING',
+            service_category: item.serviceCategory
+              ? normalizePromoCategory(item.serviceCategory) || undefined
+              : undefined,
+            service_type: item.serviceStyle,
+            vendor_id: vendorId,
+            amount: item.amount,
+          },
+        },
+        now,
+      );
+      return {
+        key: item.key,
+        quote: buildUnifiedQuoteFromEngine({
           amount: item.amount,
-          serviceStyle: item.serviceStyle,
-          serviceCategory: item.serviceCategory,
-          displayPromotionsOnly: true,
-        });
-        results[index] = { key: item.key, quote };
-      } catch (err) {
-        results[index] = {
-          key: item.key,
-          quote: null,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
+          result: { ...body, evaluation_id: '' },
+        }),
+      };
+    } catch (err) {
+      return {
+        key: item.key,
+        quote: null,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(BATCH_ITEM_CONCURRENCY, items.length) }, () => worker())
-  );
-  return results;
+  });
 }
 
 export type ApplicablePromotionOffer = {
@@ -298,7 +321,10 @@ export type ApplicablePromotionOffer = {
 export async function listApplicableBookingPromotions(
   params: ResolveBookingPromotionsParams
 ): Promise<ApplicablePromotionOffer[]> {
-  const quote = await resolveBookingDiscountQuote(params);
+  const quote = await resolveBookingDiscountQuote({
+    ...params,
+    displayPromotionsOnly: true,
+  });
   return quote.appliedOffers.map((o) => ({
     id: o.id,
     source: o.source === 'vendor' ? 'vendor' : 'platform',

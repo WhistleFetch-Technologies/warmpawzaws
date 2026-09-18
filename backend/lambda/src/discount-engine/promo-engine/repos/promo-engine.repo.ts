@@ -267,6 +267,89 @@ export async function dbFindActiveCandidates(opts: {
   return (res.rows || []).map((r) => mapPromotion(r as Record<string, unknown>));
 }
 
+export async function dbListRulesForPromotions(
+  promotionIds: string[],
+): Promise<Map<string, PromoEngineRuleRow[]>> {
+  const map = new Map<string, PromoEngineRuleRow[]>();
+  if (!promotionIds.length) return map;
+  const res = await query(
+    `SELECT * FROM promo_engine_rules
+     WHERE promotion_id = ANY($1::uuid[])
+     ORDER BY priority ASC`,
+    [promotionIds],
+  );
+  for (const raw of res.rows || []) {
+    const row = mapRule(raw as Record<string, unknown>);
+    const list = map.get(row.promotion_id) || [];
+    list.push(row);
+    map.set(row.promotion_id, list);
+  }
+  return map;
+}
+
+export async function dbGetLimitsForPromotions(
+  promotionIds: string[],
+): Promise<Map<string, PromoEngineLimitsRow>> {
+  const map = new Map<string, PromoEngineLimitsRow>();
+  if (!promotionIds.length) return map;
+  const res = await query(
+    `SELECT * FROM promo_engine_limits WHERE promotion_id = ANY($1::uuid[])`,
+    [promotionIds],
+  );
+  for (const raw of res.rows || []) {
+    const r = raw as Record<string, unknown>;
+    const id = String(r.promotion_id);
+    map.set(id, {
+      promotion_id: id,
+      per_user: r.per_user != null ? Number(r.per_user) : null,
+      per_transaction: r.per_transaction != null ? Number(r.per_transaction) : null,
+      daily_limit: r.daily_limit != null ? Number(r.daily_limit) : null,
+      campaign_limit: r.campaign_limit != null ? Number(r.campaign_limit) : null,
+      budget_limit: r.budget_limit != null ? Number(r.budget_limit) : null,
+    });
+  }
+  return map;
+}
+
+export type PromoUsageCounts = {
+  user: number;
+  campaign: number;
+  daily: number;
+};
+
+export async function dbCountUsageBatch(opts: {
+  promotionIds: string[];
+  userId: string;
+  since?: Date;
+}): Promise<Map<string, PromoUsageCounts>> {
+  const map = new Map<string, PromoUsageCounts>();
+  if (!opts.promotionIds.length) return map;
+  const params: unknown[] = [opts.promotionIds, opts.userId];
+  const dailyExpr = opts.since
+    ? (params.push(opts.since.toISOString()),
+      'COUNT(*) FILTER (WHERE created_at >= $3::timestamptz)::int')
+    : '0::int';
+  const res = await query(
+    `SELECT promotion_id::text AS promotion_id,
+            COUNT(*) FILTER (WHERE user_id = $2)::int AS user_count,
+            COUNT(*)::int AS campaign_count,
+            ${dailyExpr} AS daily_count
+     FROM promo_engine_usage
+     WHERE promotion_id = ANY($1::uuid[])
+     GROUP BY promotion_id`,
+    params,
+  );
+  for (const raw of res.rows || []) {
+    const r = raw as Record<string, unknown>;
+    map.set(String(r.promotion_id), {
+      user: Number(r.user_count ?? 0),
+      campaign: Number(r.campaign_count ?? 0),
+      daily: Number(r.daily_count ?? 0),
+    });
+  }
+  return map;
+}
+
 export async function dbCountUsage(opts: {
   promotionId: string;
   userId?: string;
