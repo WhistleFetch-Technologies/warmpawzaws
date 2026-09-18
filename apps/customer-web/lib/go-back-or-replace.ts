@@ -103,6 +103,8 @@ export function goBackFromBookingsPage(router: MinimalRouter): void {
 // --- Shop: remember where to return when opening `/shop` from profile/orders (SPA same URL) ---
 
 export const WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY = 'warmpawz_open_screen_after_nav';
+/** Set by push deep link `/notifications` so the home shell opens the inbox modal. */
+export const WARMPAWZ_OPEN_NOTIFICATIONS_KEY = 'warmpawz_open_notifications';
 
 /** After marketplace checkout: expand this shop order on profile My Orders (`order_history`). */
 export const WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY = 'warmpawz_expand_shop_order_id';

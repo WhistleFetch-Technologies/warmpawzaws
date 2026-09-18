@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { WARMPAWZ_OPEN_NOTIFICATIONS_KEY } from '@/lib/go-back-or-replace';
 import { fetchCustomerMessageUnreadBreakdown } from '@/lib/customer-message-unread';
 import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
@@ -579,6 +580,12 @@ export function CustomerHomeComplete({
   /** Unread inbox count for header bell; refreshed infrequently (same API as useNotificationService). */
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (sessionStorage.getItem(WARMPAWZ_OPEN_NOTIFICATIONS_KEY) !== '1') return;
+    sessionStorage.removeItem(WARMPAWZ_OPEN_NOTIFICATIONS_KEY);
+    setNotificationModalOpen(true);
+  }, []);
   /** Bumps when inbox changes (modal read/delete) so the header badge refetches. */
   const [notificationInboxVersion, setNotificationInboxVersion] = useState(0);
 

@@ -5,6 +5,7 @@
 
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
+  WARMPAWZ_OPEN_NOTIFICATIONS_KEY,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
 } from './go-back-or-replace';
 import { navigateCustomerDeepLink } from './navigation/deep-link-navigation';
@@ -87,8 +88,9 @@ export function navigateFromPushPayload(data: Record<string, string | undefined>
     return;
   }
 
-  if (pathOnly === '/notifications') {
-    openSpaScreen('home');
+  if (pathOnly === '/notifications' || pathOnly === '/notification-inbox') {
+    sessionStorage.setItem(WARMPAWZ_OPEN_NOTIFICATIONS_KEY, '1');
+    window.location.assign('/');
     return;
   }
 

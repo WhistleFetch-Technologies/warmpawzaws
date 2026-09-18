@@ -87,7 +87,66 @@ async function replaceCampaignTargeting(
   }
 }
 
+const CUSTOMER_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export function registerNotificationCampaignEndpoints(app: Hono) {
+  /**
+   * Lookup customers for Specific Users targeting.
+   * GET /admin/notifications/customer-lookup?q=&from=YYYY-MM-DD&to=YYYY-MM-DD
+   */
+  app.get('/admin/notifications/customer-lookup', async (c) => {
+    try {
+      const q = String(c.req.query('q') || '').trim();
+      const from = String(c.req.query('from') || '').trim();
+      const to = String(c.req.query('to') || '').trim();
+      if (!q && !from && !to) {
+        return c.json({ error: 'Enter a name, phone, UUID, or date range' }, 400);
+      }
+      if ((from && !ISO_DATE_RE.test(from)) || (to && !ISO_DATE_RE.test(to))) {
+        return c.json({ error: 'Dates must be YYYY-MM-DD' }, 400);
+      }
+
+      const uuid = CUSTOMER_UUID_RE.test(q) ? q : '';
+      const digits = q.replace(/\D/g, '');
+      const phoneDigits = digits.length >= 10 ? digits.slice(-10) : digits;
+      const name = uuid ? '' : q;
+
+      const result = await query(
+        `SELECT
+           c.id::text AS id,
+           COALESCE(c.full_name, '') AS full_name,
+           COALESCE(c.phone, '') AS phone,
+           c.created_at::text AS created_at,
+           EXISTS (
+             SELECT 1 FROM device_tokens dt
+             WHERE dt.user_id = c.id
+               AND dt.user_type = 'customer'
+               AND dt.is_active = true
+               AND position(':' IN COALESCE(dt.fcm_token, '')) > 0
+           ) AS has_active_token
+         FROM customers c
+         WHERE ($1::date IS NULL OR c.created_at >= $1::date)
+           AND ($2::date IS NULL OR c.created_at < ($2::date + INTERVAL '1 day'))
+           AND (
+             ($3::text = '' AND $4::text = '' AND $5::text = '')
+             OR ($3::text <> '' AND COALESCE(c.full_name, '') ILIKE '%' || $3 || '%')
+             OR ($4::text <> '' AND regexp_replace(COALESCE(c.phone, ''), '\\D', '', 'g') LIKE '%' || $4 || '%')
+             OR ($5::text <> '' AND c.id::text = $5)
+           )
+         ORDER BY c.created_at DESC
+         LIMIT 50`,
+        [from || null, to || null, name, phoneDigits, uuid]
+      );
+
+      return c.json({ success: true, customers: result.rows || [] });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Customer lookup failed';
+      return c.json({ error: msg }, 500);
+    }
+  });
+
   // ── Settings ──────────────────────────────────────────────────────────────
   app.get('/admin/notifications/settings', async (c) => {
     try {
