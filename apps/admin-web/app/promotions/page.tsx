@@ -8,7 +8,7 @@ function PromotionsRedirectInner() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/promotion-center?tab=platform');
+    router.replace('/promotion-center?tab=engine');
   }, [router]);
 
   return (

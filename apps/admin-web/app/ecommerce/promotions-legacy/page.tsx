@@ -1,28 +1,24 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ECommercePromoLayout } from '@/components/admin/ecommerce/ECommercePromoLayout';
-import { PromotionsManagement } from '@/components/admin/ecommerce/promotions/PromotionsManagement';
-import { LegacyPromotionDeprecatedScreen } from '@/components/admin/marketing/LegacyPromotionDeprecatedScreen';
-import { isLegacyPromotionUiEnabled } from '@/lib/legacy-promotion-ui';
 
-/** Preserved legacy ecommerce promotion grid — hidden from navigation by default. */
 export default function ECommercePromotionsLegacyPage() {
-  const legacy = isLegacyPromotionUiEnabled();
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/promotion-center?tab=engine');
+  }, [router]);
 
   return (
     <ECommercePromoLayout
-      title="Promotions (legacy)"
-      subtitle="Preserved for rollback — not used in normal QA"
+      title="Promotion Engine"
+      subtitle="Legacy promotions and coupons have been retired"
     >
-      {legacy ? (
-        <PromotionsManagement />
-      ) : (
-        <LegacyPromotionDeprecatedScreen
-          description="This legacy ecommerce promotion screen has been replaced by Marketplace Promotions."
-          promotionHubHref="/ecommerce/promotions"
-          promotionHubLabel="Open Marketplace Promotions"
-        />
-      )}
+      <div className="flex min-h-[40vh] items-center justify-center text-slate-500">
+        Redirecting to Promotion Engine…
+      </div>
     </ECommercePromoLayout>
   );
 }

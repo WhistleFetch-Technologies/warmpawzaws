@@ -1,21 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BarChart3, Megaphone, Scale, Sparkles, Store, Tag } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { AdminPromotionHub } from './AdminPromotionHub';
-import { VendorPromotionsOverview } from './VendorPromotionsOverview';
-import { PolicyCenter } from './policyCenter/PolicyCenter';
-import { MarketingAnalyticsHub } from './analytics/MarketingAnalyticsHub';
-import { CommercialCampaignHub } from './campaigns/CommercialCampaignHub';
 import { PromotionEngineHub } from './promotionEngine/PromotionEngineHub';
 
 const TABS = [
-  { id: 'platform', label: 'Platform Promotions & Coupons', icon: Tag },
-  { id: 'vendor', label: 'Vendor Promotions', icon: Store },
-  { id: 'policy', label: 'Policy Center', icon: Scale },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { id: 'campaigns', label: 'Campaigns', icon: Megaphone },
   { id: 'engine', label: 'Promotion Engine', icon: Sparkles },
 ] as const;
 
@@ -28,7 +18,7 @@ function isPromotionCenterTab(value: string | null): value is PromotionCenterTab
 }
 
 export function PromotionCenterHub() {
-  const [activeTab, setActiveTab] = useState<PromotionCenterTabId>('platform');
+  const [activeTab, setActiveTab] = useState<PromotionCenterTabId>('engine');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -53,7 +43,7 @@ export function PromotionCenterHub() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Promotion Center</h1>
               <p className="mt-1 text-sm text-gray-500">
-                Platform offers, vendor promotions, policy rules, analytics, campaigns, and engine
+                Journey offers, discounts, and cashback — Promotion Engine only
               </p>
             </div>
             <div className="rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
@@ -86,29 +76,6 @@ export function PromotionCenterHub() {
       </header>
 
       <main className="pb-12">
-        {activeTab === 'platform' ? (
-          <AdminPromotionHub surface="marketing" />
-        ) : null}
-        {activeTab === 'vendor' ? (
-          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-            <VendorPromotionsOverview
-              domain="SERVICE"
-              title="Vendor Promotions"
-              subtitle="Service vendor-created promotions and coupons"
-            />
-          </div>
-        ) : null}
-        {activeTab === 'policy' ? <PolicyCenter embedded surface="marketing" /> : null}
-        {activeTab === 'analytics' ? (
-          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-            <MarketingAnalyticsHub surface="marketing" />
-          </div>
-        ) : null}
-        {activeTab === 'campaigns' ? (
-          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-            <CommercialCampaignHub surface="marketing" />
-          </div>
-        ) : null}
         {activeTab === 'engine' ? <PromotionEngineHub /> : null}
       </main>
     </div>

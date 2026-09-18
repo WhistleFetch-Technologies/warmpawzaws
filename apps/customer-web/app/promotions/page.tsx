@@ -111,10 +111,10 @@ function PromotionsPageContent() {
             </button>
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-lg font-bold tracking-tight text-[#5b1f7a]">
-                Offers & Coupons
+                Offers
               </h1>
               <p className="truncate text-xs text-slate-500">
-                Save more on pet products
+                Apply automatically at checkout when you qualify
               </p>
             </div>
             {isCustomerEcommerceEnabled() ? (

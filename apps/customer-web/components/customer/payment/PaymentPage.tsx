@@ -640,7 +640,7 @@ export function PaymentPage({
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-orange-500" />
-              <h2 className="font-semibold text-gray-900">Coupons & Offers</h2>
+              <h2 className="font-semibold text-gray-900">Offers</h2>
             </div>
           </div>
           
@@ -657,39 +657,10 @@ export function PaymentPage({
                 <X className="w-5 h-5" />
               </button>
             </div>
-          ) : showCouponInput ? (
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                  placeholder="Enter coupon code"
-                  className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none uppercase"
-                />
-                <Button
-                  onClick={handleApplyCoupon}
-                  disabled={couponLoading}
-                  className="bg-orange-500 hover:bg-orange-600 text-white px-6"
-                >
-                  {couponLoading ? '...' : 'Apply'}
-                </Button>
-              </div>
-              <button 
-                onClick={() => setShowCouponInput(false)}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Cancel
-              </button>
-            </div>
           ) : (
-            <button
-              onClick={() => setShowCouponInput(true)}
-              className="w-full flex items-center justify-between p-3 border-2 border-dashed border-gray-200 rounded-xl hover:border-orange-300 transition"
-            >
-              <span className="text-gray-600">Have a coupon code?</span>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </button>
+            <p className="text-sm text-slate-600">
+              Offers apply automatically from the Promotion Engine. Coupon codes are no longer used.
+            </p>
           )}
         </div>
 

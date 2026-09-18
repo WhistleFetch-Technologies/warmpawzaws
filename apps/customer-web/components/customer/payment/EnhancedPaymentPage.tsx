@@ -934,42 +934,10 @@ export function EnhancedPaymentPage({
                     <X className="w-5 h-5" />
                   </button>
                 </div>
-              ) : showCouponInput ? (
-                <div className="space-y-3">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={couponCode}
-                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                      placeholder="Enter coupon code"
-                      className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none uppercase font-medium"
-                    />
-                    <Button
-                      onClick={handleApplyCoupon}
-                      disabled={couponLoading}
-                      className="bg-orange-500 hover:bg-orange-600 text-white px-6 rounded-xl"
-                    >
-                      {couponLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
-                    </Button>
-                  </div>
-                  <button 
-                    onClick={() => setShowCouponInput(false)}
-                    className="text-sm text-gray-500 hover:text-gray-700"
-                  >
-                    Cancel
-                  </button>
-                </div>
               ) : (
-                <button
-                  onClick={() => setShowCouponInput(true)}
-                  className="w-full flex items-center justify-between p-4 border-2 border-dashed border-gray-200 rounded-2xl hover:border-orange-300 transition"
-                >
-                  <div className="flex items-center gap-3">
-                    <Percent className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-600 font-medium">Have a coupon code?</span>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
-                </button>
+                <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600">
+                  Offers apply automatically from the Promotion Engine. Coupon codes are no longer used.
+                </p>
               )}
               
               {/* Bank Offers */}

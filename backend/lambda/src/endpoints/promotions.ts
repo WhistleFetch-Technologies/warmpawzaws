@@ -747,174 +747,33 @@ export function registerPromotionEndpoints(app: Hono) {
 
   const handleActivePromotions = async (c: any) => {
     try {
-      const serviceType = c.req.query('serviceType') || 'all';
-      const serviceBucket = c.req.query('service') || c.req.query('serviceCategory') || undefined;
-      const vendorId = String(c.req.query('vendorId') || c.req.query('vendor_id') || '').trim() || undefined;
-      const customerId = c.req.query('customerId');
-      const vendorRoleId = c.req.query('vendorRoleId');
-      /** Checkout/coupon gallery only — discovery surfaces must not auto-apply platform coupons. */
-      const includeCoupons = c.req.query('includeCoupons') === 'true';
-      const includeCodedPromotions =
-        c.req.query('includeCodedPromotions') === 'true' || includeCoupons;
-
-      const isProductScope =
-        serviceType === 'product' || serviceType === 'shop' || serviceType === 'ecommerce';
-      const domainOverride = parseDiscountDomainInput(
-        c.req.query('discount_domain') || c.req.query('discountDomain') || c.req.query('domain')
+      const rows = await query(
+        `SELECT id::text AS id, name, code, status,
+                service_categories::text AS service_categories,
+                start_at::text AS start_at, end_at::text AS end_at
+           FROM promo_engine_promotions
+          WHERE status = 'ACTIVE'
+            AND (start_at IS NULL OR start_at <= NOW())
+            AND (end_at IS NULL OR end_at >= NOW())
+          ORDER BY priority DESC, updated_at DESC`
       );
-      const commercialDomain: CommercialDiscountDomain | null =
-        domainOverride ??
-        (isProductScope ? 'ECOMMERCE' : serviceType !== 'all' ? 'SERVICE' : null);
-
-      const now = new Date().toISOString().split('T')[0];
-
-      let promotionsQuery = `
-        SELECT * FROM promotions
-        WHERE is_active = true
-        AND published = true
-        AND start_date <= $1
-        AND (end_date IS NULL OR end_date >= $1)
-        AND (usage_limit IS NULL OR usage_count < usage_limit)
-        AND (max_uses IS NULL OR usage_count < max_uses)
-      `;
-
-      const params: any[] = [now];
-      let paramIndex = 2;
-
-      if (commercialDomain) {
-        const filtered = appendDiscountDomainFilter({
-          queryStr: promotionsQuery,
-          params,
-          paramIndex,
-          domain: commercialDomain,
-          includeLegacyHeuristics: true,
-        });
-        promotionsQuery = filtered.queryStr;
-        paramIndex = filtered.paramIndex;
-      }
-
-      if (isProductScope) {
-        // Shop: product-scoped rows only — do not admit bare services/bookings NULL "all".
-        promotionsQuery += ` AND (
-          UPPER(COALESCE(discount_domain, '')) = 'ECOMMERCE'
-          OR LOWER(COALESCE(applicable_to, '')) = 'products'
-          OR (
-            metadata IS NOT NULL
-            AND (
-              metadata->'targetScopes' @> '"products"'::jsonb
-              OR metadata->'targetScopes' @> '"all_products"'::jsonb
-              OR LOWER(COALESCE(metadata->>'applicableTo', '')) = 'products'
-              OR LOWER(COALESCE(metadata->>'discount_domain', '')) = 'ecommerce'
-            )
-          )
-          OR (
-            (discount_domain IS NULL OR TRIM(COALESCE(discount_domain, '')) = '')
-            AND LOWER(COALESCE(service_category, '')) IN ('shop','ecommerce','product','retail','marketplace','pet-shop','pet_shop','petshop')
-          )
-        )`;
-      } else if (serviceType !== 'all') {
-        promotionsQuery += ` AND (
-          applicable_services IS NULL
-          OR COALESCE(LOWER(applicable_to), 'all') IN ('all', 'bookings', 'services')
-          OR EXISTS (
-            SELECT 1 FROM jsonb_array_elements_text(
-              CASE WHEN jsonb_typeof(applicable_services) = 'array' THEN applicable_services ELSE '[]'::jsonb END
-            ) AS svc(val)
-            WHERE svc.val = $${paramIndex}
-          )
-        )`;
-        params.push(serviceType);
-        paramIndex++;
-      }
-
-      if (vendorRoleId) {
-        promotionsQuery += ` AND (
-          applicable_roles IS NULL
-          OR EXISTS (
-            SELECT 1 FROM jsonb_array_elements_text(
-              CASE WHEN jsonb_typeof(applicable_roles) = 'array' THEN applicable_roles ELSE '[]'::jsonb END
-            ) AS role(val)
-            WHERE role.val = $${paramIndex}
-          )
-        )`;
-        params.push(vendorRoleId);
-        paramIndex++;
-      }
-
-      promotionsQuery += ` ORDER BY priority DESC, created_at DESC`;
-
-      const promotions = await query(promotionsQuery, params);
-      const promotionRows = promotions.rows ?? [];
-
-      let ecommerceAdminRows: Record<string, unknown>[] = [];
-      const includeEcommerceAdmin =
-        commercialDomain !== 'SERVICE' &&
-        (serviceType === 'all' || serviceType === 'product' || serviceType === 'shop');
-      if (includeEcommerceAdmin) {
-        try {
-          const campaigns = await query(
-            `SELECT * FROM ecommerce_admin_promotions
-             WHERE is_active = true AND published = true
-               AND start_date <= NOW() AND end_date >= NOW()
-             ORDER BY created_at DESC`
-          );
-          ecommerceAdminRows = campaigns.rows || [];
-        } catch {
-          /* table may not exist yet on older schemas */
-        }
-      }
-
-      const couponAsPromotions = includeCoupons
-        ? await loadActivePlatformCouponsAsPromotions(now, serviceBucket, commercialDomain, vendorId)
-        : [];
-
-      const filterPromotionRowsForActive = (rows: Record<string, unknown>[]) => {
-        let filtered = rows;
-        if (commercialDomain) {
-          filtered = filtered.filter((promo) => rowMatchesDiscountDomain(promo, commercialDomain));
-        }
-        if (serviceBucket) {
-          filtered = filtered.filter((promo) =>
-            promotionMatchesListService(promo, serviceBucket)
-          );
-        }
-        if (includeCodedPromotions) {
-          return filtered.filter(
-            (promo) =>
-              isDiscoveryAutoApplyPromotionRow(promo) ||
-              String(promo.code ?? '').trim().length > 0
-          );
-        }
-        return filtered.filter(isDiscoveryAutoApplyPromotionRow);
-      };
-
-      const discoveryRows = filterPromotionRowsForActive(promotionRows);
-
-      const seenCodes = new Set<string>();
-      const merged = [...discoveryRows, ...couponAsPromotions, ...ecommerceAdminRows].filter((row) => {
-        const code = String(row.code ?? '').trim().toUpperCase();
-        if (!code) return true;
-        if (seenCodes.has(code)) return false;
-        seenCodes.add(code);
-        return true;
-      });
-
-      return c.json({
-        success: true,
-        promotions: merged,
-        total: merged.length,
-      });
+      const promotions = (rows.rows || []).map((row: Record<string, unknown>) => ({
+        id: String(row.id),
+        code: row.code ? String(row.code) : '',
+        title: String(row.name || 'Promotion'),
+        name: String(row.name || 'Promotion'),
+        description: 'Applies automatically at checkout when you qualify',
+        discount_type: 'engine',
+        discount_value: 0,
+        is_active: true,
+        category: String(row.service_categories || ''),
+        valid_from: row.start_at,
+        valid_until: row.end_at,
+      }));
+      return c.json({ success: true, promotions, total: promotions.length });
     } catch (error: any) {
       console.error('Error fetching promotions:', error);
-      const msg = String(error?.message ?? error);
-      if (
-        (msg.includes('applicable_to') || msg.includes('discount_domain')) &&
-        (msg.includes('does not exist') || msg.includes('column'))
-      ) {
-        console.warn('[promotions/active] column missing — returning empty safe fallback');
-        return c.json({ success: true, promotions: [], total: 0 });
-      }
-      return c.json({ error: error.message }, 500);
+      return c.json({ success: true, promotions: [], total: 0 });
     }
   };
 
@@ -1062,6 +921,14 @@ export function registerPromotionEndpoints(app: Hono) {
    * Validate coupon code
    */
   app.get("/coupons/validate/:couponCode", async (c) => {
+    return c.json(
+      {
+        valid: false,
+        error: 'Coupons are retired. Offers apply automatically from the Promotion Engine.',
+        message: 'Coupons are retired. Offers apply automatically from the Promotion Engine.',
+      },
+      410
+    );
     try {
       const { couponCode } = c.req.param();
       const amount = parseFloat(c.req.query('amount') || c.req.query('orderAmount') || '0');
@@ -1149,6 +1016,13 @@ export function registerPromotionEndpoints(app: Hono) {
    * ✅ FIX GAP 7.1: Uses internal validation function instead of fetch()
    */
   app.post("/coupons/apply", async (c) => {
+    return c.json(
+      {
+        success: false,
+        error: 'Coupons are retired. Offers apply automatically from the Promotion Engine.',
+      },
+      410
+    );
     try {
       const { couponCode, bookingId, orderId, customerId, amount } = await c.req.json();
 

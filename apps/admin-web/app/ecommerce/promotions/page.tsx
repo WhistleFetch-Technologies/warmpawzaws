@@ -1,37 +1,32 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ECommercePromoLayout } from '@/components/admin/ecommerce/ECommercePromoLayout';
-import { AdminPromotionHub } from '@/components/admin/marketing/AdminPromotionHub';
-import type { KindFilter } from '@warmpawz/promotion-management-ui';
 
-function ECommercePromotionsInner() {
-  const [initialKindFilter, setInitialKindFilter] = useState<KindFilter | undefined>(undefined);
+function ECommercePromotionsRedirectInner() {
+  const router = useRouter();
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const type = params.get('type') ?? params.get('tab');
-    if (type === 'coupons' || type === 'coupon') {
-      setInitialKindFilter('coupon');
-    } else if (type === 'promotions' || type === 'promotion') {
-      setInitialKindFilter('promotion');
-    }
-  }, []);
+    router.replace('/promotion-center?tab=engine');
+  }, [router]);
 
   return (
-    <ECommercePromoLayout
-      title="Promotions & Coupons"
-      subtitle="Seller and product promotions, cart coupons, and marketplace offers"
-    >
-      <AdminPromotionHub surface="ecommerce" initialKindFilter={initialKindFilter} />
-    </ECommercePromoLayout>
+    <div className="flex min-h-[40vh] items-center justify-center text-slate-500">
+      Redirecting to Promotion Engine…
+    </div>
   );
 }
 
 export default function ECommercePromotionsPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-slate-500">Loading promotions…</div>}>
-      <ECommercePromotionsInner />
-    </Suspense>
+    <ECommercePromoLayout
+      title="Promotion Engine"
+      subtitle="Shop and service offers are managed in the Promotion Engine"
+    >
+      <Suspense fallback={<div className="p-8 text-slate-500">Loading…</div>}>
+        <ECommercePromotionsRedirectInner />
+      </Suspense>
+    </ECommercePromoLayout>
   );
 }
