@@ -38,14 +38,15 @@ export async function debitEcommerceWallet(opts: {
          WHERE customer_id = $2::uuid`,
         [amount, opts.customerId],
       );
+      const nextBal = Math.round((balance - amount) * 100) / 100;
       await client.query(
         `INSERT INTO wallet_transactions
-           (customer_id, wallet_id, transaction_type, amount, description, reference_type, reference_id, created_at)
-         VALUES ($1::uuid, $2, 'debit', $3, $4, 'order', $5::uuid, NOW())`,
+           (wallet_id, transaction_type, amount, balance_after, description, reference_type, reference_id, created_at)
+         VALUES ($1, 'debit', $2, $3, $4, 'order', $5::uuid, NOW())`,
         [
-          opts.customerId,
           wallet.rows[0].id,
           amount,
+          nextBal,
           `Applied to order ${opts.orderNumber}`,
           opts.orderId,
         ],

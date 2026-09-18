@@ -85,18 +85,16 @@ export async function commitPromotion(req: CommitRequest): Promise<{
       idempotency_key: idempotencyKey,
     });
 
-    if (!inserted) {
-      continue;
-    }
-    allDup = false;
-    anyInserted = true;
-
-    const promo = await dbGetPromotion(promotionId);
-    if (promo) {
-      const add = discount + cashback;
-      await dbUpdatePromotion(promotionId, {
-        budget_consumed: Number(promo.budget_consumed || 0) + add,
-      });
+    if (inserted) {
+      allDup = false;
+      anyInserted = true;
+      const promo = await dbGetPromotion(promotionId);
+      if (promo) {
+        const add = discount + cashback;
+        await dbUpdatePromotion(promotionId, {
+          budget_consumed: Number(promo.budget_consumed || 0) + add,
+        });
+      }
     }
 
     for (const cb of pickCashbackBenefits(promoBenefits)) {
@@ -112,20 +110,22 @@ export async function commitPromotion(req: CommitRequest): Promise<{
       if (credit.credited) cashbackCredited += cb.amount;
     }
 
-    await dbInsertAudit({
-      promotion_id: promotionId,
-      evaluation_id: req.evaluation_id,
-      event_type: 'COMMITTED',
-      payload: {
-        transaction_id: req.transaction_id,
-        payment_id: req.payment_id,
-        discount,
-        cashback,
-      },
-    });
+    if (inserted) {
+      await dbInsertAudit({
+        promotion_id: promotionId,
+        evaluation_id: req.evaluation_id,
+        event_type: 'COMMITTED',
+        payload: {
+          transaction_id: req.transaction_id,
+          payment_id: req.payment_id,
+          discount,
+          cashback,
+        },
+      });
+    }
   }
 
-  if (!anyInserted && allDup) {
+  if (!anyInserted && allDup && cashbackCredited <= 0) {
     return {
       success: true,
       already_committed: true,

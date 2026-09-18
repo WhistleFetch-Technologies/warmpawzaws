@@ -56,12 +56,13 @@ export async function computeSpendableWalletBalance(
   }
 
   const promoRes = await query(
-    `SELECT remaining_amount::text AS remaining, redeem_scope
-     FROM wallet_transactions
-     WHERE customer_id::text = $1
-       AND source = 'PROMOTION'
-       AND cashback_status IN ('AVAILABLE', 'PARTIALLY_USED')
-       AND COALESCE(remaining_amount, 0) > 0`,
+    `SELECT wt.remaining_amount::text AS remaining, wt.redeem_scope
+     FROM wallet_transactions wt
+     JOIN customer_wallets cw ON cw.id = wt.wallet_id
+     WHERE cw.customer_id::text = $1
+       AND wt.source = 'PROMOTION'
+       AND wt.cashback_status IN ('AVAILABLE', 'PARTIALLY_USED')
+       AND COALESCE(wt.remaining_amount, 0) > 0`,
     [customerId]
   ).catch(() => ({ rows: [] as Array<{ remaining?: string; redeem_scope?: unknown }> }));
 
@@ -92,13 +93,14 @@ export async function consumePromoCashbackForDebit(
   const category = normalizeCategory(opts.serviceCategory);
 
   const rows = await client.query(
-    `SELECT id, remaining_amount::text AS remaining, redeem_scope
-     FROM wallet_transactions
-     WHERE customer_id::text = $1
-       AND source = 'PROMOTION'
-       AND cashback_status IN ('AVAILABLE', 'PARTIALLY_USED')
-       AND COALESCE(remaining_amount, 0) > 0
-     ORDER BY earned_at ASC NULLS LAST, created_at ASC
+    `SELECT wt.id, wt.remaining_amount::text AS remaining, wt.redeem_scope
+     FROM wallet_transactions wt
+     JOIN customer_wallets cw ON cw.id = wt.wallet_id
+     WHERE cw.customer_id::text = $1
+       AND wt.source = 'PROMOTION'
+       AND wt.cashback_status IN ('AVAILABLE', 'PARTIALLY_USED')
+       AND COALESCE(wt.remaining_amount, 0) > 0
+     ORDER BY wt.earned_at ASC NULLS LAST, wt.created_at ASC
      FOR UPDATE`,
     [opts.customerId]
   );

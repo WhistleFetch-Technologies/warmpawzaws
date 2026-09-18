@@ -1,9 +1,20 @@
+import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../../database/rds-connection';
 import type { AppliedBenefit, ServiceCategory } from '../types';
+import { buildCustomerWalletCreateSql, buildPromoLedgerInsert } from './wallet-cashback-sql';
+
+async function columnSet(client: PoolClient, table: string): Promise<Set<string>> {
+  const r = await client.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1`,
+    [table]
+  );
+  return new Set(r.rows.map((x) => x.column_name));
+}
 
 /**
- * Credit promo cashback on commit only. Sets 1113 ledger columns.
- * Aligns with wallet_id + customer_id insert patterns used by wallet.ts.
+ * Credit promo cashback on commit only.
+ * Live RDS is 001-shaped: customer_wallets has no currency; wallet_transactions is wallet_id-only.
  */
 export async function creditPromoCashback(opts: {
   userId: string;
@@ -23,47 +34,25 @@ export async function creditPromoCashback(opts: {
       : null;
 
   return withTransaction(async (client) => {
-    let walletRes = await client.query(
-      `SELECT id, customer_id, balance, currency
+    const cwCols = await columnSet(client, 'customer_wallets');
+    const wtCols = await columnSet(client, 'wallet_transactions');
+
+    const create = buildCustomerWalletCreateSql(cwCols);
+    create.values[0] = opts.userId;
+    try {
+      await client.query(create.sql, create.values);
+    } catch {
+      // race or missing optional col — select below is authoritative
+    }
+
+    const walletRes = await client.query(
+      `SELECT id, customer_id, balance
        FROM customer_wallets
-       WHERE customer_id = $1::uuid
+       WHERE customer_id::text = $1
        LIMIT 1
        FOR UPDATE`,
       [opts.userId]
     );
-
-    if (!walletRes.rows.length) {
-      // Fallback: try text match if user_id is not uuid-shaped
-      walletRes = await client.query(
-        `SELECT id, customer_id, balance, currency
-         FROM customer_wallets
-         WHERE customer_id::text = $1
-         LIMIT 1
-         FOR UPDATE`,
-        [opts.userId]
-      );
-    }
-
-    if (!walletRes.rows.length) {
-      try {
-        await client.query(
-          `INSERT INTO customer_wallets (customer_id, balance, currency)
-           VALUES ($1::uuid, 0, 'INR')
-           ON CONFLICT (customer_id) DO NOTHING`,
-          [opts.userId]
-        );
-      } catch {
-        // ignore create failure; try select again
-      }
-      walletRes = await client.query(
-        `SELECT id, customer_id, balance, currency
-         FROM customer_wallets
-         WHERE customer_id::text = $1
-         LIMIT 1
-         FOR UPDATE`,
-        [opts.userId]
-      );
-    }
 
     if (!walletRes.rows.length) {
       throw new Error(`Wallet not found for user ${opts.userId}`);
@@ -74,38 +63,62 @@ export async function creditPromoCashback(opts: {
       customer_id: string;
       balance: string | number;
     };
-    const newBalance = Number(wallet.balance || 0) + opts.amount;
 
+    if (wtCols.has('promotion_id') && wtCols.has('source')) {
+      const dup = await client.query(
+        `SELECT id::text AS id
+         FROM wallet_transactions
+         WHERE source = 'PROMOTION'
+           AND promotion_id = $1::uuid
+           AND reference_id::text = $2
+         LIMIT 1`,
+        [opts.promotionId, opts.referenceId]
+      );
+      if (dup.rows.length) {
+        return { walletTransactionId: String(dup.rows[0].id), credited: false };
+      }
+    }
+
+    const newBalance = Number(wallet.balance || 0) + opts.amount;
+    const setParts = ['balance = $1'];
+    const setVals: unknown[] = [newBalance, wallet.id];
+    if (cwCols.has('updated_at')) setParts.push('updated_at = NOW()');
+    if (cwCols.has('total_earned')) {
+      setParts.push('total_earned = COALESCE(total_earned, 0) + $3');
+      setVals.push(opts.amount);
+    }
     await client.query(
-      `UPDATE customer_wallets SET balance = $1, updated_at = NOW() WHERE id = $2`,
-      [newBalance, wallet.id]
+      `UPDATE customer_wallets SET ${setParts.join(', ')} WHERE id = $2`,
+      setVals
     );
 
+    const { columns, placeholders } = buildPromoLedgerInsert({
+      wtCols,
+      includeCustomerId: true,
+    });
+    const valueByCol: Record<string, unknown> = {
+      wallet_id: wallet.id,
+      customer_id: wallet.customer_id,
+      transaction_type: 'credit',
+      amount: opts.amount,
+      balance_after: newBalance,
+      reference_type: 'PROMOTION',
+      reference_id: opts.referenceId,
+      description: `Promo cashback eval=${opts.evaluationId}`,
+      promotion_id: opts.promotionId,
+      source: 'PROMOTION',
+      remaining_amount: opts.amount,
+      earned_at: earnedAt.toISOString(),
+      expires_at: expiresAt ? expiresAt.toISOString() : null,
+      cashback_status: 'AVAILABLE',
+      redeem_scope: JSON.stringify({ services: opts.redeemScope || [] }),
+    };
+    const params = columns.map((c) => valueByCol[c]);
     const txn = await client.query(
-      `INSERT INTO wallet_transactions (
-         customer_id, wallet_id, transaction_type, amount, balance_after,
-         reference_type, reference_id, description,
-         promotion_id, source, remaining_amount, earned_at, expires_at,
-         cashback_status, redeem_scope
-       ) VALUES (
-         $1, $2, 'credit', $3, $4,
-         'PROMOTION', $5, $6,
-         $7::uuid, 'PROMOTION', $3, $8, $9,
-         'AVAILABLE', $10::jsonb
-       )
+      `INSERT INTO wallet_transactions (${columns.join(', ')})
+       VALUES (${placeholders.join(', ')})
        RETURNING id`,
-      [
-        wallet.customer_id,
-        wallet.id,
-        opts.amount,
-        newBalance,
-        opts.referenceId,
-        `Promo cashback eval=${opts.evaluationId}`,
-        opts.promotionId,
-        earnedAt.toISOString(),
-        expiresAt ? expiresAt.toISOString() : null,
-        JSON.stringify({ services: opts.redeemScope || [] }),
-      ]
+      params
     );
 
     return {
@@ -121,15 +134,17 @@ export async function reversePromoCashbackForTransaction(opts: {
   userId: string;
 }): Promise<{ reversed: boolean }> {
   const existing = await query(
-    `SELECT id, amount, remaining_amount, cashback_status, wallet_id, customer_id
-     FROM wallet_transactions
-     WHERE source = 'PROMOTION'
-       AND promotion_id = $1::uuid
-       AND reference_id = $2
-       AND cashback_status IN ('AVAILABLE', 'PARTIALLY_USED')
-     ORDER BY created_at DESC
+    `SELECT wt.id, wt.amount, wt.remaining_amount, wt.cashback_status, wt.wallet_id
+     FROM wallet_transactions wt
+     LEFT JOIN customer_wallets cw ON cw.id = wt.wallet_id
+     WHERE wt.source = 'PROMOTION'
+       AND wt.promotion_id = $1::uuid
+       AND wt.reference_id::text = $2
+       AND wt.cashback_status IN ('AVAILABLE', 'PARTIALLY_USED')
+       AND (cw.customer_id::text = $3 OR $3 IS NULL)
+     ORDER BY wt.created_at DESC
      LIMIT 1`,
-    [opts.promotionId, opts.transactionId]
+    [opts.promotionId, opts.transactionId, opts.userId]
   );
 
   if (!existing.rows.length) return { reversed: false };
@@ -138,6 +153,7 @@ export async function reversePromoCashbackForTransaction(opts: {
   if (remaining <= 0) return { reversed: false };
 
   return withTransaction(async (client) => {
+    const wtCols = await columnSet(client, 'wallet_transactions');
     await client.query(
       `UPDATE wallet_transactions
        SET cashback_status = 'REVERSED', remaining_amount = 0
@@ -154,18 +170,34 @@ export async function reversePromoCashbackForTransaction(opts: {
       );
     }
 
+    const { columns, placeholders } = buildPromoLedgerInsert({
+      wtCols,
+      includeCustomerId: false,
+    });
+    const newBalRes = row.wallet_id
+      ? await client.query(`SELECT balance FROM customer_wallets WHERE id = $1`, [row.wallet_id])
+      : { rows: [{ balance: 0 }] };
+    const valueByCol: Record<string, unknown> = {
+      wallet_id: row.wallet_id,
+      transaction_type: 'debit',
+      amount: remaining,
+      balance_after: Number(newBalRes.rows[0]?.balance || 0),
+      reference_type: 'PROMOTION_REVERSE',
+      reference_id: opts.transactionId,
+      description: 'Promo cashback reverse',
+      promotion_id: opts.promotionId,
+      source: 'PROMOTION',
+      remaining_amount: 0,
+      earned_at: null,
+      expires_at: null,
+      cashback_status: 'REVERSED',
+      redeem_scope: null,
+    };
+    const params = columns.map((c) => valueByCol[c] ?? null);
     await client.query(
-      `INSERT INTO wallet_transactions (
-         customer_id, wallet_id, transaction_type, amount, balance_after,
-         reference_type, reference_id, description,
-         promotion_id, source, remaining_amount, cashback_status
-       )
-       SELECT customer_id, wallet_id, 'debit', $1,
-              (SELECT balance FROM customer_wallets WHERE id = $2),
-              'PROMOTION_REVERSE', $3, 'Promo cashback reverse',
-              $4::uuid, 'PROMOTION', 0, 'REVERSED'
-       FROM wallet_transactions WHERE id = $5`,
-      [remaining, row.wallet_id, opts.transactionId, opts.promotionId, row.id]
+      `INSERT INTO wallet_transactions (${columns.join(', ')})
+       VALUES (${placeholders.join(', ')})`,
+      params
     );
 
     return { reversed: true };
