@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { apiClient } from '@/lib/api-client';
 import { CampaignPreview, type PreviewPlatform } from '@/components/admin/notification-engine/CampaignPreview';
+import { CampaignCustomerLookup } from '@/components/admin/notification-engine/CampaignCustomerLookup';
 import { hasAdminPortalPermission } from '@/lib/admin-permissions';
 import { AlertTriangle, Bell, History, Loader2, Megaphone, Send, Save, FileText } from 'lucide-react';
 
@@ -540,7 +541,13 @@ export default function NotificationEnginePage() {
                 )}
 
                 {form.targeting_type === 'SPECIFIC_USERS' && (
-                  <div className="pt-2">
+                  <div className="pt-2 space-y-3">
+                    {form.target_app === 'CUSTOMER' ? (
+                      <CampaignCustomerLookup
+                        userIdsText={form.user_ids_text}
+                        onUserIdsText={(user_ids_text) => setForm({ ...form, user_ids_text })}
+                      />
+                    ) : null}
                     <label className="text-sm text-gray-600">User UUIDs (comma or space separated)</label>
                     <textarea
                       rows={3}
@@ -672,8 +679,33 @@ export default function NotificationEnginePage() {
                   </div>
                   <div>
                     <label className="text-sm text-gray-600">Deep Link</label>
-                    <input className="mt-1 w-full border rounded-lg px-3 py-2" value={form.deep_link}
-                      onChange={(e) => setForm({ ...form, deep_link: e.target.value })} placeholder="/booking" />
+                    <select
+                      className="mt-1 w-full border rounded-lg px-3 py-2"
+                      value={
+                        ['', '/', '/bookings', '/shop', '/wallet', '/notifications'].includes(form.deep_link)
+                          ? form.deep_link
+                          : '__custom'
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === '__custom') return;
+                        setForm({ ...form, deep_link: value });
+                      }}
+                    >
+                      <option value="">None</option>
+                      <option value="/">Home</option>
+                      <option value="/bookings">Bookings</option>
+                      <option value="/shop">Shop</option>
+                      <option value="/wallet">Wallet</option>
+                      <option value="/notifications">Notifications inbox</option>
+                      <option value="__custom">Custom path…</option>
+                    </select>
+                    <input
+                      className="mt-2 w-full border rounded-lg px-3 py-2"
+                      value={form.deep_link}
+                      onChange={(e) => setForm({ ...form, deep_link: e.target.value })}
+                      placeholder="/notifications"
+                    />
                   </div>
                 </div>
                 <div>
