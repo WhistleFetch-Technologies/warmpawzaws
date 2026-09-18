@@ -62,6 +62,31 @@ describe('promo-engine DSL', () => {
     expect(leaf.failure?.actual).toBe(18);
   });
 
+  it('treats missing behaviour profile as first visit (visit_count = 0)', () => {
+    const ctx = buildEvalContext({
+      userId: 'U1',
+      transaction: { type: 'BOOKING', service_category: 'VET', amount: 699 },
+    });
+    const leaf = evaluateLeaf(
+      { field: 'user.veterinary_visit_count', operator: '=', value: 0 },
+      ctx
+    );
+    expect(leaf.pass).toBe(true);
+    expect(ctx['transaction.service_category']).toBe('veterinary');
+  });
+
+  it('matches VET checkout token to veterinary condition', () => {
+    const ctx = buildEvalContext({
+      userId: 'U1',
+      transaction: { type: 'BOOKING', service_category: 'VET', amount: 699 },
+    });
+    const leaf = evaluateLeaf(
+      { field: 'transaction.service_category', operator: '=', value: 'veterinary' },
+      ctx
+    );
+    expect(leaf.pass).toBe(true);
+  });
+
   it('treats first visit as grooming_visit_count = 0', () => {
     const ctx = buildEvalContext({
       userId: 'U1',

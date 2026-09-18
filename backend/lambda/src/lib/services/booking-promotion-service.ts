@@ -1,5 +1,5 @@
 import { query } from '../../database/rds-connection';
-import { evaluatePromotions } from '../../discount-engine/promo-engine';
+import { evaluatePromotions, normalizePromoCategory } from '../../discount-engine/promo-engine';
 import type { EvaluateResult } from '../../discount-engine/promo-engine/types';
 import type { UnifiedResolverResponse } from '../../discount-engine/resolver/unified-resolver-response';
 import { parseJsonMetaFromNotes } from '../../utils/booking-notes-meta';
@@ -76,7 +76,7 @@ async function evaluateEngine(
       transaction: {
         type: 'BOOKING',
         service_category: params.serviceCategory
-          ? String(params.serviceCategory).toUpperCase()
+          ? normalizePromoCategory(params.serviceCategory) || undefined
           : undefined,
         service_type: params.serviceStyle,
         vendor_id: params.vendorId,

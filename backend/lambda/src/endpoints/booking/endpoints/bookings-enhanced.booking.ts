@@ -105,7 +105,11 @@ import {
   WAPPT_BOOKING_MODE,
   WAPPT_DISPLAY_SERVICE_NAME,
 } from '../../warmpawz-appointments/shared/wappt-booking-preflight';
-import { normalizeWapptHubCategory } from '../../warmpawz-appointments/shared/wappt-policy.constants';
+import {
+  normalizeWapptHubCategory,
+  shouldSkipPromoEngineOnSlotCreate,
+} from '../../warmpawz-appointments/shared/wappt-policy.constants';
+import { normalizePromoCategory } from '../../../discount-engine/promo-engine';
 import {
   boardingBilled24hUnits,
   computeBoardingStayPriceRupeesPublic,
@@ -1680,12 +1684,19 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             : {}),
           commerce_mode: bookingCommerceMode,
           commerce_version: bookingCommerceVersion,
-          ...(isWapptBooking && serviceCategory
-            ? {
-                service_category:
-                  normalizeWapptHubCategory(String(serviceCategory)) ?? String(serviceCategory),
-              }
-            : {}),
+          ...(() => {
+            const persistedCategory =
+              normalizePromoCategory(
+                serviceCategory ||
+                  body.serviceCategory ||
+                  body.service_category ||
+                  body.category
+              ) ||
+              normalizeWapptHubCategory(
+                String(serviceCategory || body.serviceCategory || body.category || '')
+              );
+            return persistedCategory ? { service_category: persistedCategory } : {};
+          })(),
         };
         
         // Add optional columns to bookingData
@@ -1747,7 +1758,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // Persist promo-engine evaluation_id for commit-on-pay (cashback).
         let engineEvaluationId =
           body.evaluationId || body.evaluation_id || body.promoEngineEvaluationId || null;
-        if (!engineEvaluationId && bookingData.customer_id) {
+        const bookingStyle = String(
+          body.serviceStyle || body.service_type || body.serviceType || ''
+        ).toLowerCase();
+        const skipPromoEngineForWapptSlot = shouldSkipPromoEngineOnSlotCreate({
+          commerce_mode: isWapptBooking ? 'warmpawz_appointments' : bookingCommerceMode,
+          service_type: bookingStyle,
+        });
+        if (!engineEvaluationId && bookingData.customer_id && !skipPromoEngineForWapptSlot) {
           try {
             const { safeEvaluatePromotions } = await import(
               '../../../discount-engine/promo-engine'
@@ -1756,7 +1774,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               user_id: String(bookingData.customer_id),
               transaction: {
                 type: 'BOOKING',
-                service_category: body.serviceCategory || body.service_category || undefined,
+                service_category: normalizePromoCategory(
+                  body.serviceCategory || body.service_category || serviceCategory
+                ) || undefined,
+                service_type: bookingStyle || undefined,
                 vendor_id: bookingData.vendor_id ? String(bookingData.vendor_id) : undefined,
                 amount: Number(bookingData.total_amount || bookingData.base_price || 0),
               },

@@ -128,6 +128,8 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
       resolveWpayDiscountPercent(vendorRow)
     );
 
+    const linkedBookingId = existing.booking_id ? String(existing.booking_id) : null;
+
     // Appointment credit unwired — never consume credit rows for new Pay Bill payments.
     let completed;
     try {
@@ -138,7 +140,7 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
         razorpaySignature,
         originalAmount,
         discountAmount,
-        bookingId: null,
+        bookingId: linkedBookingId,
         creditAmount: 0,
       });
     } catch (error) {
@@ -164,7 +166,7 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
       const { safeCommitPromotion } = await import('../../../../discount-engine/promo-engine');
       await safeCommitPromotion({
         evaluationId: evalId,
-        transactionId: paymentId,
+        transactionId: linkedBookingId || paymentId,
         paymentId: razorpayPaymentId || null,
         userId: customerId,
       });

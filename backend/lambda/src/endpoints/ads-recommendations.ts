@@ -555,7 +555,7 @@ app.post('/promotions/calculate-cart', async (c) => {
           user_id: String(customerId),
           transaction: {
             type: 'ECOMMERCE',
-            service_category: 'ECOMMERCE',
+            service_category: 'ecommerce',
             vendor_id: vendorId ? String(vendorId) : undefined,
             amount: originalTotal,
           },

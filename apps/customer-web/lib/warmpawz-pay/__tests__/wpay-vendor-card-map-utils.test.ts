@@ -33,27 +33,18 @@ describe('normalizeWpayVendorCardAddress', () => {
 });
 
 describe('formatWpayCatalogueDiscountLabel', () => {
-  it('returns undefined when discount is zero or negative', () => {
+  it('never shows a hardcoded catalogue discount label', () => {
     expect(formatWpayCatalogueDiscountLabel(0)).toBeUndefined();
-    expect(formatWpayCatalogueDiscountLabel(-5)).toBeUndefined();
-  });
-
-  it('uses the hardcoded marketing line for any positive catalogue percent', () => {
-    expect(formatWpayCatalogueDiscountLabel(10)).toBe('Upto 15% discount');
-    expect(formatWpayCatalogueDiscountLabel(8)).toBe('Upto 15% discount');
-    expect(formatWpayCatalogueDiscountLabel(20)).toBe('Upto 15% discount');
+    expect(formatWpayCatalogueDiscountLabel(10)).toBeUndefined();
+    expect(formatWpayCatalogueDiscountLabel(20)).toBeUndefined();
   });
 });
 
 describe('buildWpayDiscountBadges', () => {
-  it('returns undefined when discount is zero or negative', () => {
+  it('never attaches a Pay Bill discount badge', () => {
     expect(buildWpayDiscountBadges(0)).toBeUndefined();
-    expect(buildWpayDiscountBadges(-5)).toBeUndefined();
-  });
-
-  it('returns the hardcoded marketing badge when a catalogue offer exists', () => {
-    expect(buildWpayDiscountBadges(20)).toEqual([{ label: 'Upto 15% discount', tone: 'discount' }]);
-    expect(buildWpayDiscountBadges(8)).toEqual([{ label: 'Upto 15% discount', tone: 'discount' }]);
+    expect(buildWpayDiscountBadges(8)).toBeUndefined();
+    expect(buildWpayDiscountBadges(20)).toBeUndefined();
   });
 });
 

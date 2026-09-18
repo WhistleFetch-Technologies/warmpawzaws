@@ -20,7 +20,7 @@ describe('mapWpayVendorCardToProps', () => {
       imageUrl: 'https://cdn.example/photo.png',
       subtitle: '+91 98765 43210',
       address: 'Sector 12',
-      badges: [{ label: 'Upto 15% discount', tone: 'discount' }],
+      badges: undefined,
     });
     expect(props.primaryAction).toBeUndefined();
     expect(props.secondaryAction).toBeUndefined();

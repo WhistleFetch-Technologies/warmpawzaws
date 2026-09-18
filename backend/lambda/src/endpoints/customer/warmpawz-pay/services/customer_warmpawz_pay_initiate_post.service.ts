@@ -5,8 +5,14 @@ import {
 } from '../../../../utils/wpay-razorpay-order';
 import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
 import { dbWpayVendorById } from '../repos/wpay-vendor-detail.repo';
+import {
+  dbFindOpenWapptBookingForPay,
+  dbLoadWapptBookingForPayCredit,
+} from '../repos/wpay-appointment-context.repo';
 import { WpayCommercialValidationError } from '../shared/wpay-discount';
 import { resolveWpayPayQuote } from '../shared/wpay-quote-resolver';
+import { resolveWpayPromoCategory } from '../shared/resolve-wpay-promo-category';
+import { applyEngineDiscountToWpayPayable } from '../shared/apply-engine-discount-to-wpay';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -25,6 +31,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     const phone = String(body.phone ?? c.req.query('phone') ?? '').trim();
     const originalAmount = Number(body.originalAmount);
     const clientRequestId = String(body.clientRequestId ?? '').trim();
+    const requestedBookingId = String(body.bookingId ?? '').trim();
 
     if (!UUID_RE.test(vendorId)) {
       return c.json({ success: false, error: 'Invalid vendor id' }, 400);
@@ -35,7 +42,6 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
       return c.json({ success: false, error: 'Invalid bill amount' }, 400);
     }
-    // bookingId intentionally ignored — appointment credit unwired from Pay Bill.
 
     const identity = await resolveWpayAuthenticatedCustomer(c, phone);
     if (!identity.ok) {
@@ -48,14 +54,23 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       return c.json({ success: false, error: 'Vendor not found or not available' }, 404);
     }
 
+    const openBooking = UUID_RE.test(requestedBookingId)
+      ? await dbLoadWapptBookingForPayCredit(requestedBookingId, customerId, vendorId)
+      : await dbFindOpenWapptBookingForPay(customerId, vendorId);
+    const bookingId = openBooking?.id ? String(openBooking.id) : null;
+    const serviceCategory = resolveWpayPromoCategory({
+      bookingCategory: openBooking?.service_category,
+      vendorRoleCategory: vendorRow.role_category,
+      vendorLegacyCategory: vendorRow.legacy_category,
+    });
+
     const resolved = await resolveWpayPayQuote({
       vendorRow,
       quotedAmount: originalAmount,
     });
 
-    // Promo Engine: evaluate on bill amount. Catalogue % remains payable authority;
-    // engine cashback credits on verify only (does not change Razorpay amount).
     let promoEngine: Record<string, unknown> | null = null;
+    let engineDiscount = 0;
     try {
       const { safeEvaluatePromotions } = await import(
         '../../../../discount-engine/promo-engine'
@@ -64,22 +79,25 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         user_id: customerId,
         transaction: {
           type: 'WPAY',
-          service_category: 'WPAY',
+          service_category: serviceCategory || undefined,
           vendor_id: vendorId,
+          booking_id: bookingId || undefined,
           amount: originalAmount,
         },
       });
       if (ev?.evaluation_id) {
+        engineDiscount = Math.max(0, Number(ev.summary.discount) || 0);
         const cashbackBenefit = (ev.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
         promoEngine = {
           evaluationId: ev.evaluation_id,
           pendingCashback: ev.summary.cashback,
           engineDiscount: ev.summary.discount,
           eligible: ev.eligible,
+          serviceCategory,
           redeemScope: cashbackBenefit?.redeem_scope || [],
           expiryDays: cashbackBenefit?.expiry_days ?? null,
           stackingNote:
-            'WPay catalogue discount controls payable; promo-engine cashback stacks on commit only',
+            'Promo-engine discount reduces Razorpay payable; cashback credits on commit',
         };
       }
     } catch (peErr) {
@@ -89,8 +107,17 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       );
     }
 
+    const applied = applyEngineDiscountToWpayPayable({
+      quotedAmount: originalAmount,
+      cataloguePayable: resolved.payableAmount,
+      engineDiscount,
+      metadata: resolved.metadata,
+    });
+
     const quoteMetadata = {
-      ...resolved.metadata,
+      ...applied.metadata,
+      serviceCategory,
+      bookingId,
       ...(promoEngine?.evaluationId
         ? { evaluationId: String(promoEngine.evaluationId), promoEngine }
         : {}),
@@ -99,8 +126,8 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     const order = await createWpayRazorpayOrder({
       customerId,
       vendorId,
-      payableAmount: resolved.payableAmount,
-      bookingId: null,
+      payableAmount: applied.payableAmount,
+      bookingId,
       clientRequestId: clientRequestId || null,
       quoteMetadata,
     });
@@ -117,16 +144,16 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         currency: order.currency,
         commercialModel: 'tier_commission',
         originalAmount: q.quotedAmount,
-        discountPercent: q.discountPercent,
-        discountAmount: q.discountAmount,
+        discountPercent: applied.metadata.quotedDiscountPercent,
+        discountAmount: applied.discountAmount,
         servicePayableAmount: q.servicePayableAmount,
         appointmentFeeCredit: 0,
         platformFee: q.platformFee,
         platformFeeGstAmount: q.platformFeeGstAmount,
         convenienceFee: q.convenienceFee,
         convenienceGstAmount: q.convenienceGstAmount,
-        payableAmount: q.payNowAmount,
-        bookingId: null,
+        payableAmount: applied.payableAmount,
+        bookingId,
         promoEngine,
       });
     }
@@ -144,9 +171,9 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       originalAmount: q.originalAmount,
       appointmentFeeCredit: 0,
       billBase: q.billBase,
-      discountAmount: q.discountAmount,
-      payableAmount: q.payableAmount,
-      bookingId: null,
+      discountAmount: applied.discountAmount,
+      payableAmount: applied.payableAmount,
+      bookingId,
       promoEngine,
     });
   } catch (error: unknown) {

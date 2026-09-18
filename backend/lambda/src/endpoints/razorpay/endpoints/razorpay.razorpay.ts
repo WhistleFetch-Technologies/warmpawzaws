@@ -552,7 +552,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
               user_id: String(customerIdFinal),
               transaction: {
                 type: 'ECOMMERCE',
-                service_category: 'ECOMMERCE',
+                service_category: 'ecommerce',
                 vendor_id: vendorIdFinal ? String(vendorIdFinal) : undefined,
                 amount: Number(amount) || 0,
               },

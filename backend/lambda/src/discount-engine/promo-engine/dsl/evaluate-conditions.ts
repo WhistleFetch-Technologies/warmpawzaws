@@ -3,6 +3,7 @@ import type {
   PromoEngineCondition,
   PromoEngineConditionGroup,
 } from '../types';
+import { normalizePromoCategory } from './category-aliases';
 
 function isGroup(
   node: PromoEngineCondition | PromoEngineConditionGroup
@@ -63,12 +64,25 @@ export function evaluateLeaf(
   switch (op) {
     case '=':
     case '==': {
+      if (condition.field === 'transaction.service_category') {
+        const left = normalizePromoCategory(actual);
+        const right = normalizePromoCategory(required);
+        return left && right && left === right
+          ? { pass: true }
+          : fail(reasonCode(condition.field, '='));
+      }
       const an = toNumber(actual);
       const rn = toNumber(required);
       if (an != null && rn != null) {
         return an === rn ? { pass: true } : fail(reasonCode(condition.field, '='));
       }
-      return String(actual) === String(required)
+      const visitFallback =
+        /_visit_count$/.test(condition.field) && actual == null ? 0 : actual;
+      const vn = toNumber(visitFallback);
+      if (vn != null && rn != null) {
+        return vn === rn ? { pass: true } : fail(reasonCode(condition.field, '='));
+      }
+      return String(visitFallback) === String(required)
         ? { pass: true }
         : fail(reasonCode(condition.field, '='));
     }
@@ -86,7 +100,9 @@ export function evaluateLeaf(
     case '>=':
     case '<':
     case '<=': {
-      const an = toNumber(actual);
+      const visitActual =
+        /_visit_count$/.test(condition.field) && actual == null ? 0 : actual;
+      const an = toNumber(visitActual);
       const rn = toNumber(required);
       if (an == null || rn == null) return fail(reasonCode(condition.field, op));
       const ok =
@@ -208,7 +224,9 @@ export function buildEvalContext(input: {
     'user.total_spend': overall.total_spend ?? 0,
     'user.average_order_value': overall.average_order_value ?? 0,
     'transaction.type': tx.type,
-    'transaction.service_category': tx.service_category,
+    'transaction.service_category': tx.service_category
+      ? normalizePromoCategory(tx.service_category) || tx.service_category
+      : tx.service_category,
     'transaction.service_type': tx.service_type,
     'transaction.vendor_id': tx.vendor_id,
     'transaction.city': tx.city,
@@ -221,8 +239,13 @@ export function buildEvalContext(input: {
     'wallet.cashback_balance': input.wallet?.cashback_balance ?? 0,
   };
 
+  const txCategory = normalizePromoCategory(tx.service_category);
+  if (txCategory) {
+    ctx[`user.${txCategory}_visit_count`] = 0;
+  }
+
   for (const [key, slice] of Object.entries(services)) {
-    const k = key.toLowerCase();
+    const k = normalizePromoCategory(key) || key.toLowerCase();
     const count = Number(slice?.completed_count ?? 0);
     ctx[`user.${k}_visit_count`] = count;
     ctx[`user.service_visit_count`] = ctx[`user.service_visit_count`] ?? count;

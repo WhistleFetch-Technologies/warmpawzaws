@@ -1,3 +1,4 @@
+import { persistIstDateTime, normalizePromoCategory } from '../dsl/category-aliases';
 import {
   dbCreatePromotion,
   dbGetPromotion,
@@ -54,8 +55,8 @@ export function mapAdminDraftToPayload(body: Record<string, unknown>): PromoDraf
     code: basics.code != null ? String(basics.code) : undefined,
     status: (body.status as PromoEngineStatus) || 'DRAFT',
     priority: Number(basics.priority ?? 50),
-    start_at: (basics.startAt || basics.start_at || null) as string | null,
-    end_at: (basics.endAt || basics.end_at || null) as string | null,
+    start_at: persistIstDateTime(basics.startAt || basics.start_at || null),
+    end_at: persistIstDateTime(basics.endAt || basics.end_at || null),
     stacking_policy: (basics.stackingPolicy || basics.stacking_policy || null) as StackingPolicy | null,
     funding_type: (basics.fundingType || basics.funding_type || null) as PromoFundingType | null,
     funding_split: fundingSplit
@@ -71,9 +72,11 @@ export function mapAdminDraftToPayload(body: Record<string, unknown>): PromoDraf
     commercial_campaign_id: (basics.commercialCampaignId ||
       basics.commercial_campaign_id ||
       null) as string | null,
-    service_categories: (basics.serviceCategories ||
+    service_categories: ((basics.serviceCategories ||
       basics.service_categories ||
-      []) as string[],
+      []) as string[])
+      .map((s) => normalizePromoCategory(s) || String(s).trim())
+      .filter(Boolean),
     condition_json: (body.conditionJson || body.condition_json) as PromoEngineConditionGroup | undefined,
     benefit_json: (body.benefitJson || body.benefit_json) as PromoEngineBenefit[] | undefined,
     rule_type: (body.ruleType || body.rule_type || 'GENERIC') as PromoRuleType,

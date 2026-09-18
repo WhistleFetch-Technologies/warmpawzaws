@@ -39,7 +39,7 @@ export async function resolveWpayPayQuote(params: {
     const quote = computeWpayCommercialQuote({
       quotedAmount: params.quotedAmount,
       commissionPercent: config.commissionPercent,
-      discountPercent: config.discountPercent,
+      discountPercent: 0,
       platformFee: settings.platformFee,
       platformFeeMode: settings.platformFeeMode,
       platformFeeGstRate: settings.platformFeeGstRate,
@@ -61,7 +61,7 @@ export async function resolveWpayPayQuote(params: {
     };
   }
 
-  const quote = computeWpayDiscountQuote(params.quotedAmount, config.discountPercent);
+  const quote = computeWpayDiscountQuote(params.quotedAmount, 0);
 
   return {
     commercialModel: 'withhold',

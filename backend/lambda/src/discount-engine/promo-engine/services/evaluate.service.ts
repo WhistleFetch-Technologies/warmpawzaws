@@ -1,3 +1,4 @@
+import { normalizePromoCategory } from '../dsl/category-aliases';
 import { buildEvalContext, evaluateConditionGroup } from '../dsl/evaluate-conditions';
 import { calculateBenefits } from '../benefits/calculate-benefits';
 import { resolveStack } from '../stacking/resolve-stack';
@@ -86,7 +87,7 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
   const now = new Date();
   const amount = Number(req.transaction?.amount ?? 0) || 0;
   const serviceCategory = req.transaction?.service_category
-    ? String(req.transaction.service_category).toUpperCase()
+    ? normalizePromoCategory(req.transaction.service_category) || undefined
     : undefined;
 
   const behaviour = await loadBehaviourProfile(req.user_id, req.behaviour_override);

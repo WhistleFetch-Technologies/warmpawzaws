@@ -56,3 +56,11 @@ export function isWapptPolicyEligibleBooking(row: {
   const style = String(row.service_type ?? row.serviceType ?? '').toLowerCase();
   return mode === WAPPT_COMMERCE_MODE && style !== 'tele';
 }
+
+/** WAPPT slot appointment fee does not evaluate promo-engine; tele still does. */
+export function shouldSkipPromoEngineOnSlotCreate(row: {
+  commerce_mode?: string | null;
+  service_type?: string | null;
+}): boolean {
+  return isWapptPolicyEligibleBooking(row);
+}

@@ -13,7 +13,6 @@ import { previewWpayCommercialQuote, previewWpayQuote } from '@/lib/warmpawz-pay
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
 import { buildWpaySuccessPath } from '@/lib/warmpawz-pay/wpay-success-href';
 import { consumeRestoredWpayPayBillAmount } from '@/lib/warmpawz-pay/wpay-guest-journey';
-import { formatWpayCatalogueDiscountLabel } from '@/lib/warmpawz-pay/wpay-vendor-card-map-utils';
 import { handleWpayPageBack } from '@/lib/go-back-or-replace';
 import {
   emitGuestAuthAnalytics,
@@ -40,6 +39,14 @@ import {
 } from '@/components/ui/dialog';
 
 const QUICK_AMOUNTS = [500, 1000, 1500, 2000];
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function readBookingIdFromQuery(): string | null {
+  if (typeof window === 'undefined') return null;
+  const id = new URLSearchParams(window.location.search).get('bookingId');
+  return id && UUID_RE.test(id) ? id : null;
+}
 
 function formatInr(n: number): string {
   const fractionDigits = Number.isInteger(n) ? 0 : 2;
@@ -101,7 +108,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     if (vendor.commercialModel === 'tier_commission') {
       return previewWpayCommercialQuote({
         originalAmount: billAmount,
-        discountPercent: vendor.discountPercent,
+        discountPercent: 0,
         maxDiscountAmount: vendor.maxDiscountAmount,
         platformFee: vendor.platformFee ?? 0,
         platformFeeMode: vendor.platformFeeMode ?? 'fixed',
@@ -113,12 +120,17 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     }
     return previewWpayQuote({
       originalAmount: billAmount,
-      discountPercent: vendor.discountPercent,
+      discountPercent: 0,
       maxDiscountAmount: vendor.maxDiscountAmount,
     });
   }, [billAmount, vendor]);
 
   const isTierQuote = quote != null && 'commercialModel' in quote && quote.commercialModel === 'tier_commission';
+  const engineDiscount = Math.max(0, Number(promoEnginePreview?.engineDiscount) || 0);
+  const displayPayable =
+    quote != null
+      ? Math.max(quote.payableAmount > 0 ? 1 : 0, Math.round((quote.payableAmount - engineDiscount) * 100) / 100)
+      : 0;
 
   const onGetDiscount = useCallback(() => {
     if (billAmount <= 0) return;
@@ -153,7 +165,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
           user_id: userId,
           transaction: {
             type: 'WPAY',
-            service_category: 'WPAY',
+            service_category: vendor?.category || undefined,
             vendor_id: resolvedVendorId,
             amount: billAmount,
           },
@@ -171,7 +183,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         setPromoEnginePreview(null);
       }
     })();
-  }, [billAmount, resolvedVendorId]);
+  }, [billAmount, resolvedVendorId, vendor?.category]);
 
   const runPaymentCheckout = useCallback(async () => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
@@ -191,6 +203,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         vendorName: vendor.name,
         originalAmount: billAmount,
         customerPhone: phone,
+        bookingId: readBookingIdFromQuery(),
       });
       const paymentId = String(result.paymentId ?? '').trim();
       if (!paymentId) {
@@ -296,16 +309,6 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                 />
               </div>
             ) : null}
-            {vendor.discountPercent > 0 ? (
-              <div className="mt-3 rounded-xl border border-green-100 bg-green-50 p-3 text-sm">
-                <p className="font-semibold text-green-800">
-                  {formatWpayCatalogueDiscountLabel(vendor.discountPercent)}
-                </p>
-                {vendor.maxDiscountAmount != null ? (
-                  <p className="text-xs text-green-700">Upto {formatInr(vendor.maxDiscountAmount)}</p>
-                ) : null}
-              </div>
-            ) : null}
           </div>
 
           <div className="space-y-4">
@@ -348,10 +351,12 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                   <span>Quoted bill</span>
                   <span>{formatInr(quote.originalAmount)}</span>
                 </div>
-                <div className="flex justify-between text-green-700">
-                  <span>Offer discount ({vendor.discountPercent}% OFF)</span>
-                  <span>- {formatInr(quote.discountAmount)}</span>
-                </div>
+                {engineDiscount > 0 ? (
+                  <div className="flex justify-between text-green-700">
+                    <span>Promo discount</span>
+                    <span>- {formatInr(engineDiscount)}</span>
+                  </div>
+                ) : null}
                 {isTierQuote ? (
                   <div className="flex justify-between text-gray-600">
                     <span>Service payable</span>
@@ -384,11 +389,13 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                 ) : null}
                 <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 font-semibold">
                   <span>You pay</span>
-                  <span>{formatInr(quote.payableAmount)}</span>
+                  <span>{formatInr(displayPayable)}</span>
                 </div>
-                <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
-                  You save {formatInr(quote.discountAmount)} with this offer!
-                </p>
+                {engineDiscount > 0 ? (
+                  <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
+                    You save {formatInr(engineDiscount)} with this offer!
+                  </p>
+                ) : null}
                 {promoEnginePreview ? (
                   <div className="mt-2">
                     <PromoEarnPreview data={promoEnginePreview} />

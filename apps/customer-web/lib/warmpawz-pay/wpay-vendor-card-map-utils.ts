@@ -17,22 +17,16 @@ export function resolveWpayVendorCardRating(
   return { average: numericRating, reviewCount: count };
 }
 
-/** Display-only Pay Bill pill. Quote / checkout still use admin catalogue %. */
-export const WPAY_MARKETING_DISCOUNT_LABEL = 'Upto 15% discount';
-
-/** Marketing copy when a catalogue offer exists — not the applied quote percent. */
-export function formatWpayCatalogueDiscountLabel(discountPercent: number): string | undefined {
-  if (!(discountPercent > 0)) return undefined;
-  return WPAY_MARKETING_DISCOUNT_LABEL;
+/** Catalogue % is no longer advertised on Pay Bill cards. */
+export function formatWpayCatalogueDiscountLabel(_discountPercent: number): string | undefined {
+  return undefined;
 }
 
-/** Pay Hub / WPay list discount pill — shared label format. */
+/** Pay Hub / WPay list discount pill — retired (Promotion Engine owns offers). */
 export function buildWpayDiscountBadges(
-  discountPercent: number,
+  _discountPercent: number,
 ): WarmpawzPayVendorCardBadge[] | undefined {
-  const label = formatWpayCatalogueDiscountLabel(discountPercent);
-  if (!label) return undefined;
-  return [{ label, tone: 'discount' }];
+  return undefined;
 }
 
 /** Discovery-style dual CTA wiring — labels and handlers from parent. */

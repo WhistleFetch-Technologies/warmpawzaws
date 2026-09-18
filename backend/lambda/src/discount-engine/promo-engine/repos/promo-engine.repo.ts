@@ -1,4 +1,5 @@
 import { query, select, insert, update } from '../../../database/rds-connection';
+import { expandPromoCategoryAliases } from '../dsl/category-aliases';
 import type {
   PromoEngineLimitsRow,
   PromoEnginePromotionRow,
@@ -242,8 +243,17 @@ export async function dbFindActiveCandidates(opts: {
   const params: unknown[] = [opts.now.toISOString()];
   let serviceClause = '';
   if (opts.serviceCategory) {
-    params.push(opts.serviceCategory);
-    serviceClause = `AND (service_categories = '{}' OR $${params.length} = ANY(service_categories))`;
+    const aliases = expandPromoCategoryAliases(opts.serviceCategory);
+    params.push(aliases.length ? aliases : [opts.serviceCategory]);
+    serviceClause = `AND (
+      service_categories = '{}'
+      OR EXISTS (
+        SELECT 1 FROM unnest(service_categories) AS cat
+        WHERE lower(trim(cat)) = ANY(
+          SELECT lower(trim(a)) FROM unnest($${params.length}::text[]) AS a
+        )
+      )
+    )`;
   }
   const res = await query(
     `SELECT * FROM promo_engine_promotions
