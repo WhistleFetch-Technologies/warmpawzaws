@@ -52,6 +52,7 @@ describe('specialization detail → existing vendor discovery', () => {
   const vetBooking = read('components/customer/vet/VetBookingRouter.tsx');
   const cardSource = read('lib/warmpawz-pay/discovery-provider-card-source.ts');
   const byCategoryFeed = read('hooks/useWarmpawzAppointmentsByCategoryFeed.ts');
+  const byCategoryFeedUrl = read('lib/wappt-discovery-feed-url.ts');
 
   it('renders specialization detail before vendor discovery', () => {
     expect(initialProblemGridFlowStep()).toBe('service-style');
@@ -70,7 +71,8 @@ describe('specialization detail → existing vendor discovery', () => {
     expect(routerSource).toMatch(/ClinicListView/);
     expect(routerSource).toMatch(/VetServicesByStyle/);
     expect(wapptList).toMatch(/useWarmpawzAppointmentsByCategoryFeed/);
-    expect(byCategoryFeed).toMatch(
+    expect(byCategoryFeed).toMatch(/buildWapptByCategoryFeedUrl/);
+    expect(byCategoryFeedUrl).toMatch(
       /\/customer\/warmpawz-appointments\/discovery\/by-category/,
     );
     expect(clinicList).toMatch(/\/customer\/discover-services/);

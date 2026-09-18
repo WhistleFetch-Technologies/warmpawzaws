@@ -1,4 +1,5 @@
 import { acceptableStylesForService } from '../../../../lib/search-discovery-parity';
+import { DistanceResolver } from '../../../../lib/utils/vendor-customer-distance';
 import { getNextAvailableSlot } from '../../discovery/repos/legacy-helpers.repo';
 import { mapWithConcurrency } from '../../../../services/image';
 import { DISCOVERY_LIST_SLOT_TIMEOUT_MS } from '../../../../utils/discovery-list-enrich';
@@ -32,8 +33,15 @@ export function wapptAcceptableStyles(serviceStyle: WapptDiscoveryEnrichStyle): 
 export async function enrichWapptDiscoveryCards(
   cards: Record<string, unknown>[],
   serviceStyle: WapptDiscoveryEnrichStyle,
+  distanceOpts?: { customerLat: number | null; customerLng: number | null },
 ): Promise<Record<string, unknown>[]> {
   const styles = wapptAcceptableStyles(serviceStyle);
+  const distResolver = new DistanceResolver(
+    distanceOpts?.customerLat ?? null,
+    distanceOpts?.customerLng ?? null,
+    false,
+    false,
+  );
   return mapWithConcurrency(cards, 3, async (card) => {
     const vendorId = String(card.vendorId ?? card.id ?? '');
     if (!vendorId) return card;
@@ -57,12 +65,33 @@ export async function enrichWapptDiscoveryCards(
     } catch {
       /* keep mapped photoUrl */
     }
+    let distanceKm: number | null = null;
+    let distanceText: string | null = null;
+    try {
+      const dist = await distResolver.resolve({
+        id: vendorId,
+        latitude: card.latitude,
+        longitude: card.longitude,
+        pincode: card.pincode,
+        address: card.address,
+        city: card.city,
+        state: card.state,
+      });
+      if (dist) {
+        distanceKm = dist.km;
+        distanceText = dist.distanceText;
+      }
+    } catch {
+      /* leave distance empty when geocode/haversine fails */
+    }
     return {
       ...card,
       photoUrl,
       nextAvailable: slot ?? { display },
       availabilityText: display,
       nextAvailableSlot: display,
+      distanceKm,
+      distanceText,
     };
   });
 }

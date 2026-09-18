@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useDiscoveryVendorFeed } from '@/hooks/useDiscoveryVendorFeed';
 import { discoveryNextCursor, discoveryVendorList } from '@/lib/discovery-list';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { buildWapptByCategoryFeedUrl } from '@/lib/wappt-discovery-feed-url';
 
 export type WapptStyleFilter = 'all' | 'at_center' | 'at_home' | 'tele';
 
@@ -14,17 +16,19 @@ export function useWarmpawzAppointmentsByCategoryFeed(opts: {
   pageSize?: number;
 }) {
   const { category, serviceStyle, specialization, enabled = true, pageSize = 3 } = opts;
+  const coordsRef = useRef<{ latitude?: string; longitude?: string }>({});
 
   const buildUrl = useCallback(
     ({ limit, cursor }: { limit: number; cursor?: string }) => {
-      const qs = new URLSearchParams({
+      return buildWapptByCategoryFeedUrl({
         category,
         serviceStyle,
-        limit: String(limit),
+        limit,
+        cursor,
+        specialization,
+        latitude: coordsRef.current.latitude,
+        longitude: coordsRef.current.longitude,
       });
-      if (specialization?.trim()) qs.set('specialization', specialization.trim());
-      if (cursor) qs.set('cursor', cursor);
-      return `/customer/warmpawz-appointments/discovery/by-category?${qs}`;
     },
     [category, serviceStyle, specialization],
   );
@@ -33,7 +37,16 @@ export function useWarmpawzAppointmentsByCategoryFeed(opts: {
 
   useEffect(() => {
     if (!enabled) return;
-    void feed.reload();
+    let cancelled = false;
+    void (async () => {
+      const coords = await resolveCustomerDiscoveryCoords();
+      if (cancelled) return;
+      coordsRef.current = coords;
+      await feed.reload();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [enabled, category, serviceStyle, specialization, feed.reload]);
 
   return {
