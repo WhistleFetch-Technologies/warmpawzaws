@@ -40,7 +40,8 @@ function wapptRoleNegativeFilterSql(category: string): string | null {
     return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|trainer|walker|boarding|nutrition|sitter)')`;
   }
   if (hub === 'training') {
-    return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|groomer|walker|boarding|nutrition|sitter|behaviorist|behaviourist)')`;
+    // Training & Behavior card: keep trainers and behaviourists on both styles.
+    return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|groomer|walker|boarding|nutrition|sitter)')`;
   }
   if (hub === 'behaviorist' || hub === 'behaviourist' || hub === 'pet_behaviorist') {
     return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|groomer|walker|boarding|nutrition|sitter|trainer|train[_ ])')`;

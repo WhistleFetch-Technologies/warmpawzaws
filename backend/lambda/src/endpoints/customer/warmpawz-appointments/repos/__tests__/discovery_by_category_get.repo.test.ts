@@ -54,6 +54,33 @@ describe('dbListWapptDiscoveryByCategory specialization filter', () => {
     expect(result.specializationApplied).toBe('vaccination');
   });
 
+  it('does not exclude behaviorists from the combined training hub', async () => {
+    await dbListWapptDiscoveryByCategory({
+      category: 'training',
+      serviceStyle: 'at_home',
+      limit: 3,
+      offset: 0,
+    });
+
+    const [sql] = query.mock.calls[0];
+    const sqlText = String(sql);
+    expect(sqlText).toContain('groomer');
+    expect(sqlText).not.toMatch(/sitter\|behaviorist\|behaviourist/);
+    expect(sqlText).not.toMatch(/behaviorist\|behaviourist/);
+  });
+
+  it('still excludes trainers from the behaviorist-only hub', async () => {
+    await dbListWapptDiscoveryByCategory({
+      category: 'behaviorist',
+      serviceStyle: 'at_home',
+      limit: 3,
+      offset: 0,
+    });
+
+    const [sql] = query.mock.calls[0];
+    expect(String(sql)).toMatch(/trainer\|train\[_ \]/);
+  });
+
   it('skips specialization filter when keys resolve empty', async () => {
     (resolveSpecializationDiscoveryKeys as jest.Mock).mockResolvedValue([]);
 
