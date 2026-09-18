@@ -25,6 +25,10 @@ export type WapptDiscoveryVendorRow = {
   preferred_service_style: string | null;
   avg_rating: number | null;
   review_count: number | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  pincode: string | null;
+  state: string | null;
 };
 
 const CLINIC_HOME_STYLES = ['at_center', 'at_vendor', 'at_clinic', 'at_home', 'home_visit'];
@@ -133,6 +137,10 @@ export async function dbListWapptDiscoveryByCategory(opts: {
       v.owner_name,
       v.city,
       v.address,
+      v.state,
+      v.pincode,
+      v.latitude,
+      v.longitude,
       v.profile_image,
       v.profile_photo_url,
       v.metadata,

@@ -95,4 +95,17 @@ describe('dbListWapptDiscoveryByCategory specialization filter', () => {
     expect(sqlVendorMatchesDeclaredSpecialization).not.toHaveBeenCalled();
     expect(result.specializationApplied).toBeNull();
   });
+
+  it('selects vendor coordinates so distance can be computed', async () => {
+    await dbListWapptDiscoveryByCategory({
+      category: 'vet',
+      serviceStyle: 'at_center',
+      limit: 3,
+      offset: 0,
+    });
+
+    const [sql] = query.mock.calls[0];
+    expect(String(sql)).toContain('v.latitude');
+    expect(String(sql)).toContain('v.longitude');
+  });
 });

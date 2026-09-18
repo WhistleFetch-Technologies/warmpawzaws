@@ -43,6 +43,10 @@ function mapRowToCard(
   return {
     vendorId: row.vendor_id,
     id: row.vendor_id,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    pincode: row.pincode,
+    state: row.state,
     name,
     photoUrl: row.profile_photo_url || row.profile_image,
     profile_photo_url: row.profile_photo_url,
@@ -81,6 +85,11 @@ export async function executeDiscoveryByCategoryGet(c: Context) {
   );
   const { s: sqlOffset } = decodeDiscoveryCursor(c.req.query('cursor'));
 
+  const latitude = c.req.query('latitude') || c.req.query('lat');
+  const longitude = c.req.query('longitude') || c.req.query('lng') || c.req.query('lon');
+  const customerLat = latitude ? Number.parseFloat(latitude) : null;
+  const customerLng = longitude ? Number.parseFloat(longitude) : null;
+
   const { rows, hasMore, specializationApplied } = await dbListWapptDiscoveryByCategory({
     category,
     serviceStyle,
@@ -90,7 +99,10 @@ export async function executeDiscoveryByCategoryGet(c: Context) {
   });
 
   const baseCards = rows.map((row) => mapRowToCard(row, serviceStyle));
-  const enrichedCards = await enrichWapptDiscoveryCards(baseCards, serviceStyle);
+  const enrichedCards = await enrichWapptDiscoveryCards(baseCards, serviceStyle, {
+    customerLat: Number.isFinite(customerLat) ? customerLat : null,
+    customerLng: Number.isFinite(customerLng) ? customerLng : null,
+  });
   const nextCursor = hasMore
     ? encodeDiscoveryCursor({ o: 0, s: sqlOffset + rows.length })
     : null;

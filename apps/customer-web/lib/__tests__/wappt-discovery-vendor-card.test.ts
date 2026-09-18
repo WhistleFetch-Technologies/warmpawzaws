@@ -44,6 +44,29 @@ describe('buildWapptDiscoveryVendorCardProps', () => {
     expect(props.name).toBe('Happy Paws Training');
   });
 
+  it('maps API distance onto the Pay Bill / Select Slot vendor card', () => {
+    const props = buildWapptDiscoveryVendorCardProps({
+      provider: {
+        name: 'Amigo Pet Hospital',
+        providerId: 'prov-dist',
+        vendorId: 'vendor-dist',
+        rating: 0,
+        reviewCount: 0,
+        isVerified: true,
+        distance: 3.4,
+        distanceText: '3 km away',
+        city: 'Bengaluru',
+      },
+      subtitle: 'Veterinary Clinic',
+      address: 'Kasavanahalli, Bengaluru',
+      category: 'vet',
+      onPrimary: jest.fn(),
+      router: mockRouter as never,
+    });
+
+    expect(props.distanceText).toBe('3 km away');
+  });
+
   it('builds walker Available Walkers card props with Pay CTA', () => {
     const onPrimary = jest.fn();
     const onProfileClick = jest.fn();
