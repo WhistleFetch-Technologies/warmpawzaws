@@ -332,7 +332,8 @@ export function isNonTrainingProviderRow(row: ProviderRoleRow): boolean {
 }
 
 export function filterTrainingHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
-  return rows.filter((row) => isTrainingProviderRow(row));
+  // Combined Training & Behavior hub: trainers and behaviourists share this list.
+  return rows.filter((row) => isTrainingProviderRow(row) || isBehavioristProviderRow(row));
 }
 
 /** Non-behaviorist personas must not appear on behaviorist WAPPT hub lists. */

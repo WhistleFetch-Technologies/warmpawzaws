@@ -182,12 +182,13 @@ describe('filterTrainingHubProviderRows', () => {
     expect(filterTrainingHubProviderRows(rows).map((r) => r.id)).toEqual(['t-1']);
   });
 
-  it('drops behaviorists from training WAPPT hub rows', () => {
+  it('keeps trainers and behaviorists on the combined training hub', () => {
     const rows = [
       { id: 'b-1', roleDisplayName: 'Pet Behaviorist (Solo)' },
       { id: 't-1', roleDisplayName: 'Trainer (Solo)' },
+      { id: 'g-1', roleDisplayName: 'Groomer (Center)' },
     ];
-    expect(filterTrainingHubProviderRows(rows).map((r) => r.id)).toEqual(['t-1']);
+    expect(filterTrainingHubProviderRows(rows).map((r) => r.id)).toEqual(['b-1', 't-1']);
   });
 });
 
@@ -208,5 +209,14 @@ describe('applyWapptHubDiscoveryToProviders', () => {
       { id: 'vet-1', roleDisplayName: 'Veterinary Clinic' },
     ];
     expect(applyWapptHubDiscoveryToProviders(rows, 'behaviorist').map((r) => r.id)).toEqual(['b-1']);
+  });
+
+  it('keeps trainers and behaviorists on the training hub', () => {
+    const rows = [
+      { id: 'b-1', roleDisplayName: 'Behaviorist (Solo)' },
+      { id: 't-1', roleDisplayName: 'Trainer (Center)' },
+      { id: 'vet-1', roleDisplayName: 'Veterinary Clinic' },
+    ];
+    expect(applyWapptHubDiscoveryToProviders(rows, 'training').map((r) => r.id)).toEqual(['b-1', 't-1']);
   });
 });
