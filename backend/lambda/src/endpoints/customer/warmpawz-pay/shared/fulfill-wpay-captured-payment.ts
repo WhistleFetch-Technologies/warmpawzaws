@@ -83,5 +83,22 @@ export async function fulfillWpayCapturedPayment(params: {
   void notifyWpayPaymentCompleted(params.paymentId).catch((error) => {
     console.error('[wpay-fulfill] vendor notify failed', error);
   });
+
+  try {
+    const { commitWpayPromoEngine } = await import('./commit-wpay-promo-engine');
+    await commitWpayPromoEngine({
+      paymentId: params.paymentId,
+      customerId: String(completed.customer_id),
+      vendorId: completed.vendor_id,
+      razorpayPaymentId: params.razorpayPaymentId,
+      originalAmount,
+      metadata: asMeta(completed.metadata),
+    });
+  } catch (peErr) {
+    console.warn(
+      '[wpay-fulfill] promo-engine commit skipped:',
+      peErr instanceof Error ? peErr.message : peErr,
+    );
+  }
   return completed;
 }

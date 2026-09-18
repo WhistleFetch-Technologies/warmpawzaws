@@ -13,6 +13,8 @@ import { WpayCommercialValidationError } from '../shared/wpay-discount';
 import { resolveWpayPayQuote } from '../shared/wpay-quote-resolver';
 import { resolveWpayPromoCategory } from '../shared/resolve-wpay-promo-category';
 import { applyEngineDiscountToWpayPayable } from '../shared/apply-engine-discount-to-wpay';
+import { loadOwnedWpayEvaluation } from '../shared/load-wpay-stored-evaluation';
+import { normalizePromoCategory } from '../../../../discount-engine/promo-engine/dsl/category-aliases';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -25,6 +27,8 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       phone?: string;
       bookingId?: string;
       clientRequestId?: string;
+      evaluationId?: string;
+      serviceCategory?: string;
     };
 
     const vendorId = String(body.vendorId ?? '').trim();
@@ -32,6 +36,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     const originalAmount = Number(body.originalAmount);
     const clientRequestId = String(body.clientRequestId ?? '').trim();
     const requestedBookingId = String(body.bookingId ?? '').trim();
+    const requestedEvaluationId = String(body.evaluationId ?? '').trim();
 
     if (!UUID_RE.test(vendorId)) {
       return c.json({ success: false, error: 'Invalid vendor id' }, 400);
@@ -58,11 +63,12 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       ? await dbLoadWapptBookingForPayCredit(requestedBookingId, customerId, vendorId)
       : await dbFindOpenWapptBookingForPay(customerId, vendorId);
     const bookingId = openBooking?.id ? String(openBooking.id) : null;
-    const serviceCategory = resolveWpayPromoCategory({
-      bookingCategory: openBooking?.service_category,
-      vendorRoleCategory: vendorRow.role_category,
-      vendorLegacyCategory: vendorRow.legacy_category,
-    });
+    const serviceCategory =
+      resolveWpayPromoCategory({
+        bookingCategory: openBooking?.service_category,
+        vendorRoleCategory: vendorRow.role_category,
+        vendorLegacyCategory: vendorRow.legacy_category,
+      }) || normalizePromoCategory(body.serviceCategory);
 
     const resolved = await resolveWpayPayQuote({
       vendorRow,
@@ -72,33 +78,48 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     let promoEngine: Record<string, unknown> | null = null;
     let engineDiscount = 0;
     try {
-      const { safeEvaluatePromotions } = await import(
-        '../../../../discount-engine/promo-engine'
-      );
-      const ev = await safeEvaluatePromotions({
-        user_id: customerId,
-        transaction: {
-          type: 'WPAY',
-          service_category: serviceCategory || undefined,
-          vendor_id: vendorId,
-          booking_id: bookingId || undefined,
-          amount: originalAmount,
-        },
-      });
-      if (ev?.evaluation_id) {
-        engineDiscount = Math.max(0, Number(ev.summary.discount) || 0);
-        const cashbackBenefit = (ev.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
+      const stored = await loadOwnedWpayEvaluation(requestedEvaluationId, customerId);
+      if (stored) {
+        engineDiscount = stored.engineDiscount;
         promoEngine = {
-          evaluationId: ev.evaluation_id,
-          pendingCashback: ev.summary.cashback,
-          engineDiscount: ev.summary.discount,
-          eligible: ev.eligible,
+          evaluationId: stored.evaluationId,
+          pendingCashback: stored.pendingCashback,
+          engineDiscount: stored.engineDiscount,
+          eligible: stored.engineDiscount > 0 || stored.pendingCashback > 0,
           serviceCategory,
-          redeemScope: cashbackBenefit?.redeem_scope || [],
-          expiryDays: cashbackBenefit?.expiry_days ?? null,
           stackingNote:
             'Promo-engine discount reduces Razorpay payable; cashback credits on commit',
         };
+      }
+      if (!stored) {
+        const { safeEvaluatePromotions } = await import(
+          '../../../../discount-engine/promo-engine'
+        );
+        const ev = await safeEvaluatePromotions({
+          user_id: customerId,
+          transaction: {
+            type: 'WPAY',
+            service_category: serviceCategory || undefined,
+            vendor_id: vendorId,
+            booking_id: bookingId || undefined,
+            amount: originalAmount,
+          },
+        });
+        if (ev?.evaluation_id) {
+          engineDiscount = Math.max(0, Number(ev.summary.discount) || 0);
+          const cashbackBenefit = (ev.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
+          promoEngine = {
+            evaluationId: ev.evaluation_id,
+            pendingCashback: ev.summary.cashback,
+            engineDiscount: ev.summary.discount,
+            eligible: ev.eligible,
+            serviceCategory,
+            redeemScope: cashbackBenefit?.redeem_scope || [],
+            expiryDays: cashbackBenefit?.expiry_days ?? null,
+            stackingNote:
+              'Promo-engine discount reduces Razorpay payable; cashback credits on commit',
+          };
+        }
       }
     } catch (peErr) {
       console.warn(

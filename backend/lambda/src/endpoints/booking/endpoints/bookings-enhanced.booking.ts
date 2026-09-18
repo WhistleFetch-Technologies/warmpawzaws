@@ -1263,6 +1263,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           null;
         if (
           wapptAppointmentFee == null &&
+          !isWapptBooking &&
           !isPackageBooking &&
           !isSubscriptionBooking &&
           grossPayableBeforeWallet > 0 &&
@@ -1721,9 +1722,19 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           bookingData.promotion_id = resolvedBookingPromotions.platformPromotionId;
         }
 
+        const bookingStyle = String(
+          body.serviceStyle || body.service_type || body.serviceType || ''
+        ).toLowerCase();
+        const skipPromoEngineForWapptSlot = shouldSkipPromoEngineOnSlotCreate({
+          commerce_mode: isWapptBooking ? 'warmpawz_appointments' : bookingCommerceMode,
+          service_type: bookingStyle,
+        });
+
         const couponDiscountRaw = body.couponDiscount ?? body.discountAmount ?? body.discount_amount;
         const couponDisc = parseFloat(String(couponDiscountRaw ?? ''));
-        if (resolvedBookingPromotions && resolvedBookingPromotions.totalSavings > 0) {
+        if (skipPromoEngineForWapptSlot) {
+          // Appointment fee is catalogue-only. Ignore client-claimed engine discounts.
+        } else if (resolvedBookingPromotions && resolvedBookingPromotions.totalSavings > 0) {
           bookingData.discount_amount =
             Math.round(resolvedBookingPromotions.totalSavings * 100) / 100;
         } else if (Number.isFinite(couponDisc) && couponDisc > 0) {
@@ -1756,15 +1767,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           : ({} as Record<string, unknown>);
 
         // Persist promo-engine evaluation_id for commit-on-pay (cashback).
-        let engineEvaluationId =
-          body.evaluationId || body.evaluation_id || body.promoEngineEvaluationId || null;
-        const bookingStyle = String(
-          body.serviceStyle || body.service_type || body.serviceType || ''
-        ).toLowerCase();
-        const skipPromoEngineForWapptSlot = shouldSkipPromoEngineOnSlotCreate({
-          commerce_mode: isWapptBooking ? 'warmpawz_appointments' : bookingCommerceMode,
-          service_type: bookingStyle,
-        });
+        let engineEvaluationId = skipPromoEngineForWapptSlot
+          ? null
+          : body.evaluationId || body.evaluation_id || body.promoEngineEvaluationId || null;
         if (!engineEvaluationId && bookingData.customer_id && !skipPromoEngineForWapptSlot) {
           try {
             const { safeEvaluatePromotions } = await import(

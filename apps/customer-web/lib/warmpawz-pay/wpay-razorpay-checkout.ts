@@ -51,8 +51,10 @@ export async function runWpayRazorpayCheckout(params: {
   originalAmount: number;
   customerPhone: string;
   bookingId?: string | null;
+  evaluationId?: string | null;
+  serviceCategory?: string | null;
 }): Promise<WpayVerifyResponse> {
-  const { vendorId, vendorName, originalAmount, customerPhone, bookingId } = params;
+  const { vendorId, vendorName, originalAmount, customerPhone, bookingId, evaluationId, serviceCategory } = params;
   // Stable for this checkout attempt so initiate retries reuse the same pending order.
   const clientRequestId = newWpayClientRequestId();
 
@@ -62,6 +64,8 @@ export async function runWpayRazorpayCheckout(params: {
     phone: customerPhone,
     clientRequestId,
     ...(bookingId ? { bookingId } : {}),
+    ...(evaluationId ? { evaluationId } : {}),
+    ...(serviceCategory ? { serviceCategory } : {}),
   })) as WpayInitiateResponse;
 
   if (!initiate?.success || !initiate.razorpayOrderId || !initiate.razorpayKeyId || !initiate.paymentId) {

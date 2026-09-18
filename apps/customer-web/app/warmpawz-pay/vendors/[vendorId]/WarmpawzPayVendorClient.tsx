@@ -154,8 +154,19 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         }
         const ev = await apiClient.post<{
           evaluation_id?: string;
+          evaluationId?: string;
           eligible?: boolean;
           summary?: { cashback?: number; discount?: number };
+          data?: {
+            evaluation_id?: string;
+            eligible?: boolean;
+            summary?: { cashback?: number; discount?: number };
+            benefits?: Array<{
+              benefit_type?: string;
+              redeem_scope?: string[];
+              expiry_days?: number;
+            }>;
+          };
           benefits?: Array<{
             benefit_type?: string;
             redeem_scope?: string[];
@@ -170,12 +181,13 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
             amount: billAmount,
           },
         });
-        const cb = (ev?.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
+        const payload = ev?.data ?? ev;
+        const cb = (payload?.benefits || ev?.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
         setPromoEnginePreview({
-          evaluationId: ev?.evaluation_id,
-          pendingCashback: ev?.summary?.cashback ?? 0,
-          engineDiscount: ev?.summary?.discount ?? 0,
-          eligible: ev?.eligible,
+          evaluationId: payload?.evaluation_id || ev?.evaluation_id || ev?.evaluationId,
+          pendingCashback: payload?.summary?.cashback ?? ev?.summary?.cashback ?? 0,
+          engineDiscount: payload?.summary?.discount ?? ev?.summary?.discount ?? 0,
+          eligible: payload?.eligible ?? ev?.eligible,
           redeemScope: cb?.redeem_scope || [],
           expiryDays: cb?.expiry_days ?? null,
         });
@@ -204,6 +216,8 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         originalAmount: billAmount,
         customerPhone: phone,
         bookingId: readBookingIdFromQuery(),
+        evaluationId: promoEnginePreview?.evaluationId || null,
+        serviceCategory: vendor.category || null,
       });
       const paymentId = String(result.paymentId ?? '').trim();
       if (!paymentId) {
@@ -224,7 +238,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     } finally {
       setPaying(false);
     }
-  }, [billAmount, quote, resolvedVendorId, router, vendor]);
+  }, [billAmount, quote, resolvedVendorId, router, vendor, promoEnginePreview?.evaluationId, vendor?.category]);
 
   const onProceedToPay = useCallback(() => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;

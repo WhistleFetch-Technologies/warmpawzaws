@@ -995,6 +995,7 @@ export function UniversalPaymentPage({
   useEffect(() => {
     // Resume: payable + breakdown already locked at booking create — do not re-quote.
     if (isPaymentResume) return;
+    if (isWapptAppointmentPayment) return;
     if (type !== 'booking' || !vendorId || baseAmount <= 0) return;
     loadPromotions();
   }, [
@@ -1011,6 +1012,7 @@ export function UniversalPaymentPage({
     initialPromotionIntent?.serviceCategory,
     appliedCoupon?.code,
     isPaymentResume,
+    isWapptAppointmentPayment,
   ]);
 
   useEffect(() => {
@@ -1426,6 +1428,7 @@ export function UniversalPaymentPage({
 
   const refreshBookingDiscountQuote = useCallback(
     async (couponCode?: string) => {
+      if (isWapptAppointmentPayment) return null;
       if (type !== 'booking' || !vendorId) return null;
       const selectedServiceIds = (selectedServices || [])
         .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
@@ -1464,9 +1467,16 @@ export function UniversalPaymentPage({
       serviceId,
       appliedCoupon?.code,
       syncBookingFromQuote,
+      isWapptAppointmentPayment,
     ]
   );
   const loadPromotions = async () => {
+    if (isWapptAppointmentPayment) {
+      setDiscountQuote(null);
+      setPromotions([]);
+      setAppliedPromotion(null);
+      return;
+    }
     try {
       const selectedServiceIds = (selectedServices || [])
         .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
@@ -1681,9 +1691,9 @@ export function UniversalPaymentPage({
   };
 
   const bookingDiscountDerived = useMemo(() => {
-    if (type !== 'booking') return null;
+    if (type !== 'booking' || isWapptAppointmentPayment) return null;
     return deriveBookingDiscountFromQuote(discountQuote, { couponCode: appliedCoupon?.code });
-  }, [type, discountQuote, appliedCoupon?.code]);
+  }, [type, isWapptAppointmentPayment, discountQuote, appliedCoupon?.code]);
 
   const autoPromoSavings =
     type === 'booking'
@@ -2833,7 +2843,9 @@ export function UniversalPaymentPage({
                 },
               }
             : {}),
-          ...(buildBookingCreateDiscountPayload(discountQuote, appliedCoupon?.code) ?? {}),
+          ...(!wapptPayment
+            ? (buildBookingCreateDiscountPayload(discountQuote, appliedCoupon?.code) ?? {})
+            : {}),
           petId: effectivePetId || undefined, // âœ… Optional UUID
           petName: effectivePetName || undefined, // âœ… Pet name for booking
           customerPhone: customerPhone, // âœ… Customer phone
@@ -3071,7 +3083,12 @@ export function UniversalPaymentPage({
 
       // âœ… Additional fields (not in schema, but backend may handle from raw body)
       // These are sent but not validated by schema
-      if (type === 'booking' && bookingDiscountDerived && bookingDiscountTotal > 0) {
+      if (
+        type === 'booking' &&
+        !isWapptAppointmentPayment &&
+        bookingDiscountDerived &&
+        bookingDiscountTotal > 0
+      ) {
         const discountPayload = buildBookingCreateDiscountPayload(
           discountQuote,
           appliedCoupon?.code
@@ -3091,7 +3108,7 @@ export function UniversalPaymentPage({
             paymentPayload.platformPromotionId = discountPayload.platformPromotionId;
           }
         }
-      } else {
+      } else if (!isWapptAppointmentPayment) {
         if (appliedCoupon?.code && couponDiscount > 0) {
           paymentPayload.couponCode = appliedCoupon.code;
           paymentPayload.couponDiscount = couponDiscount;
@@ -4179,7 +4196,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Coupon — locked on payment-resume (create-time amount already includes discount). */}
-        {!isPaymentResume ? (
+        {!isPaymentResume && !isWapptAppointmentPayment ? (
           <CheckoutCouponPanel
             kind={couponCheckoutKind}
             vendorId={vendorId}
@@ -4210,7 +4227,7 @@ export function UniversalPaymentPage({
             className={paymentSecondaryCardClass}
             alwaysShow={type === 'booking'}
           />
-        ) : lockedSnapshot?.couponCode ? (
+        ) : isWapptAppointmentPayment && !isPaymentResume ? null : lockedSnapshot?.couponCode ? (
           <div className={`${paymentSecondaryCardClass} text-sm text-gray-700`}>
             Coupon <span className="font-medium">{lockedSnapshot.couponCode}</span> applied at booking
             {(lockedSnapshot.couponDiscount || 0) > 0
@@ -4281,10 +4298,12 @@ export function UniversalPaymentPage({
             </p>
           )}
           <PriceBreakdown lines={checkoutPriceLines} title="Price details" />
-          <PromoEarnPreview
-            className="mt-3"
-            data={readPromoEngineFromQuote(discountQuote)}
-          />
+          {!isWapptAppointmentPayment ? (
+            <PromoEarnPreview
+              className="mt-3"
+              data={readPromoEngineFromQuote(discountQuote)}
+            />
+          ) : null}
           {checkoutSavingsTotal > 0 && (
             <p className="text-sm text-green-600 mt-3 px-1">
               You save ₹{checkoutSavingsTotal.toFixed(2)} on this {type}!
