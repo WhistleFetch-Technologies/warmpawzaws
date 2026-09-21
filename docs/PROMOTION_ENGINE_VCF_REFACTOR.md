@@ -1,7 +1,7 @@
 # Promotion engine refactor — V / C / F
 
 **Status:** product contract plus ranking/fast-path guardrails for the next build on `feature/promo-engine-v1`.  
-**Date:** 18 Sep 2026 (business). 21 Sep 2026 (guardrails + technical implementation).  
+**Date:** 18 Sep 2026 (business). 21 Sep 2026 (guardrails, phases, Phase 1 primitives).  
 **Supersedes, for product policy only:** HLD visit examples that treat “second visit = 15% off” as pricing, and master plan §18 where catalogue percent owns the Pay Bill payable.  
 **Does not supersede:** evaluate → commit → reverse, never credit the wallet on preview, wallet as the cashback ledger.
 
@@ -412,19 +412,35 @@ Existing files to extend, not replace: `evaluate-snapshot.ts`, `evaluate.service
 
 ---
 
-## Implementation order
+## Implementation phases
 
-1. **Context resolver.** One function used by every checkout: `vendorId`, `roleId`, `service_categories.id`, `channel`. Unit tests for role → category via `vendor_roles`, booking style → channel, Pay Bill not becoming a category, unknown role not inventing a slug.
-2. **Profile writer** on booking completion and Pay Bill capture. Idempotent. No ecommerce. Refund reverses one event.
-3. **Evaluate.** Snapshot load, then score every available promo in memory (own visit source, visit loop, limits). Rank eligible with V > C > F, then priority, then `updated_at`. Apply campaign override only if set. Combined cap on the winner. Return conflicts including `VISIT_FAIL` / `LIMIT_FAIL`. Old promotions with no `visitSource` keep today’s category condition so they do not break on deploy.
-4. **Combined cap** in `calculate-benefits`.
-5. **Commit** copies `redeem` and `expiryDays` onto the wallet row. Spend path checks letter and channel.
-6. **Pass the contract** from booking, Pay Bill, shop, and package. Delete the second discount (catalogue percent on Pay Bill, shop coupon overlay).
-7. **Admin form** compiles `PromoVcfConfig` into metadata, conditions, and benefits. Vendor search and catalogue categories only.
-8. **Customer quote UI** renders the one winner. Reuse `evaluationId` from preview through pay.
-9. **Backfill** completed bookings and captured Pay Bill into the new buckets, keyed so it cannot double-count. Dev first. Not on the request path.
+Business logic §1–6 is **frozen**. Phases below only add ranking, visits, and checkout wiring. They must not merge visit source, publish, and redeem into one picker, treat Pay Bill as a category, or increment visits on ecommerce.
 
-No new migration if `metadata`, `services`, and `redeem_scope` stay JSON. If a query needs an index later, add a numbered migration. Do not edit 1111–1114.
+Work stays on `feature/promo-engine-v1`. Each phase ships with unit tests before the next starts. No new table unless a later index migration is required. Do not edit migrations 1111–1114.
+
+| Phase | Name | Ships | Does not |
+| --- | --- | --- | --- |
+| **1** | Context + primitives | Channel classifier, role → `service_categories.id` (no invented slug), `PromoVcfConfig` / `VisitProfile` types, visit-count from **that** promo’s V/C/F + general/specific channels, visit-loop match, specificity rank V > C > F (override only if set), combined-cap helper. Tests only. | Checkout, profile writes, SQL candidate filter |
+| **2** | Visit profile writer | Idempotent increment on booking/tele completed+paid and Pay Bill capture. Three buckets (platform, category id, vendor id). Ecommerce never writes. Refund/cancel decrements once. | Evaluate ranking, admin UI |
+| **3** | Evaluate pipeline | Narrow `dbFindActiveCandidates` (ACTIVE + window + publish F or C=this category or V=this vendor). One snapshot. Score **all** available. Failures → `VISIT_FAIL` / `LIMIT_FAIL`. Rank eligible. One winner + ordered fallbacks. `persist: false` on preview. Old rows without `visitSource` keep today’s category condition. | Admin form rebuild, backfill |
+| **4** | Cap + redeem | Combined max discount in `calculate-benefits`. Commit copies redeem letter/channels/expiry onto the wallet row. Spend checks letter + channel. | New checkout screens |
+| **5** | Checkout wiring | Same evaluate contract on Pay Bill, tele/appointment, ecommerce. Server-resolved context. Engine is the only customer cut. Debounce Pay Bill ~300ms. Reuse `evaluationId` when amount, vendor, channel unchanged. | Changing §1–6 |
+| **6** | Admin + quote UI | Audience: visit source, publish, redeem as **three separate** V/C/F choices. Live vendor/category pickers. Customer shows winner only. | Second discount UI |
+| **7** | Backfill + sign-off | Dev backfill of completed bookings and captured Pay Bills, keyed so it cannot double-count. Run the **Done when** list. | Prod backfill without explicit ask |
+
+### Phase 1 file map (this branch, in progress)
+
+| File | Responsibility |
+| --- | --- |
+| `promo-engine/vcf/types.ts` | Letter, channels, `PromoVcfConfig`, `VisitProfile`, payment context |
+| `promo-engine/vcf/channel.ts` | `tele` / `appointment` / `paybill` / `ecommerce` from style or surface. Pay Bill is never inferred from a category slug. |
+| `promo-engine/vcf/category-from-role.ts` | Match `service_categories.vendor_roles` to `roles.id` / `roles.name`. No slug if none match. |
+| `promo-engine/vcf/visit-count.ts` | Sum cells for **this** promo’s visit source only. General = tele+appointment+paybill. Ecommerce excluded. |
+| `promo-engine/vcf/visit-loop.ts` | Upcoming visit = completed count + 1. First visit is n = 1 (count 0). |
+| `promo-engine/vcf/rank-eligible.ts` | Score-all list → winner. Default V > C > F, then priority, then later `updated_at`. Override re-sorts eligible only if set on the specificity winner. |
+| `promo-engine/vcf/combined-cap.ts` | When both benefits: cut cashback first, then discount, so instant cut + cashback never exceed max discount. |
+
+Later phases extend `evaluate-snapshot.ts`, `promo-engine.repo.ts`, `behaviour.service.ts`, Pay Bill / booking / ecommerce hooks, and the admin audience step. Do not replace `resolveStack` — it still shapes the **single winner’s** discount+cashback.
 
 ---
 

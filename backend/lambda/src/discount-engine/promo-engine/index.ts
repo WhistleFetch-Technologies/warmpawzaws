@@ -30,3 +30,12 @@ export {
   getPromotionDetail,
   mapAdminDraftToPayload,
 } from './services/crud.service';
+export { applyCombinedCap } from './vcf/combined-cap';
+export {
+  classifyPaymentChannel,
+  resolvePaymentContext,
+  visitCountForPromo,
+  matchesVisitLoop,
+  rankEligible,
+  categoryIdFromVendorRole,
+} from './vcf';
