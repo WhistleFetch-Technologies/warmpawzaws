@@ -17,6 +17,7 @@ import {
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { BulkProductUpload } from '@/components/vendor/products/BulkProductUpload';
 import { ProductFormModal } from '@/components/vendor/seller/ProductFormModal';
+import { ProductTextExpand } from '@/components/vendor/seller/ProductTextExpand';
 import { formatVendorProductSellingDisplay } from '@/lib/product-ecommerce-pricing';
 import { formatPriceWithSymbol } from '@/lib/format-utils';
 import { useVendorProductList } from '@/hooks/useVendorProductList';
@@ -67,6 +68,8 @@ interface Product {
   images?: string[];
   emoji?: string;
   is_active: boolean;
+  key_features?: string;
+  specifications?: { key_features?: string };
   image_ingest_status?: string | null;
   approval_hold?: string | null;
 }
@@ -680,7 +683,12 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
                       </div>
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-slate-900">{product.name}</p>
-                        <p className="text-sm text-slate-500 line-clamp-1">{product.description}</p>
+                        <ProductTextExpand
+                          text={product.description}
+                          title={product.name}
+                          className="text-sm text-slate-500"
+                          dialogHint="Full description"
+                        />
                       </div>
                     </div>
                   </td>
@@ -798,6 +806,11 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   );
 }
 
+function productKeyFeatures(product: Product): string {
+  const specs = product.specifications;
+  return String(product.key_features || specs?.key_features || '').trim();
+}
+
 function ProductCard({
   product,
   categories,
@@ -869,7 +882,25 @@ function ProductCard({
       </div>
       <div className="p-2.5 sm:p-5">
         <h3 className="line-clamp-2 text-xs font-semibold leading-snug text-slate-900 sm:text-base">{product.name}</h3>
-        <p className="mt-1 hidden text-sm text-slate-500 line-clamp-2 sm:mt-2 sm:block">{product.description}</p>
+        <div className="mt-1 hidden sm:mt-2 sm:block">
+          <ProductTextExpand
+            text={product.description}
+            title={product.name}
+            className="text-sm text-slate-500"
+            dialogHint="Full description"
+          />
+          {productKeyFeatures(product) ? (
+            <div className="mt-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Key features</p>
+              <ProductTextExpand
+                text={productKeyFeatures(product)}
+                title={`${product.name} — key features`}
+                className="text-sm text-slate-500"
+                dialogHint="Full key features"
+              />
+            </div>
+          ) : null}
+        </div>
         
         <div className="mt-2 flex items-end justify-between gap-1 border-t border-slate-100 pt-2 sm:mt-4 sm:pt-4">
           <div className="min-w-0">

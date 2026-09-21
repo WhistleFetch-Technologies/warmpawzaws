@@ -7,6 +7,17 @@ export const SQL_ADMIN_SHOP_ORDER_TYPE = `
   LOWER(COALESCE(o.order_type, 'ecommerce')) IN ('ecommerce', 'shop', 'shop_order')
 `;
 
+/** Hide Razorpay drafts and unpaid abandoned checkouts that were marked cancelled. Paid-then-cancelled stay visible. */
+export const SQL_ADMIN_SHOP_EXCLUDE_UNPAID_ABANDONED = `
+  NOT (
+    LOWER(COALESCE(o.order_status, '')) = 'pending_payment'
+    OR (
+      LOWER(COALESCE(o.order_status, '')) = 'cancelled'
+      AND LOWER(COALESCE(o.payment_status, '')) NOT IN ('paid', 'completed', 'refunded')
+    )
+  )
+`;
+
 export type AdminEcommerceOrderListFilters = {
   status?: string | null;
   period?: string | null;
@@ -42,7 +53,7 @@ export function buildAdminEcommerceOrderFilterSql(
   filters: AdminEcommerceOrderListFilters,
   startParamIndex = 1,
 ): AdminEcommerceOrderSqlParts {
-  const whereClauses: string[] = [SQL_ADMIN_SHOP_ORDER_TYPE];
+  const whereClauses: string[] = [SQL_ADMIN_SHOP_ORDER_TYPE, SQL_ADMIN_SHOP_EXCLUDE_UNPAID_ABANDONED];
   const params: unknown[] = [];
   let paramIndex = startParamIndex;
 
@@ -141,6 +152,7 @@ export function buildAdminEcommerceOrderStatusCountsSql(period?: string | null):
       COUNT(*)::int AS count
     FROM orders o
     WHERE ${SQL_ADMIN_SHOP_ORDER_TYPE}
+      AND ${SQL_ADMIN_SHOP_EXCLUDE_UNPAID_ABANDONED}
     GROUP BY o.order_status
   `;
 
@@ -158,6 +170,7 @@ export function buildAdminEcommerceOrderStatusCountsSqlForDays(days: number): {
       COUNT(*)::int AS count
     FROM orders o
     WHERE ${SQL_ADMIN_SHOP_ORDER_TYPE}
+      AND ${SQL_ADMIN_SHOP_EXCLUDE_UNPAID_ABANDONED}
       AND o.created_at >= NOW() - INTERVAL '${safeDays} days'
     GROUP BY o.order_status
   `;

@@ -49,3 +49,45 @@ export function accountNumberSuffix(value: string): string {
   if (clean.length < 4) return '';
   return clean.slice(-4);
 }
+
+/** Map GET /bank-account (unmasked) or GET /bank-details (often masked) onto the seller payment form. */
+export function mapSellerBankFieldsFromApi(
+  bank: Record<string, unknown> | null | undefined,
+): {
+  bank_name: string;
+  account_number: string;
+  ifsc_code: string;
+  hasStoredBankAccount: boolean;
+  storedAccountSuffix: string;
+} {
+  const bankDetails = bank ?? null;
+  let hasStoredBankAccount = false;
+  let storedAccountSuffix = '';
+  let bank_name = '';
+  let ifsc_code = '';
+  let account_number = '';
+
+  if (bankDetails) {
+    bank_name = String(bankDetails.bank_name || bankDetails.bankName || '').trim();
+    const rawIfsc = formatIFSC(String(bankDetails.ifsc_code || bankDetails.ifscCode || ''));
+    ifsc_code = looksLikeIndianPhone(rawIfsc) || (rawIfsc && !isValidIFSC(rawIfsc)) ? '' : rawIfsc;
+    const rawAccount = String(bankDetails.account_number || bankDetails.accountNumber || '').trim();
+    if (rawAccount && isMaskedAccountNumber(rawAccount)) {
+      hasStoredBankAccount = true;
+      storedAccountSuffix = accountNumberSuffix(rawAccount);
+      account_number = '';
+    } else if (rawAccount && isValidAccountNumber(rawAccount)) {
+      hasStoredBankAccount = true;
+      storedAccountSuffix = accountNumberSuffix(rawAccount);
+      account_number = rawAccount;
+    }
+  }
+
+  return {
+    bank_name,
+    account_number,
+    ifsc_code,
+    hasStoredBankAccount,
+    storedAccountSuffix,
+  };
+}

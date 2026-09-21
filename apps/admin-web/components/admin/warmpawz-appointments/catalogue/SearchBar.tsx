@@ -30,6 +30,7 @@ export function SearchBar({
         disabled={disabled}
         className="pl-9 bg-white"
         aria-label={placeholder}
+        maxLength={256}
       />
     </div>
   );

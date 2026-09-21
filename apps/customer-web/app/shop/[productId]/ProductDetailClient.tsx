@@ -51,6 +51,7 @@ import {
 import {
   displayProductSpecValue,
   isMeaningfulProductSpecValue,
+  KEY_FEATURES_TOGGLE_MIN_LEN,
   meaningfulSpecEntries,
 } from '@/lib/ecommerce/product-spec-display';
 import {
@@ -211,6 +212,7 @@ export default function ProductDetailClient() {
   const [isInCart, setIsInCart] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [keyFeaturesExpanded, setKeyFeaturesExpanded] = useState(false);
   const [customerCity, setCustomerCity] = useState<string | null>(null);
   const [customerPincode, setCustomerPincode] = useState<string | null>(null);
   const [customerState, setCustomerState] = useState<string | null>(null);
@@ -996,9 +998,22 @@ export default function ProductDetailClient() {
               {isMeaningfulProductSpecValue(product.key_features) && (
                 <div className="flex flex-col gap-0.5 items-end text-right shrink-0 max-w-[48%]">
                   <span className="text-xs text-slate-500">Key Features</span>
-                  <span className="text-sm font-medium text-slate-900 whitespace-pre-line">
+                  <span
+                    className={`text-sm font-medium text-slate-900 whitespace-pre-line ${
+                      keyFeaturesExpanded ? '' : 'line-clamp-3'
+                    }`}
+                  >
                     {displayProductSpecValue(product.key_features)}
                   </span>
+                  {displayProductSpecValue(product.key_features).length > KEY_FEATURES_TOGGLE_MIN_LEN && (
+                    <button
+                      type="button"
+                      onClick={() => setKeyFeaturesExpanded((v) => !v)}
+                      className="mt-0.5 text-xs font-medium text-orange-600 hover:text-orange-700"
+                    >
+                      {keyFeaturesExpanded ? 'Show less' : 'View more'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

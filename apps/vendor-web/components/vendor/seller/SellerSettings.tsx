@@ -10,8 +10,6 @@ import {
   MapPin,
   Phone,
   Mail,
-  Eye,
-  EyeOff,
   Loader2,
   CheckCircle,
 } from 'lucide-react';
@@ -21,13 +19,10 @@ import { isValidGSTIN, type GSTVerificationData } from '@/lib/gstin';
 import {
   formatAccountNumber,
   formatIFSC,
-  formatUPI,
-  isMaskedAccountNumber,
   isValidAccountNumber,
   isValidIFSC,
-  isValidUPI,
   looksLikeIndianPhone,
-  accountNumberSuffix,
+  mapSellerBankFieldsFromApi,
 } from '@/lib/bank-payment';
 import { GSTVerification } from '@/components/vendor/kyc/GSTVerification';
 import {
@@ -53,7 +48,6 @@ export type SellerSettingsFormData = {
   bank_name: string;
   account_number: string;
   ifsc_code: string;
-  upi_id: string;
   return_window_days: string;
   return_policy_text: string;
 };
@@ -62,14 +56,13 @@ const EMPTY_PAYMENT_FIELDS = {
   bank_name: '',
   account_number: '',
   ifsc_code: '',
-  upi_id: '',
   return_window_days: '7',
   return_policy_text: '',
 };
 
 function mapProfileFieldsFromVendor(
   v: Record<string, unknown> | null | undefined
-): Omit<SellerSettingsFormData, 'bank_name' | 'account_number' | 'ifsc_code' | 'upi_id'> {
+): Omit<SellerSettingsFormData, 'bank_name' | 'account_number' | 'ifsc_code'> {
   return {
     business_name: String(v?.business_name || v?.businessName || ''),
     contact_name: String(
@@ -86,68 +79,6 @@ function mapProfileFieldsFromVendor(
     longitude: v?.longitude != null ? Number(v.longitude) : undefined,
     return_window_days: String(v?.return_window_days ?? '7'),
     return_policy_text: String(v?.return_policy_text || ''),
-  };
-}
-
-function mapPaymentFieldsFromApi(
-  bank: Record<string, unknown> | null | undefined,
-  vendor: Record<string, unknown> | null | undefined,
-  upi: Record<string, unknown> | null | undefined
-): {
-  bank_name: string;
-  account_number: string;
-  ifsc_code: string;
-  upi_id: string;
-  hasStoredBankAccount: boolean;
-  storedAccountSuffix: string;
-  upiVerified: boolean;
-  upiHolderName: string;
-} {
-  const bankDetails = bank ?? null;
-  let hasStoredBankAccount = false;
-  let storedAccountSuffix = '';
-
-  let bank_name = '';
-  let ifsc_code = '';
-  let account_number = '';
-
-  if (bankDetails) {
-    bank_name = String(bankDetails.bank_name || bankDetails.bankName || '').trim();
-    ifsc_code = formatIFSC(String(bankDetails.ifsc_code || bankDetails.ifscCode || ''));
-    const rawAccount = String(bankDetails.account_number || bankDetails.accountNumber || '').trim();
-    if (rawAccount && isMaskedAccountNumber(rawAccount)) {
-      hasStoredBankAccount = true;
-      storedAccountSuffix = accountNumberSuffix(rawAccount);
-      account_number = '';
-    } else if (rawAccount && isValidAccountNumber(rawAccount)) {
-      hasStoredBankAccount = true;
-      storedAccountSuffix = accountNumberSuffix(rawAccount);
-      account_number = rawAccount;
-    }
-  }
-
-  const upiFromApi =
-    upi?.upi_id != null && String(upi.upi_id).trim() !== ''
-      ? String(upi.upi_id).trim()
-      : upi?.upiId != null && String(upi.upiId).trim() !== ''
-        ? String(upi.upiId).trim()
-        : '';
-  const upiFromVendor =
-    vendor?.upi_id != null && String(vendor.upi_id).trim() !== ''
-      ? String(vendor.upi_id).trim()
-      : vendor?.upiId != null && String(vendor.upiId).trim() !== ''
-        ? String(vendor.upiId).trim()
-        : '';
-
-  return {
-    bank_name,
-    account_number,
-    ifsc_code,
-    upi_id: upiFromApi || upiFromVendor,
-    hasStoredBankAccount,
-    storedAccountSuffix,
-    upiVerified: upi?.is_verified === true || upi?.isVerified === true,
-    upiHolderName: String(upi?.vpa_holder_name || upi?.vpaHolderName || '').trim(),
   };
 }
 
@@ -218,17 +149,12 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
     ...mapProfileFieldsFromVendor(sellerData),
     ...EMPTY_PAYMENT_FIELDS,
   }));
-  const [showAccountNumber, setShowAccountNumber] = useState(false);
   const [gstVerified, setGstVerified] = useState(false);
   const [initialVerifiedData, setInitialVerifiedData] = useState<GSTVerificationData | null>(null);
   const [hasStoredBankAccount, setHasStoredBankAccount] = useState(false);
   const [storedAccountSuffix, setStoredAccountSuffix] = useState('');
   const [storedIfsc, setStoredIfsc] = useState('');
   const [storedBankName, setStoredBankName] = useState('');
-  const [upiVerified, setUpiVerified] = useState(false);
-  const [upiHolderName, setUpiHolderName] = useState('');
-  const [storedUpi, setStoredUpi] = useState('');
-  const [verifyingUpi, setVerifyingUpi] = useState(false);
 
   const DEFAULT_NOTIFICATION_PREFS = {
     newOrder: true,
@@ -257,17 +183,19 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
     }
     try {
       setLoading(true);
-      const [profileRes, bankRes, upiRes, kycRes, notifRes] = await Promise.all([
+      const [profileRes, bankAccountRes, bankDetailsRes, kycRes, notifRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${sellerId}/profile`).catch(() => null),
+        apiClient.get<any>(`/vendor/${sellerId}/bank-account`).catch(() => null),
         apiClient.get<any>(`/vendor/${sellerId}/bank-details`).catch(() => null),
-        apiClient.get<any>(`/vendor/${sellerId}/upi`).catch(() => null),
         apiClient.get<any>(`/kyc/status/${sellerId}`).catch(() => null),
         apiClient.get<any>(`/vendor/${sellerId}/notification-preferences`).catch(() => null),
       ]);
 
       const vendor = profileRes?.success ? profileRes.vendor : sellerData;
-      const bankDetails = bankRes?.success ? bankRes.bankDetails : null;
-      const upi = upiRes?.success ? upiRes.upi : null;
+      const bank =
+        (bankAccountRes?.success && bankAccountRes.bankAccount) ||
+        (bankDetailsRes?.success && bankDetailsRes.bankDetails) ||
+        null;
       const kycData = kycRes?.success ? kycRes.data : null;
       if (notifRes?.success && notifRes.notificationPreferences) {
         setNotifPrefs((prev) => ({ ...prev, ...notifRes.notificationPreferences }));
@@ -276,13 +204,12 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
       if (profileImageUrl) setLogoUrl(profileImageUrl);
 
       if (vendor) {
-        const payment = mapPaymentFieldsFromApi(bankDetails, vendor as Record<string, unknown>, upi);
+        const payment = mapSellerBankFieldsFromApi(bank as Record<string, unknown> | null);
         const mapped = {
           ...mapProfileFieldsFromVendor(vendor as Record<string, unknown>),
           bank_name: payment.bank_name,
           account_number: payment.account_number,
           ifsc_code: payment.ifsc_code,
-          upi_id: payment.upi_id,
         };
         const gstState = deriveGstVerificationFromLoad(vendor as Record<string, unknown>, kycData);
         setFormData(mapped);
@@ -292,9 +219,6 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
         setStoredAccountSuffix(payment.storedAccountSuffix);
         setStoredIfsc(payment.ifsc_code);
         setStoredBankName(payment.bank_name);
-        setUpiVerified(payment.upiVerified);
-        setUpiHolderName(payment.upiHolderName);
-        setStoredUpi(payment.upi_id);
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -329,8 +253,6 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
           pincode: data.pincode,
           latitude: data.latitude,
           longitude: data.longitude,
-          upi_id: data.upi_id,
-          upiId: data.upi_id,
           bank_name: data.bank_name,
           ifsc_code: data.ifsc_code,
         })
@@ -433,56 +355,10 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
     }
   }, [sellerId, formData, gstVerified, onSavingChange, syncLocalStorage, loadSettings]);
 
-  const persistUpi = useCallback(async (upi: string): Promise<boolean> => {
-    const validateRes = await apiClient.post<any>(`/vendor/${sellerId}/upi/validate`, { upi_id: upi });
-    if (!validateRes?.valid && validateRes?.success === false) {
-      throw new Error(validateRes?.error || 'UPI verification failed');
-    }
-    if (validateRes && validateRes.valid === false) {
-      throw new Error(validateRes.error || 'This UPI ID could not be verified');
-    }
-    const saveRes = await apiClient.post<any>(`/vendor/${sellerId}/upi`, { upi_id: upi });
-    if (saveRes && saveRes.success === false) {
-      throw new Error(saveRes.error || 'Failed to save UPI ID');
-    }
-    return true;
-  }, [sellerId]);
-
-  const handleVerifyUpi = useCallback(async () => {
-    if (!sellerId || verifyingUpi) return;
-    const upi = formatUPI(formData.upi_id);
-    if (!upi) {
-      toast.error('Please enter a UPI ID');
-      return;
-    }
-    if (!isValidUPI(upi)) {
-      toast.error('Please enter a valid UPI ID (e.g., yourname@upi)');
-      return;
-    }
-    setVerifyingUpi(true);
-    try {
-      const res = await apiClient.post<any>(`/vendor/${sellerId}/upi/validate`, { upi_id: upi });
-      if (res?.valid) {
-        setUpiVerified(true);
-        setUpiHolderName(String(res.vpa_holder_name || '').trim());
-        toast.success(res.vpa_holder_name ? `UPI verified: ${res.vpa_holder_name}` : 'UPI ID verified');
-      } else {
-        setUpiVerified(false);
-        toast.error(res?.error || 'This UPI ID could not be verified');
-      }
-    } catch (error: any) {
-      setUpiVerified(false);
-      toast.error(error?.message || 'UPI verification failed');
-    } finally {
-      setVerifyingUpi(false);
-    }
-  }, [sellerId, formData.upi_id, verifyingUpi]);
-
   const savePayment = useCallback(async () => {
     const ifsc = formData.ifsc_code.trim().toUpperCase();
     const acct = formData.account_number.trim();
     const bankName = formData.bank_name.trim();
-    const upi = formatUPI(formData.upi_id);
 
     const wantsNewAccount = acct.length > 0;
     const bankMetaChanged =
@@ -492,69 +368,43 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
       (ifsc.length > 0 || bankName.length > 0);
     const shouldSaveBank = wantsNewAccount || bankMetaChanged;
 
-    if (shouldSaveBank) {
-      const bankError = validateBankFields(acct, ifsc, wantsNewAccount || !hasStoredBankAccount);
-      if (bankError) {
-        toast.error(bankError);
-        return;
-      }
-    }
-
-    const shouldSaveUpi = Boolean(upi) && upi !== storedUpi;
-
-    if (shouldSaveUpi && !isValidUPI(upi)) {
-      toast.error('Please enter a valid UPI ID (e.g., yourname@upi)');
+    if (!shouldSaveBank) {
+      toast.info('Enter bank account number and IFSC to save');
       return;
     }
 
-    if (!shouldSaveBank && !shouldSaveUpi) {
-      toast.info('Enter bank details or a new UPI ID to save');
+    const bankError = validateBankFields(acct, ifsc, wantsNewAccount || !hasStoredBankAccount);
+    if (bankError) {
+      toast.error(bankError);
       return;
     }
 
     setSaving(true);
     onSavingChange?.(true);
-    let bankOk = false;
-    let upiOk = false;
-    let bankTried = false;
-    let upiTried = false;
     try {
-      if (shouldSaveBank) {
-        bankTried = true;
-        const accountHolderName =
-          formData.contact_name.trim() || formData.business_name.trim() || 'Account Holder';
-        try {
-          await apiClient.put(`/vendor/${sellerId}/bank-details`, {
-            ...(wantsNewAccount ? { account_number: acct } : { keep_existing_account: true }),
-            ifsc_code: ifsc,
-            bank_name: bankName || undefined,
-            account_holder_name: accountHolderName,
-          });
-          bankOk = true;
-          toast.success('Bank details saved');
-        } catch (error: any) {
-          toast.error(error?.message || 'Failed to save bank details');
-        }
+      const accountHolderName =
+        formData.contact_name.trim() || formData.business_name.trim() || 'Account Holder';
+      if (wantsNewAccount) {
+        await apiClient.post(`/vendor/${sellerId}/bank-account`, {
+          account_holder_name: accountHolderName,
+          account_number: acct,
+          ifsc_code: ifsc,
+          bank_name: bankName || undefined,
+        });
+      } else {
+        await apiClient.put(`/vendor/${sellerId}/bank-details`, {
+          keep_existing_account: true,
+          ifsc_code: ifsc,
+          bank_name: bankName || undefined,
+          account_holder_name: accountHolderName,
+        });
       }
-
-      if (shouldSaveUpi) {
-        upiTried = true;
-        try {
-          await persistUpi(upi);
-          upiOk = true;
-          toast.success('UPI ID verified and saved');
-        } catch (error: any) {
-          toast.error(error?.message || 'Failed to save UPI ID');
-        }
-      }
-
-      if (bankOk || upiOk) {
-        syncLocalStorage(formData);
-        await loadSettings();
-      }
-      if ((bankTried || upiTried) && !bankOk && !upiOk) {
-        throw new Error('Payment details could not be saved');
-      }
+      toast.success('Bank details saved');
+      syncLocalStorage(formData);
+      await loadSettings();
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to save bank details');
+      throw error;
     } finally {
       setSaving(false);
       onSavingChange?.(false);
@@ -565,12 +415,10 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
     hasStoredBankAccount,
     storedIfsc,
     storedBankName,
-    storedUpi,
     onSavingChange,
     syncLocalStorage,
     loadSettings,
     validateBankFields,
-    persistUpi,
   ]);
 
   const handleSave = useCallback(async () => {
@@ -896,7 +744,7 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
                   placeholder="e.g., SBIN0001234"
                   maxLength={11}
                   autoComplete="off"
-                  name="vendor-ifsc"
+                  name="seller-ifsc-code"
                   className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono uppercase ${
                     formData.ifsc_code &&
                     (looksLikeIndianPhone(formData.ifsc_code) ||
@@ -919,97 +767,40 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-2">Account Number</label>
-                {hasStoredBankAccount && storedAccountSuffix && (
+                {hasStoredBankAccount && storedAccountSuffix && !formData.account_number && (
                   <p className="mb-2 text-sm text-slate-500">
                     Account on file ending in {storedAccountSuffix}. Enter full number to update.
                   </p>
                 )}
-                <div className="relative">
-                  <input
-                    type={showAccountNumber ? 'text' : 'password'}
-                    value={formData.account_number}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        account_number: formatAccountNumber(e.target.value),
-                      })
-                    }
-                    placeholder={
-                      hasStoredBankAccount
-                        ? 'Enter full account number to update'
-                        : 'Enter your account number'
-                    }
-                    autoComplete="off"
-                    name="vendor-account-number"
-                    inputMode="numeric"
-                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono ${
-                      formData.account_number && !isValidAccountNumber(formData.account_number)
-                        ? 'border-red-300'
-                        : 'border-slate-200'
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowAccountNumber(!showAccountNumber)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded"
-                  >
-                    {showAccountNumber ? (
-                      <EyeOff className="w-5 h-5 text-slate-400" />
-                    ) : (
-                      <Eye className="w-5 h-5 text-slate-400" />
-                    )}
-                  </button>
-                </div>
+                <input
+                  type="text"
+                  value={formData.account_number}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      account_number: formatAccountNumber(e.target.value),
+                    })
+                  }
+                  placeholder={
+                    hasStoredBankAccount && !formData.account_number
+                      ? 'Enter full account number to update'
+                      : 'Enter your account number'
+                  }
+                  autoComplete="off"
+                  name="seller-account-number"
+                  inputMode="numeric"
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono ${
+                    formData.account_number && !isValidAccountNumber(formData.account_number)
+                      ? 'border-red-300'
+                      : 'border-slate-200'
+                  }`}
+                />
                 {formData.account_number && !isValidAccountNumber(formData.account_number) && (
                   <p className="mt-1 text-sm text-red-600">
                     Account number must be 9–18 digits
                   </p>
                 )}
               </div>
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-slate-100 space-y-4">
-            <h4 className="font-semibold text-slate-900">UPI Details</h4>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">UPI ID</label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  value={formData.upi_id}
-                  onChange={(e) => {
-                    setFormData({ ...formData, upi_id: formatUPI(e.target.value) });
-                    setUpiVerified(false);
-                    setUpiHolderName('');
-                  }}
-                  placeholder="e.g., yourname@upi"
-                  autoComplete="off"
-                  name="vendor-upi-id"
-                  className={`flex-1 px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 ${
-                    formData.upi_id && !isValidUPI(formData.upi_id)
-                      ? 'border-red-300'
-                      : 'border-slate-200'
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleVerifyUpi()}
-                  disabled={verifyingUpi || saving}
-                  className="shrink-0 px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                >
-                  {verifyingUpi ? 'Verifying...' : 'Verify UPI'}
-                </button>
-              </div>
-              {formData.upi_id && !isValidUPI(formData.upi_id) && (
-                <p className="mt-1 text-sm text-red-600">
-                  Enter a valid UPI ID (e.g., yourname@upi)
-                </p>
-              )}
-              {upiVerified && formData.upi_id && isValidUPI(formData.upi_id) && (
-                <p className="mt-2 flex items-center gap-1.5 text-sm text-green-700">
-                  <CheckCircle className="w-4 h-4" />
-                  {upiHolderName ? `Verified — ${upiHolderName}` : 'Verified'}
-                </p>
-              )}
             </div>
           </div>
         </div>
