@@ -280,6 +280,11 @@ export function VendorBookingManagement({
   const allowedServiceStyles = getVendorAllowedServiceStyles(vendorData);
   const hasTeleService = !isSoloGroomer && allowedServiceStyles.includes('tele');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const earningsAnchorIsToday = selectedDate === new Date().toISOString().split('T')[0];
+  const selectedDayShort = new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+  });
   const [schedulePeriod, setSchedulePeriod] = useState<VendorSchedulePeriod>('today');
   const [bookingsPageIndex, setBookingsPageIndex] = useState(0);
   const [bookingsTotal, setBookingsTotal] = useState(0);
@@ -556,7 +561,7 @@ export function VendorBookingManagement({
     if (activeTab === 'earnings') {
       loadEarningsData(true);
     }
-  }, [activeTab, vendorId, vendorData?.id, schedulePeriod]);
+  }, [activeTab, vendorId, vendorData?.id, schedulePeriod, selectedDate]);
   
   // Load payouts data when payouts tab is active
   useEffect(() => {
@@ -802,6 +807,7 @@ export function VendorBookingManagement({
       const summary = await fetchVendorEarningsSummary(sessionId, {
         forceProfileRefresh,
         listPeriod: schedulePeriodToEarningsApiPeriod(schedulePeriod),
+        date: selectedDate,
       });
       const ledgerVendorId = summary.ledgerVendorId;
 
@@ -1868,8 +1874,10 @@ export function VendorBookingManagement({
                       <div className="text-2xl font-bold text-green-600">
                         ₹{(earningsData?.today || 0).toLocaleString('en-IN')}
                       </div>
-                      <div className="text-xs text-gray-600">Today</div>
-                      <div className="text-[10px] text-gray-500 mt-1 leading-tight">Credited today</div>
+                      <div className="text-xs text-gray-600">{earningsAnchorIsToday ? 'Today' : selectedDayShort}</div>
+                      <div className="text-[10px] text-gray-500 mt-1 leading-tight">
+                        {earningsAnchorIsToday ? 'Credited today' : 'Credited this day'}
+                      </div>
                     </button>
                     <button
                       type="button"
@@ -1921,10 +1929,10 @@ export function VendorBookingManagement({
                   <h3 className="font-semibold text-gray-900 mb-1">Recent Transactions</h3>
                   <p className="text-xs text-gray-500 mb-3">
                     {schedulePeriod === 'today'
-                      ? 'Credited today (IST).'
+                      ? (earningsAnchorIsToday ? 'Credited today (IST).' : `Credited on ${selectedDayShort} (IST).`)
                       : schedulePeriod === 'week'
-                        ? 'Credited this week (IST).'
-                        : 'Credited this month (IST).'}{' '}
+                        ? (earningsAnchorIsToday ? 'Credited this week (IST).' : `Credited in the 7 days ending ${selectedDayShort} (IST).`)
+                        : (earningsAnchorIsToday ? 'Credited this month (IST).' : `Credited from month start through ${selectedDayShort} (IST).`)}{' '}
                     Amount payable to you, customer, status, and payment time.
                   </p>
                   {(!earningsData?.transactions || earningsData.transactions.length === 0) ? (
@@ -1985,7 +1993,11 @@ export function VendorBookingManagement({
 
                 {/* Earnings Chart */}
                 <div className="p-4 bg-white border-t border-gray-100">
-                  <h3 className="font-semibold text-gray-900 mb-3">Earnings Trend (Last 7 Days)</h3>
+                  <h3 className="font-semibold text-gray-900 mb-3">
+                    {earningsAnchorIsToday
+                      ? 'Earnings Trend (Last 7 Days)'
+                      : `Earnings Trend (7 days ending ${selectedDayShort})`}
+                  </h3>
                   <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-4">
                     {(!earningsData?.dailyTrend || earningsData.dailyTrend.length === 0) ? (
                       <div className="text-center py-8 text-gray-500 text-sm">

@@ -49,6 +49,13 @@ import {
   SQL_EXCLUDE_WAPPT_VENDOR_EARNINGS_VE,
 } from '../../warmpawz-appointments/shared/wappt-earnings-policy';
 import { mapWpaySettlementLedgerStatus } from '../../customer/warmpawz-pay/shared/accrue-wpay-settlement';
+import {
+  EARNINGS_PERIOD_TZ,
+  earningsAnchorNoonIst,
+  formatYmdInTimeZone,
+  resolveEarningsAnchorYmd,
+  sqlTimestampInEarningsPeriod,
+} from '../../../utils/vendor-earnings-period-sql';
 
 const DASHBOARD_SERVICE_NAME_SQL = `CASE
   WHEN LOWER(COALESCE(b.commerce_mode, '')) = 'warmpawz_appointments'
@@ -105,41 +112,9 @@ function safeMoneyAmount(raw: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-const EARNINGS_PERIOD_TZ = 'Asia/Kolkata';
-
-function formatYmdInTimeZone(d: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d);
-}
-
 /** Dashboard timeframe anchor: optional client anchorDate (YYYY-MM-DD) or IST calendar today. */
 function resolveDashboardAnchorDate(anchorDateQuery?: string): string {
-  const trimmed = anchorDateQuery?.trim();
-  if (trimmed && /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return trimmed;
-  }
-  return formatYmdInTimeZone(new Date(), EARNINGS_PERIOD_TZ);
-}
-
-/** SQL predicate: realized/delivery timestamp within earnings period (IST calendar boundaries). */
-function sqlTimestampInEarningsPeriod(period: string, columnExpr: string): string {
-  const col = columnExpr;
-  switch (period) {
-    case 'day':
-      return `(${col} IS NOT NULL AND ${col} >= (timezone('${EARNINGS_PERIOD_TZ}', now()))::date::timestamp AT TIME ZONE '${EARNINGS_PERIOD_TZ}' AND ${col} < ((timezone('${EARNINGS_PERIOD_TZ}', now()))::date + interval '1 day')::timestamp AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
-    case 'week':
-      return `(${col} IS NOT NULL AND ${col} >= ((timezone('${EARNINGS_PERIOD_TZ}', now()))::date - interval '6 days')::timestamp AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
-    case 'month':
-      return `(${col} IS NOT NULL AND ${col} >= date_trunc('month', timezone('${EARNINGS_PERIOD_TZ}', now())) AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
-    case 'year':
-      return `(${col} IS NOT NULL AND ${col} >= date_trunc('year', timezone('${EARNINGS_PERIOD_TZ}', now())) AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
-    default:
-      return 'TRUE';
-  }
+  return resolveEarningsAnchorYmd(anchorDateQuery);
 }
 
 function buildDailyBreakdownLast7Days(
@@ -754,6 +729,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
     try {
       const { vendorId: paramVendorId } = c.req.param();
       const period = c.req.query('period') || 'month'; // day, week, month, year, lifetime
+      const earningsAnchor = resolveEarningsAnchorYmd(c.req.query('date') || c.req.query('anchorDate'));
 
       // Handle test IDs
       if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
@@ -774,7 +750,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       let vendorIdsForEarnings = await expandVendorIdsForEarningsContext(paramVendorId);
       if (vendorIdsForEarnings.length === 0) vendorIdsForEarnings = [vendorId];
       console.log(
-        `💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (canonical: ${vendorId}, ledgerIds: ${vendorIdsForEarnings.join(',')}), period: ${period}`
+        `💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (canonical: ${vendorId}, ledgerIds: ${vendorIdsForEarnings.join(',')}), period: ${period}, date: ${earningsAnchor}`
       );
 
       const earningsBackfilled = await backfillMissingVendorEarningsForVendorIds(
@@ -794,7 +770,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const periodScoped = period !== 'lifetime';
       const vePeriodSql = periodScoped
-        ? ` AND ${sqlTimestampInEarningsPeriod(period, 've.realized_at')}`
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, 've.realized_at', earningsAnchor)}`
         : '';
       const dsDeliveredCol = 'COALESCE(ds.order_delivered_at, ds.created_at)';
 
@@ -873,7 +849,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const earnings = earningsResult.rows || [];
 
       const dsPeriodSql = periodScoped
-        ? ` AND ${sqlTimestampInEarningsPeriod(period, dsDeliveredCol)}`
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, dsDeliveredCol, earningsAnchor)}`
         : '';
       const settlementsSql = `SELECT id, vendor_id, meal_order_id, pharmacy_order_id, order_amount, commission_amount, commission_rate,
                     net_payout, status, order_delivered_at, created_at, actual_payout_date
@@ -887,7 +863,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const wpayRealizedCol = 'COALESCE(p.completed_at, s.settlement_date::timestamptz, s.created_at)';
       const wpayPeriodSql = periodScoped
-        ? ` AND ${sqlTimestampInEarningsPeriod(period, wpayRealizedCol)}`
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, wpayRealizedCol, earningsAnchor)}`
         : '';
       const wpaySettlementsSql = `SELECT s.id,
                     s.vendor_id,
@@ -1138,7 +1114,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const dailyBreakdown =
         period === 'week'
-          ? buildDailyBreakdownLast7Days([
+          ? buildDailyBreakdownLast7Days(
+              [
               ...earnings,
               ...settlementRows.map((ds: any) => ({
                 realized_at: ds.order_delivered_at || ds.created_at,
@@ -1148,7 +1125,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
                 realized_at: ws.payment_completed_at || ws.settlement_date || ws.created_at,
                 amount: ws.net_amount,
               })),
-            ])
+              ],
+              earningsAnchorNoonIst(earningsAnchor),
+            )
           : undefined;
 
       return c.json({
@@ -1195,6 +1174,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
     try {
       const { vendorId: paramVendorId } = c.req.param();
       const period = c.req.query('period') || 'month';
+      const earningsAnchor = resolveEarningsAnchorYmd(c.req.query('date') || c.req.query('anchorDate'));
       const limit = parseInt(c.req.query('limit') || '50', 10);
 
       // Handle test IDs
@@ -1221,7 +1201,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const txPeriodScoped = period !== 'lifetime';
       const veTxPeriodSql = txPeriodScoped
-        ? ` AND ${sqlTimestampInEarningsPeriod(period, 've.realized_at')}`
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, 've.realized_at', earningsAnchor)}`
         : '';
 
       // Prefer vendor_earnings (source of truth for earnings) when available
@@ -1287,7 +1267,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       // Meal/pharmacy hyperlocal delivery settlements (vendor_earnings only covers bookings)
       const dsTxPeriodSql = txPeriodScoped
-        ? ` AND ${sqlTimestampInEarningsPeriod(period, 'COALESCE(ds.order_delivered_at, ds.created_at)')}`
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, 'COALESCE(ds.order_delivered_at, ds.created_at)', earningsAnchor)}`
         : '';
       const dsSql = `SELECT ds.id, ds.meal_order_id, ds.pharmacy_order_id, ds.net_payout, ds.status,
                     ds.order_delivered_at, ds.created_at, mo.order_number, c.full_name AS customer_name
