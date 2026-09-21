@@ -12,5 +12,7 @@ describe('ServiceDescriptionInline full-description dialog', () => {
     expect(src).toContain('min-h-0');
     expect(src).toContain('flex-1');
     expect(src).toContain('overscroll-contain');
+    expect(src).toContain('max-h-[min(70dvh,28rem)]');
+    expect(src).toContain('!flex');
   });
 });

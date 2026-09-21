@@ -169,11 +169,22 @@ export function pickEarningsTransactionsForPeriod(
   return Array.isArray(selected) ? selected : [];
 }
 
+export function earningsRequestQuery(period: string, anchorDate?: string): string {
+  const params = new URLSearchParams({ period });
+  if (anchorDate && period !== 'lifetime' && /^\d{4}-\d{2}-\d{2}$/.test(anchorDate)) {
+    params.set('date', anchorDate);
+  }
+  return params.toString();
+}
+
 async function fetchEarningsPeriod(
   vendorId: string,
-  period: string
+  period: string,
+  anchorDate?: string
 ): Promise<EarningsApiResponse> {
-  return apiClient.get<EarningsApiResponse>(`/vendor/${vendorId}/earnings?period=${period}`);
+  return apiClient.get<EarningsApiResponse>(
+    `/vendor/${vendorId}/earnings?${earningsRequestQuery(period, anchorDate)}`
+  );
 }
 
 /** Prefer localStorage (synced from profile) then props. */
@@ -190,7 +201,12 @@ export function resolveSessionVendorIdForEarnings(
 
 export async function fetchVendorEarningsSummary(
   sessionVendorId: string,
-  options?: { forceProfileRefresh?: boolean; listPeriod?: VendorEarningsListPeriod }
+  options?: {
+    forceProfileRefresh?: boolean;
+    listPeriod?: VendorEarningsListPeriod;
+    /** IST calendar YYYY-MM-DD; day/week/month windows end on this date. */
+    date?: string;
+  }
 ): Promise<VendorEarningsSummary> {
   if (options?.forceProfileRefresh) {
     clearLedgerVendorIdCache();
@@ -198,11 +214,12 @@ export async function fetchVendorEarningsSummary(
 
   const sessionId = resolveSessionVendorIdForEarnings(sessionVendorId) || sessionVendorId;
   let ledgerVendorId = await resolveLedgerVendorId(sessionId, options);
+  const anchorDate = options?.date && /^\d{4}-\d{2}-\d{2}$/.test(options.date) ? options.date : undefined;
 
   let [todayRes, weekRes, monthRes, lifetimeRes] = await Promise.all([
-    fetchEarningsPeriod(ledgerVendorId, 'day'),
-    fetchEarningsPeriod(ledgerVendorId, 'week'),
-    fetchEarningsPeriod(ledgerVendorId, 'month'),
+    fetchEarningsPeriod(ledgerVendorId, 'day', anchorDate),
+    fetchEarningsPeriod(ledgerVendorId, 'week', anchorDate),
+    fetchEarningsPeriod(ledgerVendorId, 'month', anchorDate),
     fetchEarningsPeriod(ledgerVendorId, 'lifetime'),
   ]);
 
@@ -214,9 +231,9 @@ export async function fetchVendorEarningsSummary(
       localStorage.setItem('vendorId', canonical);
     }
     [todayRes, weekRes, monthRes, lifetimeRes] = await Promise.all([
-      fetchEarningsPeriod(ledgerVendorId, 'day'),
-      fetchEarningsPeriod(ledgerVendorId, 'week'),
-      fetchEarningsPeriod(ledgerVendorId, 'month'),
+      fetchEarningsPeriod(ledgerVendorId, 'day', anchorDate),
+      fetchEarningsPeriod(ledgerVendorId, 'week', anchorDate),
+      fetchEarningsPeriod(ledgerVendorId, 'month', anchorDate),
       fetchEarningsPeriod(ledgerVendorId, 'lifetime'),
     ]);
   }

@@ -2,6 +2,7 @@ import {
   formatPayBillEarningsLabel,
   pickEarningsTransactionsForPeriod,
   schedulePeriodToEarningsApiPeriod,
+  earningsRequestQuery,
 } from '../load-vendor-earnings-summary';
 
 describe('formatPayBillEarningsLabel', () => {
@@ -31,5 +32,11 @@ describe('earnings schedule period mapping', () => {
     );
     expect(selected).toEqual(week);
     expect(selected).not.toContainEqual({ id: 'life-1' });
+  });
+
+  it('sends the calendar date on day/week/month earnings requests', () => {
+    expect(earningsRequestQuery('day', '2026-09-04')).toBe('period=day&date=2026-09-04');
+    expect(earningsRequestQuery('week', '2026-09-04')).toBe('period=week&date=2026-09-04');
+    expect(earningsRequestQuery('lifetime', '2026-09-04')).toBe('period=lifetime');
   });
 });

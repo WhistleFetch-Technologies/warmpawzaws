@@ -3,9 +3,9 @@ import { query } from '../../../database/rds-connection';
 import { resolveVendorId, resolveVendorIdsForLedger } from '../../../utils/vendor-resolve';
 import { mapWpaySettlementLedgerStatus } from '../../customer/warmpawz-pay/shared/accrue-wpay-settlement';
 import { reconcilePendingWpayPayments } from '../../customer/warmpawz-pay/shared/reconcile-wpay-razorpay-capture';
+import { resolveEarningsAnchorYmd, sqlTimestampInEarningsPeriod } from '../../../utils/vendor-earnings-period-sql';
 
 const VENDOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const EARNINGS_PERIOD_TZ = 'Asia/Kolkata';
 
 function safeMoneyAmount(raw: unknown): number {
   if (raw === null || raw === undefined || raw === '') return 0;
@@ -18,22 +18,6 @@ function normalizeEarningsPeriod(raw: string | undefined): string {
   if (p === 'all') return 'lifetime';
   if (p === 'day' || p === 'week' || p === 'month' || p === 'year' || p === 'lifetime') return p;
   return 'month';
-}
-
-function sqlTimestampInEarningsPeriod(period: string, columnExpr: string): string {
-  const col = columnExpr;
-  switch (period) {
-    case 'day':
-      return `(${col} IS NOT NULL AND ${col} >= (timezone('${EARNINGS_PERIOD_TZ}', now()))::date::timestamp AT TIME ZONE '${EARNINGS_PERIOD_TZ}' AND ${col} < ((timezone('${EARNINGS_PERIOD_TZ}', now()))::date + interval '1 day')::timestamp AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
-    case 'week':
-      return `(${col} IS NOT NULL AND ${col} >= ((timezone('${EARNINGS_PERIOD_TZ}', now()))::date - interval '6 days')::timestamp AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
-    case 'month':
-      return `(${col} IS NOT NULL AND ${col} >= date_trunc('month', timezone('${EARNINGS_PERIOD_TZ}', now())) AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
-    case 'year':
-      return `(${col} IS NOT NULL AND ${col} >= date_trunc('year', timezone('${EARNINGS_PERIOD_TZ}', now())) AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
-    default:
-      return 'TRUE';
-  }
 }
 
 function mapPayBillRow(row: Record<string, unknown>) {
@@ -91,6 +75,7 @@ export function registerVendorWpayPaymentsEndpoints(app: Hono): void {
       }
 
       const period = normalizeEarningsPeriod(c.req.query('period'));
+      const earningsAnchor = resolveEarningsAnchorYmd(c.req.query('date') || c.req.query('anchorDate'));
       const limitRaw = parseInt(c.req.query('limit') || '50', 10);
       const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
 
@@ -108,7 +93,7 @@ export function registerVendorWpayPaymentsEndpoints(app: Hono): void {
 
       const realizedCol = 'COALESCE(p.completed_at, s.settlement_date::timestamptz, s.created_at)';
       const periodSql =
-        period !== 'lifetime' ? ` AND ${sqlTimestampInEarningsPeriod(period, realizedCol)}` : '';
+        period !== 'lifetime' ? ` AND ${sqlTimestampInEarningsPeriod(period, realizedCol, earningsAnchor)}` : '';
 
       const result = await query(
         `SELECT s.id,
