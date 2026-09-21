@@ -188,7 +188,7 @@ export function evaluateAgainstSnapshot(
     req,
   });
 
-  if (vcfScore.winnerId) {
+  if (vcfScore.hadVcfCandidates) {
     const discount = vcfScore.winnerBenefits
       .filter((b) => b.benefit_type === 'DISCOUNT')
       .reduce((s, b) => s + b.amount, 0);
@@ -196,7 +196,7 @@ export function evaluateAgainstSnapshot(
       .filter((b) => b.benefit_type === 'CASHBACK')
       .reduce((s, b) => s + b.amount, 0);
     return {
-      eligible: vcfScore.winnerBenefits.length > 0,
+      eligible: Boolean(vcfScore.winnerId) && vcfScore.winnerBenefits.length > 0,
       winner_promotion_id: vcfScore.winnerId,
       benefits: vcfScore.winnerBenefits,
       summary: {

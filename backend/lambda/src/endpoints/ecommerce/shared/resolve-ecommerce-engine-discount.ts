@@ -1,5 +1,4 @@
 import { loadOwnedEvaluationDiscount } from '../../../discount-engine/promo-engine/services/owned-evaluation';
-import { normalizePromoCategory } from '../../../discount-engine/promo-engine/dsl/category-aliases';
 
 export async function resolveEcommerceEngineDiscount(opts: {
   customerId?: string | null;
@@ -33,13 +32,11 @@ export async function resolveEcommerceEngineDiscount(opts: {
     transaction: {
       type: 'ECOMMERCE',
       channel: 'ecommerce',
-      service_category: 'ecommerce',
       vendor_id: opts.vendorId || undefined,
       vendorId: opts.vendorId || undefined,
       amount: opts.amount,
       lines: (opts.lines || []).map((line) => ({
         id: line.id,
-        service_category: normalizePromoCategory(line.service_category) || 'ecommerce',
         amount: line.amount,
       })),
     },

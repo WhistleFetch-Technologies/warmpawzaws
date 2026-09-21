@@ -550,10 +550,12 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             );
             const ev = await safeEvaluatePromotions({
               user_id: String(customerIdFinal),
+              persist: true,
               transaction: {
                 type: 'ECOMMERCE',
-                service_category: 'ecommerce',
+                channel: 'ecommerce',
                 vendor_id: vendorIdFinal ? String(vendorIdFinal) : undefined,
+                vendorId: vendorIdFinal ? String(vendorIdFinal) : undefined,
                 amount: Number(amount) || 0,
               },
             });

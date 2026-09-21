@@ -43,7 +43,10 @@ export {
   getPromotionDetail,
   mapAdminDraftToPayload,
 } from './services/crud.service';
-export { loadServerPaymentContext } from './services/payment-context-load.service';
+export {
+  loadServerPaymentContext,
+  hydrateEvaluateRequest,
+} from './services/payment-context-load.service';
 export { applyCombinedCap } from './vcf/combined-cap';
 export {
   classifyPaymentChannel,

@@ -1,5 +1,5 @@
 import { query } from '../../database/rds-connection';
-import { evaluatePromotions, normalizePromoCategory } from '../../discount-engine/promo-engine';
+import { evaluatePromotions } from '../../discount-engine/promo-engine';
 import type { EvaluateResult } from '../../discount-engine/promo-engine/types';
 import type { UnifiedResolverResponse } from '../../discount-engine/resolver/unified-resolver-response';
 import { parseJsonMetaFromNotes } from '../../utils/booking-notes-meta';
@@ -84,9 +84,6 @@ async function evaluateEngine(
       transaction: {
         type: 'BOOKING',
         channel: ctx.channel || undefined,
-        service_category: params.serviceCategory
-          ? normalizePromoCategory(params.serviceCategory) || undefined
-          : undefined,
         service_type: params.serviceStyle,
         vendor_id: ctx.vendorId || params.vendorId,
         vendorId: ctx.vendorId || params.vendorId,
@@ -214,6 +211,7 @@ function bookingResultFromEngine(
           ]
         : [],
     platformPromotionId: matchedId,
+    evaluationId: result?.evaluation_id || undefined,
   };
 }
 
@@ -270,17 +268,29 @@ export async function resolveBookingDiscountQuoteBatch(params: {
     loadEvaluateSnapshot,
     evaluateAgainstSnapshot,
     loadBehaviourProfile,
+    loadServerPaymentContext,
+    classifyPaymentChannel,
   } = await import('../../discount-engine/promo-engine');
   const now = new Date();
   const behaviour = await loadBehaviourProfile(customerId);
+  const ctx = await loadServerPaymentContext({
+    surface: 'booking',
+    vendorId,
+  });
   const snapshot = await loadEvaluateSnapshot({
     userId: customerId,
     now,
     behaviour,
+    vendorId: ctx.vendorId || vendorId,
+    categoryId: ctx.categoryId || undefined,
   });
 
   return items.map((item) => {
     try {
+      const channel = classifyPaymentChannel({
+        surface: 'booking',
+        serviceStyle: item.serviceStyle,
+      });
       const body = evaluateAgainstSnapshot(
         snapshot,
         {
@@ -288,11 +298,11 @@ export async function resolveBookingDiscountQuoteBatch(params: {
           persist: false,
           transaction: {
             type: 'BOOKING',
-            service_category: item.serviceCategory
-              ? normalizePromoCategory(item.serviceCategory) || undefined
-              : undefined,
+            channel: channel || ctx.channel || undefined,
             service_type: item.serviceStyle,
-            vendor_id: vendorId,
+            vendor_id: ctx.vendorId || vendorId,
+            vendorId: ctx.vendorId || vendorId,
+            categoryId: ctx.categoryId || undefined,
             amount: item.amount,
           },
         },

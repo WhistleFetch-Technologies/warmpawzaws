@@ -1771,19 +1771,34 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           ? null
           : body.evaluationId || body.evaluation_id || body.promoEngineEvaluationId || null;
         if (!engineEvaluationId && bookingData.customer_id && !skipPromoEngineForWapptSlot) {
+          engineEvaluationId =
+            resolvedBookingPromotions?.evaluationId || null;
+        }
+        if (!engineEvaluationId && bookingData.customer_id && !skipPromoEngineForWapptSlot) {
           try {
-            const { safeEvaluatePromotions } = await import(
+            const { evaluatePromotions, loadServerPaymentContext } = await import(
               '../../../discount-engine/promo-engine'
             );
-            const ev = await safeEvaluatePromotions({
+            const ctx = await loadServerPaymentContext({
+              surface: 'booking',
+              vendorId: bookingData.vendor_id ? String(bookingData.vendor_id) : null,
+              serviceStyle: bookingStyle || null,
+              bookingCategoryId:
+                typeof serviceCategory === 'string' &&
+                /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(serviceCategory)
+                  ? serviceCategory
+                  : null,
+            });
+            const ev = await evaluatePromotions({
               user_id: String(bookingData.customer_id),
+              persist: true,
               transaction: {
                 type: 'BOOKING',
-                service_category: normalizePromoCategory(
-                  body.serviceCategory || body.service_category || serviceCategory
-                ) || undefined,
+                channel: ctx.channel || undefined,
                 service_type: bookingStyle || undefined,
-                vendor_id: bookingData.vendor_id ? String(bookingData.vendor_id) : undefined,
+                vendor_id: ctx.vendorId || undefined,
+                vendorId: ctx.vendorId || undefined,
+                categoryId: ctx.categoryId || undefined,
                 amount: Number(bookingData.total_amount || bookingData.base_price || 0),
               },
             });

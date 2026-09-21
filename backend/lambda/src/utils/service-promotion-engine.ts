@@ -398,6 +398,7 @@ export type BookingPromotionResult = {
   applied: AppliedBookingPromotion[];
   vendorPromotionId?: string;
   platformPromotionId?: string;
+  evaluationId?: string;
   settlement?: import('../discount-engine/models/discount-result').DiscountSettlementPreview;
 };
 

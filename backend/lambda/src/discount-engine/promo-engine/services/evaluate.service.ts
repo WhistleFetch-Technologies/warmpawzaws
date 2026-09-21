@@ -2,6 +2,7 @@ import { normalizePromoCategory } from '../dsl/category-aliases';
 import { dbInsertEvaluation, dbInsertAudit, dbGetBehaviour } from '../repos/promo-engine.repo';
 import type { CustomerBehaviourProfile, EvaluateRequest, EvaluateResult } from '../types';
 import { evaluateAgainstSnapshot, loadEvaluateSnapshot } from './evaluate-snapshot';
+import { hydrateEvaluateRequest } from './payment-context-load.service';
 
 function parseJsonField(v: unknown): Record<string, unknown> {
   if (v == null) return {};
@@ -43,28 +44,32 @@ export async function loadBehaviourProfile(
  */
 export async function evaluatePromotions(req: EvaluateRequest): Promise<EvaluateResult> {
   const now = new Date();
-  const serviceCategory = req.transaction?.service_category
-    ? normalizePromoCategory(req.transaction.service_category) || undefined
-    : undefined;
-  const vendorId = String(req.transaction?.vendorId || req.transaction?.vendor_id || '') || undefined;
-  const categoryId = req.transaction?.categoryId ? String(req.transaction.categoryId) : undefined;
-  const behaviour = await loadBehaviourProfile(req.user_id, req.behaviour_override);
+  const hydrated = await hydrateEvaluateRequest(req);
+  const tx = hydrated.transaction || {};
+  const categoryId = tx.categoryId ? String(tx.categoryId) : undefined;
+  const vendorId = String(tx.vendorId || tx.vendor_id || '') || undefined;
+  const serviceCategory = categoryId
+    ? undefined
+    : tx.service_category
+      ? normalizePromoCategory(tx.service_category) || undefined
+      : undefined;
+  const behaviour = await loadBehaviourProfile(hydrated.user_id, hydrated.behaviour_override);
   const snapshot = await loadEvaluateSnapshot({
-    userId: req.user_id,
+    userId: hydrated.user_id,
     now,
     serviceCategory,
     vendorId,
     categoryId,
     behaviour,
   });
-  const body = evaluateAgainstSnapshot(snapshot, req, now);
+  const body = evaluateAgainstSnapshot(snapshot, hydrated, now);
 
   let evaluation_id = '';
-  if (req.persist !== false) {
+  if (hydrated.persist !== false) {
     const expires = new Date(now.getTime() + 2 * 60 * 60 * 1000);
     evaluation_id = await dbInsertEvaluation({
-      user_id: req.user_id,
-      request_json: req,
+      user_id: hydrated.user_id,
+      request_json: hydrated,
       result_json: {
         eligible: body.eligible,
         benefits: body.benefits,

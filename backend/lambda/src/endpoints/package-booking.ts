@@ -127,13 +127,22 @@ async function evaluatePackagePromoEngine(opts: {
   serviceCategory?: string;
 }): Promise<Record<string, unknown> | null> {
   try {
-    const { safeEvaluatePromotions } = await import('../discount-engine/promo-engine');
+    const { safeEvaluatePromotions, loadServerPaymentContext } = await import(
+      '../discount-engine/promo-engine'
+    );
+    const ctx = await loadServerPaymentContext({
+      surface: 'booking',
+      vendorId: opts.vendorId || null,
+    });
     const ev = await safeEvaluatePromotions({
       user_id: opts.customerId,
+      persist: true,
       transaction: {
         type: 'PACKAGE',
-        service_category: opts.serviceCategory || 'PACKAGE',
-        vendor_id: opts.vendorId,
+        channel: ctx.channel || undefined,
+        vendor_id: ctx.vendorId || opts.vendorId,
+        vendorId: ctx.vendorId || opts.vendorId,
+        categoryId: ctx.categoryId || undefined,
         amount: opts.amount,
       },
     });
