@@ -1,7 +1,7 @@
 # Promotion engine refactor — V / C / F
 
-**Status:** product contract for the next build on `feature/promo-engine-v1`.  
-**Date:** 18 Sep 2026.  
+**Status:** product contract plus ranking/fast-path guardrails for the next build on `feature/promo-engine-v1`.  
+**Date:** 18 Sep 2026 (business). 21 Sep 2026 (guardrails + technical implementation).  
 **Supersedes, for product policy only:** HLD visit examples that treat “second visit = 15% off” as pricing, and master plan §18 where catalogue percent owns the Pay Bill payable.  
 **Does not supersede:** evaluate → commit → reverse, never credit the wallet on preview, wallet as the cashback ledger.
 
@@ -144,6 +144,15 @@ interface PromoVcfConfig {
   };
   /** Days after award. Required when benefitMode is cashback or both. */
   expiryDays?: number;
+  /**
+   * Admin override on this campaign only. Default ranking is specificity (V > C > F).
+   * Never applied unless set. If this campaign wins specificity, re-sort the eligible set with this strategy.
+   */
+  rankingOverride?:
+    | 'least_platform_loss'
+    | 'max_customer_discount'
+    | 'max_customer_cashback'
+    | 'max_customer_total_value';
 }
 ```
 
@@ -219,6 +228,10 @@ This is what makes a clinic’s own ladder beat a platform offer without a deplo
 
 Limits (per user, budget, dates, active status) still reject before this order. A paused vendor rule does not block the category rule.
 
+**Locked ranking default: specificity.** A qualifying vendor promo always beats a qualifying category promo, which always beats a qualifying platform promo. `least_platform_loss`, `max_customer_discount`, `max_customer_cashback`, and `max_customer_total_value` exist only as an admin override on that campaign. They never run unless set.
+
+Score **all** available promotions, then pick. Do not short-circuit after the first vendor hit. A vendor rule that fails its own visit loop does not block category or platform. Each promo uses its **own** visit source. Failures are recorded as fallbacks (`VISIT_FAIL`, `LIMIT_FAIL`), not as a second discount. Do not stand up a second conflict resolver — extend this rank, the same as `resolveStack` was extended rather than replaced.
+
 ---
 
 ## Combined cap
@@ -263,7 +276,10 @@ interface EvaluateResponse {
     expiryDays: number | null;
     redeem: PromoVcfConfig['redeem'] | null;
   } | null;
-  conflicts: Array<{ promotionId: string; reason: 'LOST_TO_MORE_SPECIFIC' | 'LOST_TO_PRIORITY' }>;
+  conflicts: Array<{
+    promotionId: string;
+    reason: 'LOST_TO_MORE_SPECIFIC' | 'LOST_TO_PRIORITY' | 'VISIT_FAIL' | 'LIMIT_FAIL';
+  }>;
 }
 ```
 
@@ -302,9 +318,97 @@ Reuse the current wizard shell. Replace the audience step. Pickers call live lis
 | Loop | visit number, every Nth, from N on, between. Fields N and M only. | compiles to the existing condition operators |
 | Benefit | discount only, cashback only, both. Percent or rupees. Max discount. Expiry days. | existing benefit JSON |
 | Publish | V / C / F, same pickers, not copied from visit source unless the admin copies them | — |
+| Ranking override | unset (specificity) or least_platform_loss / max_customer_discount / max_customer_cashback / max_customer_total_value. Never implied. | campaign metadata |
 | Redeem | V / C / F, then tele, Pay Bill, appointment, ecommerce | wallet row JSON |
 
 No seed of `DEV_GV_*` style codes as the product. No hardcoded category chips.
+
+---
+
+## Guardrails
+
+These do not change V / C / F meaning. They lock how ranking, evaluate, and checkout are built.
+
+1. **One winner.** Customer UI shows the winner only. Fallbacks are ordered for the **next commit**, not stacking. If the stored evaluation expires or commit hits a limit race, re-evaluate and take the next eligible row in the same order.
+2. **Score all, then pick.** Never skip remaining letters because a more specific promo exists. A failed vendor visit loop is `VISIT_FAIL` on that promo; category and platform still score.
+3. **Own visit source.** Do not share one `grooming_visit_count` across V, C, and F on the same payment. Sum cells for **that** promo’s letter + general/specific channels only.
+4. **Server context only.** Channel is `tele | appointment | paybill | ecommerce`. Vendor is `vendors.id`. Category is `service_categories.id` from the booking service, else `vendors.role_id` → `service_categories.vendor_roles`. No client slugs (`VET`, `WPAY`, `grooming`). Pay Bill is never a category.
+5. **Narrow candidates.** Today `dbFindActiveCandidates` filters by category alias only. This build requires `status = ACTIVE` AND window AND (publish F OR publish C = this category id OR publish V = this vendor id). Not the whole table.
+6. **One snapshot.** Same shape as `loadEvaluateSnapshot`: candidates + rules + limits + usage + profile. Ranking is in memory. No visit write on quote. Preview uses `persist: false`.
+7. **Override is opt-in.** Default sort is publish V > C > F, then numeric priority, then later `updated_at`. If **that** winning campaign has an override strategy, re-sort the eligible set with that strategy only. Instant discount is what `least_platform_loss` looks at; cashback is ignored for burn. Combined max cap runs **after** the winner is chosen.
+8. **Engine is the only customer cut.** Catalogue % on Pay Bill and shop coupon overlay stay retired. Ecommerce never increments visits.
+9. **Same contract on all four payments.** Pay Bill amount typing and checkout use the same evaluate path. Debounce Pay Bill amount (~300ms). Reuse `evaluationId` when amount, vendor, and channel are unchanged.
+10. **p95.** Evaluate stays well under one extra round-trip beyond that snapshot. Do not fan out per-candidate SQL.
+
+---
+
+## Technical implementation
+
+Build on the existing evaluate → commit → reverse path. Do not add a second engine.
+
+### Pipeline (Pay Bill amount typing and checkout)
+
+Same function, same snapshot, same rank. The only difference is `persist: false` on preview vs `persist: true` when storing an id for pay.
+
+1. **Resolve payment context on the server**  
+   `channel`, `vendors.id`, `service_categories.id`. Booking service id wins when it is a real catalogue row; otherwise role → `vendor_roles`. Unknown role: skip category bucket, still evaluate F and matching V. Unit tests live next to this resolver (role → category, style → channel, Pay Bill not a category, no invented slug).
+
+2. **Load available promos (narrow)**  
+   Extend `dbFindActiveCandidates` (do not scan all ACTIVE rows then filter in JS):
+
+   ```sql
+   status = 'ACTIVE'
+   AND (start_at IS NULL OR start_at <= now)
+   AND (end_at IS NULL OR end_at >= now)
+   AND (
+     metadata publish letter = 'F'
+     OR (letter = 'C' AND publish categoryId = :categoryId)
+     OR (letter = 'V' AND publish vendorId = :vendorId)
+   )
+   ```
+
+   Old rows with no publish letter keep today’s category-alias filter so they do not vanish on deploy.
+
+3. **Load the visit profile once**  
+   One read of `customer_behaviour_profiles` into the snapshot. Quote never writes.
+
+4. **Score every available promo in memory**  
+   For each row: sum visit count from **that** promo’s V/C/F + general/specific channels; apply visit loop; apply dates/budget/per-user (`passesLimits`, including `per_transaction`).  
+   Fail → keep the row as a fallback with `VISIT_FAIL` or `LIMIT_FAIL`. Do not apply its benefit.  
+   Pass → eligible set with computed discount/cashback (combined cap **not** applied yet).
+
+5. **Rank the eligible set**  
+   Default: publish V > C > F, then `priority` desc, then later `updated_at`.  
+   If the winner’s campaign has `least_platform_loss` | `max_customer_discount` | `max_customer_cashback` | `max_customer_total_value`, re-sort **only that eligible set** with that strategy. Then apply combined max cap on the winner (`calculate-benefits`).
+
+6. **Return one winner + ordered fallbacks**  
+   Reasons: `LOST_TO_MORE_SPECIFIC`, `LOST_TO_PRIORITY`, `VISIT_FAIL`, `LIMIT_FAIL`. Customer UI shows the winner only. Commit uses `evaluationId`. On expiry or limit race, re-run this pipeline and take the next eligible row in the same order.
+
+### Fast path
+
+| Guard | How |
+| --- | --- |
+| Preview | `persist: false`. No `promo_engine_evaluations` insert. No wallet. No visit. |
+| Pay Bill typing | Debounce ~300ms. Reuse `evaluationId` when amount, `vendorId`, and channel are unchanged. |
+| Snapshot | One load: candidates + rules + limits + usage + profile (`loadEvaluateSnapshot` shape). Ranking in memory. |
+| SQL | The publish V/C/F predicate above. Batch rules/limits/usage as today (`dbListRulesForPromotions`, `dbGetLimitsForPromotions`, `dbCountUsageBatch`). |
+| p95 | Well under one extra round-trip beyond the snapshot. No per-candidate limits/usage queries. |
+
+### Checkout surfaces (same evaluate contract)
+
+| Channel | Customer surface | Server evaluate today |
+| --- | --- | --- |
+| `paybill` | `apps/customer-web/app/warmpawz-pay/vendors/[vendorId]/WarmpawzPayVendorClient.tsx` | `backend/lambda/src/endpoints/customer/warmpawz-pay/services/customer_warmpawz_pay_initiate_post.service.ts` |
+| `tele` / `appointment` | `apps/customer-web/components/customer/payment/UniversalPaymentPage.tsx`, booking quote | `backend/lambda/src/lib/services/booking-promotion-service.ts` |
+| `ecommerce` | cart / `apps/customer-web/components/ecommerce/checkout/CheckoutPaymentStep.tsx` | `backend/lambda/src/endpoints/ecommerce/shared/resolve-ecommerce-engine-discount.ts` |
+
+Wire **context + ranking** into these hooks. Do not add a fifth evaluate entry. Package purchase stays on the same contract (channel from service style; visit write only if a covered service later completes). WAPPT slot `appointment_fee` still does not earn engine discount.
+
+Existing files to extend, not replace: `evaluate-snapshot.ts`, `evaluate.service.ts`, `promo-engine.repo.ts` (`dbFindActiveCandidates`), `calculate-benefits.ts`, `commit.service.ts`, `wallet-redeem-scope.service.ts`. Customer 4-layer: Pay Bill stays in `endpoints/customer/warmpawz-pay` (route → handler → service → repo). Do not put ranking SQL in the route.
+
+### Fallbacks vs stacking
+
+`resolveStack` stays for benefit shape on the **single winner** (discount + cashback together, combined cap). It is not a second ranking pass across V/C/F. Losers never add a second discount.
 
 ---
 
@@ -312,7 +416,7 @@ No seed of `DEV_GV_*` style codes as the product. No hardcoded category chips.
 
 1. **Context resolver.** One function used by every checkout: `vendorId`, `roleId`, `service_categories.id`, `channel`. Unit tests for role → category via `vendor_roles`, booking style → channel, Pay Bill not becoming a category, unknown role not inventing a slug.
 2. **Profile writer** on booking completion and Pay Bill capture. Idempotent. No ecommerce. Refund reverses one event.
-3. **Evaluate.** Per promotion, sum `visit.count` from that promotion’s visit source. Apply the loop. Apply publish. Pick one winner with V > C > F, then priority. Return conflicts. Old promotions with no `visitSource` keep today’s category condition so they do not break on deploy.
+3. **Evaluate.** Snapshot load, then score every available promo in memory (own visit source, visit loop, limits). Rank eligible with V > C > F, then priority, then `updated_at`. Apply campaign override only if set. Combined cap on the winner. Return conflicts including `VISIT_FAIL` / `LIMIT_FAIL`. Old promotions with no `visitSource` keep today’s category condition so they do not break on deploy.
 4. **Combined cap** in `calculate-benefits`.
 5. **Commit** copies `redeem` and `expiryDays` onto the wallet row. Spend path checks letter and channel.
 6. **Pass the contract** from booking, Pay Bill, shop, and package. Delete the second discount (catalogue percent on Pay Bill, shop coupon overlay).
@@ -331,6 +435,9 @@ No new migration if `metadata`, `services`, and `redeem_scope` stay JSON. If a q
 - General at that vendor does increment for tele, appointment, and Pay Bill there.
 - A shop order never changes a visit count.
 - A vendor promotion and a platform promotion on the same bill: the vendor promotion is the only one applied, and the response lists the platform one as `LOST_TO_MORE_SPECIFIC`.
+- A vendor promo that fails its visit loop does not hide a qualifying category or platform promo; that vendor row is `VISIT_FAIL` in fallbacks.
+- Campaign override strategies do not run unless set on the winning campaign.
+- Preview evaluate does not insert an evaluation row and does not write a visit. Pay Bill amount typing reuses `evaluationId` when amount, vendor, and channel are unchanged.
 - Discount and cashback together never exceed max discount. The instant cut is kept first.
 - Cashback with redeem `V` + Pay Bill unticked cannot be spent on the next Pay Bill at that vendor, and can be spent on ecommerce if that box is ticked.
 - Changing the visit number or the percent is an edit of the promotion.
