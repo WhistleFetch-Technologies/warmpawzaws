@@ -13,6 +13,10 @@ export type DebitScopedWalletParams = {
   customerId: string;
   amount: number;
   serviceCategory?: string | null;
+  vendorId?: string | null;
+  categoryId?: string | null;
+  channel?: 'tele' | 'appointment' | 'paybill' | 'ecommerce' | null;
+  ecommerceCategoryId?: string | null;
   referenceType: string;
   referenceId: string;
   description: string;
@@ -63,7 +67,13 @@ export async function debitScopedWalletInTransaction(
     };
   }
 
-  const scoped = await computeSpendableWalletBalance(params.customerId, params.serviceCategory);
+  const scoped = await computeSpendableWalletBalance(params.customerId, params.serviceCategory, {
+    serviceCategory: params.serviceCategory,
+    vendorId: params.vendorId,
+    categoryId: params.categoryId,
+    channel: params.channel,
+    ecommerceCategoryId: params.ecommerceCategoryId,
+  });
   if (amount > scoped.spendable + 0.009) {
     throw new Error(
       `Insufficient spendable wallet (spendable ₹${scoped.spendable.toFixed(2)}, locked ₹${scoped.lockedPromoCashback.toFixed(2)})`,
@@ -103,6 +113,10 @@ export async function debitScopedWalletInTransaction(
     customerId: params.customerId,
     amount,
     serviceCategory: params.serviceCategory,
+    vendorId: params.vendorId,
+    categoryId: params.categoryId,
+    channel: params.channel,
+    ecommerceCategoryId: params.ecommerceCategoryId,
   });
 
   return { reused: false, debited: amount, balanceAfter };

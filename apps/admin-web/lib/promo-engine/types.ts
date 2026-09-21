@@ -81,8 +81,70 @@ export interface PromoEngineDraft {
     campaignLimit?: number | null;
     budgetLimit?: number | null;
   };
+  vcf?: PromoVcfDraft;
   createdAt: string;
   updatedAt: string;
+}
+
+export type PromoLetter = 'V' | 'C' | 'F';
+export type PromoCountChannel = 'tele' | 'appointment' | 'paybill';
+export type PromoSpendChannel = PromoCountChannel | 'ecommerce';
+export type PromoVisitLoop =
+  | { kind: 'visit_number'; n: number }
+  | { kind: 'every_nth'; n: number }
+  | { kind: 'from_onward'; n: number }
+  | { kind: 'between'; n: number; m: number }
+  | { kind: 'every' };
+
+export interface PromoVcfDraft {
+  visitSource: {
+    letter: PromoLetter;
+    vendorId?: string;
+    vendorName?: string;
+    categoryId?: string;
+    categoryName?: string;
+    width: 'general' | 'specific';
+    channels?: PromoCountChannel[];
+  };
+  visitLoop: PromoVisitLoop;
+  benefitMode: 'discount' | 'cashback' | 'both';
+  maxDiscount?: number;
+  publish: {
+    letter: PromoLetter;
+    vendorId?: string;
+    vendorName?: string;
+    categoryId?: string;
+    categoryName?: string;
+  };
+  redeem?: {
+    letter: PromoLetter;
+    vendorId?: string;
+    vendorName?: string;
+    categoryId?: string;
+    categoryName?: string;
+    ecommerceCategoryId?: string;
+    channels: PromoSpendChannel[];
+  };
+  expiryDays?: number;
+  rankingOverride?:
+    | 'least_platform_loss'
+    | 'max_customer_discount'
+    | 'max_customer_cashback'
+    | 'max_customer_total_value';
+}
+
+export function createEmptyVcf(): PromoVcfDraft {
+  return {
+    visitSource: { letter: 'F', width: 'general' },
+    visitLoop: { kind: 'every' },
+    benefitMode: 'discount',
+    publish: { letter: 'F' },
+    redeem: {
+      letter: 'F',
+      channels: ['tele', 'appointment', 'paybill', 'ecommerce'],
+    },
+    expiryDays: 30,
+  };
 }
 
 export interface PromoEngineListItem {
@@ -127,6 +189,7 @@ export function createEmptyDraft(id: string, now = new Date().toISOString()): Pr
     conditionJson: { operator: 'AND', conditions: [] },
     benefitJson: [],
     ruleType: 'GENERIC',
+    vcf: createEmptyVcf(),
     createdAt: now,
     updatedAt: now,
   };

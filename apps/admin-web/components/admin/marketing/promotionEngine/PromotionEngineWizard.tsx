@@ -13,6 +13,7 @@ import {
 import { ChevronLeft, ChevronRight, Save } from 'lucide-react';
 import { applyBasicsToDraft, validateBasicsDraft } from '@/lib/promo-engine/draft';
 import { validateAudience } from '@/lib/promo-engine/audience';
+import { validateVcfAudience, validateVcfBenefits, vcfOrEmpty } from '@/lib/promo-engine/vcf';
 import { createEmptyDraft, type PromoEngineDraft } from '@/lib/promo-engine/types';
 import { BasicsStep } from './steps/BasicsStep';
 import { AudienceStep } from './steps/AudienceStep';
@@ -73,10 +74,21 @@ export function PromotionEngineWizard({
       setStep(0);
       return;
     }
-    const audienceErrors = validateAudience(working);
+    const audienceErrors = working.vcf
+      ? validateVcfAudience(working.vcf)
+      : validateAudience(working);
     if (audienceErrors.length) {
       toast.error(audienceErrors[0]);
       setStep(1);
+      return;
+    }
+    const vcf = vcfOrEmpty(working);
+    const hasDiscount = working.benefitJson.some((b) => b.type === 'DISCOUNT' && Number(b.value) > 0);
+    const hasCashback = working.benefitJson.some((b) => b.type === 'CASHBACK' && Number(b.value) > 0);
+    const benefitErrors = validateVcfBenefits(vcf, hasDiscount, hasCashback);
+    if (benefitErrors.length) {
+      toast.error(benefitErrors[0]);
+      setStep(2);
       return;
     }
     await onActivate(prepared());

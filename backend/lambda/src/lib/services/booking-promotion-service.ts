@@ -71,16 +71,26 @@ async function evaluateEngine(
 ): Promise<EvaluateResult | null> {
   if (!params.customerId) return null;
   try {
+    const { loadServerPaymentContext } = await import('../../discount-engine/promo-engine');
+    const ctx = await loadServerPaymentContext({
+      surface: 'booking',
+      vendorId: params.vendorId,
+      serviceStyle: params.serviceStyle,
+      bookingCategoryId: params.serviceCategory,
+    });
     return await evaluatePromotions({
       user_id: params.customerId,
       persist: params.displayPromotionsOnly === true ? false : true,
       transaction: {
         type: 'BOOKING',
+        channel: ctx.channel || undefined,
         service_category: params.serviceCategory
           ? normalizePromoCategory(params.serviceCategory) || undefined
           : undefined,
         service_type: params.serviceStyle,
-        vendor_id: params.vendorId,
+        vendor_id: ctx.vendorId || params.vendorId,
+        vendorId: ctx.vendorId || params.vendorId,
+        categoryId: ctx.categoryId || undefined,
         amount: params.amount,
       },
     });

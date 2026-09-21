@@ -9,10 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@warmpawz/ui';
-import { labelsForCatalogSlugs } from '@/lib/promo-engine/catalog-categories';
-import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
 import type { PromoEngineBenefit, PromoEngineDraft } from '@/lib/promo-engine/types';
-import { ServiceCategoryChips } from '../ServiceCategoryChips';
 
 function discountBenefit(list: PromoEngineBenefit[]): PromoEngineBenefit {
   return list.find((b) => b.type === 'DISCOUNT') || { type: 'DISCOUNT', mode: 'PERCENT', value: 0 };
@@ -36,10 +33,8 @@ export function BenefitsStep({
   draft: PromoEngineDraft;
   onChange: (next: PromoEngineDraft) => void;
 }) {
-  const { categories, loading, error } = useCatalogServiceCategories();
   const discount = discountBenefit(draft.benefitJson);
   const cashback = cashbackBenefit(draft.benefitJson);
-  const scope = new Set(cashback?.redeemScope || []);
 
   const setDiscount = (patch: Partial<PromoEngineBenefit>) => {
     const next = { ...discount, type: 'DISCOUNT' as const, ...patch };
@@ -48,7 +43,11 @@ export function BenefitsStep({
 
   const setCashback = (patch: Partial<PromoEngineBenefit> | null) => {
     if (patch === null) {
-      onChange({ ...draft, benefitJson: rebuild(discount, null) });
+      onChange({
+        ...draft,
+        benefitJson: rebuild(discount, null),
+        vcf: draft.vcf ? { ...draft.vcf, benefitMode: 'discount' } : draft.vcf,
+      });
       return;
     }
     const next: PromoEngineBenefit = {
@@ -59,14 +58,18 @@ export function BenefitsStep({
       redeemScope: cashback?.redeemScope || [],
       ...patch,
     };
-    onChange({ ...draft, benefitJson: rebuild(discount, next) });
-  };
-
-  const toggleScope = (slug: string) => {
-    const next = new Set(scope);
-    if (next.has(slug)) next.delete(slug);
-    else next.add(slug);
-    setCashback({ redeemScope: Array.from(next) });
+    const hasDiscount = Number(discount.value) > 0;
+    onChange({
+      ...draft,
+      benefitJson: rebuild(discount, next),
+      vcf: draft.vcf
+        ? {
+            ...draft.vcf,
+            benefitMode: hasDiscount ? 'both' : 'cashback',
+            expiryDays: next.expiryDays,
+          }
+        : draft.vcf,
+    });
   };
 
   return (
@@ -107,14 +110,23 @@ export function BenefitsStep({
               <Input
                 type="number"
                 min={0}
-                value={discount.maxAmount ?? ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setDiscount({
-                    maxAmount: e.target.value === '' ? undefined : Number(e.target.value),
-                  })
-                }
+                value={discount.maxAmount ?? draft.vcf?.maxDiscount ?? ''}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const n = e.target.value === '' ? undefined : Number(e.target.value);
+                  setDiscount({ maxAmount: n });
+                  if (draft.vcf) {
+                    onChange({
+                      ...draft,
+                      benefitJson: rebuild({ ...discount, maxAmount: n }, cashback),
+                      vcf: { ...draft.vcf, maxDiscount: n },
+                    });
+                  }
+                }}
                 className="min-h-11"
               />
+              <p className="text-xs text-slate-500">
+                When discount and cashback are both on, this caps the two combined.
+              </p>
             </div>
           </div>
         </section>
@@ -178,14 +190,83 @@ export function BenefitsStep({
                 </div>
               </div>
               <div className="space-y-3">
-                <Label>Can cashback be redeemed on?</Label>
-                <ServiceCategoryChips
-                  categories={categories}
-                  selected={cashback.redeemScope || []}
-                  loading={loading}
-                  error={error}
-                  onToggle={toggleScope}
-                />
+                <Label>Redeem cashback (independent of visit source and publish)</Label>
+                <div className="flex flex-wrap gap-2">
+                  {(['V', 'C', 'F'] as const).map((letter) => (
+                    <button
+                      key={letter}
+                      type="button"
+                      className={`rounded-full border px-3 py-1.5 text-sm ${
+                        (draft.vcf?.redeem?.letter || 'F') === letter
+                          ? 'border-[#FF8C42] bg-orange-50'
+                          : 'border-slate-200'
+                      }`}
+                      onClick={() =>
+                        onChange({
+                          ...draft,
+                          vcf: {
+                            ...(draft.vcf || {
+                              visitSource: { letter: 'F', width: 'general' },
+                              visitLoop: { kind: 'every' },
+                              benefitMode: 'discount',
+                              publish: { letter: 'F' },
+                            }),
+                            redeem: {
+                              letter,
+                              channels: draft.vcf?.redeem?.channels || [
+                                'tele',
+                                'appointment',
+                                'paybill',
+                                'ecommerce',
+                              ],
+                              vendorId: letter === 'V' ? draft.vcf?.redeem?.vendorId : undefined,
+                              categoryId: letter === 'C' ? draft.vcf?.redeem?.categoryId : undefined,
+                            },
+                          },
+                        })
+                      }
+                    >
+                      {letter === 'V' ? 'Same vendor' : letter === 'C' ? 'Same category' : 'Anywhere'}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(['tele', 'appointment', 'paybill', 'ecommerce'] as const).map((ch) => {
+                    const on = (draft.vcf?.redeem?.channels || []).includes(ch);
+                    return (
+                      <button
+                        key={ch}
+                        type="button"
+                        className={`rounded-full border px-3 py-1.5 text-sm ${
+                          on ? 'border-[#FF8C42] bg-orange-50' : 'border-slate-200'
+                        }`}
+                        onClick={() => {
+                          const set = new Set(draft.vcf?.redeem?.channels || []);
+                          if (set.has(ch)) set.delete(ch);
+                          else set.add(ch);
+                          onChange({
+                            ...draft,
+                            vcf: {
+                              visitSource: draft.vcf?.visitSource || { letter: 'F', width: 'general' },
+                              visitLoop: draft.vcf?.visitLoop || { kind: 'every' },
+                              benefitMode: draft.vcf?.benefitMode || 'discount',
+                              publish: draft.vcf?.publish || { letter: 'F' },
+                              ...draft.vcf,
+                              redeem: {
+                                letter: draft.vcf?.redeem?.letter || 'F',
+                                vendorId: draft.vcf?.redeem?.vendorId,
+                                categoryId: draft.vcf?.redeem?.categoryId,
+                                channels: Array.from(set),
+                              },
+                            },
+                          });
+                        }}
+                      >
+                        {ch === 'paybill' ? 'Pay Bill' : ch}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </>
           ) : (
@@ -217,9 +298,11 @@ export function BenefitsStep({
             <p className="mt-1 text-xs text-slate-500">Cashback valid for {cashback.expiryDays} days</p>
           ) : null}
         </div>
-        {cashback && (cashback.redeemScope?.length || 0) > 0 ? (
+        {cashback && (draft.vcf?.redeem?.channels?.length || 0) > 0 ? (
           <div className="rounded-xl border border-violet-100 bg-violet-50 p-4 text-sm text-violet-900">
-            Use on {labelsForCatalogSlugs(cashback.redeemScope || [], categories)}
+            Use on {draft.vcf?.redeem?.letter === 'F' ? 'anywhere' : draft.vcf?.redeem?.letter === 'V' ? 'this vendor' : 'this category'}
+            {' · '}
+            {(draft.vcf?.redeem?.channels || []).join(', ')}
           </div>
         ) : null}
         <p className="text-xs leading-5 text-slate-500">

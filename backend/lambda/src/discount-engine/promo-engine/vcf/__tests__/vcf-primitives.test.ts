@@ -5,6 +5,8 @@ import { visitCountForPromo } from '../visit-count';
 import { matchesVisitLoop } from '../visit-loop';
 import { rankEligible } from '../rank-eligible';
 import { applyCombinedCap } from '../combined-cap';
+import { incrementVisitProfile, decrementVisitProfile } from '../visit-profile';
+import { redeemAllows } from '../redeem-allows';
 import { emptyVisitProfile, type PromoVcfConfig, type RankedPromo } from '../types';
 
 describe('V/C/F channel', () => {
@@ -192,5 +194,65 @@ describe('combined cap', () => {
       discount: 100,
       cashback: 0,
     });
+  });
+});
+
+describe('visit profile writer primitives', () => {
+  it('increments platform, category, and vendor cells for paybill', () => {
+    const next = incrementVisitProfile({
+      profile: emptyVisitProfile(),
+      channel: 'paybill',
+      vendorId: 'v1',
+      categoryId: 'c1',
+      roleId: 'r1',
+      at: '2026-09-21T00:00:00Z',
+    });
+    expect(next.platform.paybill.count).toBe(1);
+    expect(next.platform.tele.count).toBe(0);
+    expect(next.categories.c1.paybill.count).toBe(1);
+    expect(next.vendors.v1.paybill.count).toBe(1);
+    expect(next.vendors.v1.categoryId).toBe('c1');
+  });
+  it('does not write ecommerce as a visit', () => {
+    const next = incrementVisitProfile({
+      profile: emptyVisitProfile(),
+      channel: 'ecommerce',
+      vendorId: 'v1',
+    });
+    expect(next).toEqual(emptyVisitProfile());
+  });
+  it('decrements the same cell once', () => {
+    const written = incrementVisitProfile({
+      profile: emptyVisitProfile(),
+      channel: 'tele',
+      vendorId: 'v1',
+    });
+    const reversed = decrementVisitProfile({
+      profile: written,
+      channel: 'tele',
+      vendorId: 'v1',
+    });
+    expect(reversed.platform.tele.count).toBe(0);
+    expect(reversed.vendors.v1.tele.count).toBe(0);
+  });
+});
+
+describe('redeem letter + channel', () => {
+  const redeem = {
+    letter: 'V' as const,
+    vendorId: 'v1',
+    channels: ['ecommerce'] as Array<'tele' | 'appointment' | 'paybill' | 'ecommerce'>,
+  };
+  it('blocks Pay Bill when only ecommerce is ticked', () => {
+    expect(
+      redeemAllows(redeem, { vendorId: 'v1', channel: 'paybill', serviceCategory: 'VET' })
+    ).toBe(false);
+  });
+  it('allows ecommerce at that vendor', () => {
+    expect(redeemAllows(redeem, { vendorId: 'v1', channel: 'ecommerce' })).toBe(true);
+  });
+  it('keeps legacy category lists when there is no letter', () => {
+    expect(redeemAllows({ services: ['VET'] }, { serviceCategory: 'VET' })).toBe(true);
+    expect(redeemAllows({ services: ['VET'] }, { serviceCategory: 'GROOMING' })).toBe(false);
   });
 });

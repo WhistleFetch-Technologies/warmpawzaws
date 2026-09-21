@@ -21,7 +21,14 @@ export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <ReviewBlock title="WHEN" body={describeConditionGroup(draft.conditionJson)} />
+        <ReviewBlock
+          title="VISIT / PUBLISH / REDEEM"
+          body={
+            draft.vcf
+              ? `Visit ${draft.vcf.visitSource.letter} ${draft.vcf.visitSource.width} · ${draft.vcf.visitLoop.kind} · Publish ${draft.vcf.publish.letter} · Redeem ${draft.vcf.redeem?.letter || '—'} ${(draft.vcf.redeem?.channels || []).join(',')}`
+              : describeConditionGroup(draft.conditionJson)
+          }
+        />
         <ReviewBlock title="THEN" body={describeBenefits(draft.benefitJson)} />
         <ReviewBlock title="REDEEM" body={describeRedeemScope(draft.benefitJson)} />
         <ReviewBlock

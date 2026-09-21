@@ -81,7 +81,7 @@ export function mapAdminDraftToPayload(body: Record<string, unknown>): PromoDraf
     benefit_json: (body.benefitJson || body.benefit_json) as PromoEngineBenefit[] | undefined,
     rule_type: (body.ruleType || body.rule_type || 'GENERIC') as PromoRuleType,
     limits: (body.limits as PromoDraftPayload['limits']) || undefined,
-    metadata: (body.metadata as Record<string, unknown>) || {},
+    metadata: mergeVcfMetadata(body),
     budget_limit:
       body.budget_limit != null
         ? Number(body.budget_limit)
@@ -89,6 +89,18 @@ export function mapAdminDraftToPayload(body: Record<string, unknown>): PromoDraf
           ? Number((body.limits as { budget_limit?: number }).budget_limit)
           : null,
   };
+}
+
+function mergeVcfMetadata(body: Record<string, unknown>): Record<string, unknown> {
+  const base =
+    body.metadata && typeof body.metadata === 'object'
+      ? { ...(body.metadata as Record<string, unknown>) }
+      : {};
+  const vcf = body.vcf ?? (body.metadata as Record<string, unknown> | undefined)?.vcf;
+  if (vcf && typeof vcf === 'object') {
+    base.vcf = vcf;
+  }
+  return base;
 }
 
 export async function createPromotionFromDraft(payload: PromoDraftPayload) {
@@ -241,5 +253,7 @@ export async function getPromotionDetail(id: string) {
     conditionJson: rules[0]?.condition_json || { operator: 'AND', conditions: [] },
     benefitJson: rules[0]?.benefit_json || [],
     ruleType: rules[0]?.rule_type || 'GENERIC',
+    vcf: (promo.metadata || {}).vcf || null,
+    metadata: promo.metadata || {},
   };
 }

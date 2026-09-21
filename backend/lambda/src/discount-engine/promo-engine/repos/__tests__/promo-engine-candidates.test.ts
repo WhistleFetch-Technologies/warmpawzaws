@@ -16,5 +16,7 @@ describe('dbFindActiveCandidates', () => {
     await dbFindActiveCandidates({ now: new Date('2026-09-18T12:00:00Z'), serviceCategory: 'VET' });
     const params = mockedQuery.mock.calls[0]?.[1] as unknown[];
     expect(params[1]).toEqual(expect.arrayContaining(['veterinary', 'vet', 'VET']));
+    expect(params[2]).toBeNull();
+    expect(params[3]).toBeNull();
   });
 });

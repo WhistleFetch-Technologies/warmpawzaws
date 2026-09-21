@@ -105,7 +105,7 @@ export async function commitPromotion(req: CommitRequest): Promise<{
         referenceId: req.transaction_id,
         evaluationId: req.evaluation_id,
         expiryDays: cb.expiry_days,
-        redeemScope: cb.redeem_scope,
+        redeemScope: cb.redeem || cb.redeem_scope,
       });
       if (credit.credited) cashbackCredited += cb.amount;
     }

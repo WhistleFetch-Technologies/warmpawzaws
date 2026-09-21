@@ -83,6 +83,8 @@ function draftToApiBody(draft: PromoEngineDraft): Record<string, unknown> {
     conditionJson: draft.conditionJson,
     benefitJson: draft.benefitJson,
     ruleType: draft.ruleType,
+    vcf: draft.vcf,
+    metadata: draft.vcf ? { vcf: draft.vcf } : undefined,
     limits: draft.limits
       ? {
           per_user: draft.limits.perUser ?? null,
@@ -131,6 +133,7 @@ function mapApiPromotionToDraft(p: Record<string, unknown>): PromoEngineDraft {
       ({ operator: 'AND', conditions: [] } as PromoEngineDraft['conditionJson']),
     benefitJson: (p.benefitJson as PromoEngineDraft['benefitJson']) || [],
     ruleType: (p.ruleType as PromoEngineDraft['ruleType']) || 'GENERIC',
+    vcf: (p.vcf as PromoEngineDraft['vcf']) || createEmptyDraft(String(p.id)).vcf,
     limits: mapLimits(p.limits),
     createdAt: String(p.created_at || p.createdAt || new Date().toISOString()),
     updatedAt: String(p.updated_at || p.updatedAt || new Date().toISOString()),

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Input,
   Label,
@@ -10,33 +10,116 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@warmpawz/ui';
-import {
-  TEMPLATES_NEEDING_M,
-  TEMPLATES_NEEDING_N,
-  applyAudienceToDraft,
-  defaultAudienceState,
-  type AudienceBuilderState,
-} from '@/lib/promo-engine/audience';
-import {
-  JOURNEY_TEMPLATE_IDS,
-  JOURNEY_TEMPLATE_LABELS,
-  type JourneyTemplateId,
-} from '@/lib/promo-engine/journey-templates';
-import { describeBenefits, describeConditionGroup } from '@/lib/promo-engine/plain-language';
-import { matchCatalogSlug } from '@/lib/promo-engine/catalog-categories';
+import { apiClient } from '@/lib/api-client';
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
-import type { PromoEngineCondition, PromoEngineDraft } from '@/lib/promo-engine/types';
+import { applyVcfToDraft, vcfOrEmpty } from '@/lib/promo-engine/vcf';
+import type {
+  PromoCountChannel,
+  PromoEngineDraft,
+  PromoLetter,
+  PromoVcfDraft,
+  PromoVisitLoop,
+} from '@/lib/promo-engine/types';
 
-const EXTRA_FIELDS = [
-  { id: 'user.grooming_visit_count', label: 'Grooming visit count' },
-  { id: 'user.vet_visit_count', label: 'Vet visit count' },
-  { id: 'user.training_visit_count', label: 'Training visit count' },
-  { id: 'user.days_since_last_grooming', label: 'Days since last grooming' },
-  { id: 'user.days_since_last_vet', label: 'Days since last vet' },
-  { id: 'transaction.amount', label: 'Transaction amount' },
+const LETTERS: Array<{ id: PromoLetter; label: string }> = [
+  { id: 'V', label: 'Vendor' },
+  { id: 'C', label: 'Category' },
+  { id: 'F', label: 'Platform' },
+];
+const COUNT_CHANNELS: Array<{ id: PromoCountChannel; label: string }> = [
+  { id: 'tele', label: 'Tele' },
+  { id: 'appointment', label: 'Appointment' },
+  { id: 'paybill', label: 'Pay Bill' },
 ];
 
-const OPERATORS = ['=', '!=', '>=', '<=', '>', '<', 'BETWEEN', 'IN'];
+type VendorHit = { id: string; business_name?: string; businessName?: string; role_display_name?: string };
+
+function LetterPicker({
+  value,
+  onChange,
+}: {
+  value: PromoLetter;
+  onChange: (letter: PromoLetter) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {LETTERS.map((row) => (
+        <button
+          key={row.id}
+          type="button"
+          className={`rounded-full border px-3 py-1.5 text-sm ${
+            value === row.id ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]' : 'border-slate-200'
+          }`}
+          onClick={() => onChange(row.id)}
+        >
+          {row.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function VendorSearch({
+  value,
+  label,
+  onPick,
+}: {
+  value?: string;
+  label?: string;
+  onPick: (id: string, name: string) => void;
+}) {
+  const [q, setQ] = useState(label || '');
+  const [hits, setHits] = useState<VendorHit[]>([]);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const query = q.trim();
+      if (query.length < 2) {
+        setHits([]);
+        return;
+      }
+      void apiClient
+        .get<{ vendors?: VendorHit[] }>(`/admin/vendors?q=${encodeURIComponent(query)}&limit=20`)
+        .then((res) => setHits(Array.isArray(res.vendors) ? res.vendors : []))
+        .catch(() => setHits([]));
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [q]);
+  return (
+    <div className="space-y-2">
+      <Label>Vendor</Label>
+      <Input
+        value={q}
+        placeholder="Search business name"
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)}
+        className="min-h-11"
+      />
+      {value ? <p className="text-xs text-slate-500">Selected id {value}</p> : null}
+      {hits.length ? (
+        <ul className="max-h-40 overflow-y-auto rounded-lg border bg-white text-sm">
+          {hits.map((v) => {
+            const name = v.business_name || v.businessName || v.id;
+            return (
+              <li key={v.id}>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-slate-50"
+                  onClick={() => {
+                    onPick(v.id, name);
+                    setQ(name);
+                    setHits([]);
+                  }}
+                >
+                  <span>{name}</span>
+                  <span className="text-xs text-slate-500">{v.role_display_name || ''}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 export function AudienceStep({
   draft,
@@ -45,242 +128,251 @@ export function AudienceStep({
   draft: PromoEngineDraft;
   onChange: (next: PromoEngineDraft) => void;
 }) {
-  const { categories, loading: categoriesLoading, error: categoriesError } =
-    useCatalogServiceCategories();
-  const [state, setState] = useState<AudienceBuilderState>(() => defaultAudienceState(draft));
-  const [builderDirty, setBuilderDirty] = useState(false);
+  const { categories, loading, error } = useCatalogServiceCategories();
+  const vcf = vcfOrEmpty(draft);
 
-  const previewGroup = useMemo(
-    () =>
-      builderDirty || !draft.conditionJson.conditions.length
-        ? applyAudienceToDraft(draft, state).conditionJson
-        : draft.conditionJson,
-    [builderDirty, draft, state],
-  );
+  const patch = (next: PromoVcfDraft) => onChange(applyVcfToDraft(draft, next));
 
-  const patchState = (partial: Partial<AudienceBuilderState>) => {
-    const next = { ...state, ...partial };
-    setState(next);
-    setBuilderDirty(true);
-    onChange(applyAudienceToDraft(draft, next));
+  const setSourceLetter = (letter: PromoLetter) => {
+    patch({
+      ...vcf,
+      visitSource: {
+        ...vcf.visitSource,
+        letter,
+        vendorId: letter === 'V' ? vcf.visitSource.vendorId : undefined,
+        categoryId: letter === 'C' ? vcf.visitSource.categoryId : undefined,
+      },
+    });
   };
-
-  useEffect(() => {
-    if (!draft.conditionJson.conditions.length) {
-      onChange(applyAudienceToDraft(draft, state));
-      setBuilderDirty(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed empty drafts once
-  }, []);
-
-  useEffect(() => {
-    if (!categories.length) return;
-    const mapped = matchCatalogSlug(state.serviceCategory, categories);
-    if (mapped && mapped !== state.serviceCategory) {
-      patchState({ serviceCategory: mapped });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- align once catalogue slugs load
-  }, [categories]);
-
-  const updateExtra = (index: number, partial: Partial<PromoEngineCondition>) => {
-    const extras = state.extras.map((row, i) => (i === index ? { ...row, ...partial } : row));
-    patchState({ extras });
+  const setPublishLetter = (letter: PromoLetter) => {
+    patch({
+      ...vcf,
+      publish: {
+        ...vcf.publish,
+        letter,
+        vendorId: letter === 'V' ? vcf.publish.vendorId : undefined,
+        categoryId: letter === 'C' ? vcf.publish.categoryId : undefined,
+      },
+    });
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
-      <div className="min-w-0 space-y-5">
-        <div className="grid gap-5 sm:grid-cols-2">
+    <div className="space-y-6">
+      <section className="space-y-4 rounded-2xl border bg-white p-5">
+        <h3 className="text-base font-semibold">Visit source</h3>
+        <p className="text-sm text-slate-500">Whose completed tele, appointment, and Pay Bill visits are counted. Ecommerce never counts.</p>
+        <LetterPicker value={vcf.visitSource.letter} onChange={setSourceLetter} />
+        {vcf.visitSource.letter === 'V' ? (
+          <VendorSearch
+            value={vcf.visitSource.vendorId}
+            label={vcf.visitSource.vendorName}
+            onPick={(id, name) =>
+              patch({ ...vcf, visitSource: { ...vcf.visitSource, vendorId: id, vendorName: name } })
+            }
+          />
+        ) : null}
+        {vcf.visitSource.letter === 'C' ? (
           <div className="space-y-2">
-            <Label>Service</Label>
+            <Label>Category</Label>
             <Select
-              value={state.serviceCategory || undefined}
-              onValueChange={(v: string) => patchState({ serviceCategory: v })}
+              value={vcf.visitSource.categoryId || ''}
+              onValueChange={(id: string) => {
+                const row = categories.find((c) => c.id === id);
+                patch({
+                  ...vcf,
+                  visitSource: { ...vcf.visitSource, categoryId: id, categoryName: row?.name },
+                });
+              }}
             >
               <SelectTrigger className="min-h-11 bg-white">
-                <SelectValue placeholder={categoriesLoading ? 'Loading…' : 'Select catalogue service'} />
+                <SelectValue placeholder={loading ? 'Loading…' : error || 'Pick a category'} />
               </SelectTrigger>
               <SelectContent>
-                {categories.map((s) => (
-                  <SelectItem key={s.slug} value={s.slug}>
-                    {s.name}
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {categoriesError ? <p className="text-xs text-red-600">{categoriesError}</p> : null}
-            {!categoriesLoading && !categories.length ? (
-              <p className="text-xs text-slate-500">
-                No catalogue categories. Add them in Admin → Catalogue → Categories.
-              </p>
-            ) : null}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="promo-engine-package">Package (optional)</Label>
-            <Input
-              id="promo-engine-package"
-              value={state.packageName}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                patchState({ packageName: e.target.value })
-              }
-              placeholder="Full Groom"
-              className="min-h-11"
-            />
-          </div>
+        ) : null}
+        <div className="space-y-2">
+          <Label>Width</Label>
+          <Select
+            value={vcf.visitSource.width}
+            onValueChange={(w: string) =>
+              patch({
+                ...vcf,
+                visitSource: { ...vcf.visitSource, width: w === 'specific' ? 'specific' : 'general' },
+              })
+            }
+          >
+            <SelectTrigger className="min-h-11 bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="general">General (tele + appointment + Pay Bill)</SelectItem>
+              <SelectItem value="specific">Specific channels</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-
-        <div className="space-y-3">
-          <Label>Journey template</Label>
+        {vcf.visitSource.width === 'specific' ? (
           <div className="flex flex-wrap gap-2">
-            {JOURNEY_TEMPLATE_IDS.map((id) => {
-              const selected = state.template === id;
+            {COUNT_CHANNELS.map((ch) => {
+              const on = (vcf.visitSource.channels || []).includes(ch.id);
               return (
                 <button
-                  key={id}
+                  key={ch.id}
                   type="button"
-                  onClick={() => patchState({ template: id as JourneyTemplateId })}
-                  className={`min-h-10 rounded-full border px-3.5 py-2 text-sm font-medium ${
-                    selected
-                      ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  className={`rounded-full border px-3 py-1.5 text-sm ${
+                    on ? 'border-[#FF8C42] bg-orange-50' : 'border-slate-200'
                   }`}
+                  onClick={() => {
+                    const set = new Set(vcf.visitSource.channels || []);
+                    if (set.has(ch.id)) set.delete(ch.id);
+                    else set.add(ch.id);
+                    patch({ ...vcf, visitSource: { ...vcf.visitSource, channels: Array.from(set) } });
+                  }}
                 >
-                  {JOURNEY_TEMPLATE_LABELS[id]}
+                  {ch.label}
                 </button>
               );
             })}
           </div>
-        </div>
+        ) : null}
+      </section>
 
-        {TEMPLATES_NEEDING_N.includes(state.template) || TEMPLATES_NEEDING_M.includes(state.template) ? (
+      <section className="space-y-4 rounded-2xl border bg-white p-5">
+        <h3 className="text-base font-semibold">Which visit</h3>
+        <Select
+          value={vcf.visitLoop.kind}
+          onValueChange={(kind: string) => {
+            const n = 'n' in vcf.visitLoop ? vcf.visitLoop.n : 1;
+            const m = vcf.visitLoop.kind === 'between' ? vcf.visitLoop.m : 5;
+            const loop: PromoVisitLoop =
+              kind === 'every'
+                ? { kind: 'every' }
+                : kind === 'every_nth'
+                  ? { kind: 'every_nth', n }
+                  : kind === 'from_onward'
+                    ? { kind: 'from_onward', n }
+                    : kind === 'between'
+                      ? { kind: 'between', n, m }
+                      : { kind: 'visit_number', n };
+            patch({ ...vcf, visitLoop: loop });
+          }}
+        >
+          <SelectTrigger className="min-h-11 bg-white">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="every">Every visit</SelectItem>
+            <SelectItem value="visit_number">This visit number</SelectItem>
+            <SelectItem value="every_nth">Every Nth visit</SelectItem>
+            <SelectItem value="from_onward">From visit N onward</SelectItem>
+            <SelectItem value="between">Between N and M</SelectItem>
+          </SelectContent>
+        </Select>
+        {vcf.visitLoop.kind !== 'every' ? (
           <div className="grid gap-4 sm:grid-cols-2">
-            {TEMPLATES_NEEDING_N.includes(state.template) ? (
+            <div className="space-y-2">
+              <Label>N</Label>
+              <Input
+                type="number"
+                min={1}
+                value={'n' in vcf.visitLoop ? vcf.visitLoop.n : 1}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const n = Math.max(1, Number(e.target.value) || 1);
+                  const loop = vcf.visitLoop.kind === 'between'
+                    ? { ...vcf.visitLoop, n }
+                    : vcf.visitLoop.kind === 'every'
+                      ? vcf.visitLoop
+                      : { ...vcf.visitLoop, n };
+                  patch({ ...vcf, visitLoop: loop });
+                }}
+                className="min-h-11"
+              />
+            </div>
+            {vcf.visitLoop.kind === 'between' ? (
               <div className="space-y-2">
-                <Label htmlFor="promo-engine-n">N</Label>
+                <Label>M</Label>
                 <Input
-                  id="promo-engine-n"
                   type="number"
                   min={1}
-                  value={state.n}
+                  value={vcf.visitLoop.m}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    patchState({ n: Number(e.target.value) || 1 })
+                    patch({ ...vcf, visitLoop: { ...vcf.visitLoop, m: Math.max(1, Number(e.target.value) || 1) } })
                   }
-                />
-              </div>
-            ) : null}
-            {TEMPLATES_NEEDING_M.includes(state.template) ? (
-              <div className="space-y-2">
-                <Label htmlFor="promo-engine-m">M</Label>
-                <Input
-                  id="promo-engine-m"
-                  type="number"
-                  min={1}
-                  value={state.m}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    patchState({ m: Number(e.target.value) || 1 })
-                  }
+                  className="min-h-11"
                 />
               </div>
             ) : null}
           </div>
         ) : null}
+      </section>
 
+      <section className="space-y-4 rounded-2xl border bg-white p-5">
+        <h3 className="text-base font-semibold">Publish</h3>
+        <p className="text-sm text-slate-500">Who the offer is for. Independent of visit source and redeem.</p>
+        <LetterPicker value={vcf.publish.letter} onChange={setPublishLetter} />
+        {vcf.publish.letter === 'V' ? (
+          <VendorSearch
+            value={vcf.publish.vendorId}
+            label={vcf.publish.vendorName}
+            onPick={(id, name) => patch({ ...vcf, publish: { ...vcf.publish, vendorId: id, vendorName: name } })}
+          />
+        ) : null}
+        {vcf.publish.letter === 'C' ? (
+          <div className="space-y-2">
+            <Label>Category</Label>
+            <Select
+              value={vcf.publish.categoryId || ''}
+              onValueChange={(id: string) => {
+                const row = categories.find((c) => c.id === id);
+                patch({ ...vcf, publish: { ...vcf.publish, categoryId: id, categoryName: row?.name } });
+              }}
+            >
+              <SelectTrigger className="min-h-11 bg-white">
+                <SelectValue placeholder="Pick a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
         <div className="space-y-2">
-          <Label>Combine extra rows with</Label>
+          <Label>Ranking override (optional)</Label>
           <Select
-            value={state.groupOperator}
-            onValueChange={(v: string) => patchState({ groupOperator: v as 'AND' | 'OR' })}
+            value={vcf.rankingOverride || 'unset'}
+            onValueChange={(v: string) =>
+              patch({
+                ...vcf,
+                rankingOverride:
+                  v === 'unset'
+                    ? undefined
+                    : (v as PromoVcfDraft['rankingOverride']),
+              })
+            }
           >
-            <SelectTrigger className="min-h-11 w-full max-w-xs bg-white">
+            <SelectTrigger className="min-h-11 bg-white">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="AND">AND</SelectItem>
-              <SelectItem value="OR">OR</SelectItem>
+              <SelectItem value="unset">Default — vendor beats category beats platform</SelectItem>
+              <SelectItem value="least_platform_loss">Least platform loss</SelectItem>
+              <SelectItem value="max_customer_discount">Max customer discount</SelectItem>
+              <SelectItem value="max_customer_cashback">Max customer cashback</SelectItem>
+              <SelectItem value="max_customer_total_value">Max customer total value</SelectItem>
             </SelectContent>
           </Select>
         </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label>Extra behaviour conditions</Label>
-            <button
-              type="button"
-              className="text-xs font-medium text-[#FF8C42]"
-              onClick={() =>
-                patchState({
-                  extras: [...state.extras, { field: 'user.grooming_visit_count', operator: '>=', value: '' }],
-                })
-              }
-            >
-              Add row
-            </button>
-          </div>
-          {state.extras.length === 0 ? (
-            <p className="text-xs text-slate-500">Optional. Template already includes the journey WHEN clause.</p>
-          ) : (
-            state.extras.map((row, index) => (
-              <div key={`${row.field}-${index}`} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1fr)_auto]">
-                <Select value={row.field} onValueChange={(v: string) => updateExtra(index, { field: v })}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EXTRA_FIELDS.map((f) => (
-                      <SelectItem key={f.id} value={f.id}>
-                        {f.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={row.operator} onValueChange={(v: string) => updateExtra(index, { operator: v })}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {OPERATORS.map((op) => (
-                      <SelectItem key={op} value={op}>
-                        {op}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  value={String(row.value ?? '')}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    updateExtra(index, { value: e.target.value })
-                  }
-                  placeholder="Value"
-                />
-                <button
-                  type="button"
-                  className="text-xs text-slate-500"
-                  onClick={() => patchState({ extras: state.extras.filter((_, i) => i !== index) })}
-                >
-                  Remove
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="rounded-xl border bg-slate-50 p-3 text-sm text-slate-700">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Plain language</p>
-          <p>{describeConditionGroup(previewGroup)}</p>
-        </div>
-      </div>
-
-      <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 text-sm xl:sticky xl:top-0">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#FF8C42]">Promotion model</p>
-        <div>
-          <p className="text-xs font-semibold text-slate-500">IF</p>
-          <p className="mt-1 text-slate-800">{describeConditionGroup(previewGroup)}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold text-slate-500">THEN</p>
-          <p className="mt-1 text-slate-600">{describeBenefits(draft.benefitJson)}</p>
-        </div>
-      </aside>
+      </section>
     </div>
   );
 }

@@ -11,6 +11,7 @@ export type PromoEngineEarnPreviewData = {
   engineDiscount?: number | null;
   eligible?: boolean | null;
   redeemScope?: string[] | null;
+  redeemLabel?: string | null;
   expiryDays?: number | null;
 };
 
@@ -61,7 +62,7 @@ export function PromoEarnPreview({
       ) : null}
       {cashback > 0 ? (
         <p className="mt-1 text-xs text-emerald-800/90">
-          Redeem on {scopeLabel(data?.redeemScope)}
+          Redeem on {data?.redeemLabel || scopeLabel(data?.redeemScope)}
           {data?.expiryDays != null && data.expiryDays > 0
             ? ` · expires in ${data.expiryDays} days`
             : ''}

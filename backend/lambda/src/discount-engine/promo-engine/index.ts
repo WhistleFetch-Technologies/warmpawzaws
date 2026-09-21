@@ -13,6 +13,15 @@ export { commitPromotion } from './services/commit.service';
 export { reversePromotion } from './services/reverse.service';
 export { recordBehaviourCompletion, normalizeServiceKey } from './services/behaviour.service';
 export {
+  recordVcfVisit,
+  reverseVcfVisit,
+  recordVcfVisitFromBooking,
+  recordVcfVisitFromPayBill,
+  safeRecordVcfVisitFromBooking,
+  safeRecordVcfVisitFromPayBill,
+  safeReverseVcfVisit,
+} from './services/visit-writer.service';
+export {
   safeCommitPromotion,
   safeReversePromotion,
   safeEvaluatePromotions,
@@ -26,10 +35,6 @@ export {
   debitScopedWalletInTransaction,
 } from './services/wallet-debit.service';
 export {
-  debitScopedWallet,
-  debitScopedWalletInTransaction,
-} from './services/wallet-debit.service';
-export {
   createPromotionFromDraft,
   updatePromotionFromDraft,
   patchPromotionStatus,
@@ -38,6 +43,7 @@ export {
   getPromotionDetail,
   mapAdminDraftToPayload,
 } from './services/crud.service';
+export { loadServerPaymentContext } from './services/payment-context-load.service';
 export { applyCombinedCap } from './vcf/combined-cap';
 export {
   classifyPaymentChannel,
@@ -46,4 +52,6 @@ export {
   matchesVisitLoop,
   rankEligible,
   categoryIdFromVendorRole,
+  parseVcfConfig,
+  redeemAllows,
 } from './vcf';

@@ -32,8 +32,10 @@ export async function resolveEcommerceEngineDiscount(opts: {
     persist: true,
     transaction: {
       type: 'ECOMMERCE',
+      channel: 'ecommerce',
       service_category: 'ecommerce',
       vendor_id: opts.vendorId || undefined,
+      vendorId: opts.vendorId || undefined,
       amount: opts.amount,
       lines: (opts.lines || []).map((line) => ({
         id: line.id,

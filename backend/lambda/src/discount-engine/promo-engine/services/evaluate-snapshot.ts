@@ -19,6 +19,8 @@ import type {
   PromoEngineRuleRow,
   StackingPolicy,
 } from '../types';
+import { scoreVcfCandidates } from './evaluate-vcf';
+import { parseVcfConfig } from '../vcf/parse-config';
 
 export type EvaluateSnapshot = {
   candidates: PromoEnginePromotionRow[];
@@ -32,12 +34,16 @@ export async function loadEvaluateSnapshot(opts: {
   userId: string;
   now: Date;
   serviceCategory?: string;
+  vendorId?: string;
+  categoryId?: string;
   behaviour: CustomerBehaviourProfile;
 }): Promise<EvaluateSnapshot> {
   const behaviour = opts.behaviour;
   const candidates = await dbFindActiveCandidates({
     now: opts.now,
     serviceCategory: opts.serviceCategory,
+    vendorId: opts.vendorId,
+    categoryId: opts.categoryId,
   });
   const ids = candidates.map((c) => c.id);
   const dayStart = new Date(opts.now);
@@ -173,7 +179,43 @@ export function evaluateAgainstSnapshot(
     }
   }
 
-  for (const promo of snapshot.candidates) {
+  const vcfScore = scoreVcfCandidates({
+    candidates: snapshot.candidates,
+    rulesByPromo: snapshot.rulesByPromo,
+    limitsByPromo: snapshot.limitsByPromo,
+    usageByPromo: snapshot.usageByPromo,
+    behaviour: snapshot.behaviour,
+    req,
+  });
+
+  if (vcfScore.winnerId) {
+    const discount = vcfScore.winnerBenefits
+      .filter((b) => b.benefit_type === 'DISCOUNT')
+      .reduce((s, b) => s + b.amount, 0);
+    const cashback = vcfScore.winnerBenefits
+      .filter((b) => b.benefit_type === 'CASHBACK')
+      .reduce((s, b) => s + b.amount, 0);
+    return {
+      eligible: vcfScore.winnerBenefits.length > 0,
+      winner_promotion_id: vcfScore.winnerId,
+      benefits: vcfScore.winnerBenefits,
+      summary: {
+        gross_amount: amount,
+        discount: Math.round(discount * 100) / 100,
+        payable: Math.round(Math.max(0, amount - discount) * 100) / 100,
+        cashback: Math.round(cashback * 100) / 100,
+      },
+      explain: {
+        failures,
+        matched_promotions: vcfScore.matched,
+        rejected_promotions: vcfScore.rejected,
+      },
+    };
+  }
+  rejected.push(...vcfScore.rejected);
+
+  const legacyCandidates = snapshot.candidates.filter((p) => !parseVcfConfig(p.metadata));
+  for (const promo of legacyCandidates) {
     const limitCheck = passesLimits({
       promo,
       limits: snapshot.limitsByPromo.get(promo.id),
@@ -232,6 +274,7 @@ export function evaluateAgainstSnapshot(
 
   return {
     eligible: benefits.length > 0,
+    winner_promotion_id: benefits[0]?.promotion_id || null,
     benefits,
     summary: {
       gross_amount: amount,

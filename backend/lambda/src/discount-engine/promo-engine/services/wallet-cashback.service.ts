@@ -23,7 +23,7 @@ export async function creditPromoCashback(opts: {
   referenceId: string;
   evaluationId: string;
   expiryDays?: number;
-  redeemScope?: ServiceCategory[];
+  redeemScope?: ServiceCategory[] | AppliedBenefit['redeem'];
 }): Promise<{ walletTransactionId: string | null; credited: boolean }> {
   if (opts.amount <= 0) return { walletTransactionId: null, credited: false };
 
@@ -111,7 +111,11 @@ export async function creditPromoCashback(opts: {
       earned_at: earnedAt.toISOString(),
       expires_at: expiresAt ? expiresAt.toISOString() : null,
       cashback_status: 'AVAILABLE',
-      redeem_scope: JSON.stringify({ services: opts.redeemScope || [] }),
+      redeem_scope: JSON.stringify(
+        opts.redeemScope && !Array.isArray(opts.redeemScope)
+          ? opts.redeemScope
+          : { services: Array.isArray(opts.redeemScope) ? opts.redeemScope : [] }
+      ),
     };
     const params = columns.map((c) => valueByCol[c]);
     const txn = await client.query(

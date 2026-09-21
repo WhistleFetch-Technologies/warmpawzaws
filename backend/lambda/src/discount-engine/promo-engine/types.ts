@@ -124,6 +124,10 @@ export interface EvaluateTransaction {
   service_category?: string;
   service_type?: string;
   vendor_id?: string;
+  vendorId?: string;
+  /** service_categories.id when already resolved on the server */
+  categoryId?: string;
+  channel?: 'tele' | 'appointment' | 'paybill' | 'ecommerce';
   city?: string;
   state?: string;
   amount?: number;
@@ -158,12 +162,21 @@ export interface AppliedBenefit {
   amount: number;
   expiry_days?: number;
   redeem_scope?: ServiceCategory[];
+  /** V/C/F redeem copied onto the wallet row at commit */
+  redeem?: {
+    letter: 'V' | 'C' | 'F';
+    vendorId?: string;
+    categoryId?: string;
+    ecommerceCategoryId?: string;
+    channels: Array<'tele' | 'appointment' | 'paybill' | 'ecommerce'>;
+  };
   benefit_index: number;
 }
 
 export interface EvaluateResult {
   eligible: boolean;
   evaluation_id: string;
+  winner_promotion_id?: string | null;
   benefits: AppliedBenefit[];
   summary: {
     gross_amount: number;

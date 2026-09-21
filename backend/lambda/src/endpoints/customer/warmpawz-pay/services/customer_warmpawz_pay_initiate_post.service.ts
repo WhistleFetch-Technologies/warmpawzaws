@@ -73,6 +73,13 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         vendorLegacyCategory: vendorRow.legacy_category,
       }) || normalizePromoCategory(body.serviceCategory);
 
+    const { loadServerPaymentContext } = await import('../../../../discount-engine/promo-engine');
+    const payCtx = await loadServerPaymentContext({
+      surface: 'paybill',
+      vendorId,
+      bookingCategoryId: openBooking?.service_category || serviceCategory,
+    });
+
     const resolved = await resolveWpayPayQuote({
       vendorRow,
       quotedAmount: originalAmount,
@@ -100,10 +107,14 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         );
         const ev = await safeEvaluatePromotions({
           user_id: customerId,
+          persist: true,
           transaction: {
             type: 'WPAY',
+            channel: 'paybill',
             service_category: serviceCategory || undefined,
             vendor_id: vendorId,
+            vendorId,
+            categoryId: payCtx.categoryId || undefined,
             booking_id: bookingId || undefined,
             amount: originalAmount,
           },
@@ -146,7 +157,12 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       const { computeSpendableWalletBalance } = await import(
         '../../../../discount-engine/promo-engine'
       );
-      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, {
+        serviceCategory,
+        vendorId,
+        categoryId: payCtx.categoryId,
+        channel: 'paybill',
+      });
       const capped = capWpayWalletAmount({
         payable: applied.payableAmount,
         requested: requestedWallet,
@@ -160,6 +176,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     const quoteMetadata = {
       ...applied.metadata,
       serviceCategory,
+      categoryId: payCtx.categoryId,
       bookingId,
       walletAmount,
       quotedPayableAmount: applied.payableAmount,
@@ -185,6 +202,9 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         customerId,
         amount: walletAmount,
         serviceCategory,
+        vendorId,
+        categoryId: payCtx.categoryId,
+        channel: 'paybill',
         referenceType: 'wpay',
         referenceId: walletPay.paymentId,
         description: `Warmpawz Pay ${walletPay.paymentId}`,

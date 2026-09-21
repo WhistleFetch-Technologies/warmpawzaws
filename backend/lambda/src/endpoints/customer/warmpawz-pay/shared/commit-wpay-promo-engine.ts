@@ -19,27 +19,48 @@ export async function commitWpayPromoEngine(opts: {
     meta.evaluationId || meta.evaluation_id || pe.evaluationId || pe.evaluation_id
       ? String(meta.evaluationId || meta.evaluation_id || pe.evaluationId || pe.evaluation_id)
       : '';
-  const { safeCommitPromotion, safeEvaluatePromotions } = await import(
-    '../../../../discount-engine/promo-engine'
-  );
+  const {
+    safeCommitPromotion,
+    safeEvaluatePromotions,
+    loadServerPaymentContext,
+    safeRecordVcfVisitFromPayBill,
+  } = await import('../../../../discount-engine/promo-engine');
+  const ctx = await loadServerPaymentContext({
+    surface: 'paybill',
+    vendorId: opts.vendorId,
+    bookingCategoryId:
+      typeof meta.categoryId === 'string'
+        ? meta.categoryId
+        : typeof meta.bookingCategoryId === 'string'
+          ? meta.bookingCategoryId
+          : null,
+  });
   if (!evalId) {
     const ev = await safeEvaluatePromotions({
       user_id: opts.customerId,
       transaction: {
         type: 'WPAY',
-        service_category:
-          (typeof meta.serviceCategory === 'string' && meta.serviceCategory) || undefined,
-        vendor_id: opts.vendorId || undefined,
+        channel: 'paybill',
+        vendor_id: ctx.vendorId || opts.vendorId || undefined,
+        vendorId: ctx.vendorId || opts.vendorId || undefined,
+        categoryId: ctx.categoryId || undefined,
         amount: opts.originalAmount,
       },
     });
     evalId = ev?.evaluation_id ? String(ev.evaluation_id) : '';
   }
-  if (!evalId) return;
-  await safeCommitPromotion({
-    evaluationId: evalId,
-    transactionId: opts.paymentId,
-    paymentId: opts.razorpayPaymentId || null,
-    userId: opts.customerId,
+  if (evalId) {
+    await safeCommitPromotion({
+      evaluationId: evalId,
+      transactionId: opts.paymentId,
+      paymentId: opts.razorpayPaymentId || null,
+      userId: opts.customerId,
+    });
+  }
+  await safeRecordVcfVisitFromPayBill({
+    paymentId: opts.paymentId,
+    customerId: opts.customerId,
+    vendorId: ctx.vendorId || opts.vendorId,
+    bookingCategoryId: ctx.categoryId,
   });
 }

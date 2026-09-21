@@ -17,6 +17,21 @@ function asStringArray(v: unknown): string[] {
   return [];
 }
 
+function parseJsonObject(v: unknown): Record<string, unknown> {
+  if (v == null) return {};
+  if (typeof v === 'string') {
+    try {
+      const parsed = JSON.parse(v) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
 function mapPromotion(row: Record<string, unknown>): PromoEnginePromotionRow {
   return {
     id: String(row.id),
@@ -28,14 +43,14 @@ function mapPromotion(row: Record<string, unknown>): PromoEnginePromotionRow {
     end_at: row.end_at ? new Date(row.end_at as string).toISOString() : null,
     stacking_policy: (row.stacking_policy as StackingPolicy) || null,
     funding_type: (row.funding_type as PromoFundingType) || null,
-    funding_split: (row.funding_split as Record<string, unknown>) || null,
+    funding_split: parseJsonObject(row.funding_split),
     budget_limit: row.budget_limit != null ? Number(row.budget_limit) : null,
     budget_consumed: Number(row.budget_consumed ?? 0),
     commercial_campaign_id: row.commercial_campaign_id
       ? String(row.commercial_campaign_id)
       : null,
     service_categories: asStringArray(row.service_categories),
-    metadata: (row.metadata as Record<string, unknown>) || {},
+    metadata: parseJsonObject(row.metadata),
     created_at: new Date(row.created_at as string).toISOString(),
     updated_at: new Date(row.updated_at as string).toISOString(),
   };
@@ -239,13 +254,15 @@ export async function dbUpsertLimits(
 export async function dbFindActiveCandidates(opts: {
   now: Date;
   serviceCategory?: string;
+  vendorId?: string;
+  categoryId?: string;
 }): Promise<PromoEnginePromotionRow[]> {
   const params: unknown[] = [opts.now.toISOString()];
-  let serviceClause = '';
+  let legacyServiceMatch = 'TRUE';
   if (opts.serviceCategory) {
     const aliases = expandPromoCategoryAliases(opts.serviceCategory);
     params.push(aliases.length ? aliases : [opts.serviceCategory]);
-    serviceClause = `AND (
+    legacyServiceMatch = `(
       service_categories = '{}'
       OR EXISTS (
         SELECT 1 FROM unnest(service_categories) AS cat
@@ -255,16 +272,78 @@ export async function dbFindActiveCandidates(opts: {
       )
     )`;
   }
+  params.push(opts.vendorId ? String(opts.vendorId) : null);
+  const vendorParam = params.length;
+  params.push(opts.categoryId ? String(opts.categoryId) : null);
+  const categoryParam = params.length;
+
   const res = await query(
     `SELECT * FROM promo_engine_promotions
      WHERE status = 'ACTIVE'
        AND (start_at IS NULL OR start_at <= $1::timestamptz)
        AND (end_at IS NULL OR end_at >= $1::timestamptz)
-       ${serviceClause}
+       AND (
+         (
+           (
+             metadata->'vcf' IS NULL
+             OR jsonb_typeof(metadata->'vcf') = 'null'
+             OR COALESCE(metadata->'vcf'->'publish'->>'letter', '') = ''
+           )
+           AND ${legacyServiceMatch}
+         )
+         OR (
+           metadata->'vcf'->'publish'->>'letter' = 'F'
+           OR (
+             metadata->'vcf'->'publish'->>'letter' = 'V'
+             AND $${vendorParam}::text IS NOT NULL
+             AND metadata->'vcf'->'publish'->>'vendorId' = $${vendorParam}::text
+           )
+           OR (
+             metadata->'vcf'->'publish'->>'letter' = 'C'
+             AND $${categoryParam}::text IS NOT NULL
+             AND metadata->'vcf'->'publish'->>'categoryId' = $${categoryParam}::text
+           )
+         )
+       )
      ORDER BY priority DESC`,
     params
   );
   return (res.rows || []).map((r) => mapPromotion(r as Record<string, unknown>));
+}
+
+export async function dbLoadServiceCategories(): Promise<
+  Array<{ id: string; vendor_roles: unknown }>
+> {
+  const res = await query(
+    `SELECT id::text AS id, vendor_roles
+     FROM service_categories
+     WHERE COALESCE(is_active, true) = true`,
+    []
+  );
+  return (res.rows || []).map((r) => ({
+    id: String((r as { id: string }).id),
+    vendor_roles: (r as { vendor_roles: unknown }).vendor_roles,
+  }));
+}
+
+export async function dbLoadVendorRole(
+  vendorId: string
+): Promise<{ roleId: string | null; roleName: string | null } | null> {
+  if (!vendorId) return null;
+  const res = await query(
+    `SELECT v.role_id::text AS role_id, r.name AS role_name
+     FROM vendors v
+     LEFT JOIN roles r ON r.id = v.role_id
+     WHERE v.id::text = $1 AND (v.is_deleted IS NOT TRUE)
+     LIMIT 1`,
+    [vendorId]
+  );
+  const row = res.rows?.[0] as { role_id?: string; role_name?: string } | undefined;
+  if (!row) return null;
+  return {
+    roleId: row.role_id ? String(row.role_id) : null,
+    roleName: row.role_name ? String(row.role_name) : null,
+  };
 }
 
 export async function dbListRulesForPromotions(

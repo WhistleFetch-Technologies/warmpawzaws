@@ -6,3 +6,6 @@ export { visitCountForPromo } from './visit-count';
 export { matchesVisitLoop } from './visit-loop';
 export { rankEligible } from './rank-eligible';
 export { applyCombinedCap } from './combined-cap';
+export { parseVcfConfig, matchesPublish } from './parse-config';
+export { parseVisitProfile, incrementVisitProfile, decrementVisitProfile } from './visit-profile';
+export { redeemAllows } from './redeem-allows';

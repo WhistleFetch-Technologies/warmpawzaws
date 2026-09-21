@@ -147,66 +147,81 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     if (billAmount <= 0) return;
     setPayError(null);
     setQuoteReady(true);
-    // Soft earn-preview (no wallet credit) — same evaluate API as admin simulator
-    if (!resolvedVendorId) {
-      setPromoEnginePreview(null);
-      return;
-    }
-    void (async () => {
-      try {
-        const userId =
-          getResolvedCustomerId() ||
-          (typeof window !== 'undefined'
-            ? localStorage.getItem('customerId') || localStorage.getItem('customer_id')
-            : null);
-        if (!userId) {
-          setPromoEnginePreview(null);
-          return;
-        }
-        const ev = await apiClient.post<{
-          evaluation_id?: string;
-          evaluationId?: string;
-          eligible?: boolean;
-          summary?: { cashback?: number; discount?: number };
-          data?: {
+  }, [billAmount]);
+
+  useEffect(() => {
+    if (!quoteReady || billAmount <= 0 || !resolvedVendorId) return;
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const userId =
+            getResolvedCustomerId() ||
+            (typeof window !== 'undefined'
+              ? localStorage.getItem('customerId') || localStorage.getItem('customer_id')
+              : null);
+          if (!userId) {
+            setPromoEnginePreview(null);
+            return;
+          }
+          const ev = await apiClient.post<{
             evaluation_id?: string;
+            evaluationId?: string;
             eligible?: boolean;
             summary?: { cashback?: number; discount?: number };
+            data?: {
+              evaluation_id?: string;
+              eligible?: boolean;
+              summary?: { cashback?: number; discount?: number };
+              benefits?: Array<{
+                benefit_type?: string;
+                redeem_scope?: string[];
+                expiry_days?: number;
+                redeem?: { letter?: string; channels?: string[] };
+              }>;
+            };
             benefits?: Array<{
               benefit_type?: string;
               redeem_scope?: string[];
               expiry_days?: number;
+              redeem?: { letter?: string; channels?: string[] };
             }>;
-          };
-          benefits?: Array<{
-            benefit_type?: string;
-            redeem_scope?: string[];
-            expiry_days?: number;
-          }>;
-        }>('/promo-engine/evaluate', {
-          user_id: userId,
-          transaction: {
-            type: 'WPAY',
-            service_category: vendor?.category || undefined,
-            vendor_id: resolvedVendorId,
-            amount: billAmount,
-          },
-        });
-        const payload = ev?.data ?? ev;
-        const cb = (payload?.benefits || ev?.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
-        setPromoEnginePreview({
-          evaluationId: payload?.evaluation_id || ev?.evaluation_id || ev?.evaluationId,
-          pendingCashback: payload?.summary?.cashback ?? ev?.summary?.cashback ?? 0,
-          engineDiscount: payload?.summary?.discount ?? ev?.summary?.discount ?? 0,
-          eligible: payload?.eligible ?? ev?.eligible,
-          redeemScope: cb?.redeem_scope || [],
-          expiryDays: cb?.expiry_days ?? null,
-        });
-      } catch {
-        setPromoEnginePreview(null);
-      }
-    })();
-  }, [billAmount, resolvedVendorId, vendor?.category]);
+          }>('/promo-engine/evaluate', {
+            user_id: userId,
+            persist: false,
+            transaction: {
+              type: 'WPAY',
+              channel: 'paybill',
+              vendor_id: resolvedVendorId,
+              vendorId: resolvedVendorId,
+              amount: billAmount,
+            },
+          });
+          const payload = ev?.data ?? ev;
+          const cb = (payload?.benefits || ev?.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
+          const redeem = cb?.redeem;
+          const redeemLabel = redeem
+            ? redeem.letter === 'F'
+              ? 'anywhere'
+              : redeem.letter === 'V'
+                ? 'this vendor'
+                : 'this category'
+            : undefined;
+          setPromoEnginePreview({
+            evaluationId: payload?.evaluation_id || ev?.evaluation_id || ev?.evaluationId,
+            pendingCashback: payload?.summary?.cashback ?? ev?.summary?.cashback ?? 0,
+            engineDiscount: payload?.summary?.discount ?? ev?.summary?.discount ?? 0,
+            eligible: payload?.eligible ?? ev?.eligible,
+            redeemScope: cb?.redeem_scope || (redeem?.channels ? redeem.channels : []),
+            redeemLabel,
+            expiryDays: cb?.expiry_days ?? null,
+          });
+        } catch {
+          setPromoEnginePreview(null);
+        }
+      })();
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [quoteReady, billAmount, resolvedVendorId]);
 
   const runPaymentCheckout = useCallback(async () => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;

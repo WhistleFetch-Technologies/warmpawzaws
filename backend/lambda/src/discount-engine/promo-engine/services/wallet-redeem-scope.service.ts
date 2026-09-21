@@ -1,42 +1,21 @@
 /**
- * Promo cashback redeem_scope gating for wallet spend (Phase 4f / C8).
- * Locked CB = PROMOTION credits whose redeem_scope excludes the current category.
+ * Promo cashback redeem_scope gating for wallet spend.
+ * V/C/F letter + spend channel when present; otherwise legacy category strings.
  */
 import { query } from '../../../database/rds-connection';
 import type { PoolClient } from 'pg';
+import { redeemAllows, type RedeemPayment } from '../vcf/redeem-allows';
+import type { SpendChannel } from '../vcf/types';
 
-function normalizeCategory(raw?: string | null): string {
-  return String(raw || '')
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9_]/g, '');
-}
-
-function scopeAllows(redeemScope: unknown, category: string): boolean {
-  if (!category) return true;
-  if (redeemScope == null) return true;
-  let parsed: unknown = redeemScope;
-  if (typeof redeemScope === 'string') {
-    try {
-      parsed = JSON.parse(redeemScope);
-    } catch {
-      return true;
-    }
-  }
-  const services =
-    Array.isArray(parsed)
-      ? parsed
-      : parsed && typeof parsed === 'object' && Array.isArray((parsed as { services?: unknown }).services)
-        ? (parsed as { services: unknown[] }).services
-        : [];
-  if (!services.length) return true;
-  const set = new Set(services.map((s) => normalizeCategory(String(s))));
-  return set.has(category);
-}
+export type WalletRedeemPayment = RedeemPayment & {
+  serviceCategory?: string | null;
+  channel?: SpendChannel | null;
+};
 
 export async function computeSpendableWalletBalance(
   customerId: string,
-  serviceCategory?: string | null
+  serviceCategory?: string | null,
+  payment?: WalletRedeemPayment
 ): Promise<{
   balance: number;
   spendable: number;
@@ -50,8 +29,15 @@ export async function computeSpendableWalletBalance(
     [customerId]
   );
   const balance = Math.round((parseFloat(String(balRes.rows[0]?.balance ?? '0')) || 0) * 100) / 100;
-  const category = normalizeCategory(serviceCategory);
-  if (!category) {
+  const ctx: WalletRedeemPayment = {
+    serviceCategory: payment?.serviceCategory ?? serviceCategory,
+    vendorId: payment?.vendorId,
+    categoryId: payment?.categoryId,
+    channel: payment?.channel,
+    ecommerceCategoryId: payment?.ecommerceCategoryId,
+  };
+  const hasContext = Boolean(ctx.channel || ctx.serviceCategory || ctx.vendorId || ctx.categoryId);
+  if (!hasContext) {
     return { balance, spendable: balance, lockedPromoCashback: 0 };
   }
 
@@ -70,7 +56,7 @@ export async function computeSpendableWalletBalance(
   for (const row of promoRes.rows || []) {
     const rem = Math.round((parseFloat(String(row.remaining ?? '0')) || 0) * 100) / 100;
     if (rem <= 0) continue;
-    if (!scopeAllows(row.redeem_scope, category)) {
+    if (!redeemAllows(row.redeem_scope, ctx)) {
       locked += rem;
     }
   }
@@ -86,11 +72,21 @@ export async function consumePromoCashbackForDebit(
     customerId: string;
     amount: number;
     serviceCategory?: string | null;
+    vendorId?: string | null;
+    categoryId?: string | null;
+    channel?: SpendChannel | null;
+    ecommerceCategoryId?: string | null;
   }
 ): Promise<void> {
   const amount = Math.round((opts.amount || 0) * 100) / 100;
   if (amount <= 0) return;
-  const category = normalizeCategory(opts.serviceCategory);
+  const ctx: WalletRedeemPayment = {
+    serviceCategory: opts.serviceCategory,
+    vendorId: opts.vendorId,
+    categoryId: opts.categoryId,
+    channel: opts.channel,
+    ecommerceCategoryId: opts.ecommerceCategoryId,
+  };
 
   const rows = await client.query(
     `SELECT wt.id, wt.remaining_amount::text AS remaining, wt.redeem_scope
@@ -112,7 +108,7 @@ export async function consumePromoCashbackForDebit(
     redeem_scope?: unknown;
   }>) {
     if (left <= 0.009) break;
-    if (!scopeAllows(row.redeem_scope, category)) continue;
+    if (!redeemAllows(row.redeem_scope, ctx)) continue;
     const rem = Math.round((parseFloat(String(row.remaining ?? '0')) || 0) * 100) / 100;
     if (rem <= 0) continue;
     const take = Math.min(rem, left);

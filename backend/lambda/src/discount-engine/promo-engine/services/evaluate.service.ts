@@ -46,11 +46,15 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
   const serviceCategory = req.transaction?.service_category
     ? normalizePromoCategory(req.transaction.service_category) || undefined
     : undefined;
+  const vendorId = String(req.transaction?.vendorId || req.transaction?.vendor_id || '') || undefined;
+  const categoryId = req.transaction?.categoryId ? String(req.transaction.categoryId) : undefined;
   const behaviour = await loadBehaviourProfile(req.user_id, req.behaviour_override);
   const snapshot = await loadEvaluateSnapshot({
     userId: req.user_id,
     now,
     serviceCategory,
+    vendorId,
+    categoryId,
     behaviour,
   });
   const body = evaluateAgainstSnapshot(snapshot, req, now);
@@ -65,6 +69,7 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
         eligible: body.eligible,
         benefits: body.benefits,
         summary: body.summary,
+        winner_promotion_id: body.winner_promotion_id ?? null,
       },
       explain_json: body.explain,
       expires_at: expires.toISOString(),

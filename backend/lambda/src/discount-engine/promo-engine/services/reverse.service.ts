@@ -3,6 +3,7 @@ import {
   dbInsertAudit,
 } from '../repos/promo-engine.repo';
 import { reversePromoCashbackForTransaction } from './wallet-cashback.service';
+import { safeReverseVcfVisit } from './visit-writer.service';
 import type { ReverseRequest } from '../types';
 
 export async function reversePromotion(req: ReverseRequest): Promise<{
@@ -12,6 +13,10 @@ export async function reversePromotion(req: ReverseRequest): Promise<{
   error?: string;
 }> {
   const rows = await dbFindUsageByTransaction(req.transaction_id);
+  const userIdHint = req.user_id || (rows[0] ? String((rows[0] as { user_id?: string }).user_id || '') : '');
+  if (userIdHint) {
+    await safeReverseVcfVisit({ userId: userIdHint, referenceId: req.transaction_id });
+  }
   if (!rows.length) {
     return { success: true, reversed_cashback: 0, usage_count: 0 };
   }
