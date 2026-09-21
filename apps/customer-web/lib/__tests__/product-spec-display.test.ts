@@ -1,6 +1,7 @@
 import {
   displayProductSpecValue,
   isMeaningfulProductSpecValue,
+  KEY_FEATURES_TOGGLE_MIN_LEN,
   meaningfulSpecEntries,
 } from '../ecommerce/product-spec-display';
 
@@ -20,6 +21,15 @@ describe('isMeaningfulProductSpecValue', () => {
     expect(isMeaningfulProductSpecValue('Crunchy treats')).toBe(true);
     expect(isMeaningfulProductSpecValue('Petz')).toBe(true);
     expect(isMeaningfulProductSpecValue(2.5)).toBe(true);
+  });
+});
+
+describe('KEY_FEATURES_TOGGLE_MIN_LEN', () => {
+  it('clamps long key features behind View more', () => {
+    expect(KEY_FEATURES_TOGGLE_MIN_LEN).toBe(80);
+    expect(
+      'Give your pet a festive makeover with our Dog Kurta – where tradition meets comfort and style.'.length,
+    ).toBeGreaterThan(KEY_FEATURES_TOGGLE_MIN_LEN);
   });
 });
 

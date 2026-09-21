@@ -26,30 +26,15 @@ interface BankAccount {
   updated_at: string;
 }
 
-interface UPIAccount {
-  id: string;
-  upi_id: string;
-  provider: string;
-  is_primary: boolean;
-  is_verified: boolean;
-  created_at: string;
-}
-
-// ============================================================================
-// MAIN COMPONENT
-// ============================================================================
-
 export default function BankDetailsPage() {
   const router = useRouter();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [upiAccounts, setUpiAccounts] = useState<UPIAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
   // Modal states
   const [showBankModal, setShowBankModal] = useState(false);
-  const [showUPIModal, setShowUPIModal] = useState(false);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState<string | null>(null);
@@ -63,11 +48,6 @@ export default function BankDetailsPage() {
     bank_name: '',
     branch_name: '',
     account_type: 'savings' as 'savings' | 'current',
-  });
-
-  const [upiForm, setUpiForm] = useState({
-    upi_id: '',
-    provider: 'gpay',
   });
 
   // ============================================================================
@@ -89,7 +69,6 @@ export default function BankDetailsPage() {
       // Backend returns single bank account, wrap in array for UI compatibility
       const bankData = bankRes.bankAccount || bankRes.bank_account || bankRes;
       setBankAccounts(bankData ? (Array.isArray(bankData) ? bankData : [bankData]) : []);
-      setUpiAccounts([]); // UPI accounts handled separately if needed
     } catch (err: any) {
       console.error('Error loading bank details:', err);
       setError(err.message || 'Failed to load bank details');
@@ -204,50 +183,6 @@ export default function BankDetailsPage() {
       loadData();
     } catch (err: any) {
       setError(err.message || 'Failed to remove bank account');
-    }
-  };
-
-  // ============================================================================
-  // UPI ACTIONS
-  // ============================================================================
-
-  const handleAddUPI = () => {
-    setUpiForm({ upi_id: '', provider: 'gpay' });
-    setShowUPIModal(true);
-  };
-
-  const handleSaveUPI = async () => {
-    if (!upiForm.upi_id || !upiForm.upi_id.includes('@')) {
-      setError('Please enter a valid UPI ID');
-      return;
-    }
-    
-    try {
-      setSaving(true);
-      setError(null);
-      
-      const vendorId = localStorage.getItem('vendorId');
-      await apiClient.post(`/vendor/${vendorId}/upi-account`, upiForm);
-      setSuccess('UPI ID added successfully');
-      setShowUPIModal(false);
-      loadData();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save UPI ID');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeleteUPI = async (upiId: string) => {
-    if (!confirm('Are you sure you want to remove this UPI ID?')) return;
-    
-    try {
-      const vendorId = localStorage.getItem('vendorId');
-      await apiClient.delete(`/vendor/${vendorId}/upi-account/${upiId}`);
-      setSuccess('UPI ID removed');
-      loadData();
-    } catch (err: any) {
-      setError(err.message || 'Failed to remove UPI ID');
     }
   };
 
@@ -404,61 +339,6 @@ export default function BankDetailsPage() {
           )}
         </section>
 
-        {/* UPI Section */}
-        <section className="bg-white rounded-2xl shadow-sm p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">UPI IDs</h2>
-              <p className="text-sm text-gray-500">For instant UPI settlements</p>
-            </div>
-            <button
-              onClick={handleAddUPI}
-              className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
-            >
-              + Add UPI ID
-            </button>
-          </div>
-
-          {upiAccounts.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-xl">
-              <div className="text-4xl mb-3">📱</div>
-              <p className="text-gray-500">No UPI IDs added</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {upiAccounts.map((upi) => (
-                <div key={upi.id} className="border rounded-xl p-4 hover:border-orange-200 transition">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center text-2xl">
-                        📱
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-gray-900">{upi.upi_id}</h3>
-                          {upi.is_primary && (
-                            <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-medium">Primary</span>
-                          )}
-                          {upi.is_verified && (
-                            <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">✓ Verified</span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-500">{upi.provider.toUpperCase()}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteUPI(upi.id)}
-                      className="p-2 text-gray-400 hover:text-red-600"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
         {/* Info Box */}
         <div className="mt-6 p-4 bg-blue-50 rounded-xl">
           <div className="flex items-start gap-3">
@@ -594,62 +474,6 @@ export default function BankDetailsPage() {
         </div>
       )}
 
-      {/* UPI Modal */}
-      {showUPIModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md">
-            <div className="p-6 border-b">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold text-gray-900">Add UPI ID</h3>
-                <button onClick={() => setShowUPIModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">✕</button>
-              </div>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">UPI ID *</label>
-                <input
-                  type="text"
-                  value={upiForm.upi_id}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUpiForm(prev => ({ ...prev, upi_id: e.target.value.toLowerCase() }))}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                  placeholder="yourname@upi"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
-                <select
-                  value={upiForm.provider}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setUpiForm(prev => ({ ...prev, provider: e.target.value }))}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
-                >
-                  <option value="gpay">Google Pay</option>
-                  <option value="phonepe">PhonePe</option>
-                  <option value="paytm">Paytm</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-            </div>
-            
-            <div className="p-6 border-t bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
-              <button
-                onClick={() => setShowUPIModal(false)}
-                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveUPI}
-                disabled={saving}
-                className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : 'Add UPI ID'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       </div>
     </div>
   );

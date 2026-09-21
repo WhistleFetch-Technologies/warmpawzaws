@@ -12,7 +12,7 @@ import {
   MAX_PAGE_SIZE,
 } from '../../../constants/catalogue-limits';
 
-const MAX_SEARCH_QUERY_LENGTH = 256;
+export const MAX_SEARCH_QUERY_LENGTH = 256;
 const MAX_CITY_LENGTH = 128;
 const MAX_VENDOR_STATUS_LENGTH = 64;
 

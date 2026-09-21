@@ -15,6 +15,12 @@ describe('admin-ecommerce-orders-sql', () => {
     expect(resolveAdminOrderPeriodDays(null)).toBeNull();
   });
 
+  it('hides unpaid abandoned cancelled orders but keeps paid cancelled', () => {
+    const sql = buildAdminEcommerceOrderFilterSql({}).whereClauses.join(' ');
+    expect(sql).toContain("order_status, '')) = 'pending_payment'");
+    expect(sql).toContain("NOT IN ('paid', 'completed', 'refunded')");
+  });
+
   it('builds status and search filters with parameterized search', () => {
     const parts = buildAdminEcommerceOrderFilterSql({
       status: 'confirmed',

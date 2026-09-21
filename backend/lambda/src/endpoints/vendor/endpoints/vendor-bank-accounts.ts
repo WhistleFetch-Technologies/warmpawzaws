@@ -14,23 +14,10 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../../../database/rds-connection';
-import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
 import { promoteVendorBankAccountToPrimary } from '../../../utils/vendor-bank-primary';
 import { resolveVendorById } from './vendorProfile.vendor';
 import { geocodeVendorAddressFields } from '../../../utils/vendor-address-geocode';
 import { markVendorBankVerified } from '../../../utils/sync-vendor-bank-verified';
-
-/** Normalize DB boolean (pg usually returns boolean; some paths may return 't'/'f' strings). */
-function isDbTruthy(v: unknown): boolean {
-  if (v === true || v === 1) return true;
-  if (v === false || v === 0 || v == null) return false;
-  if (typeof v === 'string') {
-    const s = v.trim().toLowerCase();
-    if (['true', 't', '1', 'yes'].includes(s)) return true;
-    if (['false', 'f', '0', 'no', ''].includes(s)) return false;
-  }
-  return Boolean(v);
-}
 
 export function registerVendorBankAccountEndpoints(app: Hono) {
 
@@ -525,200 +512,18 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   });
 
   // ============================================
-  // UPI ENDPOINTS
+  // UPI ENDPOINTS (retired — vendor UPI collection removed)
   // ============================================
 
-  /**
-   * GET /vendor/:vendorId/upi
-   * Get vendor UPI details
-   */
-  app.get("/vendor/:vendorId/upi", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const trimmedId = (vendorId || '').trim();
-      if (!trimmedId) {
-        return c.json({ error: 'Vendor ID is required' }, 400);
-      }
+  const vendorUpiRetired = (c: { json: (body: unknown, status?: number) => Response }) =>
+    c.json(
+      { success: false, error: 'Vendor UPI details have been removed. Use a bank account for payouts.' },
+      410,
+    );
 
-      // ✅ FIX: Use resolveVendorById to handle vendor_identity IDs and auto-create vendors row
-      const vendor = await resolveVendorById(trimmedId);
-      if (!vendor?.id) {
-        return c.json({ error: 'Vendor not found' }, 404);
-      }
-
-      const savedUpi =
-        vendor.upi_id != null && String(vendor.upi_id).trim() !== ''
-          ? String(vendor.upi_id).trim()
-          : null;
-
-      const holderRaw = (vendor as { upi_vpa_holder_name?: string | null }).upi_vpa_holder_name;
-      const vpaHolder =
-        holderRaw != null && String(holderRaw).trim() !== '' ? String(holderRaw).trim() : null;
-
-      const atRaw = (vendor as { upi_verified_at?: string | Date | null }).upi_verified_at;
-      let verified_at: string | null = null;
-      if (atRaw != null) {
-        verified_at =
-          atRaw instanceof Date ? atRaw.toISOString() : String(atRaw);
-      }
-
-      return c.json({
-        success: true,
-        upi: {
-          upi_id: savedUpi,
-          is_verified: isDbTruthy(vendor.upi_verified),
-          vpa_holder_name: vpaHolder,
-          verified_at,
-        },
-      });
-    } catch (error: any) {
-      console.error('Error fetching UPI details:', error);
-      return c.json({ error: error.message || 'Failed to fetch UPI details' }, 500);
-    }
-  });
-
-  /**
-   * POST /vendor/:vendorId/upi/validate
-   * Razorpay VPA check only — does not persist.
-   */
-  app.post("/vendor/:vendorId/upi/validate", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const trimmedId = (vendorId || '').trim();
-      if (!trimmedId) {
-        return c.json({ error: 'Vendor ID is required' }, 400);
-      }
-
-      const body = await c.req.json().catch(() => ({}));
-      const rawUpi = body?.upi_id ?? body?.upiId;
-      const upi_id = typeof rawUpi === 'string' ? rawUpi.trim() : rawUpi != null ? String(rawUpi).trim() : '';
-
-      if (!upi_id || !upi_id.includes('@')) {
-        return c.json({ success: false, valid: false, error: 'Invalid UPI ID format' }, 400);
-      }
-
-      const vendor = await resolveVendorById(trimmedId);
-      if (!vendor?.id) {
-        return c.json({ error: 'Vendor not found' }, 404);
-      }
-
-      const vpaCheck = await getRazorpayClient().validateVpa(upi_id);
-      if (!vpaCheck.valid) {
-        const msg = vpaCheck.error || 'UPI verification failed';
-        const status = /not configured/i.test(msg) ? 503 : 400;
-        return c.json({ success: false, valid: false, error: msg }, status);
-      }
-
-      return c.json({
-        success: true,
-        valid: true,
-        vpa_holder_name: vpaCheck.customerName?.trim() || null,
-      });
-    } catch (error: any) {
-      console.error('Error validating UPI ID:', error);
-      const msg = error?.message || 'Failed to validate UPI';
-      if (/Razorpay not configured|not configured.*Razorpay/i.test(msg)) {
-        return c.json({ success: false, valid: false, error: msg }, 503);
-      }
-      return c.json({ success: false, valid: false, error: msg }, 500);
-    }
-  });
-
-  /**
-   * POST /vendor/:vendorId/upi
-   * Save vendor UPI ID
-   */
-  app.post("/vendor/:vendorId/upi", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const trimmedId = (vendorId || '').trim();
-      if (!trimmedId) {
-        return c.json({ error: 'Vendor ID is required' }, 400);
-      }
-
-      const body = await c.req.json().catch(() => ({}));
-      const rawUpi = body?.upi_id ?? body?.upiId;
-      const upi_id = typeof rawUpi === 'string' ? rawUpi.trim() : rawUpi != null ? String(rawUpi).trim() : '';
-
-      if (!upi_id || !upi_id.includes('@')) {
-        return c.json({ error: 'Invalid UPI ID format' }, 400);
-      }
-
-      // ✅ FIX: Use resolveVendorById to handle vendor_identity IDs and auto-create vendors row
-      const vendor = await resolveVendorById(trimmedId);
-      if (!vendor?.id) {
-        return c.json({ error: 'Vendor not found' }, 404);
-      }
-
-      // Same Razorpay credentials as checkout / payouts (getRazorpayConfig → validateVpa → /payments/validate/vpa)
-      const vpaCheck = await getRazorpayClient().validateVpa(upi_id);
-      if (!vpaCheck.valid) {
-        const msg = vpaCheck.error || 'UPI verification failed';
-        const status = /not configured/i.test(msg) ? 503 : 400;
-        return c.json({ success: false, error: msg }, status);
-      }
-
-      const now = new Date().toISOString();
-      const holderName = vpaCheck.customerName?.trim() || null;
-      const basePayload = {
-        upi_id,
-        upi_verified: true,
-        upi_verified_at: now,
-        updated_at: now,
-      };
-      let rows: any[] | undefined;
-      try {
-        rows = await update('vendors', { id: vendor.id }, {
-          ...basePayload,
-          upi_vpa_holder_name: holderName,
-        });
-      } catch (firstErr: any) {
-        const msg = String(firstErr?.message || '');
-        if (msg.includes('upi_vpa_holder_name')) {
-          console.warn('[UPI] upi_vpa_holder_name column missing — run migration 626; saving UPI without holder column');
-          rows = await update('vendors', { id: vendor.id }, basePayload);
-        } else {
-          throw firstErr;
-        }
-      }
-
-      if (!rows?.length) {
-        return c.json({ error: 'Failed to persist UPI ID' }, 500);
-      }
-
-      const refreshed = await select('vendors', { id: vendor.id });
-      const row = refreshed?.[0];
-      const persistedUpi =
-        row?.upi_id != null && String(row.upi_id).trim() !== '' ? String(row.upi_id).trim() : upi_id;
-
-      const verifiedAtRaw = (row as { upi_verified_at?: string | Date | null })?.upi_verified_at;
-      const verified_at =
-        verifiedAtRaw instanceof Date
-          ? verifiedAtRaw.toISOString()
-          : verifiedAtRaw != null
-            ? String(verifiedAtRaw)
-            : now;
-
-      return c.json({
-        success: true,
-        message: 'UPI ID verified and saved.',
-        upi: {
-          upi_id: persistedUpi,
-          is_verified: isDbTruthy(row?.upi_verified),
-          vpa_holder_name:
-            (row as { upi_vpa_holder_name?: string | null })?.upi_vpa_holder_name ??
-            holderName ??
-            null,
-          verified_at,
-        },
-      });
-    } catch (error: any) {
-      console.error('Error saving UPI ID:', error);
-      const msg = error?.message || 'Failed to save UPI';
-      if (/Razorpay not configured|not configured.*Razorpay/i.test(msg)) {
-        return c.json({ success: false, error: msg }, 503);
-      }
-      return c.json({ error: msg }, 500);
-    }
-  });
+  app.get("/vendor/:vendorId/upi", vendorUpiRetired);
+  app.post("/vendor/:vendorId/upi/validate", vendorUpiRetired);
+  app.post("/vendor/:vendorId/upi", vendorUpiRetired);
+  app.post("/vendor/:vendorId/upi-account", vendorUpiRetired);
+  app.delete("/vendor/:vendorId/upi-account/:upiId", vendorUpiRetired);
 }

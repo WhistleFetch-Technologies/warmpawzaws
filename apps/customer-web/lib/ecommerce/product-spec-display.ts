@@ -32,6 +32,8 @@ export function displayProductSpecValue(value: unknown): string {
   }
 }
 
+export const KEY_FEATURES_TOGGLE_MIN_LEN = 80;
+
 /** Non-dimension specification entries suitable for template/inline display. */
 export function meaningfulSpecEntries(
   specifications: Record<string, unknown> | undefined,

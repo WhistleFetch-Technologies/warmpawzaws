@@ -50,6 +50,7 @@ import { ProductImageGallery } from '@/components/ecommerce/ProductImageGallery'
 import {
   displayProductSpecValue,
   isMeaningfulProductSpecValue,
+  KEY_FEATURES_TOGGLE_MIN_LEN,
   meaningfulSpecEntries,
 } from '@/lib/ecommerce/product-spec-display';
 
@@ -80,6 +81,7 @@ export function ProductDetailPage({
   const [relatedProducts, setRelatedProducts] = useState<ShopProduct[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [keyFeaturesExpanded, setKeyFeaturesExpanded] = useState(false);
   const { addToCart, cart, itemCount: cartItemCount, updateQuantity } = useCart();
   const nav = useCustomerNavigation();
   const router = useRouter();
@@ -433,9 +435,22 @@ export function ProductDetailPage({
             {isMeaningfulProductSpecValue(product.key_features) && (
               <div className="flex flex-col gap-0.5 items-end text-right shrink-0 max-w-[48%]">
                 <span className="text-xs text-gray-500">Key Features</span>
-                <span className="text-sm font-medium text-gray-900 whitespace-pre-line">
+                <span
+                  className={`text-sm font-medium text-gray-900 whitespace-pre-line ${
+                    keyFeaturesExpanded ? '' : 'line-clamp-3'
+                  }`}
+                >
                   {displayProductSpecValue(product.key_features)}
                 </span>
+                {displayProductSpecValue(product.key_features).length > KEY_FEATURES_TOGGLE_MIN_LEN && (
+                  <button
+                    type="button"
+                    onClick={() => setKeyFeaturesExpanded((v) => !v)}
+                    className="mt-0.5 text-xs font-medium text-[#FF8C42] hover:text-orange-700"
+                  >
+                    {keyFeaturesExpanded ? 'Show less' : 'View more'}
+                  </button>
+                )}
               </div>
             )}
           </div>
