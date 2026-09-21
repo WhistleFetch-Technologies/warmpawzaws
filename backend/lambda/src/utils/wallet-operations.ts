@@ -1,4 +1,8 @@
 import type { PoolClient } from 'pg';
+import {
+  computeSpendableWalletBalance,
+  consumePromoCashbackForDebit,
+} from '../discount-engine/promo-engine';
 
 const BOOKING_PAYMENT_DESC = 'Payment for booking';
 
@@ -32,12 +36,14 @@ export async function debitCustomerWalletForBookingInTransaction(
     bookingId: string;
     amount: number;
     idempotencyKey?: string | null;
+    serviceCategory?: string | null;
   }
 ): Promise<{ debited: number; balanceAfter: number }> {
   const { customerId, bookingId, amount, idempotencyKey } = params;
   if (!customerId || !bookingId || !Number.isFinite(amount) || amount <= 0) {
     return { debited: 0, balanceAfter: 0 };
   }
+  let serviceCategory = params.serviceCategory ? String(params.serviceCategory) : null;
 
   const cols = await walletTransactionsColumnSet(client);
   const hasCustomerId = cols.has('customer_id');
@@ -76,6 +82,21 @@ export async function debitCustomerWalletForBookingInTransaction(
     throw new Error('Customer wallet row missing after upsert');
   }
   const walletRow = lockRes.rows[0] as { id: string; balance: string };
+
+  if (!serviceCategory) {
+    await client.query('SAVEPOINT sp_booking_cat');
+    try {
+      const catRes = await client.query(
+        `SELECT COALESCE(service_category, service_type)::text AS cat
+         FROM bookings WHERE id = $1::uuid LIMIT 1`,
+        [bookingId],
+      );
+      serviceCategory = catRes.rows[0]?.cat ? String(catRes.rows[0].cat) : null;
+      await client.query('RELEASE SAVEPOINT sp_booking_cat');
+    } catch {
+      await client.query('ROLLBACK TO SAVEPOINT sp_booking_cat');
+    }
+  }
 
   const desc = idempotencyKey
     ? `${BOOKING_PAYMENT_DESC} ${idempotencyKey}`
@@ -126,6 +147,13 @@ export async function debitCustomerWalletForBookingInTransaction(
   }
 
   const balanceBefore = parseFloat(String(walletRow.balance ?? '0')) || 0;
+
+  const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+  if (amount > scoped.spendable + 0.009) {
+    throw new Error(
+      `Insufficient spendable wallet (spendable ₹${scoped.spendable.toFixed(2)}, locked ₹${scoped.lockedPromoCashback.toFixed(2)})`,
+    );
+  }
 
   if (balanceBefore + 1e-9 < amount) {
     throw new Error('Insufficient wallet balance');
@@ -181,6 +209,12 @@ export async function debitCustomerWalletForBookingInTransaction(
     `INSERT INTO wallet_transactions (${insertCols.join(', ')}) VALUES (${placeholders})`,
     insertParams as any[]
   );
+
+  await consumePromoCashbackForDebit(client, {
+    customerId,
+    amount,
+    serviceCategory,
+  });
 
   // Optional denormalized mirror on `customers` — must not abort the booking txn if column/table drifts.
   await client.query('SAVEPOINT sp_sync_customer_wallet_balance');

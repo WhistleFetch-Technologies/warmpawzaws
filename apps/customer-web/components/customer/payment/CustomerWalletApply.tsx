@@ -23,6 +23,8 @@ export function CustomerWalletApply({
   enabled = true,
 }: CustomerWalletApplyProps) {
   if (!wallet || !(wallet.balance > 0)) return null;
+  const spendable = Number(wallet.spendableBalance ?? wallet.balance) || 0;
+  if (spendable <= 0.009) return null;
 
   return (
     <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
@@ -45,8 +47,10 @@ export function CustomerWalletApply({
           <div>
             <p className="font-medium text-gray-900">Warmpawz Wallet</p>
             <p className="text-sm text-gray-500">
-              Balance: ₹{wallet.balance.toFixed(2)}
-              {wallet.loyaltyPoints != null ? ` • ${wallet.loyaltyPoints} points` : ''}
+              Usable: ₹{spendable.toFixed(2)}
+              {wallet.balance > spendable + 0.009
+                ? ` of ₹${wallet.balance.toFixed(2)}`
+                : ''}
             </p>
           </div>
         </div>

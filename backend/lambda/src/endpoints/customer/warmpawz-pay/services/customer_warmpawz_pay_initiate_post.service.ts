@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import {
   createWpayRazorpayOrder,
+  createWpayWalletOnlyPayment,
   WpayPaymentAlreadyCompletedError,
 } from '../../../../utils/wpay-razorpay-order';
 import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
@@ -15,6 +16,7 @@ import { resolveWpayPromoCategory } from '../shared/resolve-wpay-promo-category'
 import { applyEngineDiscountToWpayPayable } from '../shared/apply-engine-discount-to-wpay';
 import { loadOwnedWpayEvaluation } from '../shared/load-wpay-stored-evaluation';
 import { normalizePromoCategory } from '../../../../discount-engine/promo-engine/dsl/category-aliases';
+import { capWpayWalletAmount } from '../shared/wpay-wallet';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -29,6 +31,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       clientRequestId?: string;
       evaluationId?: string;
       serviceCategory?: string;
+      walletAmount?: number;
     };
 
     const vendorId = String(body.vendorId ?? '').trim();
@@ -135,19 +138,116 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       metadata: resolved.metadata,
     });
 
+    const requestedWallet = Number(body.walletAmount);
+    let walletAmount = 0;
+    let razorpayCharge = applied.payableAmount;
+    let walletOnly = false;
+    if (Number.isFinite(requestedWallet) && requestedWallet > 0.009) {
+      const { computeSpendableWalletBalance } = await import(
+        '../../../../discount-engine/promo-engine'
+      );
+      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+      const capped = capWpayWalletAmount({
+        payable: applied.payableAmount,
+        requested: requestedWallet,
+        spendable: scoped.spendable,
+      });
+      walletAmount = capped.walletAmount;
+      razorpayCharge = capped.razorpayAmount;
+      walletOnly = capped.walletOnly;
+    }
+
     const quoteMetadata = {
       ...applied.metadata,
       serviceCategory,
       bookingId,
+      walletAmount,
+      quotedPayableAmount: applied.payableAmount,
+      razorpayChargeAmount: razorpayCharge,
       ...(promoEngine?.evaluationId
         ? { evaluationId: String(promoEngine.evaluationId), promoEngine }
         : {}),
     };
 
+    if (walletOnly) {
+      const walletPay = await createWpayWalletOnlyPayment({
+        customerId,
+        vendorId,
+        payableAmount: applied.payableAmount,
+        bookingId,
+        clientRequestId: clientRequestId || null,
+        quoteMetadata,
+      });
+      const { debitScopedWallet } = await import(
+        '../../../../discount-engine/promo-engine'
+      );
+      const debit = await debitScopedWallet({
+        customerId,
+        amount: walletAmount,
+        serviceCategory,
+        referenceType: 'wpay',
+        referenceId: walletPay.paymentId,
+        description: `Warmpawz Pay ${walletPay.paymentId}`,
+      });
+      if (!debit.ok) {
+        return c.json({ success: false, error: debit.error }, 400);
+      }
+      const { dbWpayAtomicCompleteVerify } = await import(
+        '../repos/wpay-verify-transaction.repo'
+      );
+      const completed = await dbWpayAtomicCompleteVerify({
+        paymentId: walletPay.paymentId,
+        customerId,
+        razorpayPaymentId: `wallet_${walletPay.paymentId}`,
+        razorpaySignature: 'wallet',
+        originalAmount,
+        discountAmount: applied.discountAmount,
+        bookingId,
+        creditAmount: 0,
+      });
+      if (completed) {
+        try {
+          const { accrueWpaySettlement } = await import('../shared/accrue-wpay-settlement');
+          await accrueWpaySettlement(completed);
+        } catch (settleErr) {
+          console.error('[customer/warmpawz-pay/initiate] wallet-only settlement failed', settleErr);
+        }
+        try {
+          const { commitWpayPromoEngine } = await import('../shared/commit-wpay-promo-engine');
+          await commitWpayPromoEngine({
+            paymentId: walletPay.paymentId,
+            customerId,
+            vendorId,
+            razorpayPaymentId: `wallet_${walletPay.paymentId}`,
+            originalAmount,
+            metadata: quoteMetadata,
+          });
+        } catch (peErr) {
+          console.warn(
+            '[customer/warmpawz-pay/initiate] promo-engine commit skipped:',
+            peErr instanceof Error ? peErr.message : peErr,
+          );
+        }
+      }
+      return c.json({
+        success: true,
+        walletOnly: true,
+        paymentId: walletPay.paymentId,
+        originalAmount,
+        discountAmount: applied.discountAmount,
+        payableAmount: applied.payableAmount,
+        walletAmount,
+        razorpayAmount: 0,
+        bookingId,
+        promoEngine,
+      });
+    }
+
     const order = await createWpayRazorpayOrder({
       customerId,
       vendorId,
       payableAmount: applied.payableAmount,
+      chargeAmount: razorpayCharge,
       bookingId,
       clientRequestId: clientRequestId || null,
       quoteMetadata,
@@ -174,6 +274,8 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         convenienceFee: q.convenienceFee,
         convenienceGstAmount: q.convenienceGstAmount,
         payableAmount: applied.payableAmount,
+        walletAmount,
+        razorpayAmount: order.amount,
         bookingId,
         promoEngine,
       });
@@ -194,6 +296,8 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       billBase: q.billBase,
       discountAmount: applied.discountAmount,
       payableAmount: applied.payableAmount,
+      walletAmount,
+      razorpayAmount: order.amount,
       bookingId,
       promoEngine,
     });

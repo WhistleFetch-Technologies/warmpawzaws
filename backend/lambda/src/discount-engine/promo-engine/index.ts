@@ -22,6 +22,14 @@ export {
   consumePromoCashbackForDebit,
 } from './services/wallet-redeem-scope.service';
 export {
+  debitScopedWallet,
+  debitScopedWalletInTransaction,
+} from './services/wallet-debit.service';
+export {
+  debitScopedWallet,
+  debitScopedWalletInTransaction,
+} from './services/wallet-debit.service';
+export {
   createPromotionFromDraft,
   updatePromotionFromDraft,
   patchPromotionStatus,

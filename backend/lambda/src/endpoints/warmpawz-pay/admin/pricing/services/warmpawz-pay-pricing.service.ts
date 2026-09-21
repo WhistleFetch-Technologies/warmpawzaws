@@ -46,6 +46,9 @@ export function assertDiscountBelowCommission(discountValue: number, commissionR
   }
 }
 
+/** Catalogue displayed % is retired — Promotion Engine owns customer discounts. */
+export const CATALOGUE_DISPLAYED_DISCOUNT_PERCENT = 0;
+
 function assertWpayPublishTier(tier: WpayPublishTierRow | null): WpayPublishTierRow {
   if (!tier) {
     throw new PricingAdminError(PricingErrorCode.VALIDATION_ERROR, 'WPay tier not found');
@@ -100,7 +103,7 @@ export class WarmpawzPayPricingService {
     }
 
     const tier = assertWpayPublishTier(await this.pricingRepository.findWpayPublishTier(input.tierId));
-    assertDiscountBelowCommission(input.discountValue, tier.commissionRate);
+    assertDiscountBelowCommission(CATALOGUE_DISPLAYED_DISCOUNT_PERCENT, tier.commissionRate);
 
     const effectiveFrom = new Date(input.effectiveFrom);
     const effectiveUntil = input.effectiveUntil ? new Date(input.effectiveUntil) : null;
@@ -114,7 +117,7 @@ export class WarmpawzPayPricingService {
       vendorId: input.vendorId,
       tierId: tier.id,
       discountType: input.discountType,
-      discountValue: input.discountValue,
+      discountValue: CATALOGUE_DISPLAYED_DISCOUNT_PERCENT,
       platformWithholdPercent: 0,
       status: input.status,
       effectiveFrom,
@@ -181,13 +184,13 @@ export class WarmpawzPayPricingService {
       );
     }
     const tier = assertWpayPublishTier(await this.pricingRepository.findWpayPublishTier(nextTierId));
-    const nextDiscount = input.discountValue ?? existing.discountValue;
+    const nextDiscount = CATALOGUE_DISPLAYED_DISCOUNT_PERCENT;
     assertDiscountBelowCommission(nextDiscount, tier.commissionRate);
 
     const updateInput: UpdatePricingInput = {
       tierId: nextTierId,
       discountType: input.discountType,
-      discountValue: input.discountValue,
+      discountValue: CATALOGUE_DISPLAYED_DISCOUNT_PERCENT,
       status: input.status,
       effectiveFrom: input.effectiveFrom ? effectiveFrom : undefined,
       effectiveUntil: input.effectiveUntil !== undefined ? effectiveUntil : undefined,

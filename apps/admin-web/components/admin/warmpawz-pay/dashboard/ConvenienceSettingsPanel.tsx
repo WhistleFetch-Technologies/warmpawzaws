@@ -106,10 +106,8 @@ export function ConvenienceSettingsPanel() {
         <h3 className="text-base font-semibold text-gray-900">Global WPay Fee Settings</h3>
         <p className="text-sm text-gray-500">
           Platform fee and convenience fee are GST-exclusive (GST on top). Percentage mode uses the
-          post-discount customer amount (quoted − discount), not the original quote. If total fees
-          including fee GST would consume the full discount, all fees are dropped so the customer
-          still receives the displayed discount. Platform revenue GST is inclusive in margin
-          (commission − discount).
+          post-discount customer amount after the Promotion Engine cut. Platform revenue GST is
+          inclusive in the tier commission.
         </p>
       </div>
 
@@ -135,9 +133,9 @@ export function ConvenienceSettingsPanel() {
               Burn / Test mode{settings.burnMode ? ' — ACTIVE' : ''}
             </span>
             <span className="mt-0.5 block text-xs text-gray-600">
-              When on: customer still sees the published discount and pays the same (plus fees).
-              Vendor is paid the full quoted bill; platform funds the discount. Turn off to restore
-              normal tier commission immediately on new payments.
+              When on: customer still pays the same (plus fees). Vendor is paid the full quoted
+              bill; platform funds any engine discount. Turn off to restore normal tier commission
+              immediately on new payments.
             </span>
           </span>
         </label>

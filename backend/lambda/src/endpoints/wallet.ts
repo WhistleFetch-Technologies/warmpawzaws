@@ -588,6 +588,15 @@ class UseWalletByPhoneHandler extends BaseHandler {
     const { phone, amount, referenceType, referenceId, description, idempotencyKey } = body;
     const requestId = context.event.requestContext?.requestId;
 
+    const serviceCategory =
+      body.serviceCategory || body.service_category || body.redeemCategory || null;
+    const refType = String(referenceType || 'payment').trim() || 'payment';
+    const refId = isValidUUID(String(referenceId || ''))
+      ? String(referenceId)
+      : isValidUUID(String(idempotencyKey || ''))
+        ? String(idempotencyKey)
+        : randomUUID();
+
     if (!phone) {
       return this.error('Phone number is required', 400);
     }
@@ -616,78 +625,30 @@ class UseWalletByPhoneHandler extends BaseHandler {
     }
 
     try {
-      // Use transaction with row-level locking
-      const result = await withTransaction(async (client) => {
-        // Lock wallet row FOR UPDATE
-        const walletResult = await client.query(
-          `SELECT id, customer_id, balance, currency
-           FROM customer_wallets
-           WHERE customer_id = $1
-           FOR UPDATE`,
-          [customerId]
-        );
-
-        if (walletResult.rows.length === 0) {
-          throw new Error('Wallet not found');
-        }
-
-        const wallet = walletResult.rows[0];
-
-        // Check sufficient balance
-        if (parseFloat(wallet.balance) < amount) {
-          throw new Error('Insufficient balance');
-        }
-
-        // Update balance atomically
-        const updateResult = await client.query(
-          `UPDATE customer_wallets
-           SET balance = balance - $1, updated_at = NOW()
-           WHERE customer_id = $2 AND balance >= $1
-           RETURNING *`,
-          [amount, customerId]
-        );
-
-        if (updateResult.rows.length === 0) {
-          throw new Error('Insufficient balance (race condition)');
-        }
-
-        const updatedWallet = updateResult.rows[0];
-
-        // Record transaction
-        const txnResult = await client.query(
-          `INSERT INTO wallet_transactions (
-            customer_id, transaction_type, amount, balance_after,
-            reference_type, reference_id, description
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-          RETURNING *`,
-          [
-            customerId,
-            'debit',
-            amount,
-            updatedWallet.balance,
-            referenceType || 'payment',
-            referenceId || null,
-            description || 'Wallet payment',
-          ]
-        );
-
-        return {
-          wallet: updatedWallet,
-          transaction: txnResult.rows[0],
-        };
+      const { debitScopedWallet } = await import('../discount-engine/promo-engine');
+      const debit = await debitScopedWallet({
+        customerId,
+        amount,
+        serviceCategory,
+        referenceType: refType,
+        referenceId: refId,
+        description: String(description || 'Wallet payment'),
       });
+      if (!debit.ok) {
+        return this.error(debit.error, 400);
+      }
 
-      // Log audit entry
       await logAuditEntry({
         entityType: 'wallet',
-        entityId: result.wallet.id,
+        entityId: customerId,
         action: 'use_wallet',
         newValues: {
           amount,
-          balanceAfter: result.wallet.balance,
+          balanceAfter: debit.balanceAfter,
           phone,
-          referenceType,
-          referenceId,
+          referenceType: refType,
+          referenceId: refId,
+          reused: debit.reused,
         },
         actorId: customerId,
         actorType: 'customer',
@@ -696,21 +657,19 @@ class UseWalletByPhoneHandler extends BaseHandler {
 
       const response = {
         success: true,
-        transactionId: result.transaction.id,
+        reused: debit.reused,
         customerId,
         amount: Number(amount),
-        newBalance: Number(result.wallet.balance),
+        newBalance: debit.balanceAfter,
         transactionType: 'debit',
-        timestamp: result.transaction.created_at,
-        message: 'Wallet balance used successfully',
+        message: debit.reused ? 'Wallet debit already applied' : 'Wallet balance used successfully',
       };
 
-      // Store idempotency key
       if (idempotencyKey) {
         await storeIdempotencyKey(
           idempotencyKey,
           'wallet_transaction',
-          result.transaction.id,
+          refId,
           response,
           200
         );
@@ -718,10 +677,10 @@ class UseWalletByPhoneHandler extends BaseHandler {
 
       return this.success(response);
     } catch (error: any) {
-      if (error.message.includes('Insufficient balance')) {
+      if (String(error?.message || '').includes('Insufficient')) {
         return this.error('Insufficient wallet balance', 400);
       }
-      if (error.message.includes('Wallet not found')) {
+      if (String(error?.message || '').includes('Wallet not found')) {
         return this.error('Wallet not found. Please add funds first.', 404);
       }
       throw error;
@@ -870,7 +829,6 @@ class DebitWalletHandler extends BaseHandler {
     const { amount, referenceType, referenceId, description, idempotencyKey } = body;
     const serviceCategory =
       body.serviceCategory || body.service_category || body.redeemCategory || null;
-    const requestId = context.event.requestContext?.requestId;
 
     if (!customerId) {
       return this.error('Customer ID is required', 400);
@@ -883,158 +841,59 @@ class DebitWalletHandler extends BaseHandler {
       return this.error('Amount must be a positive number', 400);
     }
 
-    // Redeem-scope gate (promo cashback locked to other categories)
-    try {
-      const { computeSpendableWalletBalance } = await import(
-        '../discount-engine/promo-engine'
-      );
-      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
-      if (amount > scoped.spendable + 0.009) {
-        return this.error(
-          `Insufficient spendable balance for this category (spendable ₹${scoped.spendable.toFixed(2)}, locked promo ₹${scoped.lockedPromoCashback.toFixed(2)})`,
-          400
-        );
-      }
-    } catch {
-      // proceed with raw balance if helper unavailable
+    const refType = String(referenceType || 'manual').trim() || 'manual';
+    const refId = isValidUUID(String(referenceId || ''))
+      ? String(referenceId)
+      : isValidUUID(String(idempotencyKey || ''))
+        ? String(idempotencyKey)
+        : '';
+    if (!refId) {
+      return this.error('referenceId must be a UUID', 400);
     }
 
-    // ✅ TEMPORAL FIX: Check idempotency
-    if (idempotencyKey) {
-      const existing = await checkIdempotencyKey(idempotencyKey);
-      if (existing.exists) {
-        return this.success({
-          ...existing.response,
-          cached: true,
-          message: 'Transaction already processed',
-        });
-      }
-    }
-
-    // ✅ TEMPORAL FIX: Use transaction with row-level locking
     try {
-      const result = await withTransaction(async (client) => {
-        // Lock wallet row FOR UPDATE
-        const walletResult = await client.query(
-          `SELECT id, customer_id, balance, currency
-           FROM customer_wallets
-           WHERE customer_id = $1
-           FOR UPDATE`,
-          [customerId]
-        );
-
-        if (walletResult.rows.length === 0) {
-          throw new Error('Wallet not found');
-        }
-
-        const wallet = walletResult.rows[0];
-
-        // Check sufficient balance
-        if (parseFloat(wallet.balance) < amount) {
-          throw new Error('Insufficient balance');
-        }
-
-        // Update balance atomically
-        const updateResult = await client.query(
-          `UPDATE customer_wallets
-           SET balance = balance - $1, updated_at = NOW()
-           WHERE customer_id = $2 AND balance >= $1
-           RETURNING *`,
-          [amount, customerId]
-        );
-
-        if (updateResult.rows.length === 0) {
-          throw new Error('Insufficient balance (race condition)');
-        }
-
-        const updatedWallet = updateResult.rows[0];
-
-        // Record transaction
-        const txnResult = await client.query(
-          `INSERT INTO wallet_transactions (
-            customer_id, transaction_type, amount, balance_after,
-            reference_type, reference_id, description
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-          RETURNING *`,
-          [
-            customerId,
-            'debit',
-            amount,
-            updatedWallet.balance,
-            referenceType || null,
-            referenceId || null,
-            description || null,
-          ]
-        );
-
-        try {
-          const { consumePromoCashbackForDebit } = await import(
-            '../discount-engine/promo-engine'
-          );
-          await consumePromoCashbackForDebit(client, {
-            customerId,
-            amount,
-            serviceCategory,
-          });
-        } catch (consumeErr) {
-          console.warn(
-            '[WALLET] consumePromoCashbackForDebit skipped:',
-            consumeErr instanceof Error ? consumeErr.message : consumeErr
-          );
-        }
-
-        return {
-          wallet: updatedWallet,
-          transaction: txnResult.rows[0],
-        };
+      const { debitScopedWallet } = await import('../discount-engine/promo-engine');
+      const debit = await debitScopedWallet({
+        customerId,
+        amount,
+        serviceCategory,
+        referenceType: refType,
+        referenceId: refId,
+        description: String(description || 'Wallet debit'),
       });
-
-      // ✅ TEMPORAL FIX: Log audit entry
-      await logAuditEntry({
-        entityType: 'wallet',
-        entityId: result.wallet.id,
-        action: 'debit',
-        newValues: {
-          amount,
-          balanceAfter: result.wallet.balance,
-          referenceType,
-          referenceId,
-        },
-        actorId: customerId,
-        actorType: 'customer',
-        requestId,
-      });
+      if (!debit.ok) {
+        return this.error(debit.error, 400);
+      }
 
       const response = {
-        transactionId: result.transaction.id,
-        customerId,
-        amount: Number(amount),
-        newBalance: Number(result.wallet.balance),
-        transactionType: 'debit',
-        timestamp: result.transaction.created_at,
-        message: 'Wallet debited successfully',
+        success: true,
+        reused: debit.reused,
+        wallet: {
+          customerId,
+          balance: debit.balanceAfter,
+          currency: 'INR',
+        },
+        debit: {
+          amount: debit.debited,
+          referenceType: refType,
+          referenceId: refId,
+        },
       };
 
-      // ✅ TEMPORAL FIX: Store idempotency key
       if (idempotencyKey) {
         await storeIdempotencyKey(
           idempotencyKey,
           'wallet_transaction',
-          result.transaction.id,
+          refId,
           response,
           200
         );
       }
 
       return this.success(response);
-    } catch (error: any) {
-      if (error.message.includes('Insufficient balance')) {
-        return this.error('Insufficient wallet balance', 400);
-      }
-      if (error.message.includes('Wallet not found')) {
-        return this.error('Wallet not found', 404);
-      }
-      throw error;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Wallet debit failed';
+      return this.error(message, 400);
     }
   }
 }

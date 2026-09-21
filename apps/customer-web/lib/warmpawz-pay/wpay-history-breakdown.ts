@@ -18,7 +18,7 @@ export function buildWpayHistoryBreakdownLines(row: WpayTransactionCard): WpayHi
   ];
   if (n(row.discountAmount) > 0.009) {
     lines.push({
-      label: `Offer discount (${n(row.discountPercent)}% OFF)`,
+      label: n(row.discountPercent) > 0 ? `Offer discount (${n(row.discountPercent)}% OFF)` : 'Offer discount',
       amount: -n(row.discountAmount),
       tone: 'discount',
     });

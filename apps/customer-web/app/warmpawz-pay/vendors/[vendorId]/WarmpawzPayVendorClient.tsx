@@ -27,6 +27,8 @@ import {
   PromoEarnPreview,
   type PromoEngineEarnPreviewData,
 } from '@/components/customer/promo-engine/PromoEarnPreview';
+import { CustomerWalletApply } from '@/components/customer/payment/CustomerWalletApply';
+import { useCustomerWallet } from '@/hooks/use-customer-wallet';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
@@ -67,6 +69,9 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const [showWaitForConfirmDialog, setShowWaitForConfirmDialog] = useState(false);
   const [promoEnginePreview, setPromoEnginePreview] =
     useState<PromoEngineEarnPreviewData | null>(null);
+  const [useWallet, setUseWallet] = useState(false);
+  const phone = readCustomerPhoneFromStorage();
+  const { wallet } = useCustomerWallet(phone, vendor?.category);
 
   useEffect(() => {
     if (!resolvedVendorId) return;
@@ -131,6 +136,12 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     quote != null
       ? Math.max(quote.payableAmount > 0 ? 1 : 0, Math.round((quote.payableAmount - engineDiscount) * 100) / 100)
       : 0;
+  const spendableWallet = Math.max(0, Number(wallet?.spendableBalance ?? wallet?.balance ?? 0) || 0);
+  const walletAmountApplied =
+    useWallet && spendableWallet > 0.009 && displayPayable > 0
+      ? Math.min(spendableWallet, displayPayable)
+      : 0;
+  const displayAfterWallet = Math.max(0, Math.round((displayPayable - walletAmountApplied) * 100) / 100);
 
   const onGetDiscount = useCallback(() => {
     if (billAmount <= 0) return;
@@ -218,6 +229,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         bookingId: readBookingIdFromQuery(),
         evaluationId: promoEnginePreview?.evaluationId || null,
         serviceCategory: vendor.category || null,
+        walletAmount: walletAmountApplied,
       });
       const paymentId = String(result.paymentId ?? '').trim();
       if (!paymentId) {
@@ -238,7 +250,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     } finally {
       setPaying(false);
     }
-  }, [billAmount, quote, resolvedVendorId, router, vendor, promoEnginePreview?.evaluationId, vendor?.category]);
+  }, [billAmount, quote, resolvedVendorId, router, vendor, promoEnginePreview?.evaluationId, vendor?.category, walletAmountApplied]);
 
   const onProceedToPay = useCallback(() => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
@@ -403,8 +415,14 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                 ) : null}
                 <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 font-semibold">
                   <span>You pay</span>
-                  <span>{formatInr(displayPayable)}</span>
+                  <span>{formatInr(displayAfterWallet)}</span>
                 </div>
+                {walletAmountApplied > 0 ? (
+                  <div className="mt-1 flex justify-between text-green-700">
+                    <span>Wallet</span>
+                    <span>- {formatInr(walletAmountApplied)}</span>
+                  </div>
+                ) : null}
                 {engineDiscount > 0 ? (
                   <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
                     You save {formatInr(engineDiscount)} with this offer!
@@ -415,6 +433,14 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                     <PromoEarnPreview data={promoEnginePreview} />
                   </div>
                 ) : null}
+                <div className="mt-3">
+                  <CustomerWalletApply
+                    wallet={wallet}
+                    useWallet={useWallet}
+                    onToggleUseWallet={() => setUseWallet((prev) => !prev)}
+                    walletAmountApplied={walletAmountApplied}
+                  />
+                </div>
               </div>
             ) : null}
 

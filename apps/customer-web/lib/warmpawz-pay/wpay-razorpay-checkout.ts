@@ -18,6 +18,9 @@ export type WpayInitiateResponse = {
   billBase?: number;
   discountAmount?: number;
   payableAmount?: number;
+  walletAmount?: number;
+  razorpayAmount?: number;
+  walletOnly?: boolean;
   bookingId?: string | null;
   error?: string;
 };
@@ -53,8 +56,9 @@ export async function runWpayRazorpayCheckout(params: {
   bookingId?: string | null;
   evaluationId?: string | null;
   serviceCategory?: string | null;
+  walletAmount?: number;
 }): Promise<WpayVerifyResponse> {
-  const { vendorId, vendorName, originalAmount, customerPhone, bookingId, evaluationId, serviceCategory } = params;
+  const { vendorId, vendorName, originalAmount, customerPhone, bookingId, evaluationId, serviceCategory, walletAmount } = params;
   // Stable for this checkout attempt so initiate retries reuse the same pending order.
   const clientRequestId = newWpayClientRequestId();
 
@@ -66,21 +70,33 @@ export async function runWpayRazorpayCheckout(params: {
     ...(bookingId ? { bookingId } : {}),
     ...(evaluationId ? { evaluationId } : {}),
     ...(serviceCategory ? { serviceCategory } : {}),
+    ...(walletAmount && walletAmount > 0.009 ? { walletAmount } : {}),
   })) as WpayInitiateResponse;
+
+  if (initiate?.success && initiate.walletOnly && initiate.paymentId) {
+    return {
+      success: true,
+      paymentId: initiate.paymentId,
+      originalAmount: initiate.originalAmount,
+      discountAmount: initiate.discountAmount,
+      payableAmount: initiate.payableAmount,
+      savedAmount: Number(initiate.discountAmount ?? 0),
+    };
+  }
 
   if (!initiate?.success || !initiate.razorpayOrderId || !initiate.razorpayKeyId || !initiate.paymentId) {
     throw new Error(initiate?.error || 'Failed to start payment');
   }
 
-  const payableAmount = Number(initiate.payableAmount ?? initiate.amount ?? 0);
-  if (!Number.isFinite(payableAmount) || payableAmount <= 0) {
+  const razorpayAmount = Number(initiate.razorpayAmount ?? initiate.amount ?? 0);
+  if (!Number.isFinite(razorpayAmount) || razorpayAmount <= 0) {
     throw new Error('Invalid payable amount');
   }
 
   const amountPaise =
     typeof initiate.amountPaise === 'number' && Number.isFinite(initiate.amountPaise)
       ? Math.max(1, Math.round(initiate.amountPaise))
-      : Math.max(1, Math.round(Number(initiate.amount ?? payableAmount) * 100));
+      : Math.max(1, Math.round(razorpayAmount * 100));
 
   const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
   const paymentId = String(initiate.paymentId);

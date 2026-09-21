@@ -130,6 +130,22 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
 
     const linkedBookingId = existing.booking_id ? String(existing.booking_id) : null;
 
+    const walletAmount = Math.max(0, readMetadataNumber(meta, 'walletAmount') ?? 0);
+    if (walletAmount > 0.009) {
+      const { debitScopedWallet } = await import('../../../../discount-engine/promo-engine');
+      const debit = await debitScopedWallet({
+        customerId,
+        amount: walletAmount,
+        serviceCategory: String(meta.serviceCategory || ''),
+        referenceType: 'wpay',
+        referenceId: paymentId,
+        description: `Warmpawz Pay ${paymentId}`,
+      });
+      if (!debit.ok) {
+        return c.json({ success: false, error: debit.error }, 400);
+      }
+    }
+
     // Appointment credit unwired — never consume credit rows for new Pay Bill payments.
     let completed;
     try {

@@ -49,6 +49,7 @@ type ExistingWpayPaymentRow = {
   amount?: number;
   currency?: string;
   payment_status?: string;
+  metadata?: Record<string, unknown> | null;
 };
 
 function isUniqueViolation(error: unknown): boolean {
@@ -66,7 +67,7 @@ async function findWpayPaymentByIdempotency(params: {
   customerId: string;
 }): Promise<ExistingWpayPaymentRow | undefined> {
   const existing = await query(
-    `SELECT id::text AS id, razorpay_order_id, amount, currency, payment_status
+    `SELECT id::text AS id, razorpay_order_id, amount, currency, payment_status, metadata
      FROM payments
      WHERE idempotency_key = $1
        AND payment_source = 'warmpawz_pay'
@@ -100,7 +101,10 @@ function reusePendingOrder(
   ) {
     return null;
   }
-  const pendingAmt = Number(row.amount ?? fallbackAmount);
+  const metaCharge = Number(row.metadata?.razorpayChargeAmount);
+  const pendingAmt = Number.isFinite(metaCharge) && metaCharge > 0
+    ? metaCharge
+    : Number(row.amount ?? fallbackAmount);
   return {
     orderId: String(row.razorpay_order_id),
     amount: pendingAmt,
@@ -123,6 +127,8 @@ export async function createWpayRazorpayOrder(params: {
   customerId: string;
   vendorId: string;
   payableAmount: number;
+  /** Cash charged on Razorpay. Defaults to payableAmount. */
+  chargeAmount?: number;
   bookingId?: string | null;
   clientRequestId?: string | null;
   quoteMetadata: Record<string, unknown>;
@@ -141,8 +147,15 @@ export async function createWpayRazorpayOrder(params: {
   }
 
   const amt = Math.round(Number(payableAmount) * 100) / 100;
+  const chargeAmt =
+    params.chargeAmount != null
+      ? Math.round(Number(params.chargeAmount) * 100) / 100
+      : amt;
   if (!Number.isFinite(amt) || amt <= 0) {
     throw new Error('Invalid payable amount');
+  }
+  if (!Number.isFinite(chargeAmt) || chargeAmt <= 0) {
+    throw new Error('Invalid Razorpay charge amount');
   }
 
   const clientRequestId = normalizeWpayClientRequestId(params.clientRequestId);
@@ -158,7 +171,7 @@ export async function createWpayRazorpayOrder(params: {
     customerId,
   });
   assertNotCompleted(existing);
-  const pendingReuse = existing ? reusePendingOrder(existing, config.keyId, amt) : null;
+  const pendingReuse = existing ? reusePendingOrder(existing, config.keyId, chargeAmt) : null;
   if (pendingReuse) return pendingReuse;
 
   const quotedOriginal =
@@ -166,7 +179,7 @@ export async function createWpayRazorpayOrder(params: {
 
   const receipt = `wpay_${String(Date.now())}`.slice(0, 40);
   const orderData = {
-    amount: Math.round(amt * 100),
+    amount: Math.round(chargeAmt * 100),
     currency: 'INR',
     receipt,
     notes: {
@@ -206,6 +219,8 @@ export async function createWpayRazorpayOrder(params: {
       metadata: {
         ...quoteMetadata,
         clientRequestId,
+        razorpayChargeAmount: chargeAmt,
+        quotedPayableAmount: amt,
       },
     });
 
@@ -217,8 +232,8 @@ export async function createWpayRazorpayOrder(params: {
 
     return {
       orderId: razorpayOrder.id,
-      amount: (razorpayOrder.amount ?? Math.round(amt * 100)) / 100,
-      amountPaise: razorpayOrder.amount ?? Math.round(amt * 100),
+      amount: (razorpayOrder.amount ?? Math.round(chargeAmt * 100)) / 100,
+      amountPaise: razorpayOrder.amount ?? Math.round(chargeAmt * 100),
       currency: razorpayOrder.currency || 'INR',
       keyId: config.keyId,
       paymentId,
@@ -232,7 +247,7 @@ export async function createWpayRazorpayOrder(params: {
       customerId,
     });
     assertNotCompleted(raced);
-    const racedPending = raced ? reusePendingOrder(raced, config.keyId, amt) : null;
+    const racedPending = raced ? reusePendingOrder(raced, config.keyId, chargeAmt) : null;
     if (racedPending) return racedPending;
 
     throw new Error(
@@ -240,3 +255,67 @@ export async function createWpayRazorpayOrder(params: {
     );
   }
 }
+
+/** Wallet covers the full Pay Bill — no Razorpay order. */
+export async function createWpayWalletOnlyPayment(params: {
+  customerId: string;
+  vendorId: string;
+  payableAmount: number;
+  bookingId?: string | null;
+  clientRequestId?: string | null;
+  quoteMetadata: Record<string, unknown>;
+}): Promise<{ paymentId: string; amount: number }> {
+  const amt = Math.round(Number(params.payableAmount) * 100) / 100;
+  if (!Number.isFinite(amt) || amt <= 0) {
+    throw new Error('Invalid payable amount');
+  }
+  const clientRequestId = normalizeWpayClientRequestId(params.clientRequestId);
+  const idempotencyKey = buildWpayIdempotencyKey({
+    customerId: params.customerId,
+    vendorId: params.vendorId,
+    clientRequestId,
+  });
+  const existing = await findWpayPaymentByIdempotency({
+    idempotencyKey,
+    vendorId: params.vendorId,
+    customerId: params.customerId,
+  });
+  assertNotCompleted(existing);
+  if (existing?.id && String(existing.payment_status ?? '').toLowerCase() === 'pending') {
+    return { paymentId: String(existing.id), amount: amt };
+  }
+
+  const quotedOriginal =
+    params.quoteMetadata.quotedOriginalAmount ?? params.quoteMetadata.quotedAmount ?? amt;
+  const discountAmount = Number(params.quoteMetadata.quotedDiscountAmount ?? 0);
+  const originalAmount = Number(quotedOriginal);
+
+  const payRows = await insert('payments', {
+    booking_id: params.bookingId ?? null,
+    customer_id: params.customerId,
+    vendor_id: params.vendorId,
+    razorpay_order_id: null,
+    amount: amt,
+    original_amount: Number.isFinite(originalAmount) ? originalAmount : amt,
+    discount_amount: Number.isFinite(discountAmount) ? discountAmount : 0,
+    currency: 'INR',
+    payment_method: 'wallet',
+    payment_status: 'pending',
+    payment_source: 'warmpawz_pay',
+    idempotency_key: idempotencyKey,
+    metadata: {
+      ...params.quoteMetadata,
+      clientRequestId,
+      razorpayChargeAmount: 0,
+      quotedPayableAmount: amt,
+      walletOnly: true,
+    },
+  });
+  const row = Array.isArray(payRows) ? payRows[0] : payRows;
+  const paymentId = row?.id != null ? String(row.id) : '';
+  if (!paymentId) {
+    throw new Error('Failed to create payment row');
+  }
+  return { paymentId, amount: amt };
+}
+

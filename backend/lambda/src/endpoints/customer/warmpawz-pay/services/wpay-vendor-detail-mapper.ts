@@ -22,9 +22,8 @@ export type WpayVendorDetailDto = WpayVendorCardDto & {
   convenienceGstRate: number;
 };
 
-function buildOfferLabel(discountPercent: number): string {
-  if (discountPercent <= 0) return 'Pay with Warmpawz Pay';
-  return `Get ${discountPercent}% OFF on your bill`;
+function buildOfferLabel(_discountPercent: number): string {
+  return 'Pay with Warmpawz Pay';
 }
 
 export async function mapWpayVendorDetailRow(

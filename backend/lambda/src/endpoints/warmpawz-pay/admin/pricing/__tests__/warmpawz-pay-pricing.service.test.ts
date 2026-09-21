@@ -158,38 +158,10 @@ describe('WarmpawzPayPricingService', () => {
     ).rejects.toBeInstanceOf(PricingAdminError);
   });
 
-  it('rejects discount equal to commission on create (Case 5)', async () => {
-    const repository: IMerchantPricingRepository = {
-      assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
-      findRowByVendorId: jest.fn().mockResolvedValue(null),
-      findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
-    } as unknown as IMerchantPricingRepository;
-
-    const service = new WarmpawzPayPricingService(repository, auditService);
-
-    await expect(service.createPricing(createInput({ discountValue: 20 }), 'admin-1')).rejects.toMatchObject({
-      code: PricingErrorCode.VALIDATION_ERROR,
-    });
-  });
-
-  it('rejects discount greater than commission on create (Case 6)', async () => {
-    const repository: IMerchantPricingRepository = {
-      assertCatalogueVendor: jest.fn().mockResolvedValue({ catalogueId: 'cat-1' }),
-      findRowByVendorId: jest.fn().mockResolvedValue(null),
-      findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
-    } as unknown as IMerchantPricingRepository;
-
-    const service = new WarmpawzPayPricingService(repository, auditService);
-
-    await expect(service.createPricing(createInput({ discountValue: 21 }), 'admin-1')).rejects.toMatchObject({
-      code: PricingErrorCode.VALIDATION_ERROR,
-    });
-  });
-
-  it('accepts Both-tier publish when discount is below commission (Cases 7 + 12)', async () => {
+  it('persists catalogue displayed discount as 0 on create', async () => {
     const inserted: PricingRow = {
       ...sampleRow,
-      discountValue: 15,
+      discountValue: 0,
       platformWithholdPercent: 0,
     };
     const repository: IMerchantPricingRepository = {
@@ -198,19 +170,19 @@ describe('WarmpawzPayPricingService', () => {
       findWpayPublishTier: jest.fn().mockResolvedValue(bothTier),
       hasActiveConfiguredPricing: jest.fn().mockResolvedValue(false),
       insert: jest.fn().mockResolvedValue(inserted),
-      findByVendorId: jest.fn().mockResolvedValue({ ...sampleRow, discountValue: 15, platformWithholdPercent: 0 }),
+      findByVendorId: jest.fn().mockResolvedValue({ ...sampleRow, discountValue: 0, platformWithholdPercent: 0 }),
     } as unknown as IMerchantPricingRepository;
 
     const service = new WarmpawzPayPricingService(repository, auditService);
     const result = await service.createPricing(createInput({ discountValue: 15 }), 'admin-1');
 
     expect(result.commissionRate).toBe(20);
-    expect(result.discountValue).toBe(15);
-    expect(result.platformMargin).toBe(5);
+    expect(result.discountValue).toBe(0);
+    expect(result.platformMargin).toBe(20);
     expect(repository.insert).toHaveBeenCalledWith(
       expect.objectContaining({
         tierId: TIER_BOTH,
-        discountValue: 15,
+        discountValue: 0,
         platformWithholdPercent: 0,
       }),
       'cat-1',

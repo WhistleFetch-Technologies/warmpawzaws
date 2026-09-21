@@ -36,6 +36,8 @@ export async function executecustomerWalletGet(c: Context) {
       success: true,
       wallet: {
         balance: 0,
+        spendableBalance: 0,
+        lockedPromoCashback: 0,
         currency: 'INR',
         pending_credits: 0,
         total_earned: 0,
@@ -90,11 +92,26 @@ export async function executecustomerWalletGet(c: Context) {
       }
 
       const { totalEarned, totalSpent } = await getWalletLedgerTotalsByCustomerId(customerId);
+      const serviceCategory = c.req.query('serviceCategory') || c.req.query('service_category') || null;
+      let spendable = parseFloat(wallet.balance || '0') || 0;
+      let lockedPromoCashback = 0;
+      try {
+        const { computeSpendableWalletBalance } = await import(
+          '../../../../discount-engine/promo-engine'
+        );
+        const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+        spendable = scoped.spendable;
+        lockedPromoCashback = scoped.lockedPromoCashback;
+      } catch {
+        // columns may not exist yet
+      }
 
       return c.json({
         success: true,
         wallet: {
           balance: parseFloat(wallet.balance || '0') || 0,
+          spendableBalance: spendable,
+          lockedPromoCashback,
           currency: wallet.currency || 'INR',
           pending_credits: parseFloat(wallet.pending_credits || '0') || 0,
           total_earned: totalEarned,

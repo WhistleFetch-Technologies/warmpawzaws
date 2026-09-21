@@ -113,11 +113,18 @@ export function isWarmpawzAppointmentsPaymentRequest(opts: {
   return opts.bookingMode === WAPPT_BOOKING_MODE || sid === WAPPT_APPOINTMENT_SERVICE_ID;
 }
 
-/** Book-a-slot appointment-fee checkout on Pay — wallet debit is not offered. */
+/** Book-a-slot appointment-fee checkout on Pay — wallet debit is not offered.
+ *  Tele consults can spend cashback even when they ride Warmpawz Appointments. */
 export function isWalletDebitAllowedOnPaymentRequest(opts: {
   bookingMode?: string;
   serviceId?: string;
+  serviceType?: string;
+  serviceStyle?: string;
 }): boolean {
+  const style = String(opts.serviceStyle || opts.serviceType || '')
+    .trim()
+    .toLowerCase();
+  if (style === 'tele' || style === 'video' || style === 'tele_consult') return true;
   return !isWarmpawzAppointmentsPaymentRequest(opts);
 }
 

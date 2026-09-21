@@ -87,6 +87,16 @@ describe('isWalletDebitAllowedOnPaymentRequest', () => {
       }),
     ).toBe(true);
   });
+
+  it('keeps wallet on tele consult even when Warmpawz Appointments is the surface', () => {
+    expect(
+      isWalletDebitAllowedOnPaymentRequest({
+        bookingMode: 'warmpawz_appointments',
+        serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+        serviceStyle: 'tele',
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('resolveWapptVendorProfileConfig', () => {

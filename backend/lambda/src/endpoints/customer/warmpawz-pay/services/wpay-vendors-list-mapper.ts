@@ -1,6 +1,5 @@
 import { getVendorListingPhotoUrl } from '../../../../utils/vendor-listing-photo';
 import { mapWithConcurrency } from '../../../../services/image';
-import { isPricingCurrentlyEffective } from '../../../warmpawz-pay/shared/pricing/pricing-effective';
 import { resolveMerchantDisplayName } from '../../../warmpawz-pay/shared/merchant/merchant-display-name.resolver';
 import { resolveMerchantServiceCategory } from '../../../warmpawz-pay/shared/merchant/merchant-service-category.resolver';
 import type { WpayVendorListDbRow } from '../repos/wpay-vendors-list.repo';
@@ -26,15 +25,8 @@ export function formatWpayVendorAddress(address: string | null, city: string | n
   return line || cityLine || '';
 }
 
-function resolveDiscountPercent(row: WpayVendorListDbRow): number {
-  const value = row.pricing_discount_value != null ? Number(row.pricing_discount_value) : 0;
-  const effective = isPricingCurrentlyEffective({
-    status: String(row.pricing_status ?? 'disabled') as 'active' | 'disabled',
-    effectiveFrom: row.pricing_effective_from ? new Date(row.pricing_effective_from) : new Date(0),
-    effectiveUntil: row.pricing_effective_until ? new Date(row.pricing_effective_until) : null,
-    discountValue: Number.isFinite(value) ? value : 0,
-  });
-  return effective && Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+function resolveDiscountPercent(_row: WpayVendorListDbRow): number {
+  return 0;
 }
 
 export async function mapWpayVendorListRows(rows: WpayVendorListDbRow[]): Promise<WpayVendorCardDto[]> {

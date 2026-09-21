@@ -538,8 +538,10 @@ export function UniversalPaymentPage({
       isWalletDebitAllowedOnPaymentRequest({
         bookingMode,
         serviceId: resolvedServiceId || serviceId,
+        serviceStyle,
+        serviceType: category,
       }),
-    [bookingMode, resolvedServiceId, serviceId],
+    [bookingMode, resolvedServiceId, serviceId, serviceStyle, category],
   );
 
   useEffect(() => {
@@ -4093,7 +4095,7 @@ export function UniversalPaymentPage({
                 <div className="text-left">
                   <p className="font-medium text-gray-900">Warmpawz Wallet</p>
                   <p className="text-sm text-gray-500">
-                    Balance: ₹{wallet.balance.toFixed(2)}
+                    Usable: ₹{Number((wallet as { spendableBalance?: number }).spendableBalance ?? wallet.balance).toFixed(2)}
                     {wallet.loyaltyPoints && ` • ${wallet.loyaltyPoints} points`}
                   </p>
                 </div>

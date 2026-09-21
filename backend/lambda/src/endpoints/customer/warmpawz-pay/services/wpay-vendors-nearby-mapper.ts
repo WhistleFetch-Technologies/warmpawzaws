@@ -3,7 +3,6 @@ import { getVendorListingPhotoUrl } from '../../../../utils/vendor-listing-photo
 import { mapWithConcurrency } from '../../../../services/image';
 import { resolveMerchantDisplayName } from '../../../warmpawz-pay/shared/merchant/merchant-display-name.resolver';
 import { resolveMerchantServiceCategory } from '../../../warmpawz-pay/shared/merchant/merchant-service-category.resolver';
-import { resolveWpayDiscountPercent } from '../shared/wpay-discount';
 import type { WpayVendorsNearbyDbRow } from '../repos/wpay-vendors-nearby.repo';
 import { WPAY_LIST_PHOTO_CONCURRENCY } from './wpay-vendors-list-mapper';
 import type { WpayHomeVendorCardDto } from './wpay-vendors-nearby/types';
@@ -57,9 +56,8 @@ function mapDistanceKm(raw: unknown): number | null {
   return Math.round(km * 100) / 100;
 }
 
-function buildPayViaWarmpawzLabel(discountPercent: number): string {
-  if (discountPercent <= 0) return 'Pay with Warmpawz Pay';
-  return `Get ${discountPercent}% OFF on your bill`;
+function buildPayViaWarmpawzLabel(_discountPercent: number): string {
+  return 'Pay with Warmpawz Pay';
 }
 
 export async function mapWpayVendorsNearbyRows(
@@ -89,7 +87,7 @@ export async function mapWpayVendorsNearbyRows(
       categoryMeta.serviceCategoryId !== 'unknown' ? categoryMeta.serviceCategoryId : 'unknown';
     const warmpawzPayEligible = Boolean(row.warmpawz_pay_eligible);
     const appointmentEligible = Boolean(row.appointment_eligible);
-    const discountPercent = warmpawzPayEligible ? resolveWpayDiscountPercent(row) : 0;
+    const discountPercent = 0;
     const distanceKm = mapDistanceKm(row.distance_km);
     const distanceText =
       distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
