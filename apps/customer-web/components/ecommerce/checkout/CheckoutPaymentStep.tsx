@@ -41,6 +41,7 @@ export function CheckoutPaymentStep() {
   } = useCheckout();
 
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletTotalBalance, setWalletTotalBalance] = useState<number | null>(null);
   const [walletEnabled, setWalletEnabled] = useState(false);
   const [promoEngine, setPromoEngine] = useState<PromoEngineEarnPreviewData | null>(null);
 
@@ -96,29 +97,34 @@ export function CheckoutPaymentStep() {
     };
   }, [cart, primaryVendorId]);
 
-  // Fetch wallet balance on mount
+  // Fetch spendable wallet for this shop checkout (V/C/F + ecommerce channel)
   useEffect(() => {
     if (!ECOM_WALLET_ENABLED || !phone) return;
+    const params = new URLSearchParams({
+      phone,
+      serviceCategory: 'ECOMMERCE',
+      channel: 'ecommerce',
+    });
+    if (primaryVendorId) params.set('vendorId', String(primaryVendorId));
     apiClient
       .get<{
         balance?: number;
         data?: { balance?: number };
         wallet?: { balance?: number; spendableBalance?: number };
-      }>(`/customer/wallet?phone=${encodeURIComponent(phone)}&serviceCategory=ECOMMERCE&channel=ecommerce`)
+      }>(`/customer/wallet?${params.toString()}`)
       .then((res) => {
-        const bal = parseFloat(
-          String(
-            res?.wallet?.spendableBalance ??
-              res?.wallet?.balance ??
-              res?.balance ??
-              res?.data?.balance ??
-              '0'
-          )
+        const total = parseFloat(String(res?.wallet?.balance ?? res?.balance ?? res?.data?.balance ?? '0'));
+        const spendable = parseFloat(
+          String(res?.wallet?.spendableBalance ?? res?.wallet?.balance ?? total)
         );
-        setWalletBalance(isNaN(bal) ? 0 : bal);
+        setWalletTotalBalance(isNaN(total) ? 0 : total);
+        setWalletBalance(isNaN(spendable) ? 0 : spendable);
       })
-      .catch(() => setWalletBalance(0));
-  }, [phone]);
+      .catch(() => {
+        setWalletBalance(0);
+        setWalletTotalBalance(0);
+      });
+  }, [phone, primaryVendorId]);
 
   // Sync wallet amount applied with the context when toggle changes
   useEffect(() => {
@@ -187,7 +193,12 @@ export function CheckoutPaymentStep() {
               </div>
               <div>
                 <p className="font-semibold text-slate-900">Wallet balance</p>
-                <p className="text-sm text-slate-500">{formatINR(walletBalance)} available</p>
+                <p className="text-sm text-slate-500">
+                  {formatINR(walletBalance)} usable
+                  {walletTotalBalance != null && walletTotalBalance > walletBalance + 0.009
+                    ? ` of ${formatINR(walletTotalBalance)}`
+                    : ''}
+                </p>
               </div>
             </div>
             <button

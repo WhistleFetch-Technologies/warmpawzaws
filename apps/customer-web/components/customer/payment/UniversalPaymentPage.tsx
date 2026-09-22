@@ -4097,8 +4097,11 @@ export function UniversalPaymentPage({
           />
         )}
 
-        {/* Wallet Section â€” right after booking summary */}
-        {walletDebitAllowed && wallet && wallet.balance > 0 && (
+        {/* Wallet Section — right after booking summary */}
+        {walletDebitAllowed &&
+          wallet &&
+          Number((wallet as { spendableBalance?: number }).spendableBalance ?? wallet.balance) >
+            0.009 && (
           <div className={paymentSecondaryCardClass}>
             <button
               onClick={() => setUseWallet(!useWallet)}
@@ -4113,8 +4116,18 @@ export function UniversalPaymentPage({
                 <div className="text-left">
                   <p className="font-medium text-gray-900">Warmpawz Wallet</p>
                   <p className="text-sm text-gray-500">
-                    Usable: ₹{Number((wallet as { spendableBalance?: number }).spendableBalance ?? wallet.balance).toFixed(2)}
-                    {wallet.loyaltyPoints && ` • ${wallet.loyaltyPoints} points`}
+                    Usable: ₹
+                    {Number(
+                      (wallet as { spendableBalance?: number }).spendableBalance ?? wallet.balance
+                    ).toFixed(2)}
+                    {wallet.balance >
+                    Number(
+                      (wallet as { spendableBalance?: number }).spendableBalance ?? wallet.balance
+                    ) +
+                      0.009
+                      ? ` of ₹${Number(wallet.balance).toFixed(2)}`
+                      : ''}
+                    {wallet.loyaltyPoints ? ` • ${wallet.loyaltyPoints} points` : ''}
                   </p>
                 </div>
               </div>

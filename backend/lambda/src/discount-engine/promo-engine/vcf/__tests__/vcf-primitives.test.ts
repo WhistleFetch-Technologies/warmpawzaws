@@ -256,3 +256,29 @@ describe('redeem letter + channel', () => {
     expect(redeemAllows({ services: ['VET'] }, { serviceCategory: 'GROOMING' })).toBe(false);
   });
 });
+
+describe('stacked F + V cashback at checkout', () => {
+  const allChannels = ['tele', 'appointment', 'paybill', 'ecommerce'] as Array<
+    'tele' | 'appointment' | 'paybill' | 'ecommerce'
+  >;
+  const platform = { letter: 'F' as const, channels: allChannels };
+  const vendorScoped = {
+    letter: 'V' as const,
+    vendorId: 'vendor-a',
+    channels: allChannels,
+  };
+
+  it('unlocks both at the matching vendor on any allowed style', () => {
+    for (const channel of allChannels) {
+      expect(redeemAllows(platform, { vendorId: 'vendor-a', channel })).toBe(true);
+      expect(redeemAllows(vendorScoped, { vendorId: 'vendor-a', channel })).toBe(true);
+    }
+  });
+
+  it('unlocks only platform cashback at a different vendor', () => {
+    expect(redeemAllows(platform, { vendorId: 'vendor-b', channel: 'tele' })).toBe(true);
+    expect(redeemAllows(vendorScoped, { vendorId: 'vendor-b', channel: 'tele' })).toBe(false);
+    expect(redeemAllows(platform, { vendorId: 'vendor-b', channel: 'paybill' })).toBe(true);
+    expect(redeemAllows(vendorScoped, { vendorId: 'vendor-b', channel: 'paybill' })).toBe(false);
+  });
+});

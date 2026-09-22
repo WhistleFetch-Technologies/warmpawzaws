@@ -254,11 +254,12 @@ export function PackageBookingPage({
     (async () => {
       if (!customerPhone) return;
       try {
-        const res = (await apiClient.get(
-          `/customer/wallet?phone=${encodeURIComponent(customerPhone)}`
-        )) as any;
+        const params = new URLSearchParams({ phone: customerPhone, channel: 'appointment' });
+        const vendorId = vendorPackageIntent?.vendorId;
+        if (vendorId) params.set('vendorId', String(vendorId));
+        const res = (await apiClient.get(`/customer/wallet?${params.toString()}`)) as any;
         if (cancelled) return;
-        const bal = Number(res?.wallet?.balance ?? res?.balance ?? 0);
+        const bal = Number(res?.wallet?.spendableBalance ?? res?.wallet?.balance ?? res?.balance ?? 0);
         setWalletBalance(Number.isFinite(bal) ? bal : 0);
       } catch {
         if (!cancelled) setWalletBalance(0);
@@ -267,7 +268,7 @@ export function PackageBookingPage({
     return () => {
       cancelled = true;
     };
-  }, [customerPhone]);
+  }, [customerPhone, vendorPackageIntent?.vendorId]);
 
   useEffect(() => {
     let cancelled = false;
