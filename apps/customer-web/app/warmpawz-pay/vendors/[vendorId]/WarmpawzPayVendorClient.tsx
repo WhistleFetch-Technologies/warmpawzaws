@@ -71,7 +71,11 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     useState<PromoEngineEarnPreviewData | null>(null);
   const [useWallet, setUseWallet] = useState(false);
   const phone = readCustomerPhoneFromStorage();
-  const { wallet } = useCustomerWallet(phone, vendor?.category);
+  const { wallet } = useCustomerWallet(phone, {
+    serviceCategory: vendor?.category,
+    channel: 'paybill',
+    vendorId: resolvedVendorId,
+  });
 
   useEffect(() => {
     if (!resolvedVendorId) return;

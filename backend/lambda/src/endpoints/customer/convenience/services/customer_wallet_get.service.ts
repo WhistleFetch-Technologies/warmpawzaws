@@ -93,13 +93,28 @@ export async function executecustomerWalletGet(c: Context) {
 
       const { totalEarned, totalSpent } = await getWalletLedgerTotalsByCustomerId(customerId);
       const serviceCategory = c.req.query('serviceCategory') || c.req.query('service_category') || null;
+      const channelRaw = String(c.req.query('channel') || '').toLowerCase();
+      const channel =
+        channelRaw === 'tele' ||
+        channelRaw === 'appointment' ||
+        channelRaw === 'paybill' ||
+        channelRaw === 'ecommerce'
+          ? channelRaw
+          : null;
+      const vendorId = c.req.query('vendorId') || c.req.query('vendor_id') || null;
+      const categoryId = c.req.query('categoryId') || c.req.query('category_id') || null;
       let spendable = parseFloat(wallet.balance || '0') || 0;
       let lockedPromoCashback = 0;
       try {
         const { computeSpendableWalletBalance } = await import(
           '../../../../discount-engine/promo-engine'
         );
-        const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+        const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, {
+          serviceCategory,
+          channel,
+          vendorId,
+          categoryId,
+        });
         spendable = scoped.spendable;
         lockedPromoCashback = scoped.lockedPromoCashback;
       } catch {
