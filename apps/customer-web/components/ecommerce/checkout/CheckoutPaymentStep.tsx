@@ -104,7 +104,7 @@ export function CheckoutPaymentStep() {
         balance?: number;
         data?: { balance?: number };
         wallet?: { balance?: number; spendableBalance?: number };
-      }>(`/customer/wallet?phone=${encodeURIComponent(phone)}&serviceCategory=ECOMMERCE`)
+      }>(`/customer/wallet?phone=${encodeURIComponent(phone)}&serviceCategory=ECOMMERCE&channel=ecommerce`)
       .then((res) => {
         const bal = parseFloat(
           String(

@@ -1366,27 +1366,45 @@ export function UniversalPaymentPage({
     try {
       setLoading(true);
 
-      // Load wallet balance
+      // Load wallet balance (pass redeem channel so V/C/F cashback unlocks on allowed surfaces)
       try {
-        const walletRes = await apiClient.get<any>(
-          `/customer/wallet?phone=${encodeURIComponent(customerPhone)}${
-            category || initialPromotionIntent?.serviceCategory
-              ? `&serviceCategory=${encodeURIComponent(
-                  String(category || initialPromotionIntent?.serviceCategory || '')
-                )}`
-              : ''
-          }`
-        );
+        const walletParams = new URLSearchParams({ phone: customerPhone });
+        const cat = String(category || initialPromotionIntent?.serviceCategory || '').trim();
+        if (cat) walletParams.set('serviceCategory', cat);
+        if (vendorId) walletParams.set('vendorId', String(vendorId));
+        const style = String(serviceStyle || initialPromotionIntent?.serviceStyle || '')
+          .trim()
+          .toLowerCase();
+        const teleStyles = new Set(['tele', 'video_consultation', 'video', 'online', 'online_consultation']);
+        const apptStyles = new Set([
+          'appointment',
+          'at_center',
+          'at_clinic',
+          'at_home',
+          'home_visit',
+          'clinic',
+          'center',
+          'at_vendor',
+          'hybrid',
+        ]);
+        let walletChannel: string | null = null;
+        if (type === 'order' || type === 'ecommerce') walletChannel = 'ecommerce';
+        else if (teleStyles.has(style)) walletChannel = 'tele';
+        else if (apptStyles.has(style) || type === 'booking') walletChannel = 'appointment';
+        if (walletChannel) walletParams.set('channel', walletChannel);
+        const walletRes = await apiClient.get<any>(`/customer/wallet?${walletParams.toString()}`);
         if (walletRes.wallet) {
           setWallet(walletRes.wallet);
-          const bal = Number(walletRes.wallet.balance ?? 0);
-          if (walletDebitAllowed && type === 'booking' && Number.isFinite(bal) && bal > 0.009) {
+          const spendable = Number(
+            walletRes.wallet.spendableBalance ?? walletRes.wallet.balance ?? 0
+          );
+          if (walletDebitAllowed && type === 'booking' && Number.isFinite(spendable) && spendable > 0.009) {
             setUseWallet(true);
           }
-          if (type === 'meal_subscription' && Number.isFinite(bal) && bal > 0.009) {
+          if (type === 'meal_subscription' && Number.isFinite(spendable) && spendable > 0.009) {
             setUseWallet(true);
           }
-          if (type === 'meal_one_time' && Number.isFinite(bal) && bal > 0.009) {
+          if (type === 'meal_one_time' && Number.isFinite(spendable) && spendable > 0.009) {
             setUseWallet(true);
           }
         }

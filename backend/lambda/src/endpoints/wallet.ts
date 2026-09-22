@@ -296,13 +296,36 @@ class GetWalletByPhoneHandler extends BaseHandler {
       context.event.queryStringParameters?.serviceCategory ||
       context.event.queryStringParameters?.service_category ||
       null;
+    const channelRaw = String(
+      context.event.queryStringParameters?.channel || ''
+    ).toLowerCase();
+    const channel =
+      channelRaw === 'tele' ||
+      channelRaw === 'appointment' ||
+      channelRaw === 'paybill' ||
+      channelRaw === 'ecommerce'
+        ? channelRaw
+        : null;
+    const vendorId =
+      context.event.queryStringParameters?.vendorId ||
+      context.event.queryStringParameters?.vendor_id ||
+      null;
+    const categoryId =
+      context.event.queryStringParameters?.categoryId ||
+      context.event.queryStringParameters?.category_id ||
+      null;
     let spendable = parseFloat(wallet.balance);
     let lockedPromoCashback = 0;
     try {
       const { computeSpendableWalletBalance } = await import(
         '../discount-engine/promo-engine'
       );
-      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, {
+        serviceCategory,
+        channel,
+        vendorId,
+        categoryId,
+      });
       spendable = scoped.spendable;
       lockedPromoCashback = scoped.lockedPromoCashback;
     } catch {
@@ -590,6 +613,16 @@ class UseWalletByPhoneHandler extends BaseHandler {
 
     const serviceCategory =
       body.serviceCategory || body.service_category || body.redeemCategory || null;
+    const channelRaw = String(body.channel || '').toLowerCase();
+    const channel =
+      channelRaw === 'tele' ||
+      channelRaw === 'appointment' ||
+      channelRaw === 'paybill' ||
+      channelRaw === 'ecommerce'
+        ? channelRaw
+        : null;
+    const vendorId = body.vendorId || body.vendor_id || null;
+    const categoryId = body.categoryId || body.category_id || null;
     const refType = String(referenceType || 'payment').trim() || 'payment';
     const refId = isValidUUID(String(referenceId || ''))
       ? String(referenceId)
@@ -630,6 +663,9 @@ class UseWalletByPhoneHandler extends BaseHandler {
         customerId,
         amount,
         serviceCategory,
+        vendorId,
+        categoryId,
+        channel,
         referenceType: refType,
         referenceId: refId,
         description: String(description || 'Wallet payment'),
@@ -829,6 +865,16 @@ class DebitWalletHandler extends BaseHandler {
     const { amount, referenceType, referenceId, description, idempotencyKey } = body;
     const serviceCategory =
       body.serviceCategory || body.service_category || body.redeemCategory || null;
+    const channelRaw = String(body.channel || '').toLowerCase();
+    const channel =
+      channelRaw === 'tele' ||
+      channelRaw === 'appointment' ||
+      channelRaw === 'paybill' ||
+      channelRaw === 'ecommerce'
+        ? channelRaw
+        : null;
+    const vendorId = body.vendorId || body.vendor_id || null;
+    const categoryId = body.categoryId || body.category_id || null;
 
     if (!customerId) {
       return this.error('Customer ID is required', 400);
@@ -857,6 +903,9 @@ class DebitWalletHandler extends BaseHandler {
         customerId,
         amount,
         serviceCategory,
+        vendorId,
+        categoryId,
+        channel,
         referenceType: refType,
         referenceId: refId,
         description: String(description || 'Wallet debit'),

@@ -37,6 +37,9 @@ export async function debitCustomerWalletForBookingInTransaction(
     amount: number;
     idempotencyKey?: string | null;
     serviceCategory?: string | null;
+    vendorId?: string | null;
+    categoryId?: string | null;
+    channel?: 'tele' | 'appointment' | 'paybill' | 'ecommerce' | null;
   }
 ): Promise<{ debited: number; balanceAfter: number }> {
   const { customerId, bookingId, amount, idempotencyKey } = params;
@@ -44,6 +47,9 @@ export async function debitCustomerWalletForBookingInTransaction(
     return { debited: 0, balanceAfter: 0 };
   }
   let serviceCategory = params.serviceCategory ? String(params.serviceCategory) : null;
+  let vendorId = params.vendorId ? String(params.vendorId) : null;
+  let categoryId = params.categoryId ? String(params.categoryId) : null;
+  let channel = params.channel ?? null;
 
   const cols = await walletTransactionsColumnSet(client);
   const hasCustomerId = cols.has('customer_id');
@@ -83,15 +89,32 @@ export async function debitCustomerWalletForBookingInTransaction(
   }
   const walletRow = lockRes.rows[0] as { id: string; balance: string };
 
-  if (!serviceCategory) {
+  if (!serviceCategory || !vendorId || !channel) {
     await client.query('SAVEPOINT sp_booking_cat');
     try {
       const catRes = await client.query(
-        `SELECT COALESCE(service_category, service_type)::text AS cat
+        `SELECT
+           COALESCE(service_category, service_type)::text AS cat,
+           vendor_id::text AS vendor_id,
+           COALESCE(service_style, service_type)::text AS style
          FROM bookings WHERE id = $1::uuid LIMIT 1`,
         [bookingId],
       );
-      serviceCategory = catRes.rows[0]?.cat ? String(catRes.rows[0].cat) : null;
+      const row = catRes.rows[0] as
+        | { cat?: string; vendor_id?: string; style?: string }
+        | undefined;
+      if (!serviceCategory && row?.cat) serviceCategory = String(row.cat);
+      if (!vendorId && row?.vendor_id) vendorId = String(row.vendor_id);
+      if (!channel && row?.style) {
+        const { classifyPaymentChannel } = await import(
+          '../discount-engine/promo-engine/vcf/channel'
+        );
+        channel = classifyPaymentChannel({
+          surface: 'booking',
+          serviceStyle: row.style,
+          serviceType: row.style,
+        });
+      }
       await client.query('RELEASE SAVEPOINT sp_booking_cat');
     } catch {
       await client.query('ROLLBACK TO SAVEPOINT sp_booking_cat');
@@ -148,7 +171,12 @@ export async function debitCustomerWalletForBookingInTransaction(
 
   const balanceBefore = parseFloat(String(walletRow.balance ?? '0')) || 0;
 
-  const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+  const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, {
+    serviceCategory,
+    vendorId,
+    categoryId,
+    channel,
+  });
   if (amount > scoped.spendable + 0.009) {
     throw new Error(
       `Insufficient spendable wallet (spendable ₹${scoped.spendable.toFixed(2)}, locked ₹${scoped.lockedPromoCashback.toFixed(2)})`,
@@ -214,6 +242,9 @@ export async function debitCustomerWalletForBookingInTransaction(
     customerId,
     amount,
     serviceCategory,
+    vendorId,
+    categoryId,
+    channel,
   });
 
   // Optional denormalized mirror on `customers` — must not abort the booking txn if column/table drifts.
