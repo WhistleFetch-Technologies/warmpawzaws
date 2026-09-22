@@ -1,8 +1,18 @@
 import {
   parseVendorServiceMetadataForCustomer,
   vendorServicePackagePresentationForCustomer,
+  cleanDescription,
 } from '../../repos/legacy-helpers.repo';
 import type { VendorServicePackageInclusions } from './package-inclusions';
+
+function firstCleanDescription(...values: unknown[]): string {
+  for (const value of values) {
+    const raw = typeof value === 'string' ? value : value == null ? '' : String(value);
+    const cleaned = cleanDescription(raw);
+    if (cleaned) return cleaned;
+  }
+  return '';
+}
 
 export function mapVendorServiceRows(
   rows: Record<string, unknown>[],
@@ -22,8 +32,11 @@ export function mapVendorServiceRows(
     const name = String(
       row.service_name || row.base_name || row.catalog_name || row.catalog_display_name || 'Service'
     );
-    const description = String(
-      row.custom_description || row.base_description || row.catalog_description || ''
+    const description = firstCleanDescription(
+      row.custom_description,
+      row.catalog_description,
+      row.catalog_description_by_name,
+      row.base_description,
     );
     const shortDescription = description.length > 200 ? `${description.slice(0, 200)}…` : description;
     const rawSpec = row.catalog_specialization_ids;

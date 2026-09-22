@@ -15,6 +15,8 @@ export type ServiceCardDTO = {
   id: string;
   name: string;
   shortDescription: string | null;
+  /** Full vendor/catalog copy for View more. */
+  description: string | null;
   duration: number | null;
   categoryLabel: string | null;
   price: number | null;
@@ -58,12 +60,16 @@ export function toServiceCardDTO(
   options?: { omitPricing?: boolean },
 ): ServiceCardDTO {
   const desc =
-    (row.shortDescription as string) ||
-    (row.description as string) ||
     (row.longDescription as string) ||
+    (row.description as string) ||
+    (row.catalog_description as string) ||
+    (row.shortDescription as string) ||
     null;
+  const fullDescription = desc && String(desc).trim() ? String(desc).trim() : null;
   const shortDescription =
-    desc && desc.length > 120 ? `${desc.slice(0, 117)}...` : desc;
+    fullDescription && fullDescription.length > 120
+      ? `${fullDescription.slice(0, 117)}...`
+      : fullDescription;
 
   const omitPricing = options?.omitPricing === true;
   const rawPrice =
@@ -88,6 +94,7 @@ export function toServiceCardDTO(
     id: String(row.id ?? row.serviceId ?? ''),
     name: String(row.name ?? row.serviceName ?? ''),
     shortDescription,
+    description: fullDescription,
     duration:
       row.duration != null
         ? Number(row.duration)

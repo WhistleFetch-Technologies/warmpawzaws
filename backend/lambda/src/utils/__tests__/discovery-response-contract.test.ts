@@ -61,6 +61,7 @@ describe('discovery-service-card-dto', () => {
       serviceStyle: 'at_center',
     });
     expect(dto.shortDescription!.length).toBeLessThanOrEqual(120);
+    expect(dto.description).toBe(long);
     expect(dto.name).toBe('Groom');
   });
 });
