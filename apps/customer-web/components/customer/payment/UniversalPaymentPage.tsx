@@ -1388,9 +1388,10 @@ export function UniversalPaymentPage({
           'hybrid',
         ]);
         let walletChannel: string | null = null;
-        if (type === 'order') walletChannel = 'ecommerce';
+        const paymentType = String(type);
+        if (paymentType === 'order') walletChannel = 'ecommerce';
         else if (teleStyles.has(style)) walletChannel = 'tele';
-        else if (apptStyles.has(style) || type === 'booking') walletChannel = 'appointment';
+        else if (apptStyles.has(style) || paymentType === 'booking') walletChannel = 'appointment';
         if (walletChannel) walletParams.set('channel', walletChannel);
         const walletRes = await apiClient.get<any>(`/customer/wallet?${walletParams.toString()}`);
         if (walletRes.wallet) {
