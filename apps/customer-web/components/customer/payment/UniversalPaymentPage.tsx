@@ -1388,7 +1388,7 @@ export function UniversalPaymentPage({
           'hybrid',
         ]);
         let walletChannel: string | null = null;
-        if (type === 'order' || type === 'ecommerce') walletChannel = 'ecommerce';
+        if (type === 'order') walletChannel = 'ecommerce';
         else if (teleStyles.has(style)) walletChannel = 'tele';
         else if (apptStyles.has(style) || type === 'booking') walletChannel = 'appointment';
         if (walletChannel) walletParams.set('channel', walletChannel);
