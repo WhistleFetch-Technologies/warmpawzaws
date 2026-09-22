@@ -32,12 +32,14 @@ export function createByStyleFetchServices(
                   vs.is_enabled,
                   COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
                   COALESCE(
-                    vs.custom_description,
-                    sc.description,
-                    (SELECT sc2.description FROM service_catalog sc2
-                     WHERE sc2.service_name = vs.service_name
-                       AND sc2.service_style = vs.service_style LIMIT 1),
-                    s.description
+                    NULLIF(BTRIM(vs.custom_description), ''),
+                    NULLIF(BTRIM(sc.description), ''),
+                    (SELECT NULLIF(BTRIM(sc2.description), '') FROM service_catalog sc2
+                     WHERE LOWER(BTRIM(COALESCE(sc2.service_name, ''))) = LOWER(BTRIM(COALESCE(vs.service_name, '')))
+                       AND BTRIM(COALESCE(vs.service_name, '')) <> ''
+                     ORDER BY CASE WHEN sc2.service_style IS NOT DISTINCT FROM vs.service_style THEN 0 ELSE 1 END
+                     LIMIT 1),
+                    NULLIF(BTRIM(s.description), '')
                   ) AS description,
                   COALESCE(sc.category_name, vs.category) AS category_name,
                   sc.category_id AS catalog_category_id,

@@ -31,6 +31,9 @@ export function pickBestVendorDescription(p: Record<string, unknown>): string {
   push(p.longDescription);
   push(p.long_description);
   push(p.description);
+  push(p.catalog_description);
+  push(p.catalogDescription);
+  push(p.catalog_description_by_name);
   push(p.custom_description);
   push(p.customDescription);
   push(p.shortDescription);

@@ -31,6 +31,26 @@ const VENDOR_SERVICES_SELECT = `
     sc.service_name as catalog_name,
     sc.display_name as catalog_display_name,
     sc.description as catalog_description,
+    (
+      SELECT sc2.description
+      FROM service_catalog sc2
+      WHERE LOWER(BTRIM(COALESCE(sc2.service_name, ''))) = LOWER(BTRIM(COALESCE(vs.service_name, '')))
+        AND BTRIM(COALESCE(vs.service_name, '')) <> ''
+      ORDER BY CASE
+        WHEN sc2.service_style IS NOT DISTINCT FROM vs.service_style THEN 0
+        ELSE 1
+      END
+      LIMIT 1
+    ) as catalog_description_by_name,
+    sc.specialization_ids as catalog_specialization_ids,
+    vs.sub_category,
+    vs.metadata as vs_metadata,
+    vs.publish_status,
+    s.name as base_name,
+    s.description as base_description,
+    sc.service_name as catalog_name,
+    sc.display_name as catalog_display_name,
+    sc.description as catalog_description,
     sc.specialization_ids as catalog_specialization_ids,
     sc.category_id as catalog_category_id,
     sc.category_name as catalog_category_name,

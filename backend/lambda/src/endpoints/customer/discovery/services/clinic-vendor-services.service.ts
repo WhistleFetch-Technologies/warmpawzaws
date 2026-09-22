@@ -86,7 +86,15 @@ export async function executeclinicVendorServices(c: Context) {
           vs.service_style,
           vs.price,
           COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
-          COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
+          COALESCE(
+            NULLIF(BTRIM(vs.custom_description), ''),
+            (SELECT NULLIF(BTRIM(sc.description), '') FROM service_catalog sc
+             WHERE LOWER(BTRIM(COALESCE(sc.service_name, ''))) = LOWER(BTRIM(COALESCE(vs.service_name, '')))
+               AND BTRIM(COALESCE(vs.service_name, '')) <> ''
+             ORDER BY CASE WHEN sc.service_style IS NOT DISTINCT FROM vs.service_style THEN 0 ELSE 1 END
+             LIMIT 1),
+            NULLIF(BTRIM(s.description), '')
+          ) as description,
           vs.is_enabled,
           vs.publish_status,
           vs.category as category_name,

@@ -85,7 +85,14 @@ export async function executecustomerServicesPlatform(c: Context) {
             vs.service_id,
             vs.service_name,
             vs.service_name as display_name,
-            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+            COALESCE(
+              NULLIF(BTRIM(vs.custom_description), ''),
+              (SELECT NULLIF(BTRIM(sc.description), '') FROM service_catalog sc
+               WHERE LOWER(BTRIM(COALESCE(sc.service_name, ''))) = LOWER(BTRIM(COALESCE(vs.service_name, '')))
+                 AND BTRIM(COALESCE(vs.service_name, '')) <> ''
+               ORDER BY CASE WHEN sc.service_style IS NOT DISTINCT FROM vs.service_style THEN 0 ELSE 1 END
+               LIMIT 1)
+            ) as description,
             vs.category as category_name,
             vs.service_style,
             vs.price as base_price,
