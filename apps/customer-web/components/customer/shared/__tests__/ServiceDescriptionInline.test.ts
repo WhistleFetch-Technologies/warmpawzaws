@@ -13,7 +13,8 @@ describe('ServiceDescriptionInline full-description dialog', () => {
     expect(src).toContain('flex-1');
     expect(src).toContain('overscroll-contain');
     expect(src).toContain("maxHeight: 'min(70dvh, 28rem)'");
-    expect(src).toContain("top: '8vh'");
-    expect(src).toContain("transform: 'translateX(-50%)'");
+    expect(src).toContain("margin: 'auto'");
+    expect(src).toContain("transform: 'none'");
+    expect(src).toContain("height: 'fit-content'");
   });
 });
