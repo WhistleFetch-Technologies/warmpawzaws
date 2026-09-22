@@ -301,9 +301,17 @@ export function AudienceStep({
                   type="number"
                   min={1}
                   value={vcf.visitLoop.m}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    patch({ ...vcf, visitLoop: { ...vcf.visitLoop, m: Math.max(1, Number(e.target.value) || 1) } })
-                  }
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    if (vcf.visitLoop.kind !== 'between') return;
+                    patch({
+                      ...vcf,
+                      visitLoop: {
+                        kind: 'between',
+                        n: vcf.visitLoop.n,
+                        m: Math.max(1, Number(e.target.value) || 1),
+                      },
+                    });
+                  }}
                   className="min-h-11"
                 />
               </div>
