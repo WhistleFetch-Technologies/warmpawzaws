@@ -41,7 +41,10 @@ export function pickBestVendorDescription(p: Record<string, unknown>): string {
     push(m.serviceDescription);
   }
   if (candidates.length === 0) return '';
-  return candidates.reduce((a, b) => (b.length > a.length ? b : a), '');
+  const looksTruncated = (s: string) => /(?:…|\.{3})$/.test(s);
+  const complete = candidates.filter((c) => !looksTruncated(c));
+  const pool = complete.length > 0 ? complete : candidates;
+  return pool.reduce((a, b) => (b.length > a.length ? b : a), '');
 }
 
 function coerceOptionalString(v: unknown): string | undefined {

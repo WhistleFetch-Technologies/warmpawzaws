@@ -123,14 +123,24 @@ export function ServiceDescriptionInline({
         </p>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex max-h-[min(85dvh,36rem)] w-full flex-col gap-0 overflow-hidden p-0 !flex sm:max-w-lg">
+        <DialogContent
+          className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            maxHeight: '84dvh',
+            top: '8vh',
+            transform: 'translateX(-50%)',
+          }}
+        >
           <DialogHeader className="shrink-0 border-b border-gray-100 px-5 pt-5 pb-3 pr-12 text-left">
             <DialogTitle className="text-base leading-snug text-gray-900">{title}</DialogTitle>
             <p className="text-xs font-normal text-gray-500">{dialogHint}</p>
           </DialogHeader>
           <div
             data-testid="service-description-scroll"
-            className="min-h-0 max-h-[min(70dvh,28rem)] flex-1 overflow-y-auto overscroll-contain px-5 py-4 text-sm leading-relaxed text-gray-700 whitespace-pre-line"
+            className="min-h-0 flex-1 overflow-y-scroll overscroll-contain px-5 py-4 text-sm leading-relaxed break-words text-gray-700 whitespace-pre-wrap [-webkit-overflow-scrolling:touch]"
+            style={{ maxHeight: 'min(70dvh, 28rem)', WebkitOverflowScrolling: 'touch' }}
           >
             {modalText}
           </div>

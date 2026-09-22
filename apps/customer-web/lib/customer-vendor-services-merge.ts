@@ -59,7 +59,7 @@ export function mapHomeServiceProfileServices(rows: unknown[]): HomeServiceProfi
 
     const name = String(s.name ?? s.serviceName ?? s.service_name ?? 'Service').trim() || 'Service';
     const description = String(
-      s.description ?? s.shortDescription ?? s.longDescription ?? ''
+      s.longDescription ?? s.long_description ?? s.description ?? s.shortDescription ?? ''
     ).trim();
     const price =
       parseFloat(String(s.price ?? s.custom_price ?? s.base_price ?? 0)) || 0;
