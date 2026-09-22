@@ -12,7 +12,7 @@ import {
   type WapptFacilityRating,
 } from '@/lib/map-wappt-facility-rating';
 import {
-  buildVendorProfileServicesUrl,
+  buildVendorServicesPageUrl,
   vendorServicesNextCursor,
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
@@ -237,10 +237,12 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
       }
 
       try {
-        const url = buildVendorProfileServicesUrl({
+        const url = buildVendorServicesPageUrl({
           vendorId: vid,
           serviceStyle,
+          category: config.servicesApiCategory,
           customerPhone: phone || undefined,
+          cursor: append ? p.servicesNextCursor : undefined,
         });
         const res = await apiClient.get(url);
         const rows = vendorServicesRowsFromResponse(
@@ -297,7 +299,7 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
         setFetchingServices(false);
       }
     },
-    [config.category, phone, serviceStyle],
+    [config.category, config.servicesApiCategory, phone, serviceStyle],
   );
 
   const loadMoreServices = useCallback(() => {

@@ -129,8 +129,13 @@ export function ServiceDescriptionInline({
             display: 'flex',
             flexDirection: 'column',
             maxHeight: '84dvh',
-            top: '8vh',
-            transform: 'translateX(-50%)',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            margin: 'auto',
+            transform: 'none',
+            height: 'fit-content',
           }}
         >
           <DialogHeader className="shrink-0 border-b border-gray-100 px-5 pt-5 pb-3 pr-12 text-left">

@@ -42,7 +42,6 @@ import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
 import { discoveryServiceSections } from '@/lib/vendor-services-package-sections';
 import {
   buildVendorServicesPageUrl,
-  buildVendorProfileServicesUrl,
   vendorServicesNextCursor,
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
@@ -264,13 +263,7 @@ export function VetServicesByStyle({
       }
       try {
         const profileFetch = Boolean(vendorId);
-        const url = profileFetch
-          ? buildVendorProfileServicesUrl({
-              vendorId: vid,
-              serviceStyle,
-              customerPhone: phone || undefined,
-            })
-          : buildVendorServicesPageUrl({
+        const url = buildVendorServicesPageUrl({
               vendorId: vid,
               serviceStyle,
               category,
