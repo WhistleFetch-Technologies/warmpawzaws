@@ -21,6 +21,7 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
+import { pickBestVendorDescription } from '@/lib/clinic-service-row-mapper';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
 import { resolveCustomerVendorAmenities, shouldShowVendorAmenities, resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { shareVendorProfile, universalCategoryToSharePersona } from '@/lib/vendor-profile-share';
@@ -312,8 +313,7 @@ export function UniversalProviderProfile({
           id: String(s.id ?? s.serviceId ?? ''),
           serviceId: String(s.serviceId ?? s.id ?? ''),
           name: String(s.name ?? s.serviceName ?? 'Service'),
-          description:
-            String(s.shortDescription ?? s.description ?? '').trim() || undefined,
+          description: pickBestVendorDescription(s) || undefined,
           price: Number(s.price ?? 0),
           duration: Number(s.duration ?? 30),
           serviceStyle: String(s.serviceStyle ?? s.service_style ?? serviceStyle),

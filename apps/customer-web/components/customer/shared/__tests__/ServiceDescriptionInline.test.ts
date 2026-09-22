@@ -8,11 +8,12 @@ describe('ServiceDescriptionInline full-description dialog', () => {
       'utf8',
     );
     expect(src).toContain('data-testid="service-description-scroll"');
-    expect(src).toContain('overflow-y-auto');
+    expect(src).toContain('overflow-y-scroll');
     expect(src).toContain('min-h-0');
     expect(src).toContain('flex-1');
     expect(src).toContain('overscroll-contain');
-    expect(src).toContain('max-h-[min(70dvh,28rem)]');
-    expect(src).toContain('!flex');
+    expect(src).toContain("maxHeight: 'min(70dvh, 28rem)'");
+    expect(src).toContain("top: '8vh'");
+    expect(src).toContain("transform: 'translateX(-50%)'");
   });
 });

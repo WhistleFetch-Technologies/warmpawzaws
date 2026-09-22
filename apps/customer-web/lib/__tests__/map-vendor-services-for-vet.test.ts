@@ -25,4 +25,41 @@ describe('mapVendorServicesForVetHub vendorProfile', () => {
   it('keeps all rows on vendor profile mode', () => {
     expect(mapVendorServicesForVetHub(rows, { vendorProfile: true }).map((r) => r.id)).toEqual(['1', '2']);
   });
+
+  it('uses the full long description instead of the 200-char short preview', () => {
+    const full =
+      'Includes Physical examination of anal glands. Manual expression of anal glands. Cleaning of gland area. Basic assessment of surrounding tissue, lubrication, and follow-up advice for home care after the clinic visit so the pet stays comfortable.';
+    const short = `${full.slice(0, 200)}…`;
+    const mapped = mapVendorServicesForVetHub(
+      [
+        {
+          id: 'vs-1',
+          serviceId: 'svc-1',
+          name: 'Anal Gland Expression Manual',
+          category: 'Veterinary Services',
+          shortDescription: short,
+          description: full,
+          longDescription: full,
+        },
+      ],
+      { vendorProfile: true },
+    );
+    expect(mapped[0].description).toBe(full);
+    expect(mapped[0].description?.endsWith('…')).toBe(false);
+
+    const shortOnlyLongerBecauseEllipsis = mapVendorServicesForVetHub(
+      [
+        {
+          id: 'vs-2',
+          serviceId: 'svc-2',
+          name: 'Anal Gland Expression Manual',
+          category: 'Veterinary Services',
+          shortDescription: `${full}…`,
+          description: full,
+        },
+      ],
+      { vendorProfile: true },
+    );
+    expect(shortOnlyLongerBecauseEllipsis[0].description).toBe(full);
+  });
 });

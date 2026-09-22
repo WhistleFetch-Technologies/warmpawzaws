@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { fetchDiscoveryProfileVendorRow } from '@/lib/discovery-profile-vendor-bootstrap';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
+import { pickBestVendorDescription } from '@/lib/clinic-service-row-mapper';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
 import { mapFacilityRecentReviews } from '@/lib/universal-provider-profile-enrichment';
 import {
@@ -84,7 +85,7 @@ function mapGenericServiceRow(row: Record<string, unknown>): WapptProfileService
     id: String(row.id ?? row.serviceId ?? ''),
     serviceId: String(row.serviceId ?? row.id ?? ''),
     name: String(row.name ?? 'Service'),
-    description: typeof row.description === 'string' ? row.description : undefined,
+    description: pickBestVendorDescription(row) || undefined,
     duration: row.duration != null ? Number(row.duration) : undefined,
     category: typeof row.category === 'string' ? row.category : undefined,
     isPackage: Boolean(row.isPackage ?? row.is_package ?? (meta as { isPackage?: unknown } | undefined)?.isPackage),

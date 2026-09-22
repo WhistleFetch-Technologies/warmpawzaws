@@ -1,3 +1,4 @@
+import { pickBestVendorDescription } from '@/lib/clinic-service-row-mapper';
 import { filterServicesForVetHub } from '@/lib/filter-hub-services';
 
 export type VetHubServiceRow = {
@@ -41,7 +42,7 @@ export function mapVendorServicesForVetHub(
       originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
       vendorDiscount: s.vendorDiscount != null ? Number(s.vendorDiscount) : undefined,
       duration: Number(s.duration ?? 30),
-      description: String(s.shortDescription ?? s.description ?? '').trim() || undefined,
+      description: pickBestVendorDescription(s) || undefined,
       category: String(s.categoryLabel ?? s.category ?? s.categoryName ?? '').trim() || undefined,
       isPackage,
       packageDetails,
