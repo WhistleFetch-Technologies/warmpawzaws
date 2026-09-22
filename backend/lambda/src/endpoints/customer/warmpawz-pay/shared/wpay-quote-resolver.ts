@@ -4,7 +4,6 @@ import { resolveWpayVendorCommercialConfig } from './wpay-commercial-config';
 import {
   buildWpayCommercialSnapshot,
   computeWpayCommercialQuote,
-  computeWpayDiscountQuote,
   type WpayCommercialQuote,
   type WpayDiscountQuote,
 } from './wpay-discount';
@@ -25,14 +24,24 @@ export type WpayTierQuoteResult = {
 
 export type WpayResolvedPayQuote = WpayWithholdQuoteResult | WpayTierQuoteResult;
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 /** Resolve Pay Bill quote for initiate/verify (tier commission vs historical withhold). */
 export async function resolveWpayPayQuote(params: {
   vendorRow: WpayVendorListDbRow;
   quotedAmount: number;
+  /**
+   * Promo-engine monetary discount (₹). Feeds fee guardrail headroom under Q.
+   * Catalogue % stays 0 — engine is the only customer cut.
+   */
+  engineDiscountAmount?: number;
   /** @deprecated Ignored — appointment credit unwired from Pay Bill. */
   appointmentFeeCredit?: number;
 }): Promise<WpayResolvedPayQuote> {
   const config = resolveWpayVendorCommercialConfig(params.vendorRow);
+  const engineDiscount = Math.max(0, round2(Number(params.engineDiscountAmount) || 0));
 
   if (config.commercialModel === 'tier_commission') {
     const settings = await wpayConvenienceSettingsRepository.getConvenienceSettings();
@@ -40,6 +49,7 @@ export async function resolveWpayPayQuote(params: {
       quotedAmount: params.quotedAmount,
       commissionPercent: config.commissionPercent,
       discountPercent: 0,
+      discountAmountOverride: engineDiscount,
       platformFee: settings.platformFee,
       platformFeeMode: settings.platformFeeMode,
       platformFeeGstRate: settings.platformFeeGstRate,
@@ -54,14 +64,33 @@ export async function resolveWpayPayQuote(params: {
       commercialModel: 'tier_commission',
       quote,
       payableAmount: quote.payNowAmount,
-      metadata: buildWpayCommercialSnapshot(quote, {
-        tierId: config.tierId,
-        tierName: config.tierName,
-      }),
+      metadata: {
+        ...buildWpayCommercialSnapshot(quote, {
+          tierId: config.tierId,
+          tierName: config.tierName,
+        }),
+        engineDiscountAmount: quote.discountAmount,
+        platformFeeMode: settings.platformFeeMode,
+        convenienceFeeMode: settings.convenienceFeeMode,
+      },
     };
   }
 
-  const quote = computeWpayDiscountQuote(params.quotedAmount, 0);
+  const quotedAmount = round2(Number(params.quotedAmount));
+  const maxDiscount = round2(Math.max(0, quotedAmount - 0.01));
+  const discountAmount = round2(Math.min(maxDiscount, engineDiscount));
+  const discountPercent =
+    quotedAmount > 0 ? round2((discountAmount / quotedAmount) * 100) : 0;
+  const payableAmount = Math.max(0.01, round2(quotedAmount - discountAmount));
+
+  const quote: WpayDiscountQuote = {
+    originalAmount: quotedAmount,
+    appointmentFeeCredit: 0,
+    billBase: quotedAmount,
+    discountPercent,
+    discountAmount,
+    payableAmount,
+  };
 
   return {
     commercialModel: 'withhold',
@@ -75,6 +104,7 @@ export async function resolveWpayPayQuote(params: {
       billBase: quote.billBase,
       appointmentFeeCredit: 0,
       platformWithholdPercent: config.platformWithholdPercent,
+      engineDiscountAmount: quote.discountAmount,
     },
   };
 }

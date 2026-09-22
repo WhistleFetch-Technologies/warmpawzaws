@@ -18,6 +18,7 @@ import {
 	Package,
 	TableProperties,
 	Truck,
+	ListOrdered,
 	X,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
@@ -35,6 +36,7 @@ import {
 	VendorDailyAccrualReport,
 	VendorMonthlyAccrualReport,
 	VendorBookingEarningsReport,
+	AllTransactionsHub,
 } from "@/components/admin/finance";
 import { FeeConfigurationManager } from "@/components/admin/finance/FeeConfigurationManager";
 import { CustomerDeliveryFeePolicyManager } from "@/components/admin/finance/CustomerDeliveryFeePolicyManager";
@@ -70,7 +72,8 @@ type TabType =
 	| "settlement-rules"
 	| "vendor-daily-accrual"
 	| "vendor-monthly-accrual"
-	| "vendor-booking-earnings";
+	| "vendor-booking-earnings"
+	| "all-transactions";
 
 function FinanceManagementContent() {
 	const searchParams = useSearchParams();
@@ -92,6 +95,7 @@ function FinanceManagementContent() {
 		"vendor-daily-accrual",
 		"vendor-monthly-accrual",
 		"vendor-booking-earnings",
+		"all-transactions",
 	];
 	const initialTab = tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "dashboard";
 	const [activeTab, setActiveTab] = useState<TabType>(initialTab);
@@ -196,6 +200,11 @@ function FinanceManagementContent() {
 			id: "vendor-booking-earnings",
 			label: "Booking earnings (IST)",
 			icon: ReceiptText,
+		},
+		{
+			id: "all-transactions",
+			label: "All transactions",
+			icon: ListOrdered,
 		},
 		{ id: "payment-settings", label: "Payment Gateway", icon: Settings },
 	];
@@ -438,6 +447,12 @@ function FinanceManagementContent() {
 						<div className="rounded-lg border border-gray-200 bg-white p-6">
 							<h2 className="mb-4 text-lg font-semibold text-gray-900">Vendor booking earnings (IST)</h2>
 							<VendorBookingEarningsReport />
+						</div>
+					)}
+
+					{activeTab === "all-transactions" && (
+						<div className="rounded-lg border border-gray-200 bg-white p-6">
+							<AllTransactionsHub />
 						</div>
 					)}
 

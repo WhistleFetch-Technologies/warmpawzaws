@@ -214,6 +214,58 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.payNowAmount).toBe(900);
   });
 
+  it('case 12: engine discountAmountOverride feeds fee guardrail headroom under Q', () => {
+    // Q=1000, engine D=80 → fees 30+5.4+20+3.6=59 < 80 → fees apply; payNow ≤ Q
+    const quote = computeWpayCommercialQuote({
+      quotedAmount: 1000,
+      commissionPercent: 20,
+      discountPercent: 0,
+      discountAmountOverride: 80,
+      platformFee: 30,
+      platformFeeMode: 'fixed',
+      platformFeeGstRate: 18,
+      convenienceFee: 20,
+      convenienceFeeMode: 'fixed',
+      convenienceGstRate: 18,
+    });
+    expect(quote.discountAmount).toBe(80);
+    expect(quote.servicePayableAmount).toBe(920);
+    expect(quote.platformFee).toBe(30);
+    expect(quote.convenienceFee).toBe(20);
+    expect(quote.payNowAmount).toBe(979);
+    expect(quote.payNowAmount).toBeLessThanOrEqual(1000);
+  });
+
+  it('case 13: engine D=0 still zeros fees (any fee would exceed original Q)', () => {
+    const quote = computeWpayCommercialQuote({
+      quotedAmount: 1000,
+      commissionPercent: 20,
+      discountPercent: 0,
+      discountAmountOverride: 0,
+      platformFee: 30,
+      platformFeeGstRate: 18,
+      convenienceFee: 20,
+      convenienceGstRate: 18,
+    });
+    expect(quote.platformFee).toBe(0);
+    expect(quote.convenienceFee).toBe(0);
+    expect(quote.payNowAmount).toBe(1000);
+  });
+
+  it('case 14: engine D may exceed commission % without throwing; revenue floors at 0', () => {
+    const quote = computeWpayCommercialQuote({
+      quotedAmount: 1000,
+      commissionPercent: 10,
+      discountPercent: 0,
+      discountAmountOverride: 200,
+      platformFee: 0,
+      convenienceFee: 0,
+    });
+    expect(quote.discountAmount).toBe(200);
+    expect(quote.wpayRevenueAmount).toBe(0);
+    expect(quote.payNowAmount).toBe(800);
+  });
+
   it('assertDiscountBelowCommission enforces D < C', () => {
     expect(() => assertDiscountBelowCommission(20, 15)).not.toThrow();
     expect(() => assertDiscountBelowCommission(20, 20)).toThrow(WpayCommercialValidationError);

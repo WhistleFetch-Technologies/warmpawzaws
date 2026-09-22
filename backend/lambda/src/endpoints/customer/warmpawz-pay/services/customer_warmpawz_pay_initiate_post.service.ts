@@ -13,7 +13,6 @@ import {
 import { WpayCommercialValidationError } from '../shared/wpay-discount';
 import { resolveWpayPayQuote } from '../shared/wpay-quote-resolver';
 import { resolveWpayPromoCategory } from '../shared/resolve-wpay-promo-category';
-import { applyEngineDiscountToWpayPayable } from '../shared/apply-engine-discount-to-wpay';
 import { loadOwnedWpayEvaluation } from '../shared/load-wpay-stored-evaluation';
 import { normalizePromoCategory } from '../../../../discount-engine/promo-engine/dsl/category-aliases';
 import { capWpayWalletAmount } from '../shared/wpay-wallet';
@@ -80,11 +79,6 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       bookingCategoryId: openBooking?.service_category || serviceCategory,
     });
 
-    const resolved = await resolveWpayPayQuote({
-      vendorRow,
-      quotedAmount: originalAmount,
-    });
-
     let promoEngine: Record<string, unknown> | null = null;
     let engineDiscount = 0;
     try {
@@ -142,16 +136,18 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       );
     }
 
-    const applied = applyEngineDiscountToWpayPayable({
+    // Fees + guardrail use engine D as headroom under Q (catalogue % stays 0).
+    const resolved = await resolveWpayPayQuote({
+      vendorRow,
       quotedAmount: originalAmount,
-      cataloguePayable: resolved.payableAmount,
-      engineDiscount,
-      metadata: resolved.metadata,
+      engineDiscountAmount: engineDiscount,
     });
+    const payableAmount = resolved.payableAmount;
+    const discountAmount = resolved.quote.discountAmount;
 
     const requestedWallet = Number(body.walletAmount);
     let walletAmount = 0;
-    let razorpayCharge = applied.payableAmount;
+    let razorpayCharge = payableAmount;
     let walletOnly = false;
     if (Number.isFinite(requestedWallet) && requestedWallet > 0.009) {
       const { computeSpendableWalletBalance } = await import(
@@ -164,7 +160,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         channel: 'paybill',
       });
       const capped = capWpayWalletAmount({
-        payable: applied.payableAmount,
+        payable: payableAmount,
         requested: requestedWallet,
         spendable: scoped.spendable,
       });
@@ -174,12 +170,12 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     }
 
     const quoteMetadata = {
-      ...applied.metadata,
+      ...resolved.metadata,
       serviceCategory,
       categoryId: payCtx.categoryId,
       bookingId,
       walletAmount,
-      quotedPayableAmount: applied.payableAmount,
+      quotedPayableAmount: payableAmount,
       razorpayChargeAmount: razorpayCharge,
       ...(promoEngine?.evaluationId
         ? { evaluationId: String(promoEngine.evaluationId), promoEngine }
@@ -190,7 +186,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       const walletPay = await createWpayWalletOnlyPayment({
         customerId,
         vendorId,
-        payableAmount: applied.payableAmount,
+        payableAmount,
         bookingId,
         clientRequestId: clientRequestId || null,
         quoteMetadata,
@@ -221,7 +217,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         razorpayPaymentId: `wallet_${walletPay.paymentId}`,
         razorpaySignature: 'wallet',
         originalAmount,
-        discountAmount: applied.discountAmount,
+        discountAmount,
         bookingId,
         creditAmount: 0,
       });
@@ -254,8 +250,8 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         walletOnly: true,
         paymentId: walletPay.paymentId,
         originalAmount,
-        discountAmount: applied.discountAmount,
-        payableAmount: applied.payableAmount,
+        discountAmount,
+        payableAmount,
         walletAmount,
         razorpayAmount: 0,
         bookingId,
@@ -266,7 +262,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     const order = await createWpayRazorpayOrder({
       customerId,
       vendorId,
-      payableAmount: applied.payableAmount,
+      payableAmount,
       chargeAmount: razorpayCharge,
       bookingId,
       clientRequestId: clientRequestId || null,
@@ -285,15 +281,15 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         currency: order.currency,
         commercialModel: 'tier_commission',
         originalAmount: q.quotedAmount,
-        discountPercent: applied.metadata.quotedDiscountPercent,
-        discountAmount: applied.discountAmount,
+        discountPercent: q.discountPercent,
+        discountAmount: q.discountAmount,
         servicePayableAmount: q.servicePayableAmount,
         appointmentFeeCredit: 0,
         platformFee: q.platformFee,
         platformFeeGstAmount: q.platformFeeGstAmount,
         convenienceFee: q.convenienceFee,
         convenienceGstAmount: q.convenienceGstAmount,
-        payableAmount: applied.payableAmount,
+        payableAmount,
         walletAmount,
         razorpayAmount: order.amount,
         bookingId,
@@ -314,8 +310,8 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       originalAmount: q.originalAmount,
       appointmentFeeCredit: 0,
       billBase: q.billBase,
-      discountAmount: applied.discountAmount,
-      payableAmount: applied.payableAmount,
+      discountAmount: q.discountAmount,
+      payableAmount,
       walletAmount,
       razorpayAmount: order.amount,
       bookingId,

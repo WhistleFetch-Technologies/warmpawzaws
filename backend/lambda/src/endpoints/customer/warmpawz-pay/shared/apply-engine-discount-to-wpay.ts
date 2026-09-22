@@ -3,8 +3,9 @@ function round2(n: number): number {
 }
 
 /**
- * Overlay promo-engine discount on a Pay Bill quote.
- * Catalogue % is not applied to Razorpay; engine discount is.
+ * Overlay promo-engine discount on a Pay Bill quote that was built without engine D.
+ * Prefer resolveWpayPayQuote({ engineDiscountAmount }) so fees use the same D.
+ * Kept for unit coverage / legacy callers.
  */
 export function applyEngineDiscountToWpayPayable(params: {
   quotedAmount: number;

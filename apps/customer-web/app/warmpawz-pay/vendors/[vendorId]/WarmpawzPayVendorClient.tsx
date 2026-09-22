@@ -110,10 +110,12 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
   const quote = useMemo(() => {
     if (!vendor || billAmount <= 0) return null;
+    const engineD = Math.max(0, Number(promoEnginePreview?.engineDiscount) || 0);
     if (vendor.commercialModel === 'tier_commission') {
       return previewWpayCommercialQuote({
         originalAmount: billAmount,
         discountPercent: 0,
+        discountAmountOverride: engineD,
         maxDiscountAmount: vendor.maxDiscountAmount,
         platformFee: vendor.platformFee ?? 0,
         platformFeeMode: vendor.platformFeeMode ?? 'fixed',
@@ -126,16 +128,13 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     return previewWpayQuote({
       originalAmount: billAmount,
       discountPercent: 0,
+      discountAmountOverride: engineD,
       maxDiscountAmount: vendor.maxDiscountAmount,
     });
-  }, [billAmount, vendor]);
+  }, [billAmount, vendor, promoEnginePreview?.engineDiscount]);
 
   const isTierQuote = quote != null && 'commercialModel' in quote && quote.commercialModel === 'tier_commission';
-  const engineDiscount = Math.max(0, Number(promoEnginePreview?.engineDiscount) || 0);
-  const displayPayable =
-    quote != null
-      ? Math.max(quote.payableAmount > 0 ? 1 : 0, Math.round((quote.payableAmount - engineDiscount) * 100) / 100)
-      : 0;
+  const displayPayable = quote != null ? quote.payableAmount : 0;
   const spendableWallet = Math.max(0, Number(wallet?.spendableBalance ?? wallet?.balance ?? 0) || 0);
   const walletAmountApplied =
     useWallet && spendableWallet > 0.009 && displayPayable > 0
@@ -392,10 +391,10 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                   <span>Quoted bill</span>
                   <span>{formatInr(quote.originalAmount)}</span>
                 </div>
-                {engineDiscount > 0 ? (
+                {quote.discountAmount > 0 ? (
                   <div className="flex justify-between text-green-700">
                     <span>Promo discount</span>
-                    <span>- {formatInr(engineDiscount)}</span>
+                    <span>- {formatInr(quote.discountAmount)}</span>
                   </div>
                 ) : null}
                 {isTierQuote ? (
@@ -438,9 +437,9 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                     <span>- {formatInr(walletAmountApplied)}</span>
                   </div>
                 ) : null}
-                {engineDiscount > 0 ? (
+                {quote.discountAmount > 0 ? (
                   <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
-                    You save {formatInr(engineDiscount)} with this offer!
+                    You save {formatInr(quote.discountAmount)} with this offer!
                   </p>
                 ) : null}
                 {promoEnginePreview ? (

@@ -52,7 +52,9 @@ function resolveConfiguredFeeAmount(params: {
 /** Historical withhold model preview (discount on full Q; credit ignored). */
 export function previewWpayQuote(params: {
   originalAmount: number;
-  discountPercent: number;
+  discountPercent?: number;
+  /** Promo-engine ₹ discount (preferred over percent). */
+  discountAmountOverride?: number | null;
   appointmentFeeCredit?: number;
   maxDiscountAmount?: number | null;
 }): WpayQuotePreview {
@@ -60,27 +62,49 @@ export function previewWpayQuote(params: {
   const appointmentFeeCredit = 0;
   const billBase = original;
 
-  let discountRaw = (billBase * params.discountPercent) / 100;
-  if (params.maxDiscountAmount != null && discountRaw > params.maxDiscountAmount) {
-    discountRaw = params.maxDiscountAmount;
+  let discountAmount: number;
+  let discountPercent: number;
+  if (
+    params.discountAmountOverride != null &&
+    Number.isFinite(Number(params.discountAmountOverride))
+  ) {
+    const maxDiscount = round2(Math.max(0, original - 0.01));
+    discountAmount = round2(
+      Math.min(maxDiscount, Math.max(0, Number(params.discountAmountOverride)))
+    );
+    if (params.maxDiscountAmount != null && discountAmount > params.maxDiscountAmount) {
+      discountAmount = round2(params.maxDiscountAmount);
+    }
+    discountPercent = original > 0 ? round2((discountAmount / original) * 100) : 0;
+  } else {
+    discountPercent = round2(Number(params.discountPercent) || 0);
+    let discountRaw = (billBase * discountPercent) / 100;
+    if (params.maxDiscountAmount != null && discountRaw > params.maxDiscountAmount) {
+      discountRaw = params.maxDiscountAmount;
+    }
+    discountAmount = round2(discountRaw);
   }
-  const discountAmount = round2(discountRaw);
   const payableAmount = Math.max(0.01, round2(billBase - discountAmount));
 
   return {
     originalAmount: original,
     appointmentFeeCredit,
     billBase,
-    discountPercent: params.discountPercent,
+    discountPercent,
     discountAmount,
     payableAmount,
   };
 }
 
-/** Tier-commission preview: C/D on full Q; no appointment credit; fees + exclusive GST. */
+/**
+ * Tier-commission preview: engine ₹ discount + fees + exclusive GST.
+ * Guardrail: fee gross ≥ D → zero fees (payNow must not exceed original Q).
+ */
 export function previewWpayCommercialQuote(params: {
   originalAmount: number;
-  discountPercent: number;
+  discountPercent?: number;
+  /** Promo-engine ₹ discount — feeds fee headroom under Q. */
+  discountAmountOverride?: number | null;
   appointmentFeeCredit?: number;
   platformFee?: number;
   platformFeeMode?: WpayFeeMode;
@@ -91,15 +115,31 @@ export function previewWpayCommercialQuote(params: {
   maxDiscountAmount?: number | null;
 }): WpayCommercialQuotePreview {
   const originalAmount = round2(params.originalAmount);
-  const discountPercent = round2(params.discountPercent);
 
-  let discountRaw = (originalAmount * discountPercent) / 100;
-  if (params.maxDiscountAmount != null && discountRaw > params.maxDiscountAmount) {
-    discountRaw = params.maxDiscountAmount;
+  let discountAmount: number;
+  let discountPercent: number;
+  if (
+    params.discountAmountOverride != null &&
+    Number.isFinite(Number(params.discountAmountOverride))
+  ) {
+    const maxDiscount = round2(Math.max(0, originalAmount - 0.01));
+    discountAmount = round2(
+      Math.min(maxDiscount, Math.max(0, Number(params.discountAmountOverride)))
+    );
+    if (params.maxDiscountAmount != null && discountAmount > params.maxDiscountAmount) {
+      discountAmount = round2(params.maxDiscountAmount);
+    }
+    discountPercent = originalAmount > 0 ? round2((discountAmount / originalAmount) * 100) : 0;
+  } else {
+    discountPercent = round2(Number(params.discountPercent) || 0);
+    let discountRaw = (originalAmount * discountPercent) / 100;
+    if (params.maxDiscountAmount != null && discountRaw > params.maxDiscountAmount) {
+      discountRaw = params.maxDiscountAmount;
+    }
+    discountAmount = round2(discountRaw);
   }
-  const discountAmount = round2(discountRaw);
-  const servicePayableAmount = round2(originalAmount - discountAmount);
 
+  const servicePayableAmount = round2(originalAmount - discountAmount);
   const appointmentFeeCredit = 0;
   const serviceDueAfterCredit = servicePayableAmount;
 

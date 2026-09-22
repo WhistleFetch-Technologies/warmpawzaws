@@ -79,4 +79,38 @@ describe('previewWpayCommercialQuote', () => {
       payableAmount: 875.5,
     });
   });
+
+  it('uses engine discountAmountOverride for fee headroom under Q', () => {
+    expect(
+      previewWpayCommercialQuote({
+        originalAmount: 1000,
+        discountPercent: 0,
+        discountAmountOverride: 80,
+        platformFee: 30,
+        platformFeeGstRate: 18,
+        convenienceFee: 20,
+        convenienceGstRate: 18,
+      }),
+    ).toMatchObject({
+      discountAmount: 80,
+      platformFee: 30,
+      convenienceFee: 20,
+      payableAmount: 979,
+    });
+
+    expect(
+      previewWpayCommercialQuote({
+        originalAmount: 1000,
+        discountAmountOverride: 0,
+        platformFee: 30,
+        platformFeeGstRate: 18,
+        convenienceFee: 20,
+        convenienceGstRate: 18,
+      }),
+    ).toMatchObject({
+      platformFee: 0,
+      convenienceFee: 0,
+      payableAmount: 1000,
+    });
+  });
 });
