@@ -144,8 +144,12 @@ export function ServiceDescriptionInline({
           </DialogHeader>
           <div
             data-testid="service-description-scroll"
-            className="min-h-0 flex-1 overflow-y-scroll overscroll-contain px-5 py-4 text-sm leading-relaxed break-words text-gray-700 whitespace-pre-wrap [-webkit-overflow-scrolling:touch]"
-            style={{ maxHeight: 'min(70dvh, 28rem)', WebkitOverflowScrolling: 'touch' }}
+            className="overflow-y-scroll overscroll-contain px-5 py-4 text-sm leading-relaxed break-words text-gray-700 whitespace-pre-wrap [-webkit-overflow-scrolling:touch]"
+            style={{
+              minHeight: 'min(45dvh, 20rem)',
+              maxHeight: 'min(70dvh, 36rem)',
+              WebkitOverflowScrolling: 'touch',
+            }}
           >
             {modalText}
           </div>
