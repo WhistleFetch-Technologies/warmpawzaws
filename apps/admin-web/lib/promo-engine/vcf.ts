@@ -21,6 +21,49 @@ export function validateVcfAudience(vcf: PromoVcfDraft): string[] {
   return errors;
 }
 
+/**
+ * Redeem "Same vendor / Same category" copies Audience (visit source first, then publish).
+ */
+export function inheritRedeemScopeFromAudience(
+  vcf: PromoVcfDraft,
+  letter: PromoLetter
+): Pick<
+  NonNullable<PromoVcfDraft['redeem']>,
+  'vendorId' | 'vendorName' | 'categoryId' | 'categoryName'
+> {
+  if (letter === 'V') {
+    if (vcf.visitSource.letter === 'V' && vcf.visitSource.vendorId) {
+      return {
+        vendorId: vcf.visitSource.vendorId,
+        vendorName: vcf.visitSource.vendorName,
+      };
+    }
+    if (vcf.publish.letter === 'V' && vcf.publish.vendorId) {
+      return {
+        vendorId: vcf.publish.vendorId,
+        vendorName: vcf.publish.vendorName,
+      };
+    }
+    return {};
+  }
+  if (letter === 'C') {
+    if (vcf.visitSource.letter === 'C' && vcf.visitSource.categoryId) {
+      return {
+        categoryId: vcf.visitSource.categoryId,
+        categoryName: vcf.visitSource.categoryName,
+      };
+    }
+    if (vcf.publish.letter === 'C' && vcf.publish.categoryId) {
+      return {
+        categoryId: vcf.publish.categoryId,
+        categoryName: vcf.publish.categoryName,
+      };
+    }
+    return {};
+  }
+  return {};
+}
+
 export function validateVcfBenefits(vcf: PromoVcfDraft, hasDiscount: boolean, hasCashback: boolean): string[] {
   const errors: string[] = [];
   const mode = vcf.benefitMode;
@@ -34,7 +77,25 @@ export function validateVcfBenefits(vcf: PromoVcfDraft, hasDiscount: boolean, ha
     if (!(Number(vcf.expiryDays) > 0)) errors.push('Cashback needs expiry days after earn');
     if (!vcf.redeem?.channels?.length) errors.push('Pick at least one spend channel for cashback');
     if (vcf.redeem) {
-      errors.push(...scopeErrors('Redeem', vcf.redeem.letter, vcf.redeem.vendorId, vcf.redeem.categoryId));
+      const errorsRedeem = scopeErrors(
+        'Redeem',
+        vcf.redeem.letter,
+        vcf.redeem.vendorId,
+        vcf.redeem.categoryId
+      );
+      if (errorsRedeem.length) {
+        if (vcf.redeem.letter === 'V') {
+          errors.push(
+            'Redeem: pick a vendor on Audience (visit source or publish), then choose Same vendor'
+          );
+        } else if (vcf.redeem.letter === 'C') {
+          errors.push(
+            'Redeem: pick a category on Audience (visit source or publish), then choose Same category'
+          );
+        } else {
+          errors.push(...errorsRedeem);
+        }
+      }
     }
   }
   return errors;

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import {
   Input,
   Label,
@@ -10,6 +11,7 @@ import {
   SelectValue,
 } from '@warmpawz/ui';
 import type { PromoEngineBenefit, PromoEngineDraft } from '@/lib/promo-engine/types';
+import { createEmptyVcf, inheritRedeemScopeFromAudience } from '@/lib/promo-engine/vcf';
 
 function discountBenefit(list: PromoEngineBenefit[]): PromoEngineBenefit {
   return list.find((b) => b.type === 'DISCOUNT') || { type: 'DISCOUNT', mode: 'PERCENT', value: 0 };
@@ -35,6 +37,71 @@ export function BenefitsStep({
 }) {
   const discount = discountBenefit(draft.benefitJson);
   const cashback = cashbackBenefit(draft.benefitJson);
+
+  // Keep Same vendor/category redeem ids in sync with Audience selections.
+  useEffect(() => {
+    const vcf = draft.vcf;
+    if (!vcf?.redeem) return;
+    const letter = vcf.redeem.letter;
+    if (letter !== 'V' && letter !== 'C') return;
+    const inherited = inheritRedeemScopeFromAudience(vcf, letter);
+    if (letter === 'V') {
+      if (!inherited.vendorId) return;
+      if (
+        inherited.vendorId === vcf.redeem.vendorId &&
+        inherited.vendorName === vcf.redeem.vendorName
+      ) {
+        return;
+      }
+      onChange({
+        ...draft,
+        vcf: {
+          ...vcf,
+          redeem: {
+            ...vcf.redeem,
+            vendorId: inherited.vendorId,
+            vendorName: inherited.vendorName,
+            categoryId: undefined,
+            categoryName: undefined,
+          },
+        },
+      });
+      return;
+    }
+    if (!inherited.categoryId) return;
+    if (
+      inherited.categoryId === vcf.redeem.categoryId &&
+      inherited.categoryName === vcf.redeem.categoryName
+    ) {
+      return;
+    }
+    onChange({
+      ...draft,
+      vcf: {
+        ...vcf,
+        redeem: {
+          ...vcf.redeem,
+          categoryId: inherited.categoryId,
+          categoryName: inherited.categoryName,
+          vendorId: undefined,
+          vendorName: undefined,
+        },
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync from Audience fields only
+  }, [
+    draft.vcf?.visitSource.letter,
+    draft.vcf?.visitSource.vendorId,
+    draft.vcf?.visitSource.vendorName,
+    draft.vcf?.visitSource.categoryId,
+    draft.vcf?.visitSource.categoryName,
+    draft.vcf?.publish.letter,
+    draft.vcf?.publish.vendorId,
+    draft.vcf?.publish.vendorName,
+    draft.vcf?.publish.categoryId,
+    draft.vcf?.publish.categoryName,
+    draft.vcf?.redeem?.letter,
+  ]);
 
   const setDiscount = (patch: Partial<PromoEngineBenefit>) => {
     const next = { ...discount, type: 'DISCOUNT' as const, ...patch };
@@ -190,7 +257,7 @@ export function BenefitsStep({
                 </div>
               </div>
               <div className="space-y-3">
-                <Label>Redeem cashback (independent of visit source and publish)</Label>
+                <Label>Redeem cashback (Same vendor / category copies Audience)</Label>
                 <div className="flex flex-wrap gap-2">
                   {(['V', 'C', 'F'] as const).map((letter) => (
                     <button
@@ -201,35 +268,53 @@ export function BenefitsStep({
                           ? 'border-[#FF8C42] bg-orange-50'
                           : 'border-slate-200'
                       }`}
-                      onClick={() =>
+                      onClick={() => {
+                        const base = draft.vcf || createEmptyVcf();
+                        const inherited = inheritRedeemScopeFromAudience(base, letter);
                         onChange({
                           ...draft,
                           vcf: {
-                            ...(draft.vcf || {
-                              visitSource: { letter: 'F', width: 'general' },
-                              visitLoop: { kind: 'every' },
-                              benefitMode: 'discount',
-                              publish: { letter: 'F' },
-                            }),
+                            ...base,
                             redeem: {
                               letter,
-                              channels: draft.vcf?.redeem?.channels || [
+                              channels: base.redeem?.channels || [
                                 'tele',
                                 'appointment',
                                 'paybill',
                                 'ecommerce',
                               ],
-                              vendorId: letter === 'V' ? draft.vcf?.redeem?.vendorId : undefined,
-                              categoryId: letter === 'C' ? draft.vcf?.redeem?.categoryId : undefined,
+                              ...(letter === 'V'
+                                ? {
+                                    vendorId: inherited.vendorId,
+                                    vendorName: inherited.vendorName,
+                                  }
+                                : {}),
+                              ...(letter === 'C'
+                                ? {
+                                    categoryId: inherited.categoryId,
+                                    categoryName: inherited.categoryName,
+                                  }
+                                : {}),
                             },
                           },
-                        })
-                      }
+                        });
+                      }}
                     >
                       {letter === 'V' ? 'Same vendor' : letter === 'C' ? 'Same category' : 'Anywhere'}
                     </button>
                   ))}
                 </div>
+                {(draft.vcf?.redeem?.letter === 'V' || draft.vcf?.redeem?.letter === 'C') && (
+                  <p className="text-xs text-slate-500">
+                    {draft.vcf.redeem.letter === 'V'
+                      ? draft.vcf.redeem.vendorId
+                        ? `Using vendor ${draft.vcf.redeem.vendorName || draft.vcf.redeem.vendorId} from Audience`
+                        : 'No vendor on Audience yet — set Visit source or Publish to Vendor, then tap Same vendor again'
+                      : draft.vcf.redeem.categoryId
+                        ? `Using category ${draft.vcf.redeem.categoryName || draft.vcf.redeem.categoryId} from Audience`
+                        : 'No category on Audience yet — set Visit source or Publish to Category, then tap Same category again'}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {(['tele', 'appointment', 'paybill', 'ecommerce'] as const).map((ch) => {
                     const on = (draft.vcf?.redeem?.channels || []).includes(ch);
