@@ -49,8 +49,10 @@ export interface WpayAdminPaymentItem {
   readonly evaluationId?: string | null;
   /** Instant promo discount from engine. */
   readonly engineDiscountAmount?: number;
-  /** Cashback to credit on commit (not used on this tx). */
+  /** Cashback promised at quote (credit on commit). */
   readonly pendingCashback?: number;
+  /** Cashback actually credited to wallet after promo commit. */
+  readonly awardedCashback?: number;
   readonly platformWithholdPercent?: number;
   readonly platformWithholdAmount?: number;
   readonly vendorSettlementAmount: number;

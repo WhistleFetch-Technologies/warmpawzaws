@@ -166,6 +166,11 @@ export async function accrueWpaySettlement(
         meta.promoEngine && typeof meta.promoEngine === 'object'
           ? Number((meta.promoEngine as Record<string, unknown>).pendingCashback) || 0
           : 0,
+      awardedCashback:
+        readMetadataNumber(meta, 'awardedCashback') ||
+        (meta.promoEngine && typeof meta.promoEngine === 'object'
+          ? Number((meta.promoEngine as Record<string, unknown>).awardedCashback) || 0
+          : 0),
       promoEngine:
         meta.promoEngine && typeof meta.promoEngine === 'object' ? meta.promoEngine : null,
     };

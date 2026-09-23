@@ -14,6 +14,13 @@ const HEADERS = [
   'Discount (%)',
   'Discount Amount',
   'Amount Paid',
+  'Wallet Used',
+  'Razorpay Charge',
+  'Cashback Promised',
+  'Cashback Awarded',
+  'Evaluation ID',
+  'Burn Mode',
+  'Burn Amount',
   'Platform Withhold (%)',
   'Platform Withhold (₹)',
   'Vendor Settlement',
@@ -63,6 +70,14 @@ export async function buildWpayPaymentsExportXlsx(
       item.discountPercent,
       item.discountAmount,
       item.payableAmount,
+      item.walletAmount ?? 0,
+      item.razorpayChargeAmount ??
+        Math.max(0, Math.round((item.payableAmount - (item.walletAmount ?? 0)) * 100) / 100),
+      item.pendingCashback ?? 0,
+      item.awardedCashback ?? 0,
+      item.evaluationId ?? '',
+      item.burnMode === true ? 'Yes' : 'No',
+      item.burnAmount ?? 0,
       item.platformWithholdPercent,
       item.platformWithholdAmount,
       item.vendorSettlementAmount,
@@ -72,7 +87,7 @@ export async function buildWpayPaymentsExportXlsx(
 
   sheet.getRow(1).font = { bold: true };
   sheet.columns = HEADERS.map((header, index) => {
-    if (index >= 6 && index <= 12) {
+    if ((index >= 6 && index <= 13) || index === 16 || (index >= 17 && index <= 19)) {
       return { width: 18, style: { numFmt: '#,##0.00' } };
     }
     return { width: Math.max(header.length + 2, 14) };

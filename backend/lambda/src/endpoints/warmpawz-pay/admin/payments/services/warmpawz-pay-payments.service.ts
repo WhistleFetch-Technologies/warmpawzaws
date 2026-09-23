@@ -64,6 +64,7 @@ function resolvePromoWalletRecon(
   evaluationId?: string | null;
   engineDiscountAmount?: number;
   pendingCashback?: number;
+  awardedCashback?: number;
 } {
   const promo =
     meta?.promoEngine && typeof meta.promoEngine === 'object'
@@ -93,6 +94,11 @@ function resolvePromoWalletRecon(
     readBreakupNumber(breakup, 'pendingCashback') ??
     toFiniteNumber(promo?.pendingCashback as number | undefined) ??
     undefined;
+  const awardedCashback =
+    readBreakupNumber(breakup, 'awardedCashback') ??
+    toFiniteNumber(meta?.awardedCashback as number | undefined) ??
+    toFiniteNumber(promo?.awardedCashback as number | undefined) ??
+    undefined;
 
   return {
     walletAmount: walletAmount != null && Number.isFinite(walletAmount) ? walletAmount : undefined,
@@ -107,6 +113,8 @@ function resolvePromoWalletRecon(
         : undefined,
     pendingCashback:
       pendingCashback != null && Number.isFinite(pendingCashback) ? pendingCashback : undefined,
+    awardedCashback:
+      awardedCashback != null && Number.isFinite(awardedCashback) ? awardedCashback : undefined,
   };
 }
 

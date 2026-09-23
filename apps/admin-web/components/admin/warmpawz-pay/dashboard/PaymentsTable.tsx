@@ -89,8 +89,14 @@ function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
           <p className="font-medium">{formatWpayInr(item.payableAmount)}</p>
         </div>
         <div>
-          <span className="text-gray-500">Cashback awarded (credit later)</span>
+          <span className="text-gray-500">Cashback promised (at quote)</span>
           <p className="font-medium">{formatWpayInr(item.pendingCashback ?? 0)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Cashback awarded (credited)</span>
+          <p className="font-medium text-green-700">
+            {formatWpayInr(item.awardedCashback ?? 0)}
+          </p>
         </div>
         <div>
           <span className="text-gray-500">Promo evaluation</span>
