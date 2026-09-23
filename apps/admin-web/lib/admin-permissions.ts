@@ -25,3 +25,12 @@ export function hasAdminPortalPermission(required: string | string[]): boolean {
 export function canAccessRbacPage(): boolean {
   return hasAdminPortalPermission(['admin.roles', 'admin.full_access']);
 }
+
+/** Mark Warmpawz Pay vendor payouts settled (offline transfer). */
+export function canSettleWarmpawzPayPayouts(): boolean {
+  return hasAdminPortalPermission([
+    'admin.warmpawz_pay.payments.settle',
+    'admin.warmpawz_pay',
+    'admin.full_access',
+  ]);
+}

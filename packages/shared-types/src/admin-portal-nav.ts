@@ -146,6 +146,12 @@ export const ADMIN_PORTAL_EXTRA_RBAC_CAPABILITIES: Omit<
     description: 'Bulk publish, unpublish, and delete catalogue entries',
   },
   {
+    permissionId: 'admin.warmpawz_pay.payments.settle',
+    name: 'Warmpawz Pay — Settle payouts',
+    category: 'Admin Portal — Warmpawz Pay',
+    description: 'Mark Pay Bill vendor payouts as settled after offline transfer',
+  },
+  {
     permissionId: 'admin.full_access',
     name: 'Full admin access',
     category: 'Admin Portal — Platform',

@@ -5,6 +5,8 @@ import {
 } from '../../shared/wpay-admin-route-guards';
 import { WPAY_DASHBOARD_VIEW } from '../../dashboard/authorization/permissions';
 import { requireDashboardAdminPermission } from '../../dashboard/middleware/require-dashboard-admin-permission.middleware';
+import { WPAY_PAYMENTS_SETTLE } from '../authorization/permissions';
+import { requirePaymentsSettleAdminPermission } from '../middleware/require-payments-settle-admin-permission.middleware';
 import { paymentsListHandler } from '../handlers/payments-list.handler';
 import { paymentsExportHandler } from '../handlers/payments-export.handler';
 import { paymentsSettleHandler } from '../handlers/payments-settle.handler';
@@ -35,7 +37,7 @@ export function registerPaymentsAdminRoutes(app: Hono, deps: PaymentsAdminRouteD
     '/admin/warmpawz-pay/payments/settle',
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
-    requireDashboardAdminPermission(WPAY_DASHBOARD_VIEW),
+    requirePaymentsSettleAdminPermission(WPAY_PAYMENTS_SETTLE),
     (c) => paymentsSettleHandler(c, deps),
   );
 }

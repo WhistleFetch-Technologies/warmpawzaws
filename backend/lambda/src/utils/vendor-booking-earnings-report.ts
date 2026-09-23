@@ -31,6 +31,7 @@ import {
   correctLedgerFromFundingSnapshot,
   resolveStoredGstPercent,
 } from './funding-aware-ledger-correction';
+import { parseJsonMetaFromNotes } from './booking-notes-meta';
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -47,6 +48,10 @@ export type VendorBookingEarningsLine = {
   customerPaidTotal: number;
   serviceBase: number;
   discountAmount: number;
+  /** Wallet / cashback used on payment (display recon; does not change Customer Paid). */
+  walletAmount: number;
+  /** Promo-engine evaluation id from booking notes when present. */
+  evaluationId: string | null;
   gstTotal: number;
   gstRate: number;
   cgstAmount: number;
@@ -560,6 +565,17 @@ export async function buildVendorBookingEarningsLine(
     taxableValue: Math.max(0, serviceBase - discountAmount),
   });
 
+  const walletAmount = round2(safeMoneyAmount(row.payment_wallet_amount_used));
+  const promoMeta = parseJsonMetaFromNotes(row.booking_notes, 'wp_promo_meta');
+  const pe =
+    promoMeta?.promoEngine && typeof promoMeta.promoEngine === 'object'
+      ? (promoMeta.promoEngine as Record<string, unknown>)
+      : null;
+  const evaluationIdRaw =
+    (promoMeta?.evaluationId != null && String(promoMeta.evaluationId).trim()) ||
+    (pe?.evaluationId != null && String(pe.evaluationId).trim()) ||
+    '';
+
   return {
     bookingId: String(row.booking_id),
     vendorId: String(row.vendor_id),
@@ -572,6 +588,8 @@ export async function buildVendorBookingEarningsLine(
     customerPaidTotal,
     serviceBase,
     discountAmount,
+    walletAmount,
+    evaluationId: evaluationIdRaw || null,
     gstTotal: breakdown.gstTotal,
     gstRate,
     cgstAmount: breakdown.cgstAmount,

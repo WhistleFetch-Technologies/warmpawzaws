@@ -9,6 +9,7 @@ import {
   settleWarmpawzPayPayments,
 } from '@/lib/warmpawz-pay-payments-admin';
 import type { WpayPaymentsFilters } from '@/lib/warmpawz-pay-payments-admin';
+import { canSettleWarmpawzPayPayouts } from '@/lib/admin-permissions';
 import { AnalyticsErrorState } from '@/components/admin/marketing/analytics/AnalyticsStateViews';
 import { EmptyState } from '@/components/admin/warmpawz-pay/catalogue/EmptyState';
 import { DashboardMetricsSkeleton } from './DashboardMetricsSkeleton';
@@ -26,6 +27,7 @@ export function DashboardPage() {
   );
   const [selectedPaymentIds, setSelectedPaymentIds] = useState<Set<string>>(new Set());
   const [settling, setSettling] = useState(false);
+  const canSettle = canSettleWarmpawzPayPayouts();
   const { data, isLoading, error, refresh } = useWarmpawzPayDashboard();
   const paymentsQuery = useWarmpawzPayPayments(
     paymentsPage,
@@ -55,6 +57,10 @@ export function DashboardPage() {
   }, [paymentsQuery.data?.items, selectedPaymentIds]);
 
   const handleSettle = async () => {
+    if (!canSettle) {
+      toast.error('You do not have permission to settle Warmpawz Pay payouts');
+      return;
+    }
     const paymentIds = [...selectedPaymentIds];
     if (paymentIds.length === 0) return;
     if (
@@ -124,7 +130,7 @@ export function DashboardPage() {
               : 'Settle selected'
           }
           settling={settling}
-          onSettle={() => void handleSettle()}
+          onSettle={canSettle ? () => void handleSettle() : undefined}
         />
 
         {paymentsQuery.isLoading ? (

@@ -32,7 +32,50 @@ export interface WapptAdminBookingRow {
   readonly bookingDate: string;
   readonly bookingTime: string;
   readonly baseFeePaid: number;
+  /** Wallet / cashback applied on the appointment fee payment. */
+  readonly walletAmount?: number;
+  /** Promo-engine instant discount on the linked payment when present. */
+  readonly engineDiscountAmount?: number;
+  readonly evaluationId?: string | null;
+  readonly pendingCashback?: number;
+  readonly awardedCashback?: number;
   readonly createdAt: string;
+}
+
+function readPromoReconFromPaymentMeta(metaRaw: unknown): {
+  evaluationId: string | null;
+  engineDiscountAmount: number;
+  pendingCashback: number;
+  awardedCashback: number;
+} {
+  let meta: Record<string, unknown> = {};
+  if (metaRaw && typeof metaRaw === 'object') {
+    meta = metaRaw as Record<string, unknown>;
+  } else if (typeof metaRaw === 'string' && metaRaw.trim()) {
+    try {
+      meta = JSON.parse(metaRaw) as Record<string, unknown>;
+    } catch {
+      meta = {};
+    }
+  }
+  const pe =
+    meta.promoEngine && typeof meta.promoEngine === 'object'
+      ? (meta.promoEngine as Record<string, unknown>)
+      : {};
+  const evaluationId =
+    (meta.evaluationId != null && String(meta.evaluationId).trim()) ||
+    (pe.evaluationId != null && String(pe.evaluationId).trim()) ||
+    null;
+  const engineDiscountAmount =
+    Number(meta.quotedDiscountAmount ?? pe.engineDiscount ?? meta.discountAmount ?? 0) || 0;
+  const pendingCashback = Number(pe.pendingCashback ?? meta.pendingCashback ?? 0) || 0;
+  const awardedCashback = Number(pe.awardedCashback ?? meta.awardedCashback ?? 0) || 0;
+  return {
+    evaluationId: evaluationId || null,
+    engineDiscountAmount,
+    pendingCashback,
+    awardedCashback,
+  };
 }
 
 async function fetchWapptAppointmentRevenue(): Promise<number> {
@@ -110,11 +153,22 @@ export async function listWapptAdminBookings(params: {
            b.booking_date,
            b.booking_time,
            COALESCE(b.total_amount, b.base_price, 0) AS base_fee_paid,
-           b.created_at
+           b.created_at,
+           COALESCE(p.wallet_amount_used, 0) AS wallet_amount,
+           COALESCE(p.discount_amount, 0) AS payment_discount_amount,
+           p.metadata AS payment_metadata
          FROM bookings b
          INNER JOIN customers c ON c.id = b.customer_id
          INNER JOIN vendors v ON v.id = b.vendor_id
          ${WAPPT_CATALOGUE_JOIN_SQL}
+         LEFT JOIN LATERAL (
+           SELECT wallet_amount_used, discount_amount, metadata
+           FROM payments
+           WHERE booking_id = b.id
+             AND LOWER(COALESCE(payment_status, '')) IN ('completed', 'paid', 'captured')
+           ORDER BY completed_at DESC NULLS LAST, created_at DESC
+           LIMIT 1
+         ) p ON true
          WHERE ${WAPPT_BOOKING_FILTER_SQL}
          ORDER BY b.created_at DESC
          LIMIT $1 OFFSET $2`,
@@ -130,19 +184,28 @@ export async function listWapptAdminBookings(params: {
     throw err;
   }
 
-  const rows = (listRes.rows as Array<Record<string, unknown>>).map((row) => ({
-    bookingId: String(row.booking_id),
-    customerName: row.customer_name != null ? String(row.customer_name) : null,
-    customerPhone: row.customer_phone != null ? String(row.customer_phone) : null,
-    merchantDisplayName: resolveMerchantDisplayName({
-      businessName: row.business_name as string | null,
-      ownerName: row.owner_name as string | null,
-    }),
-    bookingDate: String(row.booking_date),
-    bookingTime: String(row.booking_time),
-    baseFeePaid: Number(row.base_fee_paid) || 0,
-    createdAt: new Date(String(row.created_at)).toISOString(),
-  }));
+  const rows = (listRes.rows as Array<Record<string, unknown>>).map((row) => {
+    const promo = readPromoReconFromPaymentMeta(row.payment_metadata);
+    const paymentDiscount = Number(row.payment_discount_amount) || 0;
+    return {
+      bookingId: String(row.booking_id),
+      customerName: row.customer_name != null ? String(row.customer_name) : null,
+      customerPhone: row.customer_phone != null ? String(row.customer_phone) : null,
+      merchantDisplayName: resolveMerchantDisplayName({
+        businessName: row.business_name as string | null,
+        ownerName: row.owner_name as string | null,
+      }),
+      bookingDate: String(row.booking_date),
+      bookingTime: String(row.booking_time),
+      baseFeePaid: Number(row.base_fee_paid) || 0,
+      walletAmount: Number(row.wallet_amount) || 0,
+      engineDiscountAmount: promo.engineDiscountAmount || paymentDiscount,
+      evaluationId: promo.evaluationId,
+      pendingCashback: promo.pendingCashback,
+      awardedCashback: promo.awardedCashback,
+      createdAt: new Date(String(row.created_at)).toISOString(),
+    };
+  });
 
   return {
     rows,

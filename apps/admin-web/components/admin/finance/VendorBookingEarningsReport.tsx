@@ -474,7 +474,7 @@ export function VendorBookingEarningsReport() {
               <div className="text-sm font-semibold">{moneyCell(periodTotals.serviceBaseTotal)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Discount</div>
+              <div className="text-xs text-gray-500">Promo discount (D)</div>
               <div className="text-sm font-semibold">{moneyCell(periodTotals.discountTotal)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
@@ -516,7 +516,7 @@ export function VendorBookingEarningsReport() {
               <th className="px-3 py-2 text-center font-medium text-gray-700">Bookings</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Customer paid</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Service base</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">Discount</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">Promo discount (D)</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">CGST</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">SGST</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">IGST</th>
@@ -586,7 +586,8 @@ export function VendorBookingEarningsReport() {
                                   <th className="px-3 py-2 text-left font-medium text-gray-700">Customer</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Customer paid</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Base</th>
-                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Discount</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Promo discount (D)</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Wallet used</th>
                                   <th className="px-3 py-2 text-left font-medium text-gray-700">Coupon</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">GST %</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">CGST</th>
@@ -609,7 +610,7 @@ export function VendorBookingEarningsReport() {
                               <tbody className="divide-y divide-gray-100">
                                 {bookings.length === 0 && !loadingBookings && (
                                   <tr>
-                                    <td colSpan={20} className="px-3 py-6 text-center text-gray-500">
+                                    <td colSpan={21} className="px-3 py-6 text-center text-gray-500">
                                       No bookings for this vendor in the selected {periodWord}.
                                     </td>
                                   </tr>
@@ -650,6 +651,9 @@ export function VendorBookingEarningsReport() {
                                         </td>
                                         <td className="px-3 py-2 text-right tabular-nums">
                                           {moneyCell(b.discountAmount)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums">
+                                          {moneyCell(b.walletAmount ?? 0)}
                                         </td>
                                         <td className="px-3 py-2 text-xs">{b.couponCode || '—'}</td>
                                         <td className="px-3 py-2 text-right tabular-nums">{gstPercentLabel(b.gstRate)}</td>
@@ -693,7 +697,7 @@ export function VendorBookingEarningsReport() {
                                       </tr>
                                       {expanded && (
                                         <tr className="bg-gray-50/80">
-                                          <td colSpan={20} className="px-6 py-3">
+                                          <td colSpan={21} className="px-6 py-3">
                                             <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
                                               <div>
                                                 <span className="text-gray-500">Customer paid</span>
@@ -704,8 +708,18 @@ export function VendorBookingEarningsReport() {
                                                 <div>{moneyCell(b.serviceBase)}</div>
                                               </div>
                                               <div>
-                                                <span className="text-gray-500">Discount</span>
+                                                <span className="text-gray-500">Promo discount (D)</span>
                                                 <div>{moneyCell(b.discountAmount)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Wallet used</span>
+                                                <div>{moneyCell(b.walletAmount ?? 0)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Promo evaluation</span>
+                                                <div className="font-mono text-xs break-all">
+                                                  {b.evaluationId || '—'}
+                                                </div>
                                               </div>
                                               <div>
                                                 <span className="text-gray-500">Coupon</span>

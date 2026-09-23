@@ -91,6 +91,15 @@ export function buildAdminEcommerceOrderListSql(
       v.business_name AS vendor_name,
       o.total_amount,
       o.discount_amount,
+      COALESCE(o.wallet_amount_applied, 0) AS wallet_amount_applied,
+      COALESCE(o.wallet_amount_applied, 0) AS wallet_amount,
+      NULLIF(TRIM(COALESCE(o.metadata->>'evaluationId', o.metadata->'promoEngine'->>'evaluationId', '')), '') AS evaluation_id,
+      COALESCE((o.metadata->'promoEngine'->>'pendingCashback')::numeric, 0) AS pending_cashback,
+      COALESCE(
+        (o.metadata->>'awardedCashback')::numeric,
+        (o.metadata->'promoEngine'->>'awardedCashback')::numeric,
+        0
+      ) AS awarded_cashback,
       o.payment_status,
       o.payment_method,
       o.created_at,

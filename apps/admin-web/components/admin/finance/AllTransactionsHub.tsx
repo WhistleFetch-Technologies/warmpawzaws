@@ -19,6 +19,7 @@ import { PaymentsFilterBar } from '@/components/admin/warmpawz-pay/dashboard/Pay
 import { PaymentsTable } from '@/components/admin/warmpawz-pay/dashboard/PaymentsTable';
 import { apiClient } from '@/lib/api-client';
 import { formatWpayInr } from '@/lib/warmpawz-pay-payments-admin';
+import { canSettleWarmpawzPayPayouts } from '@/lib/admin-permissions';
 
 type Channel = 'wpay' | 'wappt' | 'marketplace' | 'ecommerce';
 
@@ -26,22 +27,22 @@ const CHANNELS: Array<{ id: Channel; label: string; hint: string }> = [
   {
     id: 'wpay',
     label: 'Pay Bill',
-    hint: 'Warmpawz Pay — discount, fees, GST, burn, vendor payable',
+    hint: 'Warmpawz Pay — discount, fees, GST, burn, vendor payable, promo / wallet recon',
   },
   {
     id: 'wappt',
     label: 'Appointments',
-    hint: 'Warmpawz Appointments slot bookings (base fee)',
+    hint: 'Warmpawz Appointments — base fee plus promo discount / wallet / evaluation when present',
   },
   {
     id: 'marketplace',
     label: 'Marketplace bookings',
-    hint: 'Booking earnings / Customer Paid (IST) — tele + centre + home',
+    hint: 'Tele + centre + home — Customer Paid with promo discount / wallet recon columns',
   },
   {
     id: 'ecommerce',
     label: 'Shop orders',
-    hint: 'Ecommerce orders — amount, discount, payment status',
+    hint: 'Ecommerce — amount, promo discount, wallet used, evaluation / cashback when present',
   },
 ];
 
@@ -55,6 +56,11 @@ type EcomOrderRow = {
   vendor_name?: string;
   total_amount?: number;
   discount_amount?: number;
+  wallet_amount?: number;
+  wallet_amount_applied?: number;
+  evaluation_id?: string | null;
+  pending_cashback?: number;
+  awarded_cashback?: number;
   status?: string;
   payment_status?: string;
   created_at?: string;
@@ -95,6 +101,7 @@ function WpayChannel() {
   const [filters, setFilters] = useState<WpayPaymentsFilters>(defaultWpayPaymentsFilters);
   const [selectedPaymentIds, setSelectedPaymentIds] = useState<Set<string>>(new Set());
   const [settling, setSettling] = useState(false);
+  const canSettle = canSettleWarmpawzPayPayouts();
   const paymentsQuery = useWarmpawzPayPayments(page, PAGE_SIZE, filters);
 
   const selectedPendingCount = useMemo(() => {
@@ -114,6 +121,10 @@ function WpayChannel() {
   };
 
   const handleSettle = async () => {
+    if (!canSettle) {
+      toast.error('You do not have permission to settle Warmpawz Pay payouts');
+      return;
+    }
     const paymentIds = [...selectedPaymentIds];
     if (paymentIds.length === 0) return;
     if (!window.confirm(`Mark ${paymentIds.length} payout(s) as settled?`)) return;
@@ -142,7 +153,7 @@ function WpayChannel() {
           <Link href="/warmpawz-pay" className="font-medium text-[#FF8C42] hover:underline">
             Warmpawz Pay
           </Link>
-          . Expand a row for platform / convenience fee GST and burn.
+          . Expand a row for platform / convenience fee GST, burn, and promo / wallet recon.
         </p>
       </div>
       <PaymentsFilterBar
@@ -156,7 +167,7 @@ function WpayChannel() {
             : 'Settle selected'
         }
         settling={settling}
-        onSettle={() => void handleSettle()}
+        onSettle={canSettle ? () => void handleSettle() : undefined}
       />
       {paymentsQuery.isLoading ? <p className="text-sm text-gray-500">Loading…</p> : null}
       {paymentsQuery.error ? (
@@ -242,6 +253,9 @@ function WapptChannel() {
                 <th className="px-4 py-3">Business</th>
                 <th className="px-4 py-3">Slot</th>
                 <th className="px-4 py-3 text-right">Base fee</th>
+                <th className="px-4 py-3 text-right">Promo discount (D)</th>
+                <th className="px-4 py-3 text-right">Wallet used</th>
+                <th className="px-4 py-3">Evaluation</th>
                 <th className="px-4 py-3">Booked at</th>
               </tr>
             </thead>
@@ -258,6 +272,15 @@ function WapptChannel() {
                   </td>
                   <td className="px-4 py-3 text-right font-medium">
                     {formatWpayInr(row.baseFeePaid)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-green-700">
+                    {formatWpayInr(row.engineDiscountAmount ?? 0)}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {formatWpayInr(row.walletAmount ?? 0)}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-600 break-all">
+                    {row.evaluationId || '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
                     {row.createdAt ? new Date(row.createdAt).toLocaleString('en-IN') : '—'}
@@ -359,7 +382,10 @@ function EcommerceChannel() {
                 <th className="px-4 py-3">Customer</th>
                 <th className="px-4 py-3">Seller</th>
                 <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3 text-right">Discount</th>
+                <th className="px-4 py-3 text-right">Promo discount (D)</th>
+                <th className="px-4 py-3 text-right">Wallet used</th>
+                <th className="px-4 py-3 text-right">Cashback awarded</th>
+                <th className="px-4 py-3">Evaluation</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Date</th>
               </tr>
@@ -383,8 +409,19 @@ function EcommerceChannel() {
                   <td className="px-4 py-3 text-right font-medium">
                     {formatWpayInr(Number(row.total_amount) || 0)}
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-700">
+                  <td className="px-4 py-3 text-right text-green-700">
                     {formatWpayInr(Number(row.discount_amount) || 0)}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {formatWpayInr(
+                      Number(row.wallet_amount ?? row.wallet_amount_applied) || 0,
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {formatWpayInr(Number(row.awarded_cashback) || 0)}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-600 break-all">
+                    {row.evaluation_id || '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-700">
                     {row.payment_status || row.status || '—'}

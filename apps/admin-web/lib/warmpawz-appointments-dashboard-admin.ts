@@ -16,6 +16,11 @@ export interface WapptAdminBookingRow {
   readonly bookingDate: string;
   readonly bookingTime: string;
   readonly baseFeePaid: number;
+  readonly walletAmount?: number;
+  readonly engineDiscountAmount?: number;
+  readonly evaluationId?: string | null;
+  readonly pendingCashback?: number;
+  readonly awardedCashback?: number;
   readonly createdAt: string;
 }
 

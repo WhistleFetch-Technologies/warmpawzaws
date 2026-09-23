@@ -55,6 +55,9 @@ export type BookingEarningsLine = {
   customerPaidTotal: number;
   serviceBase: number;
   discountAmount: number;
+  /** Wallet / cashback used (recon display). */
+  walletAmount?: number;
+  evaluationId?: string | null;
   gstTotal: number;
   gstRate: number;
   cgstAmount: number;
@@ -163,6 +166,8 @@ export function normalizeBookingLine(raw: Record<string, unknown>): BookingEarni
     customerPaidTotal: Number(raw.customerPaidTotal) || 0,
     serviceBase: Number(raw.serviceBase) || 0,
     discountAmount: Number(raw.discountAmount) || 0,
+    walletAmount: Number(raw.walletAmount) || 0,
+    evaluationId: raw.evaluationId != null ? String(raw.evaluationId) : null,
     gstTotal: Number(raw.gstTotal) || 0,
     gstRate: Number(raw.gstRate) || 0,
     cgstAmount: Number(raw.cgstAmount) || 0,
