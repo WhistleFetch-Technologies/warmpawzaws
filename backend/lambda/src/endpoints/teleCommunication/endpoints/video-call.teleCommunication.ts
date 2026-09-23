@@ -1540,6 +1540,15 @@ export function registerVideoCallEndpoints(app: Hono) {
         console.error('[confirm-payment] Customer notification failed:', e);
       }
 
+      try {
+        const { recordBookingPromotionUsageFromBooking } = await import(
+          '../../../lib/services/booking-promotion-service'
+        );
+        await recordBookingPromotionUsageFromBooking(String(bookingId));
+      } catch (promoErr) {
+        console.warn('[confirm-payment] promo commit skipped:', promoErr);
+      }
+
       return c.json({ success: true, bookingId, meetingId, message: 'Payment confirmed. Booking is now confirmed.' });
     } catch (error: any) {
       console.error('[confirm-payment] error:', error);

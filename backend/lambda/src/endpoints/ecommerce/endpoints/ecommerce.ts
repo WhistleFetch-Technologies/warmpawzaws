@@ -50,22 +50,9 @@ import {
   SQL_EXCLUDE_PRODUCT_IMAGE_APPROVAL_HOLD,
 } from '../../../utils/product-image-approval-gate';
 import {
-  calculateBestCartPromotion,
-  calculateBestCartPromotionAsync,
   discountsWithinTolerance,
-  normalizePromotionRow,
   type CartLineItem,
 } from '../../../utils/vendor-promotion-engine';
-import {
-  countPriorVendorOrders,
-  recordEcommercePlatformCouponUsage,
-  recordVendorPromotionUsage,
-} from '../../../utils/vendor-promotion-usage';
-import {
-  resolveCommercialCampaignDiscount,
-  recordCommercialCampaignUsage,
-} from '../../../utils/resolve-commercial-campaign';
-import { selectEcommercePromotionWinnerAsync } from '../../../utils/ecommerce-promo-policy-winner';
 import { buildEcommerceProductTaxItems } from '../../../utils/resolve-ecommerce-product-tax-item';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../../../utils/idempotency';
 import {
@@ -701,7 +688,6 @@ export function registerEcommerceEndpoints(app: Hono) {
       const shippingAddress = orderData.shipping_address || orderData.shippingAddress || {};
       // Shop checkout is online/Razorpay; do not default to COD (unpaid COD would skip hold).
       const paymentMethod = orderData.payment_method || orderData.paymentMethod || 'online';
-      const couponCode = orderData.coupon_code || orderData.couponCode;
       const walletAmountApplied = Math.max(0, parseFloat(String(orderData.walletAmountApplied || orderData.wallet_amount_applied || '0')) || 0);
 
       const shopPaymentGuard = assertShopCheckoutPaymentAllowed({
@@ -868,17 +854,6 @@ export function registerEcommerceEndpoints(app: Hono) {
       const bodyCgst = orderData.cgstAmount ?? orderData.cgst_amount;
       const bodySgst = orderData.sgstAmount ?? orderData.sgst_amount;
       const bodyIgst = orderData.igstAmount ?? orderData.igst_amount;
-      const promoId = orderData.promotionId ?? orderData.promotion_id ?? null;
-      // Fix D (Commercial Campaign Engine): the customer picks exactly ONE promotion in
-      // CartPromotionSelect, tagged with its source table. We validate ONLY that table
-      // server-side and never sum a vendor discount with an admin discount.
-      const requestedPromotionSource: 'vendor' | 'admin' | null = (() => {
-        const raw = String(orderData.promotionSource ?? orderData.promotion_source ?? '')
-          .trim()
-          .toLowerCase();
-        return raw === 'admin' || raw === 'vendor' ? raw : null;
-      })();
-
       const { resolveOrderPromoLineCategory } = await import(
         '../../../utils/fill-product-category-if-missing'
       );
@@ -910,143 +885,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       const cartLines = await enrichLinesWithListingOwnership(rawCartLines);
 
       let serverPromoDiscount = 0;
-      let appliedPromotionId: string | null = promoId ? String(promoId) : null;
+      let appliedPromotionId: string | null = null;
       let promotionSource: 'vendor' | 'admin' | null = null;
-      let campaignIsLegacy = false;
-
-      const wantsPromotion =
-        cartLines.length > 0 && Boolean(couponCode || promoId || Number(bodyDiscount) > 0);
-      // Client-requested source can still force a single side; otherwise evaluate both and
-      // let ECOMMERCE Policy Center choose Best Offer vs stack (allowPlatformWithVendor).
-      const tryVendor = wantsPromotion && Boolean(firstVendorId) && requestedPromotionSource !== 'admin';
-      const tryAdmin = wantsPromotion && requestedPromotionSource !== 'vendor';
-
-      let vendorCandidateDiscount = 0;
-      let vendorCandidateId: string | null = null;
-      let adminCandidateDiscount = 0;
-      let adminCandidateId: string | null = null;
-      /** Distinguishes platform `coupons` wins from ecommerce_admin/legacy campaign promos. */
-      let adminCandidateKind: 'coupon' | 'campaign' | null = null;
-
-      if (tryVendor) {
-        try {
-          const promosRes = await query(
-            `SELECT * FROM vendor_promotions
-             WHERE vendor_id = $1::uuid
-               AND is_active = true
-               AND start_date <= NOW()
-               AND end_date >= NOW()
-               AND (usage_limit IS NULL OR usage_count < usage_limit)`,
-            [firstVendorId]
-          );
-          const promos = (promosRes.rows || []).map((row: Record<string, unknown>) =>
-            normalizePromotionRow(row)
-          );
-          const priorVendorOrderCount =
-            customerId && firstVendorId
-              ? await countPriorVendorOrders(String(customerId), String(firstVendorId))
-              : 0;
-
-          const autoResult = await calculateBestCartPromotionAsync(promos, cartLines, {
-            vendorId: String(firstVendorId),
-            customerId: customerId ? String(customerId) : undefined,
-            priorVendorOrderCount,
-          });
-
-          const codeResult = couponCode
-            ? await calculateBestCartPromotionAsync(
-                promos,
-                cartLines,
-                {
-                  vendorId: String(firstVendorId),
-                  customerId: customerId ? String(customerId) : undefined,
-                  priorVendorOrderCount,
-                  manualCode: String(couponCode).trim(),
-                },
-                { platformCouponCode: String(couponCode).trim() }
-              )
-            : null;
-
-          const autoDiscount = autoResult.bestPromotion?.discountAmount ?? autoResult.totalSavings ?? 0;
-          const vendorManualDiscount = codeResult?.bestPromotion?.discountAmount ?? 0;
-          const platformManualDiscount = codeResult?.platformCouponDiscount ?? 0;
-          vendorCandidateDiscount = Math.max(autoDiscount, vendorManualDiscount);
-          const bestEval =
-            vendorManualDiscount >= autoDiscount && codeResult?.bestPromotion
-              ? codeResult.bestPromotion
-              : autoResult.bestPromotion;
-          if (bestEval) {
-            vendorCandidateId = bestEval.promotionId;
-          }
-          // Platform coupons are admin-funded — fold into admin candidate below.
-          if (platformManualDiscount > 0 && codeResult?.platformCouponId) {
-            if (platformManualDiscount > adminCandidateDiscount) {
-              adminCandidateDiscount = platformManualDiscount;
-              adminCandidateId = String(codeResult.platformCouponId);
-              adminCandidateKind = 'coupon';
-            }
-          }
-        } catch (promoErr) {
-          console.warn('[ecommerce/orders] vendor promotion validation skipped:', promoErr);
-        }
-      }
-
-      if (tryAdmin) {
-        try {
-          const campaignResult = await resolveCommercialCampaignDiscount({
-            promoId,
-            couponCode: couponCode ? String(couponCode).trim() : null,
-            cartLines,
-            customerId: customerId ? String(customerId) : null,
-          });
-          if (campaignResult.discountAmount > 0 && campaignResult.promotionId) {
-            if (campaignResult.discountAmount > adminCandidateDiscount) {
-              adminCandidateDiscount = campaignResult.discountAmount;
-              adminCandidateId = campaignResult.promotionId;
-              adminCandidateKind = 'campaign';
-              campaignIsLegacy = campaignResult.isLegacy;
-            }
-          }
-        } catch (promoErr) {
-          console.warn('[ecommerce/orders] admin campaign validation skipped:', promoErr);
-        }
-
-        // When client sent promotionSource=admin, tryVendor is skipped — still resolve
-        // platform `coupons` table codes for Best Offer.
-        if (couponCode && adminCandidateDiscount <= 0) {
-          try {
-            const { resolveEcommercePlatformCoupon } = await import(
-              '../../../lib/services/promotion-code-validation-service'
-            );
-            const lineSubtotal = cartLines.reduce((s, l) => s + l.price * l.quantity, 0);
-            const platformCoupon = await resolveEcommercePlatformCoupon(
-              String(couponCode).trim(),
-              lineSubtotal
-            );
-            if (platformCoupon && platformCoupon.discountAmount > 0) {
-              adminCandidateDiscount = platformCoupon.discountAmount;
-              adminCandidateId = platformCoupon.couponId as string;
-              adminCandidateKind = 'coupon';
-            }
-          } catch (couponErr) {
-            console.warn('[ecommerce/orders] platform coupon lookup skipped:', couponErr);
-          }
-        }
-      }
-
-      if (vendorCandidateDiscount > 0 || adminCandidateDiscount > 0) {
-        const winner = await selectEcommercePromotionWinnerAsync({
-          vendorDiscount: vendorCandidateDiscount,
-          adminDiscount: adminCandidateDiscount,
-        });
-        serverPromoDiscount = winner.discountAmount;
-        promotionSource = winner.promotionSource;
-        if (winner.promotionSource === 'admin') {
-          appliedPromotionId = adminCandidateId ?? appliedPromotionId;
-        } else if (winner.promotionSource === 'vendor') {
-          appliedPromotionId = vendorCandidateId ?? appliedPromotionId;
-        }
-      }
 
       const requestedEvaluationId = String(
         orderData.evaluationId || orderData.evaluation_id || '',
@@ -1068,10 +908,10 @@ export function registerEcommerceEndpoints(app: Hono) {
           })),
         });
         engineEvaluationId = engine.evaluationId;
-        if (engine.discount > serverPromoDiscount) {
-          serverPromoDiscount = engine.discount;
+        serverPromoDiscount = engine.discount;
+        if (engine.evaluationId) {
           promotionSource = 'admin';
-          appliedPromotionId = engine.evaluationId ?? appliedPromotionId;
+          appliedPromotionId = engine.evaluationId;
         }
       } catch (engineErr) {
         console.warn(
@@ -1087,14 +927,6 @@ export function registerEcommerceEndpoints(app: Hono) {
         ) {
           return c.json({ error: 'Promotion discount mismatch' }, 400);
         }
-      }
-
-      if (
-        Number(bodyDiscount) > 0 &&
-        serverPromoDiscount === 0 &&
-        (couponCode || promoId)
-      ) {
-        return c.json({ error: 'Promotion validation failed' }, 400);
       }
 
       const discountAmount =
@@ -1236,10 +1068,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         pincode: shippingAddress.pincode || '',
       };
 
-      // promotionSource was already resolved server-side above (Commercial Campaign Engine
-      // / vendor_promotions strict per-source validation) — never re-inferred from
-      // serverPromoDiscount, which would incorrectly default to 'admin' whenever the
-      // vendor table simply had no match.
+      // Shop discounts come only from the promo engine (admin-funded).
       const orderMetadata = {
         checkoutSnapshot: {
           subtotal,
@@ -1252,7 +1081,6 @@ export function registerEcommerceEndpoints(app: Hono) {
         shippingAddress: normalizedAddress,
         promotionId: appliedPromotionId,
         promotionSource,
-        couponCode: couponCode || null,
         ...(engineEvaluationId
           ? { evaluationId: engineEvaluationId, promoEngine: { evaluationId: engineEvaluationId } }
           : {}),
@@ -1382,38 +1210,6 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
-      if (appliedPromotionId && discountAmount > 0) {
-        try {
-          if (promotionSource === 'admin' && adminCandidateKind === 'coupon') {
-            await recordEcommercePlatformCouponUsage({
-              couponId: appliedPromotionId,
-              orderId,
-              customerId: customerId ? String(customerId) : null,
-              discountAmount,
-            });
-          } else if (promotionSource === 'admin') {
-            await recordCommercialCampaignUsage({
-              promotionId: appliedPromotionId,
-              isLegacy: campaignIsLegacy,
-              orderId,
-              customerId: customerId ? String(customerId) : null,
-              discountAmount,
-              orderSubtotal: subtotal,
-            });
-          } else {
-            await recordVendorPromotionUsage({
-              promotionId: appliedPromotionId,
-              orderId,
-              customerId: customerId ? String(customerId) : null,
-              discountAmount,
-              orderSubtotal: subtotal,
-            });
-          }
-        } catch (usageErr) {
-          console.warn('[ecommerce/orders] promotion usage record failed:', usageErr);
-        }
-      }
-
       // Deduct wallet balance and record transaction (non-fatal if table unavailable)
       if (effectiveWalletApplied > 0 && customerId) {
         const { debitEcommerceWallet } = await import('../shared/debit-ecommerce-wallet');
@@ -1427,6 +1223,23 @@ export function registerEcommerceEndpoints(app: Hono) {
         });
         if (!debit.ok) {
           return c.json({ error: debit.error }, 400);
+        }
+      }
+
+      if (fullyCoveredByWallet && engineEvaluationId && customerId) {
+        try {
+          const { safeCommitPromotion } = await import('../../../discount-engine/promo-engine');
+          await safeCommitPromotion({
+            evaluationId: engineEvaluationId,
+            transactionId: orderId,
+            paymentId: null,
+            userId: String(customerId),
+          });
+        } catch (commitErr) {
+          console.warn(
+            '[ecommerce/orders] promo-engine commit (wallet-full) failed:',
+            commitErr instanceof Error ? commitErr.message : commitErr,
+          );
         }
       }
 
@@ -1750,7 +1563,6 @@ export function registerEcommerceEndpoints(app: Hono) {
         items,
         shippingAddress,
         paymentMethod,
-        couponCode,
       } = orderData;
 
       if (!customerId || !items || items.length === 0) {
@@ -1930,9 +1742,6 @@ export function registerEcommerceEndpoints(app: Hono) {
         payment_method: paymentMethod || 'online',
         shipping_address: shippingAddress || null,
         tax_breakdown: normalizeTaxBreakdownForDb(taxBreakdown),
-        ...(couponCode
-          ? { metadata: { couponCode: String(couponCode).trim() } }
-          : {}),
       });
 
       // Order purchase loyalty: handled by action_sources → loyalty-events-consumer (not inline here).

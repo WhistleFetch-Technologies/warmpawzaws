@@ -63,21 +63,9 @@ export function buildEcommerceOrderPayload(
   walletAmountApplied?: number
 ) {
   const customerId = getResolvedCustomerId();
-  const persisted = readPricingOptionsForCheckout();
-  const promo = persisted.sellerPromotion;
   const cgst = pricing.taxResult.byType.find((t) => t.taxType === 'cgst')?.totalAmount ?? 0;
   const sgst = pricing.taxResult.byType.find((t) => t.taxType === 'sgst')?.totalAmount ?? 0;
   const igst = pricing.taxResult.byType.find((t) => t.taxType === 'igst')?.totalAmount ?? 0;
-  const couponCode =
-    promo?.code ||
-    persisted.appliedCoupons?.[0]?.code ||
-    undefined;
-  const hasPromotionDiscount = pricing.discount > 0;
-  const promotionId = promo?.promotionId ?? persisted.sellerPromotion?.promotionId;
-  const promotionSource =
-    pricing.promotionSource ??
-    promo?.source ??
-    persisted.sellerPromotion?.source;
 
   return {
     customerId,
@@ -123,11 +111,6 @@ export function buildEcommerceOrderPayload(
         return undefined;
       }
     })(),
-    couponCode,
-    promotionId: hasPromotionDiscount ? promotionId : undefined,
-    // Explicit source so the backend validates strictly against ONE table (vendor_promotions
-    // vs ecommerce_admin_promotions) instead of inferring — see Ecommerce Settlement Engine plan §3.
-    promotionSource: hasPromotionDiscount ? promotionSource : undefined,
     walletAmountApplied: walletAmountApplied ?? 0,
   };
 }

@@ -273,10 +273,28 @@ export async function resolveBookingDiscountQuoteBatch(params: {
   } = await import('../../discount-engine/promo-engine');
   const now = new Date();
   const behaviour = await loadBehaviourProfile(customerId);
+  let categoryId: string | undefined;
+  try {
+    const { loadServerPaymentContext } = await import('../../discount-engine/promo-engine');
+    const ctx = await loadServerPaymentContext({
+      surface: 'booking',
+      vendorId,
+      serviceStyle: items[0]?.serviceStyle || null,
+      bookingCategoryId: items[0]?.serviceCategory || null,
+    });
+    categoryId = ctx.categoryId || undefined;
+  } catch {
+    categoryId = undefined;
+  }
   const snapshot = await loadEvaluateSnapshot({
     userId: customerId,
     now,
     behaviour,
+    vendorId,
+    categoryId,
+    serviceCategory: items[0]?.serviceCategory
+      ? normalizePromoCategory(items[0].serviceCategory) || undefined
+      : undefined,
   });
 
   return items.map((item) => {
@@ -293,6 +311,8 @@ export async function resolveBookingDiscountQuoteBatch(params: {
               : undefined,
             service_type: item.serviceStyle,
             vendor_id: vendorId,
+            vendorId,
+            categoryId,
             amount: item.amount,
           },
         },

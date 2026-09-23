@@ -4,9 +4,7 @@ import { useEffect, useState } from 'react';
 import { CreditCard, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCheckout } from '@/context/CheckoutProvider';
-import { CartPromotionSelect } from '@/components/ecommerce/cart/CartPromotionSelect';
 import { apiClient } from '@/lib/api-client';
-import { parseCartLineKey } from '@/lib/product-sku-client';
 import {
   PromoEarnPreview,
   type PromoEngineEarnPreviewData,
@@ -34,9 +32,6 @@ export function CheckoutPaymentStep() {
     pricing,
     goNext,
     primaryVendorId,
-    coupon,
-    applyCoupon,
-    removeCoupon,
     walletAmountApplied,
     setWalletAmountApplied,
   } = useCheckout();
@@ -140,51 +135,11 @@ export function CheckoutPaymentStep() {
     setWalletAmountApplied(maxApplicable > 0 ? maxApplicable : 0);
   }, [walletEnabled, walletBalance, pricing.total, setWalletAmountApplied]);
 
-  const selectedPromo = coupon
-    ? {
-        code: coupon.code,
-        discountAmount: coupon.discountAmount,
-        promotionId: coupon.promotionId,
-        label: coupon.code,
-        source: coupon.source ?? ('vendor' as const),
-      }
-    : null;
-
   const payableAfterWallet = Math.max(0, pricing.total - walletAmountApplied);
   const walletCoversOrder = walletAmountApplied > 0 && payableAfterWallet < 0.01;
 
   return (
     <div className="space-y-4">
-      <CartPromotionSelect
-        orderAmount={pricing.lineSubtotal}
-        vendorId={primaryVendorId}
-        cartItems={cart.map((item) => {
-          const productId =
-            parseCartLineKey(item.id).productId ||
-            (item.warmpawzLine?.product?.id != null
-              ? String(item.warmpawzLine.product.id)
-              : item.id);
-          return {
-            productId,
-            id: productId,
-            quantity: item.quantity,
-            price: item.price,
-            categoryId: item.categoryId || item.category,
-            category: item.categoryId || item.category,
-          };
-        })}
-        selected={selectedPromo}
-        onApply={(p) =>
-          applyCoupon({
-            code: p.code,
-            discountAmount: p.discountAmount,
-            promotionId: p.promotionId,
-            source: p.source,
-          })
-        }
-        onRemove={removeCoupon}
-      />
-
       <PromoEarnPreview data={promoEngine} />
 
       {/* Wallet balance section (hidden while ECOM_WALLET_ENABLED is false) */}

@@ -516,6 +516,33 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           void notifyShopOrderPaid(String(shopOrder.id)).catch((e) =>
             console.warn('[RAZORPAY-CREATE-ORDER] notifyShopOrderPaid (wallet-full) failed:', e)
           );
+          try {
+            const { query: metaQuery } = await import('../../../database/rds-connection');
+            const metaRows = await metaQuery(
+              `SELECT metadata FROM orders WHERE id = $1::uuid LIMIT 1`,
+              [shopOrder.id],
+            );
+            const meta = metaRows.rows?.[0]?.metadata;
+            const parsed = meta && typeof meta === 'string' ? JSON.parse(meta) : meta;
+            const evalId =
+              parsed?.evaluationId || parsed?.promoEngine?.evaluationId || null;
+            if (evalId) {
+              const { safeCommitPromotion } = await import(
+                '../../../discount-engine/promo-engine'
+              );
+              await safeCommitPromotion({
+                evaluationId: String(evalId),
+                transactionId: String(shopOrder.id),
+                paymentId: null,
+                userId: customerIdFinal ? String(customerIdFinal) : null,
+              });
+            }
+          } catch (commitErr) {
+            console.warn(
+              '[RAZORPAY-CREATE-ORDER] ecom promo-engine commit (wallet-full) failed:',
+              commitErr instanceof Error ? commitErr.message : commitErr,
+            );
+          }
           return this.success({ fullyCoveredByWallet: true, orderId: shopOrder.id });
         }
         if (amount != null) {
@@ -800,16 +827,14 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             void notifyBookingCreatedIfNeeded(String(bookingId)).catch((err) =>
               console.warn('[RAZORPAY-CREATE-ORDER] wallet-only booking notify failed:', err)
             );
-            Promise.resolve()
-              .then(async () => {
-                const { recordBookingPromotionUsageFromBooking } = await import(
-                  '../../../lib/services/booking-promotion-service'
-                );
-                await recordBookingPromotionUsageFromBooking(String(bookingId));
-              })
-              .catch((err) => {
-                console.warn('[RAZORPAY-CREATE-ORDER] wallet-only promotion usage record failed:', err);
-              });
+            try {
+              const { recordBookingPromotionUsageFromBooking } = await import(
+                '../../../lib/services/booking-promotion-service'
+              );
+              await recordBookingPromotionUsageFromBooking(String(bookingId));
+            } catch (err) {
+              console.warn('[RAZORPAY-CREATE-ORDER] wallet-only promotion usage record failed:', err);
+            }
           }
         } catch (e: any) {
           console.error('[RAZORPAY-CREATE-ORDER] wallet slice + orphan payment failed:', e?.message || e);
@@ -1446,45 +1471,43 @@ class VerifyPaymentHandler extends BaseHandler {
             ecommerceVendorIdForCommission = String(payment.vendor_id);
           }
 
-          // Promo Engine commit for shop orders (evaluation_id from payment notes)
-          Promise.resolve()
-            .then(async () => {
-              const notesObj =
-                payment.notes && typeof payment.notes === 'object'
-                  ? (payment.notes as Record<string, unknown>)
-                  : {};
-              let evalId =
-                notesObj.evaluationId ||
-                notesObj.evaluation_id ||
-                notesObj.promoEngineEvaluationId ||
-                null;
-              if (!evalId) {
-                const { query: q } = await import('../../../database/rds-connection');
-                const metaRows = await q(
-                  `SELECT metadata FROM orders WHERE id = $1::uuid LIMIT 1`,
-                  [ecommerceOrderId],
-                );
-                const meta = metaRows.rows?.[0]?.metadata;
-                const parsed =
-                  meta && typeof meta === 'string' ? JSON.parse(meta) : meta;
-                evalId =
-                  parsed?.evaluationId ||
-                  parsed?.promoEngine?.evaluationId ||
-                  null;
-              }
-              const { safeCommitPromotion } = await import(
-                '../../../discount-engine/promo-engine'
+          // Promo Engine commit for shop orders — await so Lambda does not freeze mid-commit.
+          try {
+            const notesObj =
+              payment.notes && typeof payment.notes === 'object'
+                ? (payment.notes as Record<string, unknown>)
+                : {};
+            let evalId =
+              notesObj.evaluationId ||
+              notesObj.evaluation_id ||
+              notesObj.promoEngineEvaluationId ||
+              null;
+            if (!evalId) {
+              const { query: q } = await import('../../../database/rds-connection');
+              const metaRows = await q(
+                `SELECT metadata FROM orders WHERE id = $1::uuid LIMIT 1`,
+                [ecommerceOrderId],
               );
-              await safeCommitPromotion({
-                evaluationId: evalId ? String(evalId) : null,
-                transactionId: String(ecommerceOrderId),
-                paymentId: razorpay_payment_id ? String(razorpay_payment_id) : null,
-                userId: payment.customer_id ? String(payment.customer_id) : null,
-              });
-            })
-            .catch((err) =>
-              console.warn('[PAYMENT-VERIFY] ecom promo-engine commit failed:', err)
+              const meta = metaRows.rows?.[0]?.metadata;
+              const parsed =
+                meta && typeof meta === 'string' ? JSON.parse(meta) : meta;
+              evalId =
+                parsed?.evaluationId ||
+                parsed?.promoEngine?.evaluationId ||
+                null;
+            }
+            const { safeCommitPromotion } = await import(
+              '../../../discount-engine/promo-engine'
             );
+            await safeCommitPromotion({
+              evaluationId: evalId ? String(evalId) : null,
+              transactionId: String(ecommerceOrderId),
+              paymentId: razorpay_payment_id ? String(razorpay_payment_id) : null,
+              userId: payment.customer_id ? String(payment.customer_id) : null,
+            });
+          } catch (err) {
+            console.warn('[PAYMENT-VERIFY] ecom promo-engine commit failed:', err);
+          }
 
           return {
             success: true,
@@ -1625,16 +1648,14 @@ class VerifyPaymentHandler extends BaseHandler {
 
         console.log('[PAYMENT-VERIFY] Payment row completed; entity finalization runs after commit:', bookingId);
 
-        Promise.resolve()
-          .then(async () => {
-            const { recordBookingPromotionUsageFromBooking } = await import(
-              '../../../lib/services/booking-promotion-service'
-            );
-            await recordBookingPromotionUsageFromBooking(String(bookingId));
-          })
-          .catch((err) => {
-            console.warn('[PAYMENT-VERIFY] promotion usage record failed:', err);
-          });
+        try {
+          const { recordBookingPromotionUsageFromBooking } = await import(
+            '../../../lib/services/booking-promotion-service'
+          );
+          await recordBookingPromotionUsageFromBooking(String(bookingId));
+        } catch (err) {
+          console.warn('[PAYMENT-VERIFY] promotion usage record failed:', err);
+        }
 
         // ✅ AUTO-GENERATE OTP for in-person services when booking transitions to confirmed
         await ensureBookingStartOtpIfNeeded(String(bookingId), {

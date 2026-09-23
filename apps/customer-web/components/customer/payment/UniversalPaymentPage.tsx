@@ -1457,7 +1457,7 @@ export function UniversalPaymentPage({
             ? [String(serviceId)]
             : [],
         couponCode,
-        displayPromotionsOnly: !couponCode,
+        displayPromotionsOnly: false,
         bypassCache: Boolean(couponCode),
       };
       const quote = await fetchBookingDiscountQuote(params);
@@ -3611,6 +3611,7 @@ export function UniversalPaymentPage({
               serviceName,
               vendorName,
               petName: effectivePetName,
+              evaluationId: discountQuote?.promoEngine?.evaluationId || undefined,
             });
             const bid = instantRes?.bookingId;
             if (!bid) {
@@ -3629,6 +3630,7 @@ export function UniversalPaymentPage({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
+              evaluationId: discountQuote?.promoEngine?.evaluationId || undefined,
             });
             if (!confirmRes?.success) {
               throw new Error(confirmRes?.error || 'Payment confirmation failed');

@@ -4,6 +4,8 @@ import type { PriceBreakdownLine } from './types';
 export type EcommerceCheckoutBreakdownOptions = {
   /** e.g. "10% OFF" or campaign name from calculate-cart */
   promotionLabel?: string;
+  /** Wallet amount applied at checkout (display only). */
+  walletAmount?: number;
 };
 
 /** Maps ecommerce cart pricing to checkout order-summary lines (Option A: MRP + explicit promo). */
@@ -61,10 +63,20 @@ export function buildEcommerceCheckoutPriceLines(
     });
   }
 
+  const walletAmount = Math.max(0, Number(options.walletAmount) || 0);
+  if (walletAmount > 0.009) {
+    lines.push({
+      kind: 'wallet',
+      label: 'Wallet',
+      amount: -walletAmount,
+    });
+  }
+
+  const payable = Math.max(0, Math.round((pricing.total - walletAmount) * 100) / 100);
   lines.push({
     kind: 'final',
-    label: 'Total',
-    amount: pricing.total,
+    label: walletAmount > 0.009 ? 'You pay' : 'Total',
+    amount: payable,
     emphasis: 'total',
   });
 

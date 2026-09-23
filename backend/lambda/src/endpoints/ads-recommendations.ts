@@ -10,10 +10,6 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
-import { calculateBestCartPromotionAsync, discountsWithinTolerance, normalizePromotionRow, type CartLineItem } from '../utils/vendor-promotion-engine';
-import { countPriorVendorOrders, recordVendorPromotionUsage } from '../utils/vendor-promotion-usage';
-import { resolveCommercialCampaignDiscount } from '../utils/resolve-commercial-campaign';
-import { selectEcommercePromotionWinnerAsync } from '../utils/ecommerce-promo-policy-winner';
 import {
   clampRecommendationLimit,
   resolveProductRecommendations,
@@ -506,7 +502,7 @@ app.get('/ads-recommendations/products/:productId/similar', async (c) => {
 app.post('/promotions/calculate-cart', async (c) => {
   try {
     const body = await c.req.json();
-    const { items, vendorId, customerId, manualCode } = body;
+    const { items, vendorId, customerId } = body;
 
     if (!items || !Array.isArray(items)) {
       return c.json({ success: false, error: 'items array required' }, 400);
@@ -556,8 +552,10 @@ app.post('/promotions/calculate-cart', async (c) => {
           persist: true,
           transaction: {
             type: 'ECOMMERCE',
+            channel: 'ecommerce',
             service_category: 'ecommerce',
             vendor_id: vendorId ? String(vendorId) : undefined,
+            vendorId: vendorId ? String(vendorId) : undefined,
             amount: originalTotal,
             lines: cartLines.map((line) => ({
               id: line.productId || line.id,

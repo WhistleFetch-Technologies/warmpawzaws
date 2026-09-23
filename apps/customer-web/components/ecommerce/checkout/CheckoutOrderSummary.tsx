@@ -8,7 +8,7 @@ type CheckoutOrderSummaryProps = {
 };
 
 export function CheckoutOrderSummary({ sticky = true }: CheckoutOrderSummaryProps) {
-  const { cart, pricing, savingsAmount, promotionLabel } = useCheckout();
+  const { cart, pricing, savingsAmount, promotionLabel, walletAmountApplied } = useCheckout();
 
   return (
     <aside
@@ -33,6 +33,7 @@ export function CheckoutOrderSummary({ sticky = true }: CheckoutOrderSummaryProp
         compact={false}
         showItems
         promotionLabel={promotionLabel}
+        walletAmount={walletAmountApplied}
       />
     </aside>
   );

@@ -15,6 +15,7 @@ type CheckoutPriceBreakdownProps = {
   compact?: boolean;
   showItems?: boolean;
   promotionLabel?: string;
+  walletAmount?: number;
 };
 
 export function CheckoutPriceBreakdown({
@@ -23,8 +24,9 @@ export function CheckoutPriceBreakdown({
   compact = false,
   showItems = true,
   promotionLabel,
+  walletAmount,
 }: CheckoutPriceBreakdownProps) {
-  const lines = buildEcommerceCheckoutPriceLines(pricing, { promotionLabel });
+  const lines = buildEcommerceCheckoutPriceLines(pricing, { promotionLabel, walletAmount });
   const hasPromotion = pricing.discount > 0;
 
   return (
