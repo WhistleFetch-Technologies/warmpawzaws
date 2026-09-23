@@ -214,6 +214,40 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.payNowAmount).toBe(900);
   });
 
+  it('keeps platform and convenience fees when catalogue discount is 0', () => {
+    const quote = computeWpayCommercialQuote({
+      quotedAmount: 6700,
+      commissionPercent: 20,
+      discountPercent: 0,
+      platformFee: 30,
+      platformFeeGstRate: 18,
+      convenienceFee: 20,
+      convenienceGstRate: 18,
+    });
+    expect(quote.discountAmount).toBe(0);
+    expect(quote.platformFee).toBe(30);
+    expect(quote.convenienceFee).toBe(20);
+    expect(quote.payNowAmount).toBe(6759);
+  });
+
+  it('applies engine discount then keeps fees when they are smaller than the offer', () => {
+    const quote = computeWpayCommercialQuote({
+      quotedAmount: 7800,
+      commissionPercent: 20,
+      discountPercent: 0,
+      engineDiscount: 500,
+      platformFee: 30,
+      platformFeeGstRate: 18,
+      convenienceFee: 20,
+      convenienceGstRate: 18,
+    });
+    expect(quote.discountAmount).toBe(500);
+    expect(quote.servicePayableAmount).toBe(7300);
+    expect(quote.platformFee).toBe(30);
+    expect(quote.convenienceFee).toBe(20);
+    expect(quote.payNowAmount).toBe(7359);
+  });
+
   it('assertDiscountBelowCommission enforces D < C', () => {
     expect(() => assertDiscountBelowCommission(20, 15)).not.toThrow();
     expect(() => assertDiscountBelowCommission(20, 20)).toThrow(WpayCommercialValidationError);

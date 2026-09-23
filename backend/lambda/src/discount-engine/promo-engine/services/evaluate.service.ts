@@ -1,6 +1,7 @@
 import { normalizePromoCategory } from '../dsl/category-aliases';
 import { dbInsertEvaluation, dbInsertAudit, dbGetBehaviour } from '../repos/promo-engine.repo';
 import type { CustomerBehaviourProfile, EvaluateRequest, EvaluateResult } from '../types';
+import { inferEvaluateSurface } from '../vcf/channel';
 import { evaluateAgainstSnapshot, loadEvaluateSnapshot } from './evaluate-snapshot';
 
 function parseJsonField(v: unknown): Record<string, unknown> {
@@ -47,7 +48,28 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
     ? normalizePromoCategory(req.transaction.service_category) || undefined
     : undefined;
   const vendorId = String(req.transaction?.vendorId || req.transaction?.vendor_id || '') || undefined;
-  const categoryId = req.transaction?.categoryId ? String(req.transaction.categoryId) : undefined;
+  let categoryId = req.transaction?.categoryId ? String(req.transaction.categoryId) : undefined;
+  if (vendorId && !categoryId) {
+    try {
+      const { loadServerPaymentContext } = await import('./payment-context-load.service');
+      const ctx = await loadServerPaymentContext({
+        surface: inferEvaluateSurface(req.transaction || {}),
+        vendorId,
+        serviceStyle:
+          (req.transaction?.service_type as string | undefined) ||
+          (req.transaction?.serviceStyle as string | undefined) ||
+          null,
+        bookingCategoryId: req.transaction?.service_category || null,
+      });
+      categoryId = ctx.categoryId || undefined;
+      if (req.transaction) {
+        if (categoryId) req.transaction.categoryId = categoryId;
+        if (ctx.channel && !req.transaction.channel) req.transaction.channel = ctx.channel;
+      }
+    } catch {
+      // evaluate still runs; category publish just will not match
+    }
+  }
   const behaviour = await loadBehaviourProfile(req.user_id, req.behaviour_override);
   const snapshot = await loadEvaluateSnapshot({
     userId: req.user_id,

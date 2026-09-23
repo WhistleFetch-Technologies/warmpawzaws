@@ -79,4 +79,24 @@ describe('previewWpayCommercialQuote', () => {
       payableAmount: 875.5,
     });
   });
+
+  it('keeps fees when catalogue % is 0 and overlays engine discount', () => {
+    expect(
+      previewWpayCommercialQuote({
+        originalAmount: 7800,
+        discountPercent: 0,
+        engineDiscount: 500,
+        platformFee: 30,
+        platformFeeGstRate: 18,
+        convenienceFee: 20,
+        convenienceGstRate: 18,
+      }),
+    ).toMatchObject({
+      discountAmount: 500,
+      servicePayableAmount: 7300,
+      platformFee: 30,
+      convenienceFee: 20,
+      payableAmount: 7359,
+    });
+  });
 });

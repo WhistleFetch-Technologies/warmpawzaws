@@ -37,6 +37,38 @@ describe('buildWpayHistoryBreakdownLines', () => {
     });
   });
 
+  it('shows wallet and You paid after wallet', () => {
+    const lines = buildWpayHistoryBreakdownLines({
+      paymentId: 'p3',
+      vendorId: 'v3',
+      vendorName: 'Bindu Vet',
+      originalAmount: 6700,
+      discountPercent: 7.46,
+      discountAmount: 500,
+      servicePayableAmount: 6200,
+      platformFee: 30,
+      platformFeeGstAmount: 5.4,
+      platformFeeGstRate: 18,
+      convenienceFee: 20,
+      convenienceGstAmount: 3.6,
+      convenienceGstRate: 18,
+      payableAmount: 6259,
+      walletAmount: 50,
+      commercialModel: 'tier_commission',
+      paidAt: '2026-09-23T07:14:00.000Z',
+    });
+    expect(lines.find((l) => l.label === 'Wallet')).toEqual({
+      label: 'Wallet',
+      amount: -50,
+      tone: 'discount',
+    });
+    expect(lines[lines.length - 1]).toEqual({
+      label: 'You paid',
+      amount: 6209,
+      tone: 'total',
+    });
+  });
+
   it('hides fee rows for withhold history without stored fees', () => {
     const lines = buildWpayHistoryBreakdownLines({
       paymentId: 'p2',

@@ -40,6 +40,68 @@ export function validateVcfBenefits(vcf: PromoVcfDraft, hasDiscount: boolean, ha
   return errors;
 }
 
+const DEFAULT_REDEEM_CHANNELS: NonNullable<PromoVcfDraft['redeem']>['channels'] = [
+  'tele',
+  'appointment',
+  'paybill',
+  'ecommerce',
+];
+
+/**
+ * Redeem V/C copies the vendor or category already chosen on publish (preferred)
+ * or visit source. Admin has no second search on the cashback step.
+ */
+export function mapRedeemFromAudience(
+  vcf: PromoVcfDraft,
+  letter: PromoLetter
+): NonNullable<PromoVcfDraft['redeem']> {
+  const channels =
+    vcf.redeem?.channels?.length ? vcf.redeem.channels : [...DEFAULT_REDEEM_CHANNELS];
+  if (letter === 'F') {
+    return { letter: 'F', channels };
+  }
+  if (letter === 'V') {
+    const fromPublish = vcf.publish.letter === 'V';
+    const fromVisit = vcf.visitSource.letter === 'V';
+    return {
+      letter: 'V',
+      channels,
+      vendorId: fromPublish
+        ? vcf.publish.vendorId
+        : fromVisit
+          ? vcf.visitSource.vendorId
+          : vcf.redeem?.vendorId,
+      vendorName: fromPublish
+        ? vcf.publish.vendorName
+        : fromVisit
+          ? vcf.visitSource.vendorName
+          : vcf.redeem?.vendorName,
+    };
+  }
+  const fromPublish = vcf.publish.letter === 'C';
+  const fromVisit = vcf.visitSource.letter === 'C';
+  return {
+    letter: 'C',
+    channels,
+    categoryId: fromPublish
+      ? vcf.publish.categoryId
+      : fromVisit
+        ? vcf.visitSource.categoryId
+        : vcf.redeem?.categoryId,
+    categoryName: fromPublish
+      ? vcf.publish.categoryName
+      : fromVisit
+        ? vcf.visitSource.categoryName
+        : vcf.redeem?.categoryName,
+  };
+}
+
+export function syncRedeemAfterAudience(vcf: PromoVcfDraft): PromoVcfDraft {
+  const letter = vcf.redeem?.letter;
+  if (!letter || letter === 'F') return vcf;
+  return { ...vcf, redeem: mapRedeemFromAudience(vcf, letter) };
+}
+
 export function applyVcfToDraft(draft: PromoEngineDraft, vcf: PromoVcfDraft): PromoEngineDraft {
   return {
     ...draft,

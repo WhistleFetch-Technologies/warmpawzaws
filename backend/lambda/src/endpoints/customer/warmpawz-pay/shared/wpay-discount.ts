@@ -88,6 +88,8 @@ export type WpayCommercialQuoteInput = {
    */
   burnMode?: boolean;
   maxDiscountAmount?: number | null;
+  /** Promo-engine ₹ discount. Used instead of catalogue % when > 0. */
+  engineDiscount?: number | null;
 };
 
 export type WpayCommercialQuote = {
@@ -185,12 +187,13 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
   const burnMode = Boolean(input.burnMode);
   const grossCommissionAmount = round2((quotedAmount * commissionPercent) / 100);
 
-  let discountRaw = (quotedAmount * discountPercent) / 100;
+  const engineDiscount = Math.max(0, round2(Number(input.engineDiscount ?? 0) || 0));
+  let discountRaw = engineDiscount > 0.009 ? engineDiscount : (quotedAmount * discountPercent) / 100;
   const maxDiscountAmount = input.maxDiscountAmount ?? null;
   if (maxDiscountAmount != null && discountRaw > maxDiscountAmount) {
     discountRaw = maxDiscountAmount;
   }
-  const discountAmount = round2(discountRaw);
+  const discountAmount = round2(Math.min(discountRaw, Math.max(0, quotedAmount - 0.01)));
 
   const servicePayableAmount = round2(quotedAmount - discountAmount);
   // Burn: vendor gets full Q; platform funds discount (no C−D margin).
@@ -234,9 +237,9 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
   const totalCustomerFees = round2(
     platformFee + platformFeeGstAmount + convenienceFee + convenienceGstAmount,
   );
-  // Preserve full displayed discount: drop all customer fees when they would
-  // consume the entire monetary discount (effective discount would be ≤ 0).
-  if (totalCustomerFees >= discountAmount) {
+  // Preserve a real displayed discount: drop fees only when they would eat it.
+  // Catalogue % is 0 now — do not treat “fees >= ₹0” as a reason to wipe fees.
+  if (discountAmount > 0.009 && totalCustomerFees >= discountAmount) {
     platformFee = 0;
     platformFeeGstAmount = 0;
     convenienceFee = 0;
@@ -260,7 +263,8 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
     commercialModel: 'tier_commission',
     quotedAmount,
     commissionPercent,
-    discountPercent,
+    discountPercent:
+      quotedAmount > 0 ? round2((discountAmount / quotedAmount) * 100) : discountPercent,
     grossCommissionAmount,
     discountAmount,
     vendorPayableAmount,

@@ -112,12 +112,14 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     return Number.isFinite(n) && n > 0 ? n : 0;
   }, [amountInput]);
 
+  const engineDiscount = Math.max(0, Number(promoEnginePreview?.engineDiscount) || 0);
   const quote = useMemo(() => {
     if (!vendor || billAmount <= 0) return null;
     if (vendor.commercialModel === 'tier_commission') {
       return previewWpayCommercialQuote({
         originalAmount: billAmount,
         discountPercent: 0,
+        engineDiscount,
         maxDiscountAmount: vendor.maxDiscountAmount,
         platformFee: vendor.platformFee ?? 0,
         platformFeeMode: vendor.platformFeeMode ?? 'fixed',
@@ -130,16 +132,13 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     return previewWpayQuote({
       originalAmount: billAmount,
       discountPercent: 0,
+      engineDiscount,
       maxDiscountAmount: vendor.maxDiscountAmount,
     });
-  }, [billAmount, vendor]);
+  }, [billAmount, vendor, engineDiscount]);
 
   const isTierQuote = quote != null && 'commercialModel' in quote && quote.commercialModel === 'tier_commission';
-  const engineDiscount = Math.max(0, Number(promoEnginePreview?.engineDiscount) || 0);
-  const displayPayable =
-    quote != null
-      ? Math.max(quote.payableAmount > 0 ? 1 : 0, Math.round((quote.payableAmount - engineDiscount) * 100) / 100)
-      : 0;
+  const displayPayable = quote != null ? quote.payableAmount : 0;
   const spendableWallet = Math.max(0, Number(wallet?.spendableBalance ?? wallet?.balance ?? 0) || 0);
   const walletAmountApplied =
     useWallet && spendableWallet > 0.009 && displayPayable > 0

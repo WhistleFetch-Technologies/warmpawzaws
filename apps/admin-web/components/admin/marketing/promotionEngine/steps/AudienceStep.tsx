@@ -12,7 +12,7 @@ import {
 } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
-import { applyVcfToDraft, vcfOrEmpty } from '@/lib/promo-engine/vcf';
+import { applyVcfToDraft, syncRedeemAfterAudience, vcfOrEmpty } from '@/lib/promo-engine/vcf';
 import type {
   PromoCountChannel,
   PromoEngineDraft,
@@ -131,7 +131,8 @@ export function AudienceStep({
   const { categories, loading, error } = useCatalogServiceCategories();
   const vcf = vcfOrEmpty(draft);
 
-  const patch = (next: PromoVcfDraft) => onChange(applyVcfToDraft(draft, next));
+  const patch = (next: PromoVcfDraft) =>
+    onChange(applyVcfToDraft(draft, syncRedeemAfterAudience(next)));
 
   const setSourceLetter = (letter: PromoLetter) => {
     patch({

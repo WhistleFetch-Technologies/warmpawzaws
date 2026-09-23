@@ -39,6 +39,17 @@ export function isCountChannel(channel: PaymentChannel): channel is 'tele' | 'ap
   return channel === 'tele' || channel === 'appointment' || channel === 'paybill';
 }
 
+export function inferEvaluateSurface(tx: {
+  type?: string | null;
+  channel?: string | null;
+}): 'paybill' | 'ecommerce' | 'booking' {
+  const type = String(tx?.type || '').toUpperCase();
+  const channel = String(tx?.channel || '').toLowerCase();
+  if (type === 'WPAY' || channel === 'paybill') return 'paybill';
+  if (type === 'ECOMMERCE' || type === 'SHOP' || channel === 'ecommerce') return 'ecommerce';
+  return 'booking';
+}
+
 export function isSpendChannel(raw: unknown): raw is PaymentChannel {
   const s = String(raw || '')
     .trim()

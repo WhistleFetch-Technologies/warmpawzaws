@@ -1,10 +1,14 @@
 import { fulfillWpayCapturedPayment, quoteAmountsFromWpayPayment } from '../fulfill-wpay-captured-payment';
 import { accrueWpaySettlement } from '../accrue-wpay-settlement';
+import { debitWpayWalletFromMetadata } from '../debit-wpay-wallet';
 import { notifyWpayPaymentCompleted } from '../../../../../utils/wpay-notifications';
 import { dbWpayCompleteFromCapture, dbWpayPaymentById } from '../../repos/wpay-payment.repo';
 
 jest.mock('../accrue-wpay-settlement', () => ({
   accrueWpaySettlement: jest.fn(),
+}));
+jest.mock('../debit-wpay-wallet', () => ({
+  debitWpayWalletFromMetadata: jest.fn(),
 }));
 jest.mock('../../../../../utils/wpay-notifications', () => ({
   notifyWpayPaymentCompleted: jest.fn().mockResolvedValue(undefined),
@@ -35,6 +39,7 @@ describe('fulfillWpayCapturedPayment', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (notifyWpayPaymentCompleted as jest.Mock).mockResolvedValue(undefined);
+    (debitWpayWalletFromMetadata as jest.Mock).mockResolvedValue({ ok: true, skipped: true });
   });
 
   it('reads quote amounts from the stored payment snapshot', () => {
@@ -67,6 +72,12 @@ describe('fulfillWpayCapturedPayment', () => {
       discountAmount: 63,
       customerId: 'cust-1',
     });
+    expect(debitWpayWalletFromMetadata).toHaveBeenCalledWith({
+      customerId: 'cust-1',
+      paymentId: 'pay-1',
+      vendorId: 'vendor-1',
+      metadata: payment.metadata,
+    });
     expect(accrueWpaySettlement).toHaveBeenCalled();
     expect(notifyWpayPaymentCompleted).toHaveBeenCalledWith('pay-1');
   });
@@ -90,6 +101,26 @@ describe('fulfillWpayCapturedPayment', () => {
     expect(result?.payment_status).toBe('completed');
     expect(accrueWpaySettlement).toHaveBeenCalledTimes(1);
     expect(dbWpayCompleteFromCapture).toHaveBeenCalled();
+  });
+
+  it('does not complete a pending payment when wallet debit fails', async () => {
+    (dbWpayPaymentById as jest.Mock).mockResolvedValue({
+      ...payment,
+      metadata: { ...payment.metadata, walletAmount: 50 },
+    });
+    (debitWpayWalletFromMetadata as jest.Mock).mockResolvedValue({
+      ok: false,
+      error: 'Insufficient spendable wallet',
+    });
+
+    const result = await fulfillWpayCapturedPayment({
+      paymentId: 'pay-1',
+      razorpayPaymentId: 'pay_rzp_1',
+      customerId: 'cust-1',
+    });
+
+    expect(result).toBeNull();
+    expect(dbWpayCompleteFromCapture).not.toHaveBeenCalled();
   });
 
   it('rejects a customer mismatch', async () => {

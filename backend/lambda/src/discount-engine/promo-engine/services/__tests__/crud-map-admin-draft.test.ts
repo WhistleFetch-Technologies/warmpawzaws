@@ -37,4 +37,20 @@ describe('mapAdminDraftToPayload', () => {
       redeem: { letter: 'C', channels: ['ecommerce'] },
     });
   });
+
+  it('maps Same vendor redeem onto the publish vendor id', () => {
+    const payload = mapAdminDraftToPayload({
+      basics: { name: 'Same vendor cashback' },
+      vcf: {
+        visitSource: { letter: 'V', vendorId: 'visit-vendor', width: 'general' },
+        visitLoop: { kind: 'every' },
+        benefitMode: 'cashback',
+        publish: { letter: 'V', vendorId: 'publish-vendor' },
+        redeem: { letter: 'V', channels: ['paybill'] },
+      },
+    });
+    expect(payload.metadata?.vcf).toMatchObject({
+      redeem: { letter: 'V', vendorId: 'publish-vendor', channels: ['paybill'] },
+    });
+  });
 });

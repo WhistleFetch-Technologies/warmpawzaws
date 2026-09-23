@@ -9,7 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@warmpawz/ui';
-import type { PromoEngineBenefit, PromoEngineDraft } from '@/lib/promo-engine/types';
+import type { PromoEngineBenefit, PromoEngineDraft, PromoLetter } from '@/lib/promo-engine/types';
+import { mapRedeemFromAudience, vcfOrEmpty } from '@/lib/promo-engine/vcf';
 
 function discountBenefit(list: PromoEngineBenefit[]): PromoEngineBenefit {
   return list.find((b) => b.type === 'DISCOUNT') || { type: 'DISCOUNT', mode: 'PERCENT', value: 0 };
@@ -190,7 +191,11 @@ export function BenefitsStep({
                 </div>
               </div>
               <div className="space-y-3">
-                <Label>Redeem cashback (independent of visit source and publish)</Label>
+                <Label>Redeem cashback</Label>
+                <p className="text-xs text-slate-500">
+                  Same vendor / same category uses the vendor or category already set on Publish
+                  (or Visit source if Publish is platform).
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {(['V', 'C', 'F'] as const).map((letter) => (
                     <button
@@ -201,35 +206,35 @@ export function BenefitsStep({
                           ? 'border-[#FF8C42] bg-orange-50'
                           : 'border-slate-200'
                       }`}
-                      onClick={() =>
+                      onClick={() => {
+                        const audience = vcfOrEmpty(draft);
                         onChange({
                           ...draft,
                           vcf: {
-                            ...(draft.vcf || {
-                              visitSource: { letter: 'F', width: 'general' },
-                              visitLoop: { kind: 'every' },
-                              benefitMode: 'discount',
-                              publish: { letter: 'F' },
-                            }),
-                            redeem: {
-                              letter,
-                              channels: draft.vcf?.redeem?.channels || [
-                                'tele',
-                                'appointment',
-                                'paybill',
-                                'ecommerce',
-                              ],
-                              vendorId: letter === 'V' ? draft.vcf?.redeem?.vendorId : undefined,
-                              categoryId: letter === 'C' ? draft.vcf?.redeem?.categoryId : undefined,
-                            },
+                            ...audience,
+                            redeem: mapRedeemFromAudience(audience, letter as PromoLetter),
                           },
-                        })
-                      }
+                        });
+                      }}
                     >
                       {letter === 'V' ? 'Same vendor' : letter === 'C' ? 'Same category' : 'Anywhere'}
                     </button>
                   ))}
                 </div>
+                {draft.vcf?.redeem?.letter === 'V' ? (
+                  <p className="text-xs text-slate-600">
+                    {draft.vcf.redeem.vendorName || draft.vcf.redeem.vendorId
+                      ? `Mapped vendor: ${draft.vcf.redeem.vendorName || draft.vcf.redeem.vendorId}`
+                      : 'Pick a vendor on Visit source or Publish first.'}
+                  </p>
+                ) : null}
+                {draft.vcf?.redeem?.letter === 'C' ? (
+                  <p className="text-xs text-slate-600">
+                    {draft.vcf.redeem.categoryName || draft.vcf.redeem.categoryId
+                      ? `Mapped category: ${draft.vcf.redeem.categoryName || draft.vcf.redeem.categoryId}`
+                      : 'Pick a category on Visit source or Publish first.'}
+                  </p>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
                   {(['tele', 'appointment', 'paybill', 'ecommerce'] as const).map((ch) => {
                     const on = (draft.vcf?.redeem?.channels || []).includes(ch);
@@ -244,18 +249,16 @@ export function BenefitsStep({
                           const set = new Set(draft.vcf?.redeem?.channels || []);
                           if (set.has(ch)) set.delete(ch);
                           else set.add(ch);
+                          const audience = vcfOrEmpty(draft);
                           onChange({
                             ...draft,
                             vcf: {
-                              visitSource: draft.vcf?.visitSource || { letter: 'F', width: 'general' },
-                              visitLoop: draft.vcf?.visitLoop || { kind: 'every' },
-                              benefitMode: draft.vcf?.benefitMode || 'discount',
-                              publish: draft.vcf?.publish || { letter: 'F' },
-                              ...draft.vcf,
+                              ...audience,
                               redeem: {
-                                letter: draft.vcf?.redeem?.letter || 'F',
-                                vendorId: draft.vcf?.redeem?.vendorId,
-                                categoryId: draft.vcf?.redeem?.categoryId,
+                                ...mapRedeemFromAudience(
+                                  audience,
+                                  (audience.redeem?.letter || 'F') as PromoLetter
+                                ),
                                 channels: Array.from(set),
                               },
                             },

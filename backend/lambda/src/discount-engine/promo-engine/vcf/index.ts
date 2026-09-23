@@ -1,5 +1,11 @@
 export * from './types';
-export { classifyPaymentChannel, isCountChannel, isSpendChannel, resolveSpendChannelFromBooking } from './channel';
+export {
+  classifyPaymentChannel,
+  inferEvaluateSurface,
+  isCountChannel,
+  isSpendChannel,
+  resolveSpendChannelFromBooking,
+} from './channel';
 export { categoryIdFromVendorRole } from './category-from-role';
 export { resolvePaymentContext } from './payment-context';
 export { visitCountForPromo } from './visit-count';

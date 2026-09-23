@@ -48,6 +48,7 @@ export { loadServerPaymentContext } from './services/payment-context-load.servic
 export { applyCombinedCap } from './vcf/combined-cap';
 export {
   classifyPaymentChannel,
+  inferEvaluateSurface,
   isSpendChannel,
   resolveSpendChannelFromBooking,
   resolvePaymentContext,

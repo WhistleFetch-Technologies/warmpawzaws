@@ -13,7 +13,13 @@ import {
 import { ChevronLeft, ChevronRight, Save } from 'lucide-react';
 import { applyBasicsToDraft, validateBasicsDraft } from '@/lib/promo-engine/draft';
 import { validateAudience } from '@/lib/promo-engine/audience';
-import { validateVcfAudience, validateVcfBenefits, vcfOrEmpty } from '@/lib/promo-engine/vcf';
+import {
+  applyVcfToDraft,
+  syncRedeemAfterAudience,
+  validateVcfAudience,
+  validateVcfBenefits,
+  vcfOrEmpty,
+} from '@/lib/promo-engine/vcf';
 import { createEmptyDraft, type PromoEngineDraft } from '@/lib/promo-engine/types';
 import { BasicsStep } from './steps/BasicsStep';
 import { AudienceStep } from './steps/AudienceStep';
@@ -54,7 +60,10 @@ export function PromotionEngineWizard({
     onClose();
   };
 
-  const prepared = () => applyBasicsToDraft(working, working.basics);
+  const prepared = () => {
+    const next = applyBasicsToDraft(working, working.basics);
+    return applyVcfToDraft(next, syncRedeemAfterAudience(vcfOrEmpty(next)));
+  };
 
   const saveDraft = async () => {
     const errors = validateBasicsDraft(working.basics);
@@ -82,7 +91,7 @@ export function PromotionEngineWizard({
       setStep(1);
       return;
     }
-    const vcf = vcfOrEmpty(working);
+    const vcf = syncRedeemAfterAudience(vcfOrEmpty(working));
     const hasDiscount = working.benefitJson.some((b) => b.type === 'DISCOUNT' && Number(b.value) > 0);
     const hasCashback = working.benefitJson.some((b) => b.type === 'CASHBACK' && Number(b.value) > 0);
     const benefitErrors = validateVcfBenefits(vcf, hasDiscount, hasCashback);

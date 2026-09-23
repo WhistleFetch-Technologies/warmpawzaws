@@ -13,7 +13,6 @@ import {
 import { WpayCommercialValidationError } from '../shared/wpay-discount';
 import { resolveWpayPayQuote } from '../shared/wpay-quote-resolver';
 import { resolveWpayPromoCategory } from '../shared/resolve-wpay-promo-category';
-import { applyEngineDiscountToWpayPayable } from '../shared/apply-engine-discount-to-wpay';
 import { loadOwnedWpayEvaluation } from '../shared/load-wpay-stored-evaluation';
 import { normalizePromoCategory } from '../../../../discount-engine/promo-engine/dsl/category-aliases';
 import { capWpayWalletAmount } from '../shared/wpay-wallet';
@@ -80,11 +79,6 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       bookingCategoryId: openBooking?.service_category || serviceCategory,
     });
 
-    const resolved = await resolveWpayPayQuote({
-      vendorRow,
-      quotedAmount: originalAmount,
-    });
-
     let promoEngine: Record<string, unknown> | null = null;
     let engineDiscount = 0;
     try {
@@ -142,12 +136,16 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       );
     }
 
-    const applied = applyEngineDiscountToWpayPayable({
+    const resolved = await resolveWpayPayQuote({
+      vendorRow,
       quotedAmount: originalAmount,
-      cataloguePayable: resolved.payableAmount,
       engineDiscount,
-      metadata: resolved.metadata,
     });
+    const applied = {
+      payableAmount: resolved.payableAmount,
+      discountAmount: Number(resolved.metadata.quotedDiscountAmount) || 0,
+      metadata: resolved.metadata,
+    };
 
     const requestedWallet = Number(body.walletAmount);
     let walletAmount = 0;

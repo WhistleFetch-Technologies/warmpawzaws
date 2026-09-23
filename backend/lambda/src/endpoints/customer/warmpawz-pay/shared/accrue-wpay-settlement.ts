@@ -83,14 +83,13 @@ export async function accrueWpaySettlement(
     return { inserted: false, settlementId: String(existing.rows[0].id) };
   }
 
+  const meta = (payment.metadata ?? {}) as Record<string, unknown>;
   const payableAmount = round2(
     readMetadataNumber(meta, 'quotedPayableAmount') || Number(payment.amount ?? 0),
   );
   if (!Number.isFinite(payableAmount) || payableAmount <= 0) {
     return { inserted: false, settlementId: null, skippedReason: 'invalid_payable_amount' };
   }
-
-  const meta = (payment.metadata ?? {}) as Record<string, unknown>;
   const quotedAmount = round2(
     Number(payment.original_amount ?? readMetadataNumber(meta, 'quotedOriginalAmount') ?? payableAmount),
   );

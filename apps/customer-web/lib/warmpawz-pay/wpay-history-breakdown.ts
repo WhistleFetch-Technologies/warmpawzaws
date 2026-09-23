@@ -49,6 +49,11 @@ export function buildWpayHistoryBreakdownLines(row: WpayTransactionCard): WpayHi
       });
     }
   }
-  lines.push({ label: 'You paid', amount: n(row.payableAmount), tone: 'total' });
+  const walletAmount = n(row.walletAmount);
+  if (walletAmount > 0.009) {
+    lines.push({ label: 'Wallet', amount: -walletAmount, tone: 'discount' });
+  }
+  const youPaid = Math.max(0, Math.round((n(row.payableAmount) - walletAmount) * 100) / 100);
+  lines.push({ label: 'You paid', amount: youPaid, tone: 'total' });
   return lines;
 }

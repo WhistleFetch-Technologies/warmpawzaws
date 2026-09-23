@@ -41,6 +41,7 @@ export type WpayTransactionCard = {
   convenienceGstAmount?: number;
   convenienceGstRate?: number;
   payableAmount: number;
+  walletAmount?: number;
   commercialModel?: string | null;
   paidAt: string;
 };

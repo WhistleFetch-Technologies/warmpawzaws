@@ -55,16 +55,18 @@ export function previewWpayQuote(params: {
   discountPercent: number;
   appointmentFeeCredit?: number;
   maxDiscountAmount?: number | null;
+  engineDiscount?: number | null;
 }): WpayQuotePreview {
   const original = round2(params.originalAmount);
   const appointmentFeeCredit = 0;
   const billBase = original;
+  const engineDiscount = Math.max(0, round2(Number(params.engineDiscount ?? 0) || 0));
 
-  let discountRaw = (billBase * params.discountPercent) / 100;
+  let discountRaw = engineDiscount > 0.009 ? engineDiscount : (billBase * params.discountPercent) / 100;
   if (params.maxDiscountAmount != null && discountRaw > params.maxDiscountAmount) {
     discountRaw = params.maxDiscountAmount;
   }
-  const discountAmount = round2(discountRaw);
+  const discountAmount = round2(Math.min(discountRaw, Math.max(0, billBase - 0.01)));
   const payableAmount = Math.max(0.01, round2(billBase - discountAmount));
 
   return {
@@ -89,15 +91,17 @@ export function previewWpayCommercialQuote(params: {
   convenienceFeeMode?: WpayFeeMode;
   convenienceGstRate?: number;
   maxDiscountAmount?: number | null;
+  engineDiscount?: number | null;
 }): WpayCommercialQuotePreview {
   const originalAmount = round2(params.originalAmount);
   const discountPercent = round2(params.discountPercent);
+  const engineDiscount = Math.max(0, round2(Number(params.engineDiscount ?? 0) || 0));
 
-  let discountRaw = (originalAmount * discountPercent) / 100;
+  let discountRaw = engineDiscount > 0.009 ? engineDiscount : (originalAmount * discountPercent) / 100;
   if (params.maxDiscountAmount != null && discountRaw > params.maxDiscountAmount) {
     discountRaw = params.maxDiscountAmount;
   }
-  const discountAmount = round2(discountRaw);
+  const discountAmount = round2(Math.min(discountRaw, Math.max(0, originalAmount - 0.01)));
   const servicePayableAmount = round2(originalAmount - discountAmount);
 
   const appointmentFeeCredit = 0;
@@ -128,7 +132,7 @@ export function previewWpayCommercialQuote(params: {
   const totalCustomerFees = round2(
     platformFee + platformFeeGstAmount + convenienceFee + convenienceGstAmount,
   );
-  if (totalCustomerFees >= discountAmount) {
+  if (discountAmount > 0.009 && totalCustomerFees >= discountAmount) {
     platformFee = 0;
     platformFeeGstAmount = 0;
     convenienceFee = 0;
@@ -145,7 +149,8 @@ export function previewWpayCommercialQuote(params: {
   return {
     commercialModel: 'tier_commission',
     originalAmount,
-    discountPercent,
+    discountPercent:
+      originalAmount > 0 ? round2((discountAmount / originalAmount) * 100) : discountPercent,
     discountAmount,
     servicePayableAmount,
     appointmentFeeCredit,
