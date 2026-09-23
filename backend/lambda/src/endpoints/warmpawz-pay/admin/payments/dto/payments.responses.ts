@@ -32,6 +32,16 @@ export interface WpayAdminPaymentItemDTO {
   readonly finalGstAmount?: number;
   readonly burnMode?: boolean;
   readonly burnAmount?: number;
+  /** Wallet cashback (or balance) applied on this Pay Bill. */
+  readonly walletAmount?: number;
+  /** Razorpay portion after wallet. */
+  readonly razorpayChargeAmount?: number;
+  /** Promo-engine evaluation id when a promo applied. */
+  readonly evaluationId?: string | null;
+  /** Instant promo discount from engine (same as discountAmount when engine-driven). */
+  readonly engineDiscountAmount?: number;
+  /** Cashback to credit on commit (not used on this tx). */
+  readonly pendingCashback?: number;
   readonly platformWithholdPercent?: number;
   readonly platformWithholdAmount?: number;
   readonly vendorSettlementAmount: number;

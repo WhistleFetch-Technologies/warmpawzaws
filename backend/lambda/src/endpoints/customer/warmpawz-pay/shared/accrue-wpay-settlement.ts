@@ -154,6 +154,20 @@ export async function accrueWpaySettlement(
       payNowAmount: readMetadataNumber(meta, 'payNowAmount') || payableAmount,
       burnMode: Boolean(meta.burnMode),
       burnAmount: readMetadataNumber(meta, 'burnAmount'),
+      walletAmount: readMetadataNumber(meta, 'walletAmount'),
+      razorpayChargeAmount: readMetadataNumber(meta, 'razorpayChargeAmount'),
+      evaluationId: readMetadataString(meta, 'evaluationId'),
+      engineDiscountAmount:
+        readMetadataNumber(meta, 'quotedDiscountAmount') ||
+        (meta.promoEngine && typeof meta.promoEngine === 'object'
+          ? Number((meta.promoEngine as Record<string, unknown>).engineDiscount) || 0
+          : 0),
+      pendingCashback:
+        meta.promoEngine && typeof meta.promoEngine === 'object'
+          ? Number((meta.promoEngine as Record<string, unknown>).pendingCashback) || 0
+          : 0,
+      promoEngine:
+        meta.promoEngine && typeof meta.promoEngine === 'object' ? meta.promoEngine : null,
     };
 
     const insertResult = await query(

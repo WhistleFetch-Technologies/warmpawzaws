@@ -49,59 +49,169 @@ function rowTintClass(status: WpayAdminPayoutStatus | undefined): string {
 }
 
 function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
+  const walletUsed = item.walletAmount ?? 0;
+  const razorpayCharge =
+    item.razorpayChargeAmount ??
+    Math.max(0, Math.round((item.payableAmount - walletUsed) * 100) / 100);
+  const reconBlock = (
+    <div className="mt-3 rounded-lg border border-orange-100 bg-orange-50/40 p-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-orange-800">
+        Promo &amp; wallet reconciliation
+      </p>
+      <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <span className="text-gray-500">Who → whom</span>
+          <p className="font-medium">
+            {item.customer.name} → {item.vendor.name}
+          </p>
+        </div>
+        <div>
+          <span className="text-gray-500">Quoted bill (Q)</span>
+          <p className="font-medium">{formatWpayInr(item.originalAmount)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Promo discount (D)</span>
+          <p className="font-medium text-green-700">
+            {formatWpayInr(item.discountAmount)}
+            {item.discountPercent > 0 ? ` (${item.discountPercent}%)` : ''}
+          </p>
+        </div>
+        <div>
+          <span className="text-gray-500">Wallet / cashback used</span>
+          <p className="font-medium">{formatWpayInr(walletUsed)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Razorpay collected</span>
+          <p className="font-medium">{formatWpayInr(razorpayCharge)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Customer paid (pay-now)</span>
+          <p className="font-medium">{formatWpayInr(item.payableAmount)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Cashback awarded (credit later)</span>
+          <p className="font-medium">{formatWpayInr(item.pendingCashback ?? 0)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Promo evaluation</span>
+          <p className="font-mono text-xs font-medium break-all">
+            {item.evaluationId || '—'}
+          </p>
+        </div>
+        <div>
+          <span className="text-gray-500">Pay vendor</span>
+          <p className="font-semibold text-blue-700">
+            {formatWpayInr(
+              item.commercialModel === 'tier_commission'
+                ? item.vendorPayableAmount ?? item.vendorSettlementAmount
+                : item.vendorSettlementAmount,
+            )}
+          </p>
+        </div>
+        <div>
+          <span className="text-gray-500">Payout status</span>
+          <p className="font-medium">{payoutLabel(item.payoutStatus)}</p>
+        </div>
+      </div>
+    </div>
+  );
+
   if (item.commercialModel === 'tier_commission') {
     const burnOn = item.burnMode === true;
     return (
-      <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <span className="text-gray-500">Tier commission</span>
-          <p className="font-medium">
-            {burnOn ? 'N/A' : formatWpayPercent(item.commissionPercent ?? 0)}
-          </p>
-        </div>
-        <div><span className="text-gray-500">Vendor payable</span><p className="font-medium">{formatWpayInr(item.vendorPayableAmount ?? item.vendorSettlementAmount)}</p></div>
-        <div>
-          <span className="text-gray-500">Platform revenue</span>
-          <p className="font-medium">{burnOn ? 'N/A' : formatWpayInr(item.wpayRevenueAmount ?? 0)}</p>
-        </div>
-        <div>
-          <span className="text-gray-500">Platform GST (inclusive)</span>
-          <p className="font-medium">{burnOn ? 'N/A' : formatWpayInr(item.platformGstAmount ?? 0)}</p>
-        </div>
-        <div><span className="text-gray-500">Burn / Test</span><p className="font-medium">{burnOn ? 'On' : 'Off'}</p></div>
-        <div>
-          <span className="text-gray-500">Burn amount</span>
-          <p className="font-medium">{formatWpayInr(item.burnAmount ?? 0)}</p>
-        </div>
-        <div><span className="text-gray-500">Platform fee</span><p className="font-medium">{formatWpayInr(item.platformFee ?? 0)}</p></div>
-        <div><span className="text-gray-500">Platform fee GST</span><p className="font-medium">{formatWpayInr(item.platformFeeGstAmount ?? 0)}</p></div>
-        <div><span className="text-gray-500">Convenience fee</span><p className="font-medium">{formatWpayInr(item.convenienceFee ?? 0)}</p></div>
-        <div><span className="text-gray-500">Convenience GST</span><p className="font-medium">{formatWpayInr(item.convenienceGstAmount ?? 0)}</p></div>
-        <div><span className="text-gray-500">Final GST</span><p className="font-semibold text-orange-700">{formatWpayInr(item.finalGstAmount ?? 0)}</p></div>
-        <div>
-          <span className="text-gray-500">Payout</span>
-          <p className="font-medium">{payoutLabel(item.payoutStatus)}</p>
-        </div>
-        {item.payoutSettledAt ? (
+      <div className="space-y-3">
+        <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <span className="text-gray-500">Payout settled at</span>
-            <p className="font-medium">{formatWpayPaidAt(item.payoutSettledAt)}</p>
+            <span className="text-gray-500">Tier commission</span>
+            <p className="font-medium">
+              {burnOn ? 'N/A' : formatWpayPercent(item.commissionPercent ?? 0)}
+            </p>
           </div>
-        ) : null}
+          <div>
+            <span className="text-gray-500">Vendor payable</span>
+            <p className="font-medium">
+              {formatWpayInr(item.vendorPayableAmount ?? item.vendorSettlementAmount)}
+            </p>
+          </div>
+          <div>
+            <span className="text-gray-500">Platform revenue (hold)</span>
+            <p className="font-medium">
+              {burnOn ? 'N/A' : formatWpayInr(item.wpayRevenueAmount ?? 0)}
+            </p>
+          </div>
+          <div>
+            <span className="text-gray-500">Platform GST (inclusive)</span>
+            <p className="font-medium">
+              {burnOn ? 'N/A' : formatWpayInr(item.platformGstAmount ?? 0)}
+            </p>
+          </div>
+          <div>
+            <span className="text-gray-500">Burn / Test</span>
+            <p className="font-medium">{burnOn ? 'On' : 'Off'}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Burn amount</span>
+            <p className="font-medium">{formatWpayInr(item.burnAmount ?? 0)}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Platform fee</span>
+            <p className="font-medium">{formatWpayInr(item.platformFee ?? 0)}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Platform fee GST (exclusive)</span>
+            <p className="font-medium">{formatWpayInr(item.platformFeeGstAmount ?? 0)}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Convenience fee</span>
+            <p className="font-medium">{formatWpayInr(item.convenienceFee ?? 0)}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Convenience GST (exclusive)</span>
+            <p className="font-medium">{formatWpayInr(item.convenienceGstAmount ?? 0)}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Final GST</span>
+            <p className="font-semibold text-orange-700">
+              {formatWpayInr(item.finalGstAmount ?? 0)}
+            </p>
+          </div>
+          {item.payoutSettledAt ? (
+            <div>
+              <span className="text-gray-500">Payout settled at</span>
+              <p className="font-medium">{formatWpayPaidAt(item.payoutSettledAt)}</p>
+            </div>
+          ) : null}
+        </div>
+        {reconBlock}
       </div>
     );
   }
 
   return (
-    <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-      <div><span className="text-gray-500">Platform withhold</span><p className="font-medium">{formatWpayPercent(item.platformWithholdPercent ?? 0)}</p></div>
-      <div><span className="text-gray-500">Withhold amount</span><p className="font-medium">{formatWpayInr(item.platformWithholdAmount ?? 0)}</p></div>
-      <div><span className="text-gray-500">Vendor settlement</span><p className="font-medium">{formatWpayInr(item.vendorSettlementAmount)}</p></div>
-      <div><span className="text-gray-500">Model</span><p className="font-medium">Historical withhold</p></div>
-      <div>
-        <span className="text-gray-500">Payout</span>
-        <p className="font-medium">{payoutLabel(item.payoutStatus)}</p>
+    <div className="space-y-3">
+      <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <span className="text-gray-500">Platform withhold</span>
+          <p className="font-medium">{formatWpayPercent(item.platformWithholdPercent ?? 0)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Withhold amount</span>
+          <p className="font-medium">{formatWpayInr(item.platformWithholdAmount ?? 0)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Vendor settlement</span>
+          <p className="font-medium">{formatWpayInr(item.vendorSettlementAmount)}</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Model</span>
+          <p className="font-medium">Historical withhold</p>
+        </div>
+        <div>
+          <span className="text-gray-500">Payout</span>
+          <p className="font-medium">{payoutLabel(item.payoutStatus)}</p>
+        </div>
       </div>
+      {reconBlock}
     </div>
   );
 }
@@ -176,6 +286,8 @@ export function PaymentsTable({
               <TableHead>Payout</TableHead>
               <TableHead className="text-right">Amount Quoted</TableHead>
               <TableHead className="text-right">Tier / Discount</TableHead>
+              <TableHead className="text-right">Discount ₹</TableHead>
+              <TableHead className="text-right">Wallet Used</TableHead>
               <TableHead className="text-right">Customer Paid</TableHead>
               <TableHead className="text-right">Platform Revenue</TableHead>
               <TableHead className="text-right">Final GST</TableHead>
@@ -260,8 +372,36 @@ export function PaymentsTable({
                         </span>
                       )}
                     </TableCell>
+                    <TableCell className="text-right text-green-700">
+                      {formatWpayInr(item.discountAmount)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {(item.walletAmount ?? 0) > 0.009 ? (
+                        <span className="font-medium text-violet-700">
+                          {formatWpayInr(item.walletAmount ?? 0)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right font-semibold text-green-700">
-                      {formatWpayInr(item.payableAmount)}
+                      <div className="space-y-0.5">
+                        <span className="block">{formatWpayInr(item.payableAmount)}</span>
+                        {(item.walletAmount ?? 0) > 0.009 ? (
+                          <span className="block text-[10px] font-normal text-gray-500">
+                            RZ{' '}
+                            {formatWpayInr(
+                              item.razorpayChargeAmount ??
+                                Math.max(
+                                  0,
+                                  Math.round(
+                                    (item.payableAmount - (item.walletAmount ?? 0)) * 100,
+                                  ) / 100,
+                                ),
+                            )}
+                          </span>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right text-gray-800">
                       {isTier
@@ -286,7 +426,7 @@ export function PaymentsTable({
                   </TableRow>
                   {expanded ? (
                     <TableRow>
-                      <TableCell colSpan={12} className="bg-gray-50 px-6 py-4">
+                      <TableCell colSpan={14} className="bg-gray-50 px-6 py-4">
                         <PaymentDetailDrawer item={item} />
                       </TableCell>
                     </TableRow>

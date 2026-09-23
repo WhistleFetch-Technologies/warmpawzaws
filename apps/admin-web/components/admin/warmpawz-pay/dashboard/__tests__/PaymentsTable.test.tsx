@@ -77,6 +77,10 @@ describe('PaymentsTable', () => {
     expect(screen.getByText('Burn amount')).toBeInTheDocument();
     expect(screen.getByText('₹1,441.00')).toBeInTheDocument();
     expect(screen.getByText('On')).toBeInTheDocument();
+    expect(screen.getByText(/Promo & wallet reconciliation/i)).toBeInTheDocument();
+    expect(screen.getByText('Wallet / cashback used')).toBeInTheDocument();
+    expect(screen.getByText('Discount ₹')).toBeInTheDocument();
+    expect(screen.getByText('Wallet Used')).toBeInTheDocument();
   });
 
   it('tints pending rows and allows selecting only pending payouts', () => {

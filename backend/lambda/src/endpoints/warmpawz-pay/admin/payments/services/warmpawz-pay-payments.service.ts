@@ -44,6 +44,72 @@ function readBreakupNumber(
   return toFiniteNumber(breakup[key] as string | number | null | undefined);
 }
 
+function readMetaString(
+  meta: Record<string, unknown> | null | undefined,
+  key: string,
+): string | null {
+  if (!meta) return null;
+  const v = meta[key];
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s || null;
+}
+
+function resolvePromoWalletRecon(
+  breakup: Record<string, unknown> | null | undefined,
+  meta: Record<string, unknown> | null | undefined,
+): {
+  walletAmount?: number;
+  razorpayChargeAmount?: number;
+  evaluationId?: string | null;
+  engineDiscountAmount?: number;
+  pendingCashback?: number;
+} {
+  const promo =
+    meta?.promoEngine && typeof meta.promoEngine === 'object'
+      ? (meta.promoEngine as Record<string, unknown>)
+      : breakup?.promoEngine && typeof breakup.promoEngine === 'object'
+        ? (breakup.promoEngine as Record<string, unknown>)
+        : null;
+
+  const walletAmount =
+    readBreakupNumber(breakup, 'walletAmount') ??
+    toFiniteNumber(meta?.walletAmount as number | undefined) ??
+    undefined;
+  const razorpayChargeAmount =
+    readBreakupNumber(breakup, 'razorpayChargeAmount') ??
+    toFiniteNumber(meta?.razorpayChargeAmount as number | undefined) ??
+    undefined;
+  const evaluationId =
+    readMetaString(breakup as Record<string, unknown> | null, 'evaluationId') ??
+    readMetaString(meta, 'evaluationId') ??
+    (promo?.evaluationId != null ? String(promo.evaluationId) : null);
+  const engineDiscountAmount =
+    readBreakupNumber(breakup, 'engineDiscountAmount') ??
+    toFiniteNumber(promo?.engineDiscount as number | undefined) ??
+    toFiniteNumber(meta?.quotedDiscountAmount as number | undefined) ??
+    undefined;
+  const pendingCashback =
+    readBreakupNumber(breakup, 'pendingCashback') ??
+    toFiniteNumber(promo?.pendingCashback as number | undefined) ??
+    undefined;
+
+  return {
+    walletAmount: walletAmount != null && Number.isFinite(walletAmount) ? walletAmount : undefined,
+    razorpayChargeAmount:
+      razorpayChargeAmount != null && Number.isFinite(razorpayChargeAmount)
+        ? razorpayChargeAmount
+        : undefined,
+    evaluationId,
+    engineDiscountAmount:
+      engineDiscountAmount != null && Number.isFinite(engineDiscountAmount)
+        ? engineDiscountAmount
+        : undefined,
+    pendingCashback:
+      pendingCashback != null && Number.isFinite(pendingCashback) ? pendingCashback : undefined,
+  };
+}
+
 function resolveCommercialModel(row: WpayAdminPaymentDbRow): WpayCommercialModel {
   const breakupModel = String(row.settlement_breakup?.commercialModel ?? '').trim();
   if (breakupModel === 'tier_commission') return 'tier_commission';
@@ -151,6 +217,7 @@ function mapPaymentRow(
   const breakup = row.settlement_breakup ?? undefined;
   const meta = row.payment_metadata ?? undefined;
   const payout = resolvePayoutStatus(row);
+  const promoWallet = resolvePromoWalletRecon(breakup, meta);
 
   const base = {
     paymentId: row.payment_id,
@@ -181,6 +248,7 @@ function mapPaymentRow(
     settlementId: payout.settlementId,
     payoutStatus: payout.payoutStatus,
     payoutSettledAt: payout.payoutSettledAt,
+    ...promoWallet,
   };
 
   if (commercialModel === 'tier_commission') {
