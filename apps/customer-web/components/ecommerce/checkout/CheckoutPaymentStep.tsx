@@ -10,6 +10,7 @@ import {
   type PromoEngineEarnPreviewData,
 } from '@/components/customer/promo-engine/PromoEarnPreview';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { parseCartLineKey } from '@/lib/product-sku-client';
 import { buildCustomerWalletPath } from '@/lib/wallet-redeem-query';
 
 function formatINR(amount: number): string {
