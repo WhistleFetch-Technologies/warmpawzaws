@@ -380,6 +380,8 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
           const stored: StoredCheckoutOrderResponse = {
             orderId,
             totalAmount: pricing.total,
+            walletAmountApplied,
+            paidAmount: Math.max(0, pricing.total - walletAmountApplied),
             phone,
             shippingAddress: address,
             status: 'confirmed',

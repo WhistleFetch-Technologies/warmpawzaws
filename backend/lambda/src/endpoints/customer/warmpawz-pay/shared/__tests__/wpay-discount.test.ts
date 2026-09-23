@@ -214,56 +214,38 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.payNowAmount).toBe(900);
   });
 
-  it('case 12: engine discountAmountOverride feeds fee guardrail headroom under Q', () => {
-    // Q=1000, engine D=80 → fees 30+5.4+20+3.6=59 < 80 → fees apply; payNow ≤ Q
+  it('keeps platform and convenience fees when catalogue discount is 0', () => {
     const quote = computeWpayCommercialQuote({
-      quotedAmount: 1000,
+      quotedAmount: 6700,
       commissionPercent: 20,
       discountPercent: 0,
-      discountAmountOverride: 80,
       platformFee: 30,
-      platformFeeMode: 'fixed',
       platformFeeGstRate: 18,
       convenienceFee: 20,
-      convenienceFeeMode: 'fixed',
       convenienceGstRate: 18,
     });
-    expect(quote.discountAmount).toBe(80);
-    expect(quote.servicePayableAmount).toBe(920);
+    expect(quote.discountAmount).toBe(0);
     expect(quote.platformFee).toBe(30);
     expect(quote.convenienceFee).toBe(20);
-    expect(quote.payNowAmount).toBe(979);
-    expect(quote.payNowAmount).toBeLessThanOrEqual(1000);
+    expect(quote.payNowAmount).toBe(6759);
   });
 
-  it('case 13: engine D=0 still zeros fees (any fee would exceed original Q)', () => {
+  it('applies engine discount then keeps fees when they are smaller than the offer', () => {
     const quote = computeWpayCommercialQuote({
-      quotedAmount: 1000,
+      quotedAmount: 7800,
       commissionPercent: 20,
       discountPercent: 0,
-      discountAmountOverride: 0,
+      engineDiscount: 500,
       platformFee: 30,
       platformFeeGstRate: 18,
       convenienceFee: 20,
       convenienceGstRate: 18,
     });
-    expect(quote.platformFee).toBe(0);
-    expect(quote.convenienceFee).toBe(0);
-    expect(quote.payNowAmount).toBe(1000);
-  });
-
-  it('case 14: engine D may exceed commission % without throwing; revenue floors at 0', () => {
-    const quote = computeWpayCommercialQuote({
-      quotedAmount: 1000,
-      commissionPercent: 10,
-      discountPercent: 0,
-      discountAmountOverride: 200,
-      platformFee: 0,
-      convenienceFee: 0,
-    });
-    expect(quote.discountAmount).toBe(200);
-    expect(quote.wpayRevenueAmount).toBe(0);
-    expect(quote.payNowAmount).toBe(800);
+    expect(quote.discountAmount).toBe(500);
+    expect(quote.servicePayableAmount).toBe(7300);
+    expect(quote.platformFee).toBe(30);
+    expect(quote.convenienceFee).toBe(20);
+    expect(quote.payNowAmount).toBe(7359);
   });
 
   it('assertDiscountBelowCommission enforces D < C', () => {

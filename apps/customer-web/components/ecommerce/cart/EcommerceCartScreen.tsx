@@ -19,7 +19,6 @@ import {
   persistPricingOptionsForCheckout,
   readPricingOptionsForCheckout,
 } from '@/lib/ecommerce/cart-pricing';
-import { CartPromotionSelect, type SelectedCartPromotion } from '@/components/ecommerce/cart/CartPromotionSelect';
 import { CartLineQuantityStepper } from '@/components/ecommerce/shared/CartLineQuantityStepper';
 import { DeliveryAddressPickerSheet } from '@/components/customer/ecommerce/DeliveryAddressPickerSheet';
 import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
@@ -78,7 +77,6 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   const phone = phoneProp || resolveCustomerPhone();
   const isGuest = isGuestApplicationState();
 
-  const [selectedPromo, setSelectedPromo] = useState<SelectedCartPromotion | null>(null);
   const [autoPromo, setAutoPromo] = useState<{
     discountAmount: number;
     promotionId?: string;
@@ -93,34 +91,17 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   const [recommendations, setRecommendations] = useState<ShopProduct[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
 
-  useEffect(() => {
-    const persisted = readPricingOptionsForCheckout();
-    const sp = persisted.sellerPromotion;
-    if (sp?.code && (sp.codeDiscount ?? 0) > 0) {
-      setSelectedPromo({
-        code: sp.code,
-        discountAmount: sp.codeDiscount ?? 0,
-        promotionId: sp.promotionId,
-        label: sp.label || sp.code,
-        source: sp.source ?? 'vendor',
-      });
-    }
-  }, []);
-
   const sellerPromotionPricing = useMemo(() => {
-    // Best Offer: only the winning offer is priced (auto XOR selected code).
-    const autoDiscount = selectedPromo ? 0 : (autoPromo?.discountAmount ?? 0);
-    const codeDiscount = selectedPromo?.discountAmount ?? 0;
-    if (autoDiscount <= 0 && codeDiscount <= 0) return undefined;
+    const autoDiscount = autoPromo?.discountAmount ?? 0;
+    if (autoDiscount <= 0) return undefined;
     return {
       autoDiscount,
-      codeDiscount,
-      label: selectedPromo?.label ?? autoPromo?.label,
-      promotionId: selectedPromo?.promotionId ?? autoPromo?.promotionId,
-      code: selectedPromo?.code,
-      source: selectedPromo ? selectedPromo.source : (autoPromo?.source ?? 'vendor'),
+      codeDiscount: 0,
+      label: autoPromo?.label,
+      promotionId: autoPromo?.promotionId,
+      source: autoPromo?.source ?? 'admin',
     };
-  }, [selectedPromo, autoPromo]);
+  }, [autoPromo]);
 
   const pricing = useMemo(() => {
     const persisted = readPricingOptionsForCheckout();
@@ -165,9 +146,8 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   );
 
   useEffect(() => {
-    // Admin/platform campaigns work without vendorId; only skip when cart empty or a manual promo is selected.
-    if (cart.length === 0 || selectedPromo) {
-      if (!selectedPromo) setAutoPromo(null);
+    if (cart.length === 0) {
+      setAutoPromo(null);
       return;
     }
     let cancelled = false;
@@ -197,15 +177,16 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
         });
         if (cancelled) return;
         const best = res?.bestPromotion;
-        const amount = best?.calculatedDiscount ?? 0;
-        const promoSource =
-          best?.promotionSource ?? res?.promotionSource ?? undefined;
+        const amount = Math.max(
+          Number(best?.calculatedDiscount ?? 0) || 0,
+          Number(res?.promoEngine?.engineDiscount ?? 0) || 0,
+        );
         if (amount > 0) {
           setAutoPromo({
             discountAmount: amount,
-            promotionId: best?.id,
+            promotionId: best?.id || res?.promoEngine?.evaluationId,
             label: best?.description || best?.name || 'Promotion applied',
-            source: promoSource === 'admin' ? 'admin' : 'vendor',
+            source: 'admin',
           });
         } else {
           setAutoPromo(null);
@@ -227,7 +208,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     return () => {
       cancelled = true;
     };
-  }, [primaryVendorId, cart.length, cartPromoItems, selectedPromo]);
+  }, [primaryVendorId, cart.length, cartPromoItems]);
 
   const refreshAddresses = useCallback(async () => {
     setAddressesLoading(true);
@@ -304,116 +285,24 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     setSelectedAddress(addr);
   };
 
-  const persistPromoForCheckout = useCallback(
-    (promo: SelectedCartPromotion | null) => {
-      const persisted = readPricingOptionsForCheckout();
-      const autoDiscount = promo ? 0 : (autoPromo?.discountAmount ?? 0);
-      persistPricingOptionsForCheckout({
-        ...persisted,
-        itemCount,
-        deliverySpeed: 'standard',
-        sellerPromotion:
-          promo || autoDiscount > 0
-            ? {
-                autoDiscount,
-                codeDiscount: promo?.discountAmount ?? 0,
-                label: promo?.label ?? autoPromo?.label,
-                code: promo?.code,
-                promotionId: promo?.promotionId ?? autoPromo?.promotionId,
-                source: promo ? promo.source : (autoPromo?.source ?? 'vendor'),
-              }
-            : undefined,
-      });
-    },
-    [itemCount, autoPromo]
-  );
-
   useEffect(() => {
-    if (!selectedPromo) {
-      persistPromoForCheckout(null);
-    }
-  }, [autoPromo, selectedPromo, persistPromoForCheckout]);
-
-  const handleApplyPromo = async (promo: SelectedCartPromotion) => {
-    // Re-run Best Offer with this code so a weaker coupon cannot replace a stronger auto promo.
-    try {
-      const res = await apiClient.post<{
-        bestPromotion?: {
-          id?: string;
-          name?: string;
-          description?: string;
-          code?: string;
-          calculatedDiscount?: number;
-          promotionSource?: 'vendor' | 'admin';
-        };
-        totalSavings?: number;
-        promotionSource?: 'vendor' | 'admin' | null;
-      }>('/promotions/calculate-cart', {
-        ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
-        customerId: getResolvedCustomerId() || undefined,
-        items: cartPromoItems,
-        manualCode: promo.code,
-      });
-
-      const savings = Number(res?.totalSavings ?? res?.bestPromotion?.calculatedDiscount ?? 0);
-      const source: 'vendor' | 'admin' =
-        (res?.bestPromotion?.promotionSource ?? res?.promotionSource) === 'admin'
-          ? 'admin'
-          : 'vendor';
-      const best = res?.bestPromotion;
-      const codeUpper = promo.code.trim().toUpperCase();
-      const bestCode = String(best?.code || '').trim().toUpperCase();
-      const wonBySelectedCode =
-        savings > 0 &&
-        (bestCode === codeUpper ||
-          (best?.id != null &&
-            promo.promotionId != null &&
-            String(best.id) === String(promo.promotionId)) ||
-          // Platform coupon payload may omit id match but source+amount align with validate-code.
-          (source === promo.source &&
-            Math.abs(savings - Number(promo.discountAmount || 0)) <= 1));
-
-      if (!wonBySelectedCode) {
-        // Stronger auto (or other) offer wins — keep auto, do not pin the weaker coupon.
-        setSelectedPromo(null);
-        if (savings > 0) {
-          setAutoPromo({
-            discountAmount: savings,
-            promotionId: best?.id,
-            label: best?.description || best?.name || 'Promotion applied',
-            source,
-          });
-          toast.message(
-            `Better offer already applied (−₹${Math.round(savings)}). Coupon not used.`
-          );
-        } else {
-          toast.error('Coupon is not the best available offer for this cart');
-        }
-        persistPromoForCheckout(null);
-        return;
-      }
-
-      const applied: SelectedCartPromotion = {
-        code: promo.code,
-        discountAmount: savings,
-        promotionId: best?.id ?? promo.promotionId,
-        label: best?.description || best?.name || promo.label,
-        source,
-      };
-      setSelectedPromo(applied);
-      persistPromoForCheckout(applied);
-      toast.success('Coupon applied');
-    } catch {
-      // Fallback: use validated coupon as selected (server re-validates at order create).
-      setSelectedPromo(promo);
-      persistPromoForCheckout(promo);
-    }
-  };
-
-  const handleRemovePromo = () => {
-    setSelectedPromo(null);
-    persistPromoForCheckout(null);
-  };
+    const persisted = readPricingOptionsForCheckout();
+    persistPricingOptionsForCheckout({
+      ...persisted,
+      itemCount,
+      deliverySpeed: 'standard',
+      sellerPromotion:
+        (autoPromo?.discountAmount ?? 0) > 0
+          ? {
+              autoDiscount: autoPromo?.discountAmount ?? 0,
+              codeDiscount: 0,
+              label: autoPromo?.label,
+              promotionId: autoPromo?.promotionId,
+              source: autoPromo?.source ?? 'admin',
+            }
+          : undefined,
+    });
+  }, [autoPromo, itemCount]);
 
   const handleProceedCheckout = () => {
     if (!selectedAddress?.id) {
@@ -553,17 +442,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               </div>
             </section>
 
-            <CartPromotionSelect
-              orderAmount={pricing.lineSubtotal}
-              vendorId={primaryVendorId}
-              cartItems={cartPromoItems}
-              customerId={getResolvedCustomerId() || undefined}
-              selected={selectedPromo}
-              onApply={handleApplyPromo}
-              onRemove={handleRemovePromo}
-            />
-
-            {!selectedPromo && autoPromo && autoPromo.discountAmount > 0 && (
+            {autoPromo && autoPromo.discountAmount > 0 && (
               <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
                 <p className="text-sm font-semibold text-emerald-900">{autoPromo.label}</p>
                 <p className="text-xs text-emerald-700 mt-0.5">
@@ -674,7 +553,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                 cart={cart}
                 pricing={pricing}
                 showItems={false}
-                promotionLabel={selectedPromo?.label ?? autoPromo?.label}
+                promotionLabel={autoPromo?.label}
               />
             </section>
           </div>
@@ -687,9 +566,9 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                   <p className="font-semibold text-emerald-800">
                     You save ₹{pricing.discount.toFixed(0)} on this order
                   </p>
-                  {(selectedPromo?.label ?? autoPromo?.label) ? (
+                  {(autoPromo?.label) ? (
                     <p className="text-xs text-emerald-700 mt-0.5">
-                      {selectedPromo?.label ?? autoPromo?.label}
+                      {autoPromo?.label}
                     </p>
                   ) : null}
                 </div>
@@ -697,7 +576,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               <CheckoutPriceBreakdown
                 cart={cart}
                 pricing={pricing}
-                promotionLabel={selectedPromo?.label ?? autoPromo?.label}
+                promotionLabel={autoPromo?.label}
               />
               <Button
                 onClick={handleProceedCheckout}

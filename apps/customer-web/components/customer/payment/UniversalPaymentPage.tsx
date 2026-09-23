@@ -70,6 +70,7 @@ import {
   WAPPT_APPOINTMENT_SERVICE_ID,
 } from '@/lib/warmpawz-appointments-customer';
 import { toWapptRequestedServices } from '@/lib/wappt-requested-services';
+import { buildCustomerWalletPath, inferBookingSpendChannel } from '@/lib/wallet-redeem-query';
 import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
 import {
   isWarmpawzCustomerNativeWebView,
@@ -1368,44 +1369,34 @@ export function UniversalPaymentPage({
 
       // Load wallet balance (pass redeem channel so V/C/F cashback unlocks on allowed surfaces)
       try {
-        const walletParams = new URLSearchParams({ phone: customerPhone });
-        const cat = String(category || initialPromotionIntent?.serviceCategory || '').trim();
-        if (cat) walletParams.set('serviceCategory', cat);
-        if (vendorId) walletParams.set('vendorId', String(vendorId));
-        const style = String(serviceStyle || initialPromotionIntent?.serviceStyle || '')
-          .trim()
-          .toLowerCase();
-        const teleStyles = new Set(['tele', 'video_consultation', 'video', 'online', 'online_consultation']);
-        const apptStyles = new Set([
-          'appointment',
-          'at_center',
-          'at_clinic',
-          'at_home',
-          'home_visit',
-          'clinic',
-          'center',
-          'at_vendor',
-          'hybrid',
-        ]);
-        let walletChannel: string | null = null;
-        const paymentType = String(type);
-        if (paymentType === 'order') walletChannel = 'ecommerce';
-        else if (teleStyles.has(style)) walletChannel = 'tele';
-        else if (apptStyles.has(style) || paymentType === 'booking') walletChannel = 'appointment';
-        if (walletChannel) walletParams.set('channel', walletChannel);
-        const walletRes = await apiClient.get<any>(`/customer/wallet?${walletParams.toString()}`);
+        const walletRes = await apiClient.get<any>(
+          buildCustomerWalletPath(customerPhone, {
+            serviceCategory: category || initialPromotionIntent?.serviceCategory || null,
+            channel:
+              type === 'booking'
+                ? inferBookingSpendChannel({
+                    serviceStyle,
+                    serviceType: category,
+                    isWapptAppointment: isWapptAppointmentPayment,
+                  })
+                : type === 'order'
+                  ? 'ecommerce'
+                  : null,
+            vendorId: type === 'booking' || type === 'order' ? vendorId : null,
+          })
+        );
         if (walletRes.wallet) {
           setWallet(walletRes.wallet);
-          const spendable = Number(
+          const bal = Number(
             walletRes.wallet.spendableBalance ?? walletRes.wallet.balance ?? 0
           );
-          if (walletDebitAllowed && type === 'booking' && Number.isFinite(spendable) && spendable > 0.009) {
+          if (walletDebitAllowed && type === 'booking' && Number.isFinite(bal) && bal > 0.009) {
             setUseWallet(true);
           }
-          if (type === 'meal_subscription' && Number.isFinite(spendable) && spendable > 0.009) {
+          if (type === 'meal_subscription' && Number.isFinite(bal) && bal > 0.009) {
             setUseWallet(true);
           }
-          if (type === 'meal_one_time' && Number.isFinite(spendable) && spendable > 0.009) {
+          if (type === 'meal_one_time' && Number.isFinite(bal) && bal > 0.009) {
             setUseWallet(true);
           }
         }
@@ -1468,7 +1459,7 @@ export function UniversalPaymentPage({
             ? [String(serviceId)]
             : [],
         couponCode,
-        displayPromotionsOnly: !couponCode,
+        displayPromotionsOnly: false,
         bypassCache: Boolean(couponCode),
       };
       const quote = await fetchBookingDiscountQuote(params);
@@ -3622,6 +3613,7 @@ export function UniversalPaymentPage({
               serviceName,
               vendorName,
               petName: effectivePetName,
+              evaluationId: discountQuote?.promoEngine?.evaluationId || undefined,
             });
             const bid = instantRes?.bookingId;
             if (!bid) {
@@ -3640,6 +3632,7 @@ export function UniversalPaymentPage({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
+              evaluationId: discountQuote?.promoEngine?.evaluationId || undefined,
             });
             if (!confirmRes?.success) {
               throw new Error(confirmRes?.error || 'Payment confirmation failed');

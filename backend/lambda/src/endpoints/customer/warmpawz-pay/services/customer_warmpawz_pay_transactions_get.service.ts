@@ -51,6 +51,7 @@ export function mapWpayCustomerHistoryCard(row: WpayTransactionDbRow) {
     convenienceGstAmount: metaNumber(meta, 'convenienceGstAmount'),
     convenienceGstRate: metaNumber(meta, 'convenienceGstRateSnapshot'),
     payableAmount: Number(row.payable_amount ?? 0),
+    walletAmount: metaNumber(meta, 'walletAmount'),
     commercialModel: String(meta?.commercialModel ?? '').trim() || null,
     paidAt: row.paid_at,
   };

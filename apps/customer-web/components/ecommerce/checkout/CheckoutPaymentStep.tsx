@@ -4,14 +4,14 @@ import { useEffect, useState } from 'react';
 import { CreditCard, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCheckout } from '@/context/CheckoutProvider';
-import { CartPromotionSelect } from '@/components/ecommerce/cart/CartPromotionSelect';
 import { apiClient } from '@/lib/api-client';
-import { parseCartLineKey } from '@/lib/product-sku-client';
 import {
   PromoEarnPreview,
   type PromoEngineEarnPreviewData,
 } from '@/components/customer/promo-engine/PromoEarnPreview';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { parseCartLineKey } from '@/lib/product-sku-client';
+import { buildCustomerWalletPath } from '@/lib/wallet-redeem-query';
 
 function formatINR(amount: number): string {
   return `₹${amount.toFixed(2)}`;
@@ -33,9 +33,6 @@ export function CheckoutPaymentStep() {
     pricing,
     goNext,
     primaryVendorId,
-    coupon,
-    applyCoupon,
-    removeCoupon,
     walletAmountApplied,
     setWalletAmountApplied,
   } = useCheckout();
@@ -100,18 +97,21 @@ export function CheckoutPaymentStep() {
   // Fetch spendable wallet for this shop checkout (V/C/F + ecommerce channel)
   useEffect(() => {
     if (!ECOM_WALLET_ENABLED || !phone) return;
-    const params = new URLSearchParams({
-      phone,
-      serviceCategory: 'ECOMMERCE',
-      channel: 'ecommerce',
-    });
-    if (primaryVendorId) params.set('vendorId', String(primaryVendorId));
     apiClient
       .get<{
         balance?: number;
         data?: { balance?: number };
         wallet?: { balance?: number; spendableBalance?: number };
-      }>(`/customer/wallet?${params.toString()}`)
+      }>(
+        buildCustomerWalletPath(phone, {
+          serviceCategory: 'ecommerce',
+          channel: 'ecommerce',
+          vendorId: primaryVendorId,
+          ecommerceCategoryId: cart.find((item) => item.categoryId || item.category)?.categoryId
+            || cart.find((item) => item.categoryId || item.category)?.category
+            || null,
+        })
+      )
       .then((res) => {
         const total = parseFloat(String(res?.wallet?.balance ?? res?.balance ?? res?.data?.balance ?? '0'));
         const spendable = parseFloat(
@@ -124,7 +124,7 @@ export function CheckoutPaymentStep() {
         setWalletBalance(0);
         setWalletTotalBalance(0);
       });
-  }, [phone, primaryVendorId]);
+  }, [phone, primaryVendorId, cart]);
 
   // Sync wallet amount applied with the context when toggle changes
   useEffect(() => {
@@ -136,51 +136,11 @@ export function CheckoutPaymentStep() {
     setWalletAmountApplied(maxApplicable > 0 ? maxApplicable : 0);
   }, [walletEnabled, walletBalance, pricing.total, setWalletAmountApplied]);
 
-  const selectedPromo = coupon
-    ? {
-        code: coupon.code,
-        discountAmount: coupon.discountAmount,
-        promotionId: coupon.promotionId,
-        label: coupon.code,
-        source: coupon.source ?? ('vendor' as const),
-      }
-    : null;
-
   const payableAfterWallet = Math.max(0, pricing.total - walletAmountApplied);
   const walletCoversOrder = walletAmountApplied > 0 && payableAfterWallet < 0.01;
 
   return (
     <div className="space-y-4">
-      <CartPromotionSelect
-        orderAmount={pricing.lineSubtotal}
-        vendorId={primaryVendorId}
-        cartItems={cart.map((item) => {
-          const productId =
-            parseCartLineKey(item.id).productId ||
-            (item.warmpawzLine?.product?.id != null
-              ? String(item.warmpawzLine.product.id)
-              : item.id);
-          return {
-            productId,
-            id: productId,
-            quantity: item.quantity,
-            price: item.price,
-            categoryId: item.categoryId || item.category,
-            category: item.categoryId || item.category,
-          };
-        })}
-        selected={selectedPromo}
-        onApply={(p) =>
-          applyCoupon({
-            code: p.code,
-            discountAmount: p.discountAmount,
-            promotionId: p.promotionId,
-            source: p.source,
-          })
-        }
-        onRemove={removeCoupon}
-      />
-
       <PromoEarnPreview data={promoEngine} />
 
       {/* Wallet balance section (hidden while ECOM_WALLET_ENABLED is false) */}

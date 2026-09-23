@@ -12,7 +12,7 @@ import {
 } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
-import { applyVcfToDraft, vcfOrEmpty } from '@/lib/promo-engine/vcf';
+import { applyVcfToDraft, syncRedeemAfterAudience, vcfOrEmpty } from '@/lib/promo-engine/vcf';
 import type {
   PromoCountChannel,
   PromoEngineDraft,
@@ -131,7 +131,8 @@ export function AudienceStep({
   const { categories, loading, error } = useCatalogServiceCategories();
   const vcf = vcfOrEmpty(draft);
 
-  const patch = (next: PromoVcfDraft) => onChange(applyVcfToDraft(draft, next));
+  const patch = (next: PromoVcfDraft) =>
+    onChange(applyVcfToDraft(draft, syncRedeemAfterAudience(next)));
 
   const setSourceLetter = (letter: PromoLetter) => {
     patch({
@@ -302,12 +303,13 @@ export function AudienceStep({
                   min={1}
                   value={vcf.visitLoop.m}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    if (vcf.visitLoop.kind !== 'between') return;
+                    const current = vcf.visitLoop;
+                    if (current.kind !== 'between') return;
                     patch({
                       ...vcf,
                       visitLoop: {
                         kind: 'between',
-                        n: vcf.visitLoop.n,
+                        n: current.n,
                         m: Math.max(1, Number(e.target.value) || 1),
                       },
                     });

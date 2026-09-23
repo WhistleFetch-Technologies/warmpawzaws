@@ -1,4 +1,5 @@
-import { classifyPaymentChannel } from '../channel';
+import { classifyPaymentChannel, inferEvaluateSurface, resolveSpendChannelFromBooking } from '../channel';
+import { parseVcfConfig } from '../parse-config';
 import { categoryIdFromVendorRole } from '../category-from-role';
 import { resolvePaymentContext } from '../payment-context';
 import { visitCountForPromo } from '../visit-count';
@@ -29,6 +30,17 @@ describe('V/C/F channel', () => {
   });
   it('marks shop as ecommerce spend-only', () => {
     expect(classifyPaymentChannel({ surface: 'ecommerce' })).toBe('ecommerce');
+  });
+  it('treats WAPPT commerce_mode as appointment when style is missing', () => {
+    expect(
+      resolveSpendChannelFromBooking({
+        service_type: 'grooming',
+        commerce_mode: 'warmpawz_appointments',
+      })
+    ).toBe('appointment');
+  });
+  it('keeps tele when the booking style is tele', () => {
+    expect(resolveSpendChannelFromBooking({ service_type: 'tele' })).toBe('tele');
   });
 });
 
@@ -70,6 +82,57 @@ describe('payment context', () => {
       catalogue,
     });
     expect(ctx.categoryId).toBeNull();
+  });
+  it('maps Pay Bill category from vendor role when the client sent no categoryId', () => {
+    const ctx = resolvePaymentContext({
+      surface: 'paybill',
+      vendorId: 'v1',
+      roleId: 'vet-role',
+      catalogue,
+    });
+    expect(ctx.channel).toBe('paybill');
+    expect(ctx.categoryId).toBe('cat-vet');
+  });
+});
+
+describe('inferEvaluateSurface', () => {
+  it('treats WPAY / paybill as paybill', () => {
+    expect(inferEvaluateSurface({ type: 'WPAY' })).toBe('paybill');
+    expect(inferEvaluateSurface({ channel: 'paybill' })).toBe('paybill');
+  });
+  it('treats shop as ecommerce', () => {
+    expect(inferEvaluateSurface({ type: 'ECOMMERCE' })).toBe('ecommerce');
+    expect(inferEvaluateSurface({ type: 'SHOP' })).toBe('ecommerce');
+  });
+  it('defaults to booking', () => {
+    expect(inferEvaluateSurface({})).toBe('booking');
+  });
+});
+
+describe('parseVcfConfig redeem mapping', () => {
+  it('fills redeem vendor from publish when the id was omitted', () => {
+    const vcf = parseVcfConfig({
+      vcf: {
+        visitSource: { letter: 'F', width: 'general' },
+        visitLoop: { kind: 'every' },
+        benefitMode: 'cashback',
+        publish: { letter: 'V', vendorId: 'clinic-1' },
+        redeem: { letter: 'V', channels: ['paybill'] },
+      },
+    });
+    expect(vcf?.redeem?.vendorId).toBe('clinic-1');
+  });
+  it('fills redeem category from visit when publish is platform', () => {
+    const vcf = parseVcfConfig({
+      vcf: {
+        visitSource: { letter: 'C', categoryId: 'cat-vet', width: 'general' },
+        visitLoop: { kind: 'every' },
+        benefitMode: 'cashback',
+        publish: { letter: 'F' },
+        redeem: { letter: 'C', channels: ['paybill'] },
+      },
+    });
+    expect(vcf?.redeem?.categoryId).toBe('cat-vet');
   });
 });
 

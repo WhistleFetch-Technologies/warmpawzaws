@@ -413,6 +413,7 @@ export class GetCustomerOrdersHandler extends BaseHandler {
           o.subtotal,
           o.total_amount,
           o.discount_amount,
+          o.wallet_amount_applied,
           o.shipping_amount,
           o.tax_amount,
           o.payment_method,

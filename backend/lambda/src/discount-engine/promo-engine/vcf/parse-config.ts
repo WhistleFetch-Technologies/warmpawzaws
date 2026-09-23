@@ -48,6 +48,37 @@ function scope(raw: unknown, requireId: boolean): PromoVcfConfig['publish'] | nu
   return { letter, vendorId, categoryId };
 }
 
+/** Same vendor / same category copies publish first, then visit source. */
+function inheritRedeemIds(
+  redeem: NonNullable<PromoVcfConfig['redeem']>,
+  publish: PromoVcfConfig['publish'],
+  visitSource: Pick<PromoVcfConfig['visitSource'], 'letter' | 'vendorId' | 'categoryId'>
+): NonNullable<PromoVcfConfig['redeem']> {
+  if (redeem.letter === 'V' && !redeem.vendorId) {
+    return {
+      ...redeem,
+      vendorId:
+        publish.letter === 'V'
+          ? publish.vendorId
+          : visitSource.letter === 'V'
+            ? visitSource.vendorId
+            : undefined,
+    };
+  }
+  if (redeem.letter === 'C' && !redeem.categoryId) {
+    return {
+      ...redeem,
+      categoryId:
+        publish.letter === 'C'
+          ? publish.categoryId
+          : visitSource.letter === 'C'
+            ? visitSource.categoryId
+            : undefined,
+    };
+  }
+  return redeem;
+}
+
 /**
  * Read V/C/F contract from promotion metadata.vcf.
  * Missing or invalid → null (legacy row, keep today’s conditions).
@@ -83,13 +114,21 @@ export function parseVcfConfig(metadata: Record<string, unknown> | undefined | n
       ? r.channels.map((c) => String(c)).filter((c): c is SpendChannel => SPEND.includes(c as SpendChannel))
       : [];
     if (redeemLetter && redeemChannels.length) {
-      redeem = {
-        letter: redeemLetter,
-        vendorId: r.vendorId ? String(r.vendorId) : undefined,
-        categoryId: r.categoryId ? String(r.categoryId) : undefined,
-        ecommerceCategoryId: r.ecommerceCategoryId ? String(r.ecommerceCategoryId) : undefined,
-        channels: redeemChannels,
-      };
+      redeem = inheritRedeemIds(
+        {
+          letter: redeemLetter,
+          vendorId: r.vendorId ? String(r.vendorId) : undefined,
+          categoryId: r.categoryId ? String(r.categoryId) : undefined,
+          ecommerceCategoryId: r.ecommerceCategoryId ? String(r.ecommerceCategoryId) : undefined,
+          channels: redeemChannels,
+        },
+        publish,
+        {
+          letter,
+          vendorId: vs.vendorId ? String(vs.vendorId) : undefined,
+          categoryId: vs.categoryId ? String(vs.categoryId) : undefined,
+        }
+      );
     }
   }
 

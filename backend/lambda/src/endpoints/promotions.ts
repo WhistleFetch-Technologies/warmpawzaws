@@ -1097,9 +1097,7 @@ export function registerPromotionEndpoints(app: Hono) {
 
       const couponCode = body.couponCode || body.coupon_code;
       const displayPromotionsOnly =
-        body.displayPromotionsOnly === true ||
-        body.display_promotions_only === true ||
-        (!couponCode && body.includeCoupon !== true);
+        body.displayPromotionsOnly === true || body.display_promotions_only === true;
 
       const quote = await resolveBookingDiscountQuote({
         vendorId,

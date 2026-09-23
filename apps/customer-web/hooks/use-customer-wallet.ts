@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildCustomerWalletPath,
+  type WalletRedeemContext,
+} from '@/lib/wallet-redeem-query';
 
 export type CustomerWalletInfo = {
   balance: number;
@@ -12,29 +16,27 @@ export type CustomerWalletInfo = {
   rewardsBalance?: number;
 };
 
-export type CustomerWalletScope = {
-  serviceCategory?: string | null;
-  channel?: 'tele' | 'appointment' | 'paybill' | 'ecommerce' | null;
-  vendorId?: string | null;
-  categoryId?: string | null;
-};
+function asRedeemContext(
+  serviceCategoryOrCtx?: string | null | WalletRedeemContext
+): WalletRedeemContext {
+  if (serviceCategoryOrCtx && typeof serviceCategoryOrCtx === 'object') {
+    return serviceCategoryOrCtx;
+  }
+  return { serviceCategory: serviceCategoryOrCtx || null };
+}
 
 /**
  * Loads Warmpawz wallet for a customer phone (same source as UniversalPaymentPage).
- * Pass channel (and vendor/category when known) so VCF cashback redeem_scope unlocks correctly.
+ * Pass channel + vendorId so V/C/F cashback follows admin redeem rules.
  */
 export function useCustomerWallet(
   customerPhone: string | undefined,
-  serviceCategoryOrScope?: string | null | CustomerWalletScope,
+  serviceCategoryOrCtx?: string | null | WalletRedeemContext
 ) {
-  const scope: CustomerWalletScope =
-    serviceCategoryOrScope && typeof serviceCategoryOrScope === 'object'
-      ? serviceCategoryOrScope
-      : { serviceCategory: serviceCategoryOrScope ?? null };
-
   const [wallet, setWallet] = useState<CustomerWalletInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const ctx = asRedeemContext(serviceCategoryOrCtx);
 
   const refresh = useCallback(async () => {
     const phone = String(customerPhone || '').trim();
@@ -45,13 +47,7 @@ export function useCustomerWallet(
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ phone });
-      const cat = String(scope.serviceCategory || '').trim();
-      if (cat) params.set('serviceCategory', cat);
-      if (scope.channel) params.set('channel', scope.channel);
-      if (scope.vendorId) params.set('vendorId', String(scope.vendorId));
-      if (scope.categoryId) params.set('categoryId', String(scope.categoryId));
-      const walletRes = await apiClient.get<any>(`/customer/wallet?${params.toString()}`);
+      const walletRes = await apiClient.get<any>(buildCustomerWalletPath(phone, ctx));
       if (walletRes.wallet) {
         setWallet({
           balance: Number(walletRes.wallet.balance ?? 0),
@@ -74,10 +70,11 @@ export function useCustomerWallet(
     }
   }, [
     customerPhone,
-    scope.serviceCategory,
-    scope.channel,
-    scope.vendorId,
-    scope.categoryId,
+    ctx.serviceCategory,
+    ctx.channel,
+    ctx.vendorId,
+    ctx.categoryId,
+    ctx.ecommerceCategoryId,
   ]);
 
   useEffect(() => {

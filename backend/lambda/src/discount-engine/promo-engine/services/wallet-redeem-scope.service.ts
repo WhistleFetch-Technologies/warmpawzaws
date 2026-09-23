@@ -4,13 +4,39 @@
  */
 import { query } from '../../../database/rds-connection';
 import type { PoolClient } from 'pg';
-import { redeemAllows, type RedeemPayment } from '../vcf/redeem-allows';
+import { redeemAllows } from '../vcf/redeem-allows';
+import { categoryIdFromVendorRole } from '../vcf/category-from-role';
+import { dbLoadServiceCategories, dbLoadVendorRole } from '../repos/promo-engine.repo';
 import type { SpendChannel } from '../vcf/types';
+import {
+  parseWalletRedeemQuery,
+  type WalletRedeemPayment,
+} from '../vcf/parse-wallet-query';
 
-export type WalletRedeemPayment = RedeemPayment & {
-  serviceCategory?: string | null;
-  channel?: SpendChannel | null;
-};
+export type { WalletRedeemPayment };
+export { parseWalletRedeemQuery };
+
+async function enrichWalletRedeemPayment(
+  payment: WalletRedeemPayment
+): Promise<WalletRedeemPayment> {
+  const ctx: WalletRedeemPayment = { ...payment };
+  if (ctx.vendorId && !ctx.categoryId) {
+    try {
+      const vendor = await dbLoadVendorRole(String(ctx.vendorId));
+      if (vendor) {
+        const catalogue = await dbLoadServiceCategories();
+        ctx.categoryId = categoryIdFromVendorRole({
+          roleId: vendor.roleId,
+          roleName: vendor.roleName,
+          categories: catalogue,
+        });
+      }
+    } catch {
+      // vendor/catalogue lookup is best-effort for letter C
+    }
+  }
+  return ctx;
+}
 
 export async function computeSpendableWalletBalance(
   customerId: string,
@@ -29,13 +55,13 @@ export async function computeSpendableWalletBalance(
     [customerId]
   );
   const balance = Math.round((parseFloat(String(balRes.rows[0]?.balance ?? '0')) || 0) * 100) / 100;
-  const ctx: WalletRedeemPayment = {
+  const ctx = await enrichWalletRedeemPayment({
     serviceCategory: payment?.serviceCategory ?? serviceCategory,
     vendorId: payment?.vendorId,
     categoryId: payment?.categoryId,
     channel: payment?.channel,
     ecommerceCategoryId: payment?.ecommerceCategoryId,
-  };
+  });
   const hasContext = Boolean(ctx.channel || ctx.serviceCategory || ctx.vendorId || ctx.categoryId);
   if (!hasContext) {
     return { balance, spendable: balance, lockedPromoCashback: 0 };
@@ -80,13 +106,13 @@ export async function consumePromoCashbackForDebit(
 ): Promise<void> {
   const amount = Math.round((opts.amount || 0) * 100) / 100;
   if (amount <= 0) return;
-  const ctx: WalletRedeemPayment = {
+  const ctx = await enrichWalletRedeemPayment({
     serviceCategory: opts.serviceCategory,
     vendorId: opts.vendorId,
     categoryId: opts.categoryId,
     channel: opts.channel,
     ecommerceCategoryId: opts.ecommerceCategoryId,
-  };
+  });
 
   const rows = await client.query(
     `SELECT wt.id, wt.remaining_amount::text AS remaining, wt.redeem_scope

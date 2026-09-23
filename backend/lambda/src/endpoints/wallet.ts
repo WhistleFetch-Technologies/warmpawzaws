@@ -292,40 +292,22 @@ class GetWalletByPhoneHandler extends BaseHandler {
     const loyaltyCredits = transactions.filter(t => t.isLoyaltyConversion || t.source === 'loyalty_points');
     const totalLoyaltyCredits = loyaltyCredits.reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-    const serviceCategory =
-      context.event.queryStringParameters?.serviceCategory ||
-      context.event.queryStringParameters?.service_category ||
-      null;
-    const channelRaw = String(
-      context.event.queryStringParameters?.channel || ''
-    ).toLowerCase();
-    const channel =
-      channelRaw === 'tele' ||
-      channelRaw === 'appointment' ||
-      channelRaw === 'paybill' ||
-      channelRaw === 'ecommerce'
-        ? channelRaw
-        : null;
-    const vendorId =
-      context.event.queryStringParameters?.vendorId ||
-      context.event.queryStringParameters?.vendor_id ||
-      null;
-    const categoryId =
-      context.event.queryStringParameters?.categoryId ||
-      context.event.queryStringParameters?.category_id ||
-      null;
+    const qs = context.event.queryStringParameters || {};
+    const serviceCategory = qs.serviceCategory || qs.service_category || null;
     let spendable = parseFloat(wallet.balance);
     let lockedPromoCashback = 0;
     try {
-      const { computeSpendableWalletBalance } = await import(
+      const { computeSpendableWalletBalance, parseWalletRedeemQuery } = await import(
         '../discount-engine/promo-engine'
       );
-      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, {
+      const payment = parseWalletRedeemQuery({
         serviceCategory,
-        channel,
-        vendorId,
-        categoryId,
+        channel: qs.channel,
+        vendorId: qs.vendorId || qs.vendor_id,
+        categoryId: qs.categoryId || qs.category_id,
+        ecommerceCategoryId: qs.ecommerceCategoryId || qs.ecommerce_category_id,
       });
+      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, payment);
       spendable = scoped.spendable;
       lockedPromoCashback = scoped.lockedPromoCashback;
     } catch {
@@ -613,16 +595,14 @@ class UseWalletByPhoneHandler extends BaseHandler {
 
     const serviceCategory =
       body.serviceCategory || body.service_category || body.redeemCategory || null;
-    const channelRaw = String(body.channel || '').toLowerCase();
-    const channel =
-      channelRaw === 'tele' ||
-      channelRaw === 'appointment' ||
-      channelRaw === 'paybill' ||
-      channelRaw === 'ecommerce'
-        ? channelRaw
-        : null;
-    const vendorId = body.vendorId || body.vendor_id || null;
-    const categoryId = body.categoryId || body.category_id || null;
+    const { parseWalletRedeemQuery } = await import('../discount-engine/promo-engine');
+    const redeemPayment = parseWalletRedeemQuery({
+      serviceCategory,
+      channel: body.channel,
+      vendorId: body.vendorId || body.vendor_id,
+      categoryId: body.categoryId || body.category_id,
+      ecommerceCategoryId: body.ecommerceCategoryId || body.ecommerce_category_id,
+    });
     const refType = String(referenceType || 'payment').trim() || 'payment';
     const refId = isValidUUID(String(referenceId || ''))
       ? String(referenceId)
@@ -663,9 +643,10 @@ class UseWalletByPhoneHandler extends BaseHandler {
         customerId,
         amount,
         serviceCategory,
-        vendorId,
-        categoryId,
-        channel,
+        vendorId: redeemPayment.vendorId,
+        categoryId: redeemPayment.categoryId,
+        channel: redeemPayment.channel,
+        ecommerceCategoryId: redeemPayment.ecommerceCategoryId,
         referenceType: refType,
         referenceId: refId,
         description: String(description || 'Wallet payment'),
@@ -865,16 +846,14 @@ class DebitWalletHandler extends BaseHandler {
     const { amount, referenceType, referenceId, description, idempotencyKey } = body;
     const serviceCategory =
       body.serviceCategory || body.service_category || body.redeemCategory || null;
-    const channelRaw = String(body.channel || '').toLowerCase();
-    const channel =
-      channelRaw === 'tele' ||
-      channelRaw === 'appointment' ||
-      channelRaw === 'paybill' ||
-      channelRaw === 'ecommerce'
-        ? channelRaw
-        : null;
-    const vendorId = body.vendorId || body.vendor_id || null;
-    const categoryId = body.categoryId || body.category_id || null;
+    const { parseWalletRedeemQuery } = await import('../discount-engine/promo-engine');
+    const redeemPayment = parseWalletRedeemQuery({
+      serviceCategory,
+      channel: body.channel,
+      vendorId: body.vendorId || body.vendor_id,
+      categoryId: body.categoryId || body.category_id,
+      ecommerceCategoryId: body.ecommerceCategoryId || body.ecommerce_category_id,
+    });
 
     if (!customerId) {
       return this.error('Customer ID is required', 400);
@@ -903,9 +882,10 @@ class DebitWalletHandler extends BaseHandler {
         customerId,
         amount,
         serviceCategory,
-        vendorId,
-        categoryId,
-        channel,
+        vendorId: redeemPayment.vendorId,
+        categoryId: redeemPayment.categoryId,
+        channel: redeemPayment.channel,
+        ecommerceCategoryId: redeemPayment.ecommerceCategoryId,
         referenceType: refType,
         referenceId: refId,
         description: String(description || 'Wallet debit'),

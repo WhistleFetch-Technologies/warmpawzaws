@@ -5,6 +5,7 @@ import {
   type WpayPaymentRow,
 } from '../repos/wpay-payment.repo';
 import { accrueWpaySettlement } from './accrue-wpay-settlement';
+import { debitWpayWalletFromMetadata } from './debit-wpay-wallet';
 
 function asMeta(raw: unknown): Record<string, unknown> | null {
   if (!raw) return null;
@@ -64,6 +65,17 @@ export async function fulfillWpayCapturedPayment(params: {
   if (params.customerId && String(existing.customer_id) !== params.customerId) return null;
 
   const { originalAmount, discountAmount } = quoteAmountsFromWpayPayment(existing);
+  const alreadyCompleted = String(existing.payment_status).toLowerCase() === 'completed';
+  const walletDebit = await debitWpayWalletFromMetadata({
+    customerId: String(existing.customer_id),
+    paymentId: params.paymentId,
+    vendorId: String(existing.vendor_id || ''),
+    metadata: asMeta(existing.metadata),
+  });
+  if (!walletDebit.ok) {
+    console.error('[wpay-fulfill] wallet debit failed', walletDebit.error);
+    if (!alreadyCompleted) return null;
+  }
   const completed =
     (await dbWpayCompleteFromCapture({
       paymentId: params.paymentId,

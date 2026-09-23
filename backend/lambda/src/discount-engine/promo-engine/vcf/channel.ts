@@ -38,3 +38,39 @@ export function classifyPaymentChannel(opts: {
 export function isCountChannel(channel: PaymentChannel): channel is 'tele' | 'appointment' | 'paybill' {
   return channel === 'tele' || channel === 'appointment' || channel === 'paybill';
 }
+
+export function inferEvaluateSurface(tx: {
+  type?: string | null;
+  channel?: string | null;
+}): 'paybill' | 'ecommerce' | 'booking' {
+  const type = String(tx?.type || '').toUpperCase();
+  const channel = String(tx?.channel || '').toLowerCase();
+  if (type === 'WPAY' || channel === 'paybill') return 'paybill';
+  if (type === 'ECOMMERCE' || type === 'SHOP' || channel === 'ecommerce') return 'ecommerce';
+  return 'booking';
+}
+
+export function isSpendChannel(raw: unknown): raw is PaymentChannel {
+  const s = String(raw || '')
+    .trim()
+    .toLowerCase();
+  return s === 'tele' || s === 'appointment' || s === 'paybill' || s === 'ecommerce';
+}
+
+/** Booking debit fallback when the caller did not pass a spend channel. */
+export function resolveSpendChannelFromBooking(row: {
+  service_style?: string | null;
+  service_type?: string | null;
+  commerce_mode?: string | null;
+}): PaymentChannel | null {
+  const classified = classifyPaymentChannel({
+    surface: 'booking',
+    serviceStyle: row.service_style || row.service_type,
+    serviceType: row.service_type,
+  });
+  if (classified) return classified;
+  if (String(row.commerce_mode || '').trim().toLowerCase() === 'warmpawz_appointments') {
+    return 'appointment';
+  }
+  return null;
+}

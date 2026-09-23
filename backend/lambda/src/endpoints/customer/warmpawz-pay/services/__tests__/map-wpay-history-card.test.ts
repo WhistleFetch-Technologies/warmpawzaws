@@ -25,6 +25,7 @@ const baseRow: WpayTransactionDbRow = {
     convenienceFee: 20,
     convenienceGstAmount: 3.6,
     convenienceGstRateSnapshot: 18,
+    walletAmount: 50,
   },
 };
 
@@ -39,6 +40,7 @@ describe('mapWpayCustomerHistoryCard', () => {
     expect(card.convenienceFee).toBe(20);
     expect(card.convenienceGstAmount).toBe(3.6);
     expect(card.payableAmount).toBe(959);
+    expect(card.walletAmount).toBe(50);
     expect(card.commercialModel).toBe('tier_commission');
   });
 

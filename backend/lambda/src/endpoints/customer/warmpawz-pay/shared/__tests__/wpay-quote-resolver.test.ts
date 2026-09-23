@@ -108,7 +108,7 @@ describe('resolveWpayPayQuote', () => {
         pricing_tier_name: 'Walk-in',
       } as never,
       quotedAmount: 1000,
-      engineDiscountAmount: 80,
+      engineDiscount: 80,
     });
 
     expect(resolved.commercialModel).toBe('tier_commission');

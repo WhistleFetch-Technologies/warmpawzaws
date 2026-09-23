@@ -1,4 +1,4 @@
-import { persistIstDateTime, normalizePromoCategory } from '../dsl/category-aliases';
+import { persistIstDateTime, toDatetimeLocalIst, normalizePromoCategory } from '../dsl/category-aliases';
 import {
   dbCreatePromotion,
   dbGetPromotion,
@@ -98,9 +98,38 @@ function mergeVcfMetadata(body: Record<string, unknown>): Record<string, unknown
       : {};
   const vcf = body.vcf ?? (body.metadata as Record<string, unknown> | undefined)?.vcf;
   if (vcf && typeof vcf === 'object') {
-    base.vcf = vcf;
+    base.vcf = fillRedeemIdsFromAudience(vcf as Record<string, unknown>);
   }
   return base;
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+}
+
+/** Persist Same vendor / Same category IDs from publish, then visit source. */
+function fillRedeemIdsFromAudience(vcf: Record<string, unknown>): Record<string, unknown> {
+  const redeem = asRecord(vcf.redeem);
+  const letter = String(redeem.letter || '').toUpperCase();
+  if (!letter || letter === 'F') return vcf;
+  const publish = asRecord(vcf.publish);
+  const visit = asRecord(vcf.visitSource);
+  if (letter === 'V') {
+    const vendorId =
+      String(publish.letter || '').toUpperCase() === 'V' && publish.vendorId
+        ? publish.vendorId
+        : String(visit.letter || '').toUpperCase() === 'V' && visit.vendorId
+          ? visit.vendorId
+          : redeem.vendorId;
+    return { ...vcf, redeem: { ...redeem, vendorId, categoryId: undefined } };
+  }
+  const categoryId =
+    String(publish.letter || '').toUpperCase() === 'C' && publish.categoryId
+      ? publish.categoryId
+      : String(visit.letter || '').toUpperCase() === 'C' && visit.categoryId
+        ? visit.categoryId
+        : redeem.categoryId;
+  return { ...vcf, redeem: { ...redeem, categoryId, vendorId: undefined } };
 }
 
 export async function createPromotionFromDraft(payload: PromoDraftPayload) {
@@ -237,8 +266,8 @@ export async function getPromotionDetail(id: string) {
       name: promo.name,
       code: promo.code || '',
       priority: promo.priority,
-      startAt: promo.start_at || '',
-      endAt: promo.end_at || '',
+      startAt: toDatetimeLocalIst(promo.start_at),
+      endAt: toDatetimeLocalIst(promo.end_at),
       stackingPolicy: promo.stacking_policy || 'SERVICE_LEVEL',
       fundingType: promo.funding_type || 'WARMPAWZ',
       fundingSplit: {

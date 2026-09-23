@@ -30,6 +30,7 @@ export function CheckoutReviewStep() {
     shippingMethod,
     savingsAmount,
     promotionLabel,
+    walletAmountApplied,
     isPlacingOrder,
     placeOrder,
     setStep,
@@ -155,7 +156,13 @@ export function CheckoutReviewStep() {
             );
           })}
         </div>
-        <p className="mt-2 text-xs text-slate-500">Payment: Online (Razorpay)</p>
+        <p className="mt-2 text-xs text-slate-500">
+          {walletAmountApplied > 0.009 && pricing.total - walletAmountApplied < 0.01
+            ? 'Payment: Wallet'
+            : walletAmountApplied > 0.009
+              ? 'Payment: Wallet + online (Razorpay)'
+              : 'Payment: Online (Razorpay)'}
+        </p>
       </section>
 
       <EcommerceCheckoutTermsAcceptance
@@ -170,6 +177,7 @@ export function CheckoutReviewStep() {
           pricing={pricing}
           showItems={false}
           promotionLabel={promotionLabel}
+          walletAmount={walletAmountApplied}
         />
       </section>
 
@@ -188,7 +196,9 @@ export function CheckoutReviewStep() {
             Placing order…
           </span>
         ) : (
-          `Pay ₹${pricing.total.toFixed(0)}`
+          walletAmountApplied > 0.009 && pricing.total - walletAmountApplied < 0.01
+            ? 'Pay with wallet'
+            : `Pay ₹${Math.max(0, pricing.total - walletAmountApplied).toFixed(0)}`
         )}
       </Button>
     </div>

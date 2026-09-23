@@ -102,7 +102,15 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
         status: 'confirmed',
         payment_status: 'paid',
         is_instant_tele: true, // ✅ Mark as instant tele booking
-        notes: `[Instant Tele V2] Razorpay Order: ${razorpay_order_id}. Service: ${serviceName || 'Instant Vet Consultation'}`,
+        notes: `[Instant Tele V2] Razorpay Order: ${razorpay_order_id}. Service: ${serviceName || 'Instant Vet Consultation'}${
+          body.evaluationId || body.evaluation_id
+            ? ` | wp_promo_meta:${JSON.stringify({
+                evaluationId: String(body.evaluationId || body.evaluation_id),
+                promotionType: 'promo_engine',
+                promotionSource: 'platform',
+              })}`
+            : ''
+        }`,
       });
       const booking = Array.isArray(bookingInsert) ? bookingInsert[0] : bookingInsert;
       const bookingId = booking?.id;
@@ -157,6 +165,15 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
         });
       } catch (e) {
         console.warn('[instant-tele-v2] Customer notification failed:', e);
+      }
+
+      try {
+        const { recordBookingPromotionUsageFromBooking } = await import(
+          '../../../lib/services/booking-promotion-service'
+        );
+        await recordBookingPromotionUsageFromBooking(String(bookingId));
+      } catch (promoErr) {
+        console.warn('[instant-tele-v2] promo commit skipped:', promoErr);
       }
 
       return c.json({

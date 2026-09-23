@@ -1,3 +1,4 @@
+import { toDatetimeLocalIst } from '../../dsl/category-aliases';
 import { mapAdminDraftToPayload } from '../crud.service';
 
 describe('mapAdminDraftToPayload', () => {
@@ -13,6 +14,9 @@ describe('mapAdminDraftToPayload', () => {
     expect(payload.start_at).toBe('2026-09-17T17:29:00+05:30');
     expect(payload.end_at).toBe('2026-09-30T23:59:00+05:30');
     expect(payload.service_categories).toEqual(['veterinary', 'ecommerce']);
+    expect(toDatetimeLocalIst(new Date(payload.start_at as string).toISOString())).toBe(
+      '2026-09-17T17:29'
+    );
   });
 
   it('stores independent visit/publish/redeem on metadata.vcf', () => {
@@ -31,6 +35,22 @@ describe('mapAdminDraftToPayload', () => {
       visitSource: { letter: 'V', vendorId: 'v1' },
       publish: { letter: 'F' },
       redeem: { letter: 'C', channels: ['ecommerce'] },
+    });
+  });
+
+  it('maps Same vendor redeem onto the publish vendor id', () => {
+    const payload = mapAdminDraftToPayload({
+      basics: { name: 'Same vendor cashback' },
+      vcf: {
+        visitSource: { letter: 'V', vendorId: 'visit-vendor', width: 'general' },
+        visitLoop: { kind: 'every' },
+        benefitMode: 'cashback',
+        publish: { letter: 'V', vendorId: 'publish-vendor' },
+        redeem: { letter: 'V', channels: ['paybill'] },
+      },
+    });
+    expect(payload.metadata?.vcf).toMatchObject({
+      redeem: { letter: 'V', vendorId: 'publish-vendor', channels: ['paybill'] },
     });
   });
 });

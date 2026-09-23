@@ -140,10 +140,11 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     const resolved = await resolveWpayPayQuote({
       vendorRow,
       quotedAmount: originalAmount,
-      engineDiscountAmount: engineDiscount,
+      engineDiscount,
     });
     const payableAmount = resolved.payableAmount;
-    const discountAmount = resolved.quote.discountAmount;
+    const discountAmount =
+      Number(resolved.metadata.quotedDiscountAmount) || resolved.quote.discountAmount || 0;
 
     const requestedWallet = Number(body.walletAmount);
     let walletAmount = 0;

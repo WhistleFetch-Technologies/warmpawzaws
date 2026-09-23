@@ -85,7 +85,9 @@ interface Order {
   subtotal: number;
   shipping_fee: number;
   discount: number;
+  wallet_amount_applied: number;
   total: number;
+  paid_amount: number;
   payment_method: string;
   payment_status: string;
   payment_hold_expires_at?: string;
@@ -208,6 +210,8 @@ function normalizeOrder(raw: any): Order {
   const discount = Number(raw.discount_amount ?? raw.discount ?? 0) || 0;
   const shippingFee = Number(raw.shipping_amount ?? raw.shipping_fee ?? 0) || 0;
   const total = Number(raw.final_amount ?? raw.total_amount ?? raw.total ?? 0) || 0;
+  const walletApplied =
+    Number(raw.wallet_amount_applied ?? raw.walletAmountApplied ?? 0) || 0;
   const subtotal = Number(raw.subtotal ?? raw.total_amount ?? Math.max(0, total - shippingFee + discount)) || 0;
   const tracking = resolveOrderTracking(raw);
 
@@ -220,7 +224,9 @@ function normalizeOrder(raw: any): Order {
     subtotal,
     shipping_fee: shippingFee,
     discount,
+    wallet_amount_applied: walletApplied,
     total,
+    paid_amount: Math.max(0, Math.round((total - walletApplied) * 100) / 100),
     payment_method: raw.payment_method || 'online',
     payment_status: String(raw.payment_status || 'pending').toLowerCase(),
     payment_hold_expires_at:
@@ -815,7 +821,7 @@ export function CustomerShopOrdersScreen({
                           </span>
                           <span>{order.items?.length || 0} items</span>
                           <span className="font-semibold text-slate-900">
-                            {formatPriceWithSymbol(order.total)}
+                            {formatPriceWithSymbol(order.paid_amount)}
                           </span>
                         </div>
                       </div>
@@ -1006,9 +1012,21 @@ export function CustomerShopOrdersScreen({
                               {order.shipping_fee === 0 ? 'FREE' : formatPriceWithSymbol(order.shipping_fee)}
                             </span>
                           </div>
+                          {order.wallet_amount_applied > 0.009 && (
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Wallet</span>
+                              <span className="text-slate-900">
+                                -{formatPriceWithSymbol(order.wallet_amount_applied)}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex justify-between font-bold pt-2 border-t border-slate-200">
-                            <span className="text-slate-900">Total</span>
-                            <span className="text-orange-600">{formatPriceWithSymbol(order.total)}</span>
+                            <span className="text-slate-900">
+                              {order.wallet_amount_applied > 0.009 ? 'You paid' : 'Total'}
+                            </span>
+                            <span className="text-orange-600">
+                              {formatPriceWithSymbol(order.paid_amount)}
+                            </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 mt-1">
                             <span className="text-slate-500">Method:</span>

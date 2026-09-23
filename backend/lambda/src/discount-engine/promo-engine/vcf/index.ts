@@ -1,5 +1,11 @@
 export * from './types';
-export { classifyPaymentChannel, isCountChannel } from './channel';
+export {
+  classifyPaymentChannel,
+  inferEvaluateSurface,
+  isCountChannel,
+  isSpendChannel,
+  resolveSpendChannelFromBooking,
+} from './channel';
 export { categoryIdFromVendorRole } from './category-from-role';
 export { resolvePaymentContext } from './payment-context';
 export { visitCountForPromo } from './visit-count';
@@ -9,3 +15,4 @@ export { applyCombinedCap } from './combined-cap';
 export { parseVcfConfig, matchesPublish } from './parse-config';
 export { parseVisitProfile, incrementVisitProfile, decrementVisitProfile } from './visit-profile';
 export { redeemAllows } from './redeem-allows';
+export { parseWalletRedeemQuery } from './parse-wallet-query';

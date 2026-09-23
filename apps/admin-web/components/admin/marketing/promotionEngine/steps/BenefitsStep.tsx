@@ -11,7 +11,8 @@ import {
   SelectValue,
 } from '@warmpawz/ui';
 import type { PromoEngineBenefit, PromoEngineDraft } from '@/lib/promo-engine/types';
-import { createEmptyVcf, inheritRedeemScopeFromAudience } from '@/lib/promo-engine/vcf';
+import { createEmptyVcf } from '@/lib/promo-engine/types';
+import { inheritRedeemScopeFromAudience } from '@/lib/promo-engine/vcf';
 
 function discountBenefit(list: PromoEngineBenefit[]): PromoEngineBenefit {
   return list.find((b) => b.type === 'DISCOUNT') || { type: 'DISCOUNT', mode: 'PERCENT', value: 0 };

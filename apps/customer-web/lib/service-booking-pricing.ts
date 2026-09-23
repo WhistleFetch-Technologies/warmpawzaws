@@ -72,7 +72,7 @@ export async function fetchBookingDiscountQuote(
           serviceStyle: params.serviceStyle,
           serviceCategory: params.serviceCategory,
           couponCode: params.couponCode,
-          displayPromotionsOnly: params.displayPromotionsOnly ?? !params.couponCode,
+          displayPromotionsOnly: params.displayPromotionsOnly ?? false,
           debugSessionId: params.debugSessionId,
         }
       );

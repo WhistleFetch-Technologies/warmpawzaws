@@ -130,15 +130,20 @@ export function EcommerceOrderSuccessScreen() {
           domain: 'product',
           orderNumber: String(displayId),
           title: 'Order placed!',
-          paidAmount: order.totalAmount ?? 0,
-          summaryLines: order.shippingAddress
-            ? [
-                {
-                  label: 'Delivery to',
-                  value: `${order.shippingAddress.city ?? ''} ${order.shippingAddress.pincode ?? ''}`.trim(),
-                },
-              ]
-            : undefined,
+          paidAmount: order.paidAmount ?? Math.max(0, (order.totalAmount ?? 0) - (order.walletAmountApplied ?? 0)),
+          summaryLines: [
+            ...(order.walletAmountApplied && order.walletAmountApplied > 0.009
+              ? [{ label: 'Wallet', value: `₹${order.walletAmountApplied.toFixed(0)}` }]
+              : []),
+            ...(order.shippingAddress
+              ? [
+                  {
+                    label: 'Delivery to',
+                    value: `${order.shippingAddress.city ?? ''} ${order.shippingAddress.pincode ?? ''}`.trim(),
+                  },
+                ]
+              : []),
+          ],
         }}
         actions={[
           {

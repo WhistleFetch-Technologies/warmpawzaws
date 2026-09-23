@@ -4,6 +4,8 @@ export type StoredCheckoutOrderResponse = {
   orderId: string;
   orderNumber?: string;
   totalAmount?: number;
+  walletAmountApplied?: number;
+  paidAmount?: number;
   phone?: string;
   email?: string;
   shippingAddress?: CheckoutAddress;

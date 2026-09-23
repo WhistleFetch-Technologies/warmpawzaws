@@ -2,6 +2,7 @@ import {
   expandPromoCategoryAliases,
   normalizePromoCategory,
   persistIstDateTime,
+  toDatetimeLocalIst,
 } from '../category-aliases';
 
 describe('normalizePromoCategory', () => {
@@ -36,5 +37,25 @@ describe('persistIstDateTime', () => {
 
   it('leaves an explicit offset unchanged', () => {
     expect(persistIstDateTime('2026-09-17T17:29:00+05:30')).toBe('2026-09-17T17:29:00+05:30');
+  });
+});
+
+describe('toDatetimeLocalIst', () => {
+  it('converts UTC ISO Z so datetime-local can show the IST clock time', () => {
+    expect(toDatetimeLocalIst('2026-09-17T11:59:00.000Z')).toBe('2026-09-17T17:29');
+  });
+
+  it('keeps an already-local picker value', () => {
+    expect(toDatetimeLocalIst('2026-09-17T17:29')).toBe('2026-09-17T17:29');
+  });
+
+  it('round-trips persistIstDateTime through Date.toISOString()', () => {
+    const persisted = persistIstDateTime('2026-09-17T17:29');
+    expect(toDatetimeLocalIst(new Date(persisted as string).toISOString())).toBe('2026-09-17T17:29');
+  });
+
+  it('returns empty for blank input so a cleared picker does not invent a date', () => {
+    expect(toDatetimeLocalIst('')).toBe('');
+    expect(toDatetimeLocalIst(null)).toBe('');
   });
 });
