@@ -118,7 +118,6 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     if (vendor.commercialModel === 'tier_commission') {
       return previewWpayCommercialQuote({
         originalAmount: billAmount,
-        discountPercent: 0,
         engineDiscount,
         maxDiscountAmount: vendor.maxDiscountAmount,
         platformFee: vendor.platformFee ?? 0,
@@ -131,7 +130,6 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     }
     return previewWpayQuote({
       originalAmount: billAmount,
-      discountPercent: 0,
       engineDiscount,
       maxDiscountAmount: vendor.maxDiscountAmount,
     });

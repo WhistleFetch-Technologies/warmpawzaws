@@ -2,6 +2,8 @@ import type { WpayVendorListDbRow } from '../repos/wpay-vendors-list.repo';
 
 export type WpayDiscountQuoteOptions = {
   maxDiscountAmount?: number | null;
+  /** Promo-engine ₹ discount (only customer cut on Pay Bill). */
+  engineDiscount?: number | null;
   /** @deprecated Appointment credit is unwired for Pay Bill; ignored. */
   appointmentFeeCredit?: number;
 };
@@ -13,6 +15,7 @@ export type WpayDiscountQuote = {
   appointmentFeeCredit: number;
   /** Same as originalAmount (credit no longer reduces bill base). */
   billBase: number;
+  /** Effective % of Q from engine discount (display / history). */
   discountPercent: number;
   discountAmount: number;
   payableAmount: number;
@@ -22,14 +25,26 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Catalogue % is retired — Pay Bill customer cuts come only from the promo engine. */
 export function resolveWpayDiscountPercent(_row: WpayVendorListDbRow): number {
   return 0;
 }
 
-/** Historical withhold model: discount on full Q (appointment credit ignored). */
+function resolveEngineDiscountAmount(
+  quotedAmount: number,
+  engineDiscount: number | null | undefined,
+  maxDiscountAmount?: number | null,
+): number {
+  let discountRaw = Math.max(0, round2(Number(engineDiscount ?? 0) || 0));
+  if (maxDiscountAmount != null && discountRaw > maxDiscountAmount) {
+    discountRaw = maxDiscountAmount;
+  }
+  return round2(Math.min(discountRaw, Math.max(0, quotedAmount - 0.01)));
+}
+
+/** Historical withhold model: engine discount on full Q (appointment credit ignored). */
 export function computeWpayDiscountQuote(
   originalAmount: number,
-  discountPercent: number,
   options: WpayDiscountQuoteOptions | null = null,
 ): WpayDiscountQuote {
   const original = round2(Number(originalAmount));
@@ -39,14 +54,14 @@ export function computeWpayDiscountQuote(
 
   const appointmentFeeCredit = 0;
   const billBase = original;
-
-  let discountRaw = (billBase * discountPercent) / 100;
-  const maxDiscountAmount = options?.maxDiscountAmount ?? null;
-  if (maxDiscountAmount != null && discountRaw > maxDiscountAmount) {
-    discountRaw = maxDiscountAmount;
-  }
-  const discountAmount = round2(discountRaw);
+  const discountAmount = resolveEngineDiscountAmount(
+    billBase,
+    options?.engineDiscount,
+    options?.maxDiscountAmount,
+  );
   const payableAmount = Math.max(0.01, round2(billBase - discountAmount));
+  const discountPercent =
+    original > 0 ? round2((discountAmount / original) * 100) : 0;
 
   return {
     originalAmount: original,
@@ -63,7 +78,6 @@ export type WpayFeeMode = 'fixed' | 'percent';
 export type WpayCommercialQuoteInput = {
   quotedAmount: number;
   commissionPercent: number;
-  discountPercent: number;
   /** @deprecated Ignored — appointment credit unwired from Pay Bill. */
   appointmentFeeCredit?: number;
   /**
@@ -88,7 +102,7 @@ export type WpayCommercialQuoteInput = {
    */
   burnMode?: boolean;
   maxDiscountAmount?: number | null;
-  /** Promo-engine ₹ discount. Used instead of catalogue % when > 0. */
+  /** Promo-engine ₹ discount — only customer cut (catalogue % removed). */
   engineDiscount?: number | null;
 };
 
@@ -96,6 +110,7 @@ export type WpayCommercialQuote = {
   commercialModel: 'tier_commission';
   quotedAmount: number;
   commissionPercent: number;
+  /** Effective % of Q from engine discount (display / history). */
   discountPercent: number;
   grossCommissionAmount: number;
   discountAmount: number;
@@ -132,6 +147,27 @@ export class WpayCommercialValidationError extends Error {
   }
 }
 
+/** Tier economics: effective engine cut must stay strictly below commission ₹ (unless burn). */
+export function assertEngineDiscountBelowCommission(params: {
+  commissionPercent: number;
+  quotedAmount: number;
+  discountAmount: number;
+  burnMode?: boolean;
+}): void {
+  const commissionPercent = round2(Number(params.commissionPercent));
+  if (!Number.isFinite(commissionPercent) || commissionPercent <= 0 || commissionPercent > 100) {
+    throw new WpayCommercialValidationError('Invalid commission percent');
+  }
+  if (params.burnMode) return;
+  const quotedAmount = round2(Number(params.quotedAmount));
+  const discountAmount = round2(Number(params.discountAmount));
+  const grossCommissionAmount = round2((quotedAmount * commissionPercent) / 100);
+  if (discountAmount + 0.009 >= grossCommissionAmount) {
+    throw new WpayCommercialValidationError('Discount must be less than commission');
+  }
+}
+
+/** @deprecated Prefer assertEngineDiscountBelowCommission — catalogue % removed. */
 export function assertDiscountBelowCommission(
   commissionPercent: number,
   discountPercent: number,
@@ -167,12 +203,13 @@ export function resolveWpayConfiguredFeeAmount(params: {
 
 /**
  * Tier-commission Pay Bill quote:
+ * - Customer discount = promo-engine ₹ only (no catalogue %)
  * - C/D on full Q; platform revenue = C − D (GST inclusive extract) unless burnMode
  * - burnMode: vendor paid full Q; platform funds discount; fees unchanged
  * - No appointment credit
  * - Platform fee + convenience fee each with exclusive GST on top
  * - Fees may be fixed ₹ or % of post-discount amount
- * - Guardrail: if total fees (incl. fee GST) >= discount ₹, zero all fees + fee GST
+ * - Guardrail: if total fees (incl. fee GST) >= engine discount ₹, zero all fees + fee GST
  */
 export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): WpayCommercialQuote {
   const quotedAmount = round2(Number(input.quotedAmount));
@@ -181,19 +218,20 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
   }
 
   const commissionPercent = round2(Number(input.commissionPercent));
-  const discountPercent = round2(Number(input.discountPercent));
-  assertDiscountBelowCommission(commissionPercent, discountPercent);
-
   const burnMode = Boolean(input.burnMode);
   const grossCommissionAmount = round2((quotedAmount * commissionPercent) / 100);
 
-  const engineDiscount = Math.max(0, round2(Number(input.engineDiscount ?? 0) || 0));
-  let discountRaw = engineDiscount > 0.009 ? engineDiscount : (quotedAmount * discountPercent) / 100;
-  const maxDiscountAmount = input.maxDiscountAmount ?? null;
-  if (maxDiscountAmount != null && discountRaw > maxDiscountAmount) {
-    discountRaw = maxDiscountAmount;
-  }
-  const discountAmount = round2(Math.min(discountRaw, Math.max(0, quotedAmount - 0.01)));
+  const discountAmount = resolveEngineDiscountAmount(
+    quotedAmount,
+    input.engineDiscount,
+    input.maxDiscountAmount,
+  );
+  assertEngineDiscountBelowCommission({
+    commissionPercent,
+    quotedAmount,
+    discountAmount,
+    burnMode,
+  });
 
   const servicePayableAmount = round2(quotedAmount - discountAmount);
   // Burn: vendor gets full Q; platform funds discount (no C−D margin).
@@ -237,8 +275,7 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
   const totalCustomerFees = round2(
     platformFee + platformFeeGstAmount + convenienceFee + convenienceGstAmount,
   );
-  // Preserve a real displayed discount: drop fees only when they would eat it.
-  // Catalogue % is 0 now — do not treat “fees >= ₹0” as a reason to wipe fees.
+  // Fees must stay strictly below the promo-engine discount; otherwise wipe fees.
   if (discountAmount > 0.009 && totalCustomerFees >= discountAmount) {
     platformFee = 0;
     platformFeeGstAmount = 0;
@@ -264,7 +301,7 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
     quotedAmount,
     commissionPercent,
     discountPercent:
-      quotedAmount > 0 ? round2((discountAmount / quotedAmount) * 100) : discountPercent,
+      quotedAmount > 0 ? round2((discountAmount / quotedAmount) * 100) : 0,
     grossCommissionAmount,
     discountAmount,
     vendorPayableAmount,

@@ -148,7 +148,7 @@ export function CatalogueDashboardPage() {
     return catalogueId;
   };
 
-  const handleSaveDiscount = async (
+  const handleSavePricing = async (
     item: CatalogueListItem,
     values: WarmpawzPayPricingFormValues,
   ) => {
@@ -159,7 +159,7 @@ export function CatalogueDashboardPage() {
       toast.success(`Pricing saved for ${item.businessName}.`);
     } catch (cause) {
       const message =
-        cause instanceof Error ? cause.message : 'Failed to save discount';
+        cause instanceof Error ? cause.message : 'Failed to save pricing';
       toast.error(message);
     } finally {
       setRowBusyVendorId(null);
@@ -232,7 +232,7 @@ export function CatalogueDashboardPage() {
   return (
     <WarmpawzPayShell
       title="Vendor Catalogue"
-      subtitle="Manage approved vendors, discounts, and Warmpawz Pay publish status."
+      subtitle="Select a Warmpawz Pay tier and publish approved vendors. Customer discounts come from the Promotion Engine."
     >
       <div className="space-y-4">
         <CatalogueFilterBar
@@ -281,7 +281,7 @@ export function CatalogueDashboardPage() {
               items={items}
               rowBusyVendorId={rowBusyVendorId}
               disabled={anyMutationPending}
-              onSaveDiscount={handleSaveDiscount}
+              onSaveDiscount={handleSavePricing}
               onPublish={handlePublish}
               onUnpublish={(item) => setPendingAction({ type: 'unpublish', item })}
               onDelete={(item) => setPendingAction({ type: 'delete', item })}

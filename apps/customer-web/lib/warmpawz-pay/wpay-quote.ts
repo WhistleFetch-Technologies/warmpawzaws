@@ -3,6 +3,7 @@ export type WpayQuotePreview = {
   originalAmount: number;
   appointmentFeeCredit: number;
   billBase: number;
+  /** Effective % of Q from engine discount (display). */
   discountPercent: number;
   discountAmount: number;
   payableAmount: number;
@@ -13,6 +14,7 @@ export type WpayFeeMode = 'fixed' | 'percent';
 export type WpayCommercialQuotePreview = {
   commercialModel: 'tier_commission';
   originalAmount: number;
+  /** Effective % of Q from engine discount (display). */
   discountPercent: number;
   discountAmount: number;
   servicePayableAmount: number;
@@ -49,10 +51,21 @@ function resolveConfiguredFeeAmount(params: {
   return round2(value);
 }
 
-/** Historical withhold model preview (discount on full Q; credit ignored). */
+function resolveEngineDiscountAmount(
+  quotedAmount: number,
+  engineDiscount: number | null | undefined,
+  maxDiscountAmount?: number | null,
+): number {
+  let discountRaw = Math.max(0, round2(Number(engineDiscount ?? 0) || 0));
+  if (maxDiscountAmount != null && discountRaw > maxDiscountAmount) {
+    discountRaw = maxDiscountAmount;
+  }
+  return round2(Math.min(discountRaw, Math.max(0, quotedAmount - 0.01)));
+}
+
+/** Historical withhold model preview — promo-engine ₹ only. */
 export function previewWpayQuote(params: {
   originalAmount: number;
-  discountPercent: number;
   appointmentFeeCredit?: number;
   maxDiscountAmount?: number | null;
   engineDiscount?: number | null;
@@ -60,29 +73,29 @@ export function previewWpayQuote(params: {
   const original = round2(params.originalAmount);
   const appointmentFeeCredit = 0;
   const billBase = original;
-  const engineDiscount = Math.max(0, round2(Number(params.engineDiscount ?? 0) || 0));
-
-  let discountRaw = engineDiscount > 0.009 ? engineDiscount : (billBase * params.discountPercent) / 100;
-  if (params.maxDiscountAmount != null && discountRaw > params.maxDiscountAmount) {
-    discountRaw = params.maxDiscountAmount;
-  }
-  const discountAmount = round2(Math.min(discountRaw, Math.max(0, billBase - 0.01)));
+  const discountAmount = resolveEngineDiscountAmount(
+    billBase,
+    params.engineDiscount,
+    params.maxDiscountAmount,
+  );
   const payableAmount = Math.max(0.01, round2(billBase - discountAmount));
 
   return {
     originalAmount: original,
     appointmentFeeCredit,
     billBase,
-    discountPercent: params.discountPercent,
+    discountPercent: original > 0 ? round2((discountAmount / original) * 100) : 0,
     discountAmount,
     payableAmount,
   };
 }
 
-/** Tier-commission preview: C/D on full Q; no appointment credit; fees + exclusive GST. */
+/**
+ * Tier-commission preview: engine discount only; fees + exclusive GST.
+ * Guardrail: fees wiped when total fees >= engine discount ₹.
+ */
 export function previewWpayCommercialQuote(params: {
   originalAmount: number;
-  discountPercent: number;
   appointmentFeeCredit?: number;
   platformFee?: number;
   platformFeeMode?: WpayFeeMode;
@@ -94,14 +107,11 @@ export function previewWpayCommercialQuote(params: {
   engineDiscount?: number | null;
 }): WpayCommercialQuotePreview {
   const originalAmount = round2(params.originalAmount);
-  const discountPercent = round2(params.discountPercent);
-  const engineDiscount = Math.max(0, round2(Number(params.engineDiscount ?? 0) || 0));
-
-  let discountRaw = engineDiscount > 0.009 ? engineDiscount : (originalAmount * discountPercent) / 100;
-  if (params.maxDiscountAmount != null && discountRaw > params.maxDiscountAmount) {
-    discountRaw = params.maxDiscountAmount;
-  }
-  const discountAmount = round2(Math.min(discountRaw, Math.max(0, originalAmount - 0.01)));
+  const discountAmount = resolveEngineDiscountAmount(
+    originalAmount,
+    params.engineDiscount,
+    params.maxDiscountAmount,
+  );
   const servicePayableAmount = round2(originalAmount - discountAmount);
 
   const appointmentFeeCredit = 0;
@@ -150,7 +160,7 @@ export function previewWpayCommercialQuote(params: {
     commercialModel: 'tier_commission',
     originalAmount,
     discountPercent:
-      originalAmount > 0 ? round2((discountAmount / originalAmount) * 100) : discountPercent,
+      originalAmount > 0 ? round2((discountAmount / originalAmount) * 100) : 0,
     discountAmount,
     servicePayableAmount,
     appointmentFeeCredit,

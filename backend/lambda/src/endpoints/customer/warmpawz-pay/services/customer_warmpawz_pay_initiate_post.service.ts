@@ -136,7 +136,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       );
     }
 
-    // Fees + guardrail use engine D as headroom under Q (catalogue % stays 0).
+    // Customer discount = promo-engine ₹ only; fee guardrail uses that D.
     const resolved = await resolveWpayPayQuote({
       vendorRow,
       quotedAmount: originalAmount,

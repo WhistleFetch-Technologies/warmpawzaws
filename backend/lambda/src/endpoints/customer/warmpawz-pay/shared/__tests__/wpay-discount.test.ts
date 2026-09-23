@@ -1,13 +1,14 @@
 import {
   assertDiscountBelowCommission,
+  assertEngineDiscountBelowCommission,
   computeWpayCommercialQuote,
   computeWpayDiscountQuote,
   WpayCommercialValidationError,
 } from '../wpay-discount';
 
 describe('computeWpayDiscountQuote', () => {
-  it('applies percentage discount on full quoted amount (appointment credit ignored)', () => {
-    const quote = computeWpayDiscountQuote(1000, 10, null);
+  it('applies promo-engine ₹ discount on full quoted amount', () => {
+    const quote = computeWpayDiscountQuote(1000, { engineDiscount: 100 });
     expect(quote).toEqual({
       originalAmount: 1000,
       appointmentFeeCredit: 0,
@@ -19,7 +20,10 @@ describe('computeWpayDiscountQuote', () => {
   });
 
   it('ignores appointment fee credit when provided', () => {
-    const quote = computeWpayDiscountQuote(800, 10, { appointmentFeeCredit: 200 });
+    const quote = computeWpayDiscountQuote(800, {
+      engineDiscount: 80,
+      appointmentFeeCredit: 200,
+    });
     expect(quote).toEqual({
       originalAmount: 800,
       appointmentFeeCredit: 0,
@@ -31,14 +35,23 @@ describe('computeWpayDiscountQuote', () => {
   });
 
   it('honors maxDiscountAmount cap on bill base', () => {
-    const quote = computeWpayDiscountQuote(1000, 20, { maxDiscountAmount: 50 });
+    const quote = computeWpayDiscountQuote(1000, {
+      engineDiscount: 200,
+      maxDiscountAmount: 50,
+    });
     expect(quote.discountAmount).toBe(50);
     expect(quote.payableAmount).toBe(950);
   });
 
   it('rejects invalid quoted amounts', () => {
-    expect(() => computeWpayDiscountQuote(0, 10, null)).toThrow('Invalid bill amount');
-    expect(() => computeWpayDiscountQuote(-100, 10, null)).toThrow('Invalid bill amount');
+    expect(() => computeWpayDiscountQuote(0, { engineDiscount: 10 })).toThrow('Invalid bill amount');
+    expect(() => computeWpayDiscountQuote(-100, { engineDiscount: 10 })).toThrow('Invalid bill amount');
+  });
+
+  it('pays full bill when there is no engine discount', () => {
+    const quote = computeWpayDiscountQuote(1000, null);
+    expect(quote.discountAmount).toBe(0);
+    expect(quote.payableAmount).toBe(1000);
   });
 });
 
@@ -46,7 +59,7 @@ describe('computeWpayCommercialQuote', () => {
   const base = {
     quotedAmount: 10_000,
     commissionPercent: 20,
-    discountPercent: 15,
+    engineDiscount: 1500,
   };
 
   it('case 1: walk-in tier math without fees', () => {
@@ -105,21 +118,29 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.finalGstAmount).toBe(79.87);
   });
 
-  it('case 5: rejects discount equal to commission', () => {
+  it('case 5: rejects engine discount equal to commission ₹', () => {
     expect(() =>
-      computeWpayCommercialQuote({ ...base, discountPercent: 20 }),
+      computeWpayCommercialQuote({
+        quotedAmount: 10_000,
+        commissionPercent: 20,
+        engineDiscount: 2000,
+      }),
     ).toThrow(WpayCommercialValidationError);
   });
 
-  it('case 6: rejects discount above commission', () => {
+  it('case 6: rejects engine discount above commission ₹', () => {
     expect(() =>
-      computeWpayCommercialQuote({ ...base, discountPercent: 21 }),
+      computeWpayCommercialQuote({
+        quotedAmount: 10_000,
+        commissionPercent: 20,
+        engineDiscount: 2100,
+      }),
     ).toThrow(WpayCommercialValidationError);
   });
 
-  it('case 7: accepts discount below commission', () => {
+  it('case 7: accepts engine discount below commission ₹', () => {
     expect(() =>
-      computeWpayCommercialQuote({ ...base, discountPercent: 15 }),
+      computeWpayCommercialQuote({ ...base }),
     ).not.toThrow();
   });
 
@@ -154,12 +175,10 @@ describe('computeWpayCommercialQuote', () => {
   });
 
   it('case 9: percent fees use post-discount amount, not original quote', () => {
-    // Q=1000, D=15% → discount=150, servicePayable=850
-    // platform 2% of 850 = 17; convenience 1% of 850 = 8.5
     const quote = computeWpayCommercialQuote({
       quotedAmount: 1000,
       commissionPercent: 20,
-      discountPercent: 15,
+      engineDiscount: 150,
       platformFee: 2,
       platformFeeMode: 'percent',
       platformFeeGstRate: 18,
@@ -175,13 +194,11 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.payNowAmount).toBe(880.09);
   });
 
-  it('case 10: guardrail zeros all fees when total fees >= discount', () => {
-    // Q=100, D=10% → discount=10, servicePayable=90
-    // fees 8+1.44+2+0.36 = 11.8 >= 10 → zero
+  it('case 10: guardrail zeros all fees when total fees >= engine discount', () => {
     const quote = computeWpayCommercialQuote({
       quotedAmount: 100,
       commissionPercent: 20,
-      discountPercent: 10,
+      engineDiscount: 10,
       platformFee: 8,
       platformFeeMode: 'fixed',
       platformFeeGstRate: 18,
@@ -197,11 +214,11 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.payNowAmount).toBe(90);
   });
 
-  it('case 11: guardrail also fires when total fees exactly equal discount', () => {
+  it('case 11: guardrail also fires when total fees exactly equal engine discount', () => {
     const quote = computeWpayCommercialQuote({
       quotedAmount: 1000,
       commissionPercent: 20,
-      discountPercent: 10,
+      engineDiscount: 100,
       platformFee: 100,
       platformFeeMode: 'fixed',
       platformFeeGstRate: 0,
@@ -214,11 +231,10 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.payNowAmount).toBe(900);
   });
 
-  it('keeps platform and convenience fees when catalogue discount is 0', () => {
+  it('keeps platform and convenience fees when there is no engine discount', () => {
     const quote = computeWpayCommercialQuote({
       quotedAmount: 6700,
       commissionPercent: 20,
-      discountPercent: 0,
       platformFee: 30,
       platformFeeGstRate: 18,
       convenienceFee: 20,
@@ -234,7 +250,6 @@ describe('computeWpayCommercialQuote', () => {
     const quote = computeWpayCommercialQuote({
       quotedAmount: 7800,
       commissionPercent: 20,
-      discountPercent: 0,
       engineDiscount: 500,
       platformFee: 30,
       platformFeeGstRate: 18,
@@ -248,7 +263,24 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.payNowAmount).toBe(7359);
   });
 
-  it('assertDiscountBelowCommission enforces D < C', () => {
+  it('assertEngineDiscountBelowCommission enforces D ₹ < C ₹', () => {
+    expect(() =>
+      assertEngineDiscountBelowCommission({
+        commissionPercent: 20,
+        quotedAmount: 10_000,
+        discountAmount: 1500,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertEngineDiscountBelowCommission({
+        commissionPercent: 20,
+        quotedAmount: 10_000,
+        discountAmount: 2000,
+      }),
+    ).toThrow(WpayCommercialValidationError);
+  });
+
+  it('assertDiscountBelowCommission legacy still enforces D% < C%', () => {
     expect(() => assertDiscountBelowCommission(20, 15)).not.toThrow();
     expect(() => assertDiscountBelowCommission(20, 20)).toThrow(WpayCommercialValidationError);
   });

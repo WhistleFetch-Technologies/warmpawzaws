@@ -4,7 +4,6 @@ export type WpayCommercialModel = 'tier_commission' | 'withhold';
 
 export type WpayVendorCommercialConfig = {
   commercialModel: WpayCommercialModel;
-  discountPercent: number;
   tierId: string | null;
   tierName: string | null;
   commissionPercent: number;
@@ -22,7 +21,6 @@ function readPercent(raw: string | number | null | undefined): number {
 
 /** Resolve published vendor commercial config for Pay Bill (tier commission vs historical withhold). */
 export function resolveWpayVendorCommercialConfig(row: WpayVendorListDbRow): WpayVendorCommercialConfig {
-  const discountPercent = 0;
   const tierId = row.pricing_tier_id ? String(row.pricing_tier_id) : null;
   const commissionPercent = readPercent(row.pricing_commission_rate);
   const platformWithholdPercent = readPercent(row.pricing_platform_withhold_percent);
@@ -30,7 +28,6 @@ export function resolveWpayVendorCommercialConfig(row: WpayVendorListDbRow): Wpa
   if (tierId && commissionPercent > 0) {
     return {
       commercialModel: 'tier_commission',
-      discountPercent,
       tierId,
       tierName: row.pricing_tier_name ? String(row.pricing_tier_name) : null,
       commissionPercent,
@@ -40,7 +37,6 @@ export function resolveWpayVendorCommercialConfig(row: WpayVendorListDbRow): Wpa
 
   return {
     commercialModel: 'withhold',
-    discountPercent,
     tierId: null,
     tierName: null,
     commissionPercent: 0,
