@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { toDatetimeLocalIst } from './datetime';
 import type {
   PromoEngineDraft,
   PromoEngineListItem,
@@ -108,8 +109,8 @@ function mapApiListItem(p: Record<string, unknown>): PromoEngineListItem {
     ruleType: (p.ruleType || p.rule_type || 'GENERIC') as PromoEngineListItem['ruleType'],
     fundingType: (p.fundingType || p.funding_type || 'WARMPAWZ') as PromoEngineListItem['fundingType'],
     usageCount: Number(p.usageCount ?? p.usage_count ?? 0),
-    startAt: String(p.startAt || p.start_at || ''),
-    endAt: String(p.endAt || p.end_at || ''),
+    startAt: toDatetimeLocalIst(p.startAt || p.start_at),
+    endAt: toDatetimeLocalIst(p.endAt || p.end_at),
     updatedAt: String(p.updatedAt || p.updated_at || ''),
   };
 }
@@ -124,6 +125,8 @@ function mapApiPromotionToDraft(p: Record<string, unknown>): PromoEngineDraft {
       ...basics,
       name: basics.name || String(p.name || ''),
       code: basics.code || String(p.code || ''),
+      startAt: toDatetimeLocalIst(basics.startAt || p.start_at || p.startAt),
+      endAt: toDatetimeLocalIst(basics.endAt || p.end_at || p.endAt),
       serviceCategories: (basics.serviceCategories ||
         (p.service_categories as PromoEngineDraft['basics']['serviceCategories']) ||
         []) as PromoEngineDraft['basics']['serviceCategories'],

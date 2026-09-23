@@ -7,9 +7,9 @@ import {
 } from '../shop-checkout-payment-flags';
 
 describe('shop-checkout-payment-flags', () => {
-  test('COD and wallet are disabled by default', () => {
+  test('COD stays off; shop wallet follows the customer checkout toggle', () => {
     expect(SHOP_CHECKOUT_COD_ENABLED).toBe(false);
-    expect(SHOP_CHECKOUT_WALLET_ENABLED).toBe(false);
+    expect(SHOP_CHECKOUT_WALLET_ENABLED).toBe(true);
   });
 
   test('isShopCodPaymentMethod recognizes cod aliases', () => {
@@ -27,15 +27,12 @@ describe('shop-checkout-payment-flags', () => {
     }
   });
 
-  test('assertShopCheckoutPaymentAllowed rejects wallet when disabled', () => {
+  test('assertShopCheckoutPaymentAllowed allows wallet when enabled', () => {
     const result = assertShopCheckoutPaymentAllowed({
       paymentMethod: 'online',
       walletAmountApplied: 50,
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toMatch(/wallet/i);
-    }
+    expect(result).toEqual({ ok: true });
   });
 
   test('assertShopCheckoutPaymentAllowed allows online-only checkout', () => {

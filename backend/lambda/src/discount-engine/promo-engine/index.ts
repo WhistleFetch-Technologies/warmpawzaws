@@ -4,6 +4,7 @@ export {
   normalizePromoCategory,
   expandPromoCategoryAliases,
   persistIstDateTime,
+  toDatetimeLocalIst,
 } from './dsl/category-aliases';
 export { calculateBenefits } from './benefits/calculate-benefits';
 export { resolveStack } from './stacking/resolve-stack';
@@ -47,6 +48,8 @@ export { loadServerPaymentContext } from './services/payment-context-load.servic
 export { applyCombinedCap } from './vcf/combined-cap';
 export {
   classifyPaymentChannel,
+  isSpendChannel,
+  resolveSpendChannelFromBooking,
   resolvePaymentContext,
   visitCountForPromo,
   matchesVisitLoop,
@@ -54,4 +57,5 @@ export {
   categoryIdFromVendorRole,
   parseVcfConfig,
   redeemAllows,
+  parseWalletRedeemQuery,
 } from './vcf';

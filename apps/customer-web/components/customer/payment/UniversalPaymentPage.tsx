@@ -70,6 +70,7 @@ import {
   WAPPT_APPOINTMENT_SERVICE_ID,
 } from '@/lib/warmpawz-appointments-customer';
 import { toWapptRequestedServices } from '@/lib/wappt-requested-services';
+import { buildCustomerWalletPath, inferBookingSpendChannel } from '@/lib/wallet-redeem-query';
 import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
 import {
   isWarmpawzCustomerNativeWebView,
@@ -1369,17 +1370,24 @@ export function UniversalPaymentPage({
       // Load wallet balance
       try {
         const walletRes = await apiClient.get<any>(
-          `/customer/wallet?phone=${encodeURIComponent(customerPhone)}${
-            category || initialPromotionIntent?.serviceCategory
-              ? `&serviceCategory=${encodeURIComponent(
-                  String(category || initialPromotionIntent?.serviceCategory || '')
-                )}`
-              : ''
-          }`
+          buildCustomerWalletPath(customerPhone, {
+            serviceCategory: category || initialPromotionIntent?.serviceCategory || null,
+            channel:
+              type === 'booking'
+                ? inferBookingSpendChannel({
+                    serviceStyle,
+                    serviceType: category,
+                    isWapptAppointment: isWapptAppointmentPayment,
+                  })
+                : null,
+            vendorId: type === 'booking' ? vendorId : null,
+          })
         );
         if (walletRes.wallet) {
           setWallet(walletRes.wallet);
-          const bal = Number(walletRes.wallet.balance ?? 0);
+          const bal = Number(
+            walletRes.wallet.spendableBalance ?? walletRes.wallet.balance ?? 0
+          );
           if (walletDebitAllowed && type === 'booking' && Number.isFinite(bal) && bal > 0.009) {
             setUseWallet(true);
           }

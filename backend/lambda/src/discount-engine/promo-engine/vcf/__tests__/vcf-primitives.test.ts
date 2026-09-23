@@ -1,4 +1,4 @@
-import { classifyPaymentChannel } from '../channel';
+import { classifyPaymentChannel, resolveSpendChannelFromBooking } from '../channel';
 import { categoryIdFromVendorRole } from '../category-from-role';
 import { resolvePaymentContext } from '../payment-context';
 import { visitCountForPromo } from '../visit-count';
@@ -29,6 +29,17 @@ describe('V/C/F channel', () => {
   });
   it('marks shop as ecommerce spend-only', () => {
     expect(classifyPaymentChannel({ surface: 'ecommerce' })).toBe('ecommerce');
+  });
+  it('treats WAPPT commerce_mode as appointment when style is missing', () => {
+    expect(
+      resolveSpendChannelFromBooking({
+        service_type: 'grooming',
+        commerce_mode: 'warmpawz_appointments',
+      })
+    ).toBe('appointment');
+  });
+  it('keeps tele when the booking style is tele', () => {
+    expect(resolveSpendChannelFromBooking({ service_type: 'tele' })).toBe('tele');
   });
 });
 

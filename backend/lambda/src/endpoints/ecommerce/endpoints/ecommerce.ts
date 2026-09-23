@@ -1210,7 +1210,12 @@ export function registerEcommerceEndpoints(app: Hono) {
         const { computeSpendableWalletBalance } = await import(
           '../../../discount-engine/promo-engine'
         );
-        const scoped = await computeSpendableWalletBalance(String(customerId), 'ecommerce');
+        const scoped = await computeSpendableWalletBalance(String(customerId), 'ecommerce', {
+          serviceCategory: 'ecommerce',
+          channel: 'ecommerce',
+          vendorId: firstVendorId ? String(firstVendorId) : null,
+          ecommerceCategoryId: cartLines[0]?.categoryId ? String(cartLines[0].categoryId) : null,
+        });
         if (scoped.spendable < walletAmountApplied) {
           return c.json(
             {
@@ -1417,6 +1422,8 @@ export function registerEcommerceEndpoints(app: Hono) {
           amount: effectiveWalletApplied,
           orderId,
           orderNumber,
+          vendorId: firstVendorId ? String(firstVendorId) : null,
+          ecommerceCategoryId: cartLines[0]?.categoryId ? String(cartLines[0].categoryId) : null,
         });
         if (!debit.ok) {
           return c.json({ error: debit.error }, 400);

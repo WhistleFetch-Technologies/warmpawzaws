@@ -1,10 +1,10 @@
 /**
  * Shop / pet shop checkout payment options.
- * Wallet and COD handler code remains in place; flip flags to re-enable.
- * Matches customer-web CheckoutPaymentStep ECOM_WALLET_ENABLED = false.
+ * Wallet matches customer-web CheckoutPaymentStep ECOM_WALLET_ENABLED.
+ * COD stays off until product turns it back on.
  */
 
-export const SHOP_CHECKOUT_WALLET_ENABLED = false;
+export const SHOP_CHECKOUT_WALLET_ENABLED = true;
 export const SHOP_CHECKOUT_COD_ENABLED = false;
 
 export function isShopCodPaymentMethod(paymentMethod: string | null | undefined): boolean {

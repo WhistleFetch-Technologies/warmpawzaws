@@ -12,6 +12,7 @@ import {
   type PromoEngineEarnPreviewData,
 } from '@/components/customer/promo-engine/PromoEarnPreview';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { buildCustomerWalletPath } from '@/lib/wallet-redeem-query';
 
 function formatINR(amount: number): string {
   return `₹${amount.toFixed(2)}`;
@@ -104,7 +105,16 @@ export function CheckoutPaymentStep() {
         balance?: number;
         data?: { balance?: number };
         wallet?: { balance?: number; spendableBalance?: number };
-      }>(`/customer/wallet?phone=${encodeURIComponent(phone)}&serviceCategory=ECOMMERCE`)
+      }>(
+        buildCustomerWalletPath(phone, {
+          serviceCategory: 'ecommerce',
+          channel: 'ecommerce',
+          vendorId: primaryVendorId,
+          ecommerceCategoryId: cart.find((item) => item.categoryId || item.category)?.categoryId
+            || cart.find((item) => item.categoryId || item.category)?.category
+            || null,
+        })
+      )
       .then((res) => {
         const bal = parseFloat(
           String(
@@ -118,7 +128,7 @@ export function CheckoutPaymentStep() {
         setWalletBalance(isNaN(bal) ? 0 : bal);
       })
       .catch(() => setWalletBalance(0));
-  }, [phone]);
+  }, [phone, primaryVendorId, cart]);
 
   // Sync wallet amount applied with the context when toggle changes
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { persistIstDateTime, normalizePromoCategory } from '../dsl/category-aliases';
+import { persistIstDateTime, toDatetimeLocalIst, normalizePromoCategory } from '../dsl/category-aliases';
 import {
   dbCreatePromotion,
   dbGetPromotion,
@@ -237,8 +237,8 @@ export async function getPromotionDetail(id: string) {
       name: promo.name,
       code: promo.code || '',
       priority: promo.priority,
-      startAt: promo.start_at || '',
-      endAt: promo.end_at || '',
+      startAt: toDatetimeLocalIst(promo.start_at),
+      endAt: toDatetimeLocalIst(promo.end_at),
       stackingPolicy: promo.stacking_policy || 'SERVICE_LEVEL',
       fundingType: promo.funding_type || 'WARMPAWZ',
       fundingSplit: {

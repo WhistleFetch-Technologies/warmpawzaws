@@ -96,10 +96,18 @@ export async function executecustomerWalletGet(c: Context) {
       let spendable = parseFloat(wallet.balance || '0') || 0;
       let lockedPromoCashback = 0;
       try {
-        const { computeSpendableWalletBalance } = await import(
+        const { computeSpendableWalletBalance, parseWalletRedeemQuery } = await import(
           '../../../../discount-engine/promo-engine'
         );
-        const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+        const payment = parseWalletRedeemQuery({
+          serviceCategory,
+          channel: c.req.query('channel'),
+          vendorId: c.req.query('vendorId') || c.req.query('vendor_id'),
+          categoryId: c.req.query('categoryId') || c.req.query('category_id'),
+          ecommerceCategoryId:
+            c.req.query('ecommerceCategoryId') || c.req.query('ecommerce_category_id'),
+        });
+        const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, payment);
         spendable = scoped.spendable;
         lockedPromoCashback = scoped.lockedPromoCashback;
       } catch {

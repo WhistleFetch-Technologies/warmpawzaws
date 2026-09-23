@@ -2,7 +2,9 @@ import type { PoolClient } from 'pg';
 import {
   computeSpendableWalletBalance,
   consumePromoCashbackForDebit,
+  resolveSpendChannelFromBooking,
 } from '../discount-engine/promo-engine';
+import type { SpendChannel } from '../discount-engine/promo-engine/vcf/types';
 
 const BOOKING_PAYMENT_DESC = 'Payment for booking';
 
@@ -22,6 +24,36 @@ async function customerWalletsColumnSet(client: PoolClient): Promise<Set<string>
   return new Set(r.rows.map((x) => x.column_name));
 }
 
+async function loadBookingWalletContext(
+  client: PoolClient,
+  bookingId: string
+): Promise<{
+  vendorId: string | null;
+  serviceCategory: string | null;
+  channel: SpendChannel | null;
+} | null> {
+  const r = await client.query<{
+    vendor_id?: string | null;
+    service_type?: string | null;
+  }>(
+    `SELECT vendor_id, service_type
+     FROM bookings
+     WHERE id = $1::uuid
+     LIMIT 1`,
+    [bookingId]
+  );
+  const row = r.rows[0];
+  if (!row) return null;
+  return {
+    vendorId: row.vendor_id ? String(row.vendor_id) : null,
+    serviceCategory: row.service_type ? String(row.service_type) : null,
+    channel: resolveSpendChannelFromBooking({
+      service_type: row.service_type,
+      service_style: row.service_type,
+    }),
+  };
+}
+
 /**
  * Debit customer wallet for a booking payment inside an existing transaction.
  * Idempotent per (customer_id, booking_id, idempotency_key) when idempotencyKey is set.
@@ -37,6 +69,9 @@ export async function debitCustomerWalletForBookingInTransaction(
     amount: number;
     idempotencyKey?: string | null;
     serviceCategory?: string | null;
+    vendorId?: string | null;
+    categoryId?: string | null;
+    channel?: SpendChannel | null;
   }
 ): Promise<{ debited: number; balanceAfter: number }> {
   const { customerId, bookingId, amount, idempotencyKey } = params;
@@ -44,6 +79,9 @@ export async function debitCustomerWalletForBookingInTransaction(
     return { debited: 0, balanceAfter: 0 };
   }
   let serviceCategory = params.serviceCategory ? String(params.serviceCategory) : null;
+  let vendorId = params.vendorId ? String(params.vendorId) : null;
+  let categoryId = params.categoryId ? String(params.categoryId) : null;
+  let channel: SpendChannel | null = params.channel || null;
 
   const cols = await walletTransactionsColumnSet(client);
   const hasCustomerId = cols.has('customer_id');
@@ -148,7 +186,21 @@ export async function debitCustomerWalletForBookingInTransaction(
 
   const balanceBefore = parseFloat(String(walletRow.balance ?? '0')) || 0;
 
-  const scoped = await computeSpendableWalletBalance(customerId, serviceCategory);
+  if (!channel || !vendorId || !serviceCategory) {
+    const bookingCtx = await loadBookingWalletContext(client, bookingId);
+    if (bookingCtx) {
+      vendorId = vendorId || bookingCtx.vendorId;
+      serviceCategory = serviceCategory || bookingCtx.serviceCategory;
+      channel = channel || bookingCtx.channel;
+    }
+  }
+
+  const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, {
+    serviceCategory,
+    vendorId,
+    categoryId,
+    channel,
+  });
   if (amount > scoped.spendable + 0.009) {
     throw new Error(
       `Insufficient spendable wallet (spendable ₹${scoped.spendable.toFixed(2)}, locked ₹${scoped.lockedPromoCashback.toFixed(2)})`,
@@ -214,6 +266,9 @@ export async function debitCustomerWalletForBookingInTransaction(
     customerId,
     amount,
     serviceCategory,
+    vendorId,
+    categoryId,
+    channel,
   });
 
   // Optional denormalized mirror on `customers` — must not abort the booking txn if column/table drifts.

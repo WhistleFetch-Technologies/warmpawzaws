@@ -6,6 +6,7 @@ export async function debitEcommerceWallet(opts: {
   orderId: string;
   orderNumber: string;
   vendorId?: string | null;
+  ecommerceCategoryId?: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const amount = Math.round((opts.amount || 0) * 100) / 100;
   if (amount <= 0) return { ok: true };
@@ -16,6 +17,7 @@ export async function debitEcommerceWallet(opts: {
     serviceCategory: 'ecommerce',
     vendorId: opts.vendorId || null,
     channel: 'ecommerce',
+    ecommerceCategoryId: opts.ecommerceCategoryId || null,
     referenceType: 'order',
     referenceId: opts.orderId,
     description: `Applied to order ${opts.orderNumber}`,
