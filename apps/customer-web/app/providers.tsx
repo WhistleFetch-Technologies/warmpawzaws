@@ -8,6 +8,7 @@ import { SearchContextProvider } from '@/context/SearchContext';
 import { CartProvider } from '@/context/CartContext';
 import { ScrollToTop } from '@/components/ScrollToTop';
 import { AnalyticsRouteTracker } from '@/components/AnalyticsRouteTracker';
+import { MetaPixelPageView } from '@/components/MetaPixelPageView';
 import { ClientErrorBoundary } from '@/components/ClientErrorBoundary';
 import { GlobalClientErrorReporting } from '@/components/GlobalClientErrorReporting';
 import { PushSessionRegistrar } from '@/components/PushSessionRegistrar';
@@ -68,6 +69,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
                   <ScrollToTop />
                   <Suspense fallback={null}>
                     <AnalyticsRouteTracker />
+                    <MetaPixelPageView />
                   </Suspense>
                   {children}
                   <Toaster position="top-right" />
