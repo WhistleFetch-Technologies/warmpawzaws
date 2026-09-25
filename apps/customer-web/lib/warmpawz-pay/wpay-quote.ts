@@ -63,7 +63,7 @@ function resolveEngineDiscountAmount(
   return round2(Math.min(discountRaw, Math.max(0, quotedAmount - 0.01)));
 }
 
-/** Historical withhold model preview — promo-engine ₹ only. */
+/** Historical withhold model preview — promo-engine ₹ on Q, then at-home credit. */
 export function previewWpayQuote(params: {
   originalAmount: number;
   appointmentFeeCredit?: number;
@@ -71,14 +71,19 @@ export function previewWpayQuote(params: {
   engineDiscount?: number | null;
 }): WpayQuotePreview {
   const original = round2(params.originalAmount);
-  const appointmentFeeCredit = 0;
   const billBase = original;
   const discountAmount = resolveEngineDiscountAmount(
     billBase,
     params.engineDiscount,
     params.maxDiscountAmount,
   );
-  const payableAmount = Math.max(0.01, round2(billBase - discountAmount));
+  const afterDiscount = round2(Math.max(0, original - discountAmount));
+  const rawCredit = Number(params.appointmentFeeCredit ?? 0);
+  const appointmentFeeCredit =
+    Number.isFinite(rawCredit) && rawCredit > 0
+      ? round2(Math.min(afterDiscount, rawCredit))
+      : 0;
+  const payableAmount = Math.max(0.01, round2(afterDiscount - appointmentFeeCredit));
 
   return {
     originalAmount: original,
@@ -91,8 +96,8 @@ export function previewWpayQuote(params: {
 }
 
 /**
- * Tier-commission preview: engine discount only; fees + exclusive GST.
- * Guardrail: fees wiped when total fees >= engine discount ₹.
+ * Tier-commission preview: engine discount on Q, then at-home credit, then fees.
+ * Fees computed from (Q − D). Guardrail: fees wiped when total fees >= engine discount ₹.
  */
 export function previewWpayCommercialQuote(params: {
   originalAmount: number;
@@ -114,8 +119,12 @@ export function previewWpayCommercialQuote(params: {
   );
   const servicePayableAmount = round2(originalAmount - discountAmount);
 
-  const appointmentFeeCredit = 0;
-  const serviceDueAfterCredit = servicePayableAmount;
+  const rawCredit = Number(params.appointmentFeeCredit ?? 0);
+  const appointmentFeeCredit =
+    Number.isFinite(rawCredit) && rawCredit > 0
+      ? round2(Math.min(servicePayableAmount, rawCredit))
+      : 0;
+  const serviceDueAfterCredit = round2(Math.max(0, servicePayableAmount - appointmentFeeCredit));
 
   let platformFee = resolveConfiguredFeeAmount({
     servicePayableAmount,
@@ -153,7 +162,7 @@ export function previewWpayCommercialQuote(params: {
   const convenienceGrossAmount = round2(convenienceFee + convenienceGstAmount);
   const payableAmount = Math.max(
     0.01,
-    round2(servicePayableAmount + platformFeeGrossAmount + convenienceGrossAmount),
+    round2(serviceDueAfterCredit + platformFeeGrossAmount + convenienceGrossAmount),
   );
 
   return {

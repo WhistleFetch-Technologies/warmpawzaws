@@ -1,5 +1,6 @@
 import {
   assertBookingEligibleForPayCredit,
+  isWapptAtHomeServiceType,
   mapWpayAppointmentContextBooking,
   mapWpayAppointmentContextBookingPublic,
   resolveWapptAppointmentFeeCredit,
@@ -25,7 +26,7 @@ const baseRow: WpayWapptBookingContextRow = {
   booking_date: '2026-08-05',
   booking_time: '10:00',
   booking_datetime: '2026-08-05T10:00:00.000Z',
-  service_type: 'at_center',
+  service_type: 'at_home',
   service_category: 'vet',
   commerce_mode: 'warmpawz_appointments',
   total_amount: 200,
@@ -42,12 +43,24 @@ describe('wpay-appointment-credit', () => {
     hasCustomerPaidCapture.mockResolvedValue(true);
   });
 
-  it('maps booking context with creditEligible for active same-day booking', () => {
+  it('recognizes at_home service styles only', () => {
+    expect(isWapptAtHomeServiceType('at_home')).toBe(true);
+    expect(isWapptAtHomeServiceType('home_visit')).toBe(true);
+    expect(isWapptAtHomeServiceType('at_center')).toBe(false);
+    expect(isWapptAtHomeServiceType('tele')).toBe(false);
+  });
+
+  it('maps booking context with creditEligible for active same-day at_home booking', () => {
     const mapped = mapWpayAppointmentContextBooking(baseRow);
     expect(mapped.bookingId).toBe('booking-1');
     expect(mapped.serviceName).toBe('Appointment');
     expect(mapped.otpVerified).toBe(false);
     expect(mapped.creditEligible).toBe(true);
+  });
+
+  it('marks at_center bookings not creditEligible', () => {
+    const mapped = mapWpayAppointmentContextBooking({ ...baseRow, service_type: 'at_center' });
+    expect(mapped.creditEligible).toBe(false);
   });
 
   it('public mapper never exposes OTP fields', () => {
@@ -69,12 +82,21 @@ describe('wpay-appointment-credit', () => {
     expect(resolveWapptAppointmentFeeFromBooking(baseRow)).toBe(200);
   });
 
-  it('allows credit for active same-day paid booking', async () => {
+  it('allows credit for active same-day paid at_home booking', async () => {
     const result = await resolveWapptAppointmentFeeCredit({
       booking: baseRow,
       creditAlreadyConsumed: false,
     });
     expect(result).toEqual({ credit: 200 });
+  });
+
+  it('rejects credit for at_center booking', async () => {
+    const result = await resolveWapptAppointmentFeeCredit({
+      booking: { ...baseRow, service_type: 'at_center', total_amount: 99 },
+      creditAlreadyConsumed: false,
+    });
+    expect(result.credit).toBe(0);
+    expect(result.status).toBe(409);
   });
 
   it('rejects credit when booking date is not today', async () => {
@@ -96,7 +118,11 @@ describe('wpay-appointment-credit', () => {
   });
 
   it('allows credit when OTP already set booking status to completed', async () => {
-    const mapped = mapWpayAppointmentContextBooking({ ...baseRow, status: 'completed', otp_verified: true });
+    const mapped = mapWpayAppointmentContextBooking({
+      ...baseRow,
+      status: 'completed',
+      otp_verified: true,
+    });
     expect(mapped.creditEligible).toBe(true);
 
     const result = await resolveWapptAppointmentFeeCredit({
@@ -106,10 +132,17 @@ describe('wpay-appointment-credit', () => {
     expect(result).toEqual({ credit: 200 });
   });
 
-  it('assertBookingEligibleForPayCredit passes for OTP-completed same-day booking', () => {
-    expect(assertBookingEligibleForPayCredit({ ...baseRow, status: 'completed', otp_verified: true })).toEqual({
+  it('assertBookingEligibleForPayCredit passes for OTP-completed same-day at_home', () => {
+    expect(
+      assertBookingEligibleForPayCredit({ ...baseRow, status: 'completed', otp_verified: true }),
+    ).toEqual({
       ok: true,
     });
+  });
+
+  it('assertBookingEligibleForPayCredit rejects centre', () => {
+    const result = assertBookingEligibleForPayCredit({ ...baseRow, service_type: 'at_center' });
+    expect(result.ok).toBe(false);
   });
 
   it('rejects credit when already consumed', async () => {
@@ -121,7 +154,7 @@ describe('wpay-appointment-credit', () => {
     expect(result.status).toBe(409);
   });
 
-  it('assertBookingEligibleForPayCredit passes for active same-day booking', () => {
+  it('assertBookingEligibleForPayCredit passes for active same-day at_home', () => {
     expect(assertBookingEligibleForPayCredit(baseRow)).toEqual({ ok: true });
   });
 });

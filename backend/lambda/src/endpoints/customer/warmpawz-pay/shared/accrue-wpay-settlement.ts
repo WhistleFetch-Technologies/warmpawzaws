@@ -96,7 +96,7 @@ export async function accrueWpaySettlement(
   const discountAmount = round2(
     Number(payment.discount_amount ?? readMetadataNumber(meta, 'quotedDiscountAmount') ?? 0),
   );
-  const appointmentFeeCredit = 0;
+  const appointmentFeeCredit = round2(readMetadataNumber(meta, 'appointmentFeeCredit'));
   const discountPercent = round2(
     readMetadataNumber(meta, 'quotedDiscountPercent') ||
       readMetadataNumber(meta, 'discountPercentSnapshot'),

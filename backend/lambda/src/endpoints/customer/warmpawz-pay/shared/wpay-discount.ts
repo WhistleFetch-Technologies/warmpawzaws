@@ -4,16 +4,16 @@ export type WpayDiscountQuoteOptions = {
   maxDiscountAmount?: number | null;
   /** Promo-engine ₹ discount (only customer cut on Pay Bill). */
   engineDiscount?: number | null;
-  /** @deprecated Appointment credit is unwired for Pay Bill; ignored. */
+  /** At-home WAPPT fee credited after Q−D: payNow = (Q−D)−C (+ fees on commercial). */
   appointmentFeeCredit?: number;
 };
 
 export type WpayDiscountQuote = {
   /** Vendor-quoted gross bill. */
   originalAmount: number;
-  /** Always 0 — appointment credit is unwired from Pay Bill. */
+  /** At-home appointment fee credited against (Q − D). */
   appointmentFeeCredit: number;
-  /** Same as originalAmount (credit no longer reduces bill base). */
+  /** Discount base remains full Q; payable is Q − D − C. */
   billBase: number;
   /** Effective % of Q from engine discount (display / history). */
   discountPercent: number;
@@ -42,7 +42,7 @@ function resolveEngineDiscountAmount(
   return round2(Math.min(discountRaw, Math.max(0, quotedAmount - 0.01)));
 }
 
-/** Historical withhold model: engine discount on full Q (appointment credit ignored). */
+/** Historical withhold model: engine discount on full Q, then at-home credit. */
 export function computeWpayDiscountQuote(
   originalAmount: number,
   options: WpayDiscountQuoteOptions | null = null,
@@ -52,14 +52,19 @@ export function computeWpayDiscountQuote(
     throw new Error('Invalid bill amount');
   }
 
-  const appointmentFeeCredit = 0;
   const billBase = original;
   const discountAmount = resolveEngineDiscountAmount(
     billBase,
     options?.engineDiscount,
     options?.maxDiscountAmount,
   );
-  const payableAmount = Math.max(0.01, round2(billBase - discountAmount));
+  const afterDiscount = round2(Math.max(0, original - discountAmount));
+  const rawCredit = Number(options?.appointmentFeeCredit ?? 0);
+  const appointmentFeeCredit =
+    Number.isFinite(rawCredit) && rawCredit > 0
+      ? round2(Math.min(afterDiscount, rawCredit))
+      : 0;
+  const payableAmount = Math.max(0.01, round2(afterDiscount - appointmentFeeCredit));
   const discountPercent =
     original > 0 ? round2((discountAmount / original) * 100) : 0;
 
@@ -78,7 +83,7 @@ export type WpayFeeMode = 'fixed' | 'percent';
 export type WpayCommercialQuoteInput = {
   quotedAmount: number;
   commissionPercent: number;
-  /** @deprecated Ignored — appointment credit unwired from Pay Bill. */
+  /** At-home WAPPT fee credited after Q−D; fees still computed from Q−D. */
   appointmentFeeCredit?: number;
   /**
    * Configured platform fee value: ₹ when mode=fixed, or % of post-discount
@@ -120,9 +125,9 @@ export type WpayCommercialQuote = {
   platformGstRate: number;
   platformGstAmount: number;
   netWpayRevenueAmount: number;
-  /** Always 0 — appointment credit unwired. */
+  /** At-home appointment fee credited: serviceDue = (Q−D)−C. */
   appointmentFeeCredit: number;
-  /** Alias of servicePayableAmount (credit removed). */
+  /** (Q − D) − appointmentFeeCredit. */
   serviceDueAfterCredit: number;
   platformFee: number;
   platformFeeGstRate: number;
@@ -206,9 +211,9 @@ export function resolveWpayConfiguredFeeAmount(params: {
  * - Customer discount = promo-engine ₹ only (no catalogue %)
  * - C/D on full Q; platform revenue = C − D (GST inclusive extract) unless burnMode
  * - burnMode: vendor paid full Q; platform funds discount; fees unchanged
- * - No appointment credit
+ * - At-home appointment credit after Q−D: payNow = (Q−D)−credit + fees
  * - Platform fee + convenience fee each with exclusive GST on top
- * - Fees may be fixed ₹ or % of post-discount amount
+ * - Fees may be fixed ₹ or % of post-discount amount (not after credit)
  * - Guardrail: if total fees (incl. fee GST) >= engine discount ₹, zero all fees + fee GST
  */
 export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): WpayCommercialQuote {
@@ -247,8 +252,12 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
       : 0;
   const netWpayRevenueAmount = round2(Math.max(0, wpayRevenueAmount - platformGstAmount));
 
-  const appointmentFeeCredit = 0;
-  const serviceDueAfterCredit = servicePayableAmount;
+  const rawCredit = Number(input.appointmentFeeCredit ?? 0);
+  const appointmentFeeCredit =
+    Number.isFinite(rawCredit) && rawCredit > 0
+      ? round2(Math.min(servicePayableAmount, rawCredit))
+      : 0;
+  const serviceDueAfterCredit = round2(Math.max(0, servicePayableAmount - appointmentFeeCredit));
 
   let platformFee = resolveWpayConfiguredFeeAmount({
     servicePayableAmount,
@@ -289,7 +298,7 @@ export function computeWpayCommercialQuote(input: WpayCommercialQuoteInput): Wpa
   const finalGstAmount = round2(platformGstAmount + platformFeeGstAmount + convenienceGstAmount);
   const payNowAmount = Math.max(
     0.01,
-    round2(servicePayableAmount + platformFeeGrossAmount + convenienceGrossAmount),
+    round2(serviceDueAfterCredit + platformFeeGrossAmount + convenienceGrossAmount),
   );
   // Burn amount = vendor payable − customer paid (payNow).
   const burnAmount = burnMode
@@ -345,7 +354,7 @@ export function buildWpayCommercialSnapshot(quote: WpayCommercialQuote, extras?:
     platformGstRateSnapshot: quote.platformGstRate,
     platformGstAmount: quote.platformGstAmount,
     netWpayRevenueAmount: quote.netWpayRevenueAmount,
-    appointmentFeeCredit: 0,
+    appointmentFeeCredit: quote.appointmentFeeCredit,
     serviceDueAfterCredit: quote.serviceDueAfterCredit,
     platformFee: quote.platformFee,
     platformFeeGstRateSnapshot: quote.platformFeeGstRate,

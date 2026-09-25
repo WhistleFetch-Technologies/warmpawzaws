@@ -19,19 +19,28 @@ describe('computeWpayDiscountQuote', () => {
     });
   });
 
-  it('ignores appointment fee credit when provided', () => {
+  it('applies appointment fee credit after Q − D', () => {
     const quote = computeWpayDiscountQuote(800, {
       engineDiscount: 80,
       appointmentFeeCredit: 200,
     });
     expect(quote).toEqual({
       originalAmount: 800,
-      appointmentFeeCredit: 0,
+      appointmentFeeCredit: 200,
       billBase: 800,
       discountPercent: 10,
       discountAmount: 80,
-      payableAmount: 720,
+      payableAmount: 520,
     });
+  });
+
+  it('caps appointment fee credit at Q − D', () => {
+    const quote = computeWpayDiscountQuote(500, {
+      engineDiscount: 50,
+      appointmentFeeCredit: 999,
+    });
+    expect(quote.appointmentFeeCredit).toBe(450);
+    expect(quote.payableAmount).toBe(0.01);
   });
 
   it('honors maxDiscountAmount cap on bill base', () => {
@@ -77,7 +86,7 @@ describe('computeWpayCommercialQuote', () => {
     expect(quote.appointmentFeeCredit).toBe(0);
   });
 
-  it('case 2: appointment credit input is ignored', () => {
+  it('case 2: appointment credit after Q − D then fees', () => {
     const quote = computeWpayCommercialQuote({
       ...base,
       appointmentFeeCredit: 200,
@@ -85,10 +94,10 @@ describe('computeWpayCommercialQuote', () => {
       platformFee: 0,
     });
     expect(quote.vendorPayableAmount).toBe(8000);
-    expect(quote.wpayRevenueAmount).toBe(500);
-    expect(quote.serviceDueAfterCredit).toBe(8500);
-    expect(quote.payNowAmount).toBe(8500);
-    expect(quote.appointmentFeeCredit).toBe(0);
+    expect(quote.servicePayableAmount).toBe(8500);
+    expect(quote.serviceDueAfterCredit).toBe(8300);
+    expect(quote.payNowAmount).toBe(8300);
+    expect(quote.appointmentFeeCredit).toBe(200);
   });
 
   it('case 3: platform fee + convenience with exclusive GST on top', () => {

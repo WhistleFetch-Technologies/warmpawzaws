@@ -54,6 +54,13 @@ const WAPPT_FILTER = `
 /** Financial fact: cover not consumed — OTP may set status=completed without blocking Pay Bill. */
 const WAPPT_PAY_CREDIT_STATUS_FILTER = `b.status NOT IN ('cancelled', 'refunded')`;
 
+/** Pay Bill credit is at_home only — never auto-pick centre / clinic / tele. */
+const WAPPT_AT_HOME_SERVICE_TYPE_FILTER = `
+  LOWER(TRIM(COALESCE(b.service_type, ''))) IN (
+    'at_home', 'home_visit', 'home', 'sitting', 'pet_sitting'
+  )
+`;
+
 export async function dbFindOpenWapptBookingForPay(
   customerId: string,
   vendorId: string,
@@ -79,6 +86,7 @@ export async function dbFindCreditEligibleWapptBookingForPay(
      WHERE ${WAPPT_FILTER}
        AND b.booking_date = $4::date
        AND ${WAPPT_PAY_CREDIT_STATUS_FILTER}
+       AND ${WAPPT_AT_HOME_SERVICE_TYPE_FILTER}
      ORDER BY COALESCE(b.booking_datetime, b.created_at) DESC
      LIMIT 1`,
     [customerId, vendorId, WAPPT_BOOKING_MODE, today],

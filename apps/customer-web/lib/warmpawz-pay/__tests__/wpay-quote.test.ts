@@ -11,7 +11,7 @@ describe('previewWpayQuote', () => {
     });
   });
 
-  it('ignores appointment fee credit when provided', () => {
+  it('applies appointment fee credit after Q − D', () => {
     expect(
       previewWpayQuote({
         originalAmount: 800,
@@ -21,8 +21,8 @@ describe('previewWpayQuote', () => {
     ).toMatchObject({
       billBase: 800,
       discountAmount: 80,
-      payableAmount: 720,
-      appointmentFeeCredit: 0,
+      payableAmount: 520,
+      appointmentFeeCredit: 200,
     });
   });
 
@@ -51,6 +51,25 @@ describe('previewWpayCommercialQuote', () => {
       convenienceGstAmount: 3.6,
       payableAmount: 8559,
       appointmentFeeCredit: 0,
+    });
+  });
+
+  it('subtracts appointment fee credit after Q − D then adds fees', () => {
+    expect(
+      previewWpayCommercialQuote({
+        originalAmount: 10_000,
+        engineDiscount: 1500,
+        appointmentFeeCredit: 200,
+        platformFee: 30,
+        platformFeeGstRate: 18,
+        convenienceFee: 20,
+        convenienceGstRate: 18,
+      }),
+    ).toMatchObject({
+      servicePayableAmount: 8500,
+      appointmentFeeCredit: 200,
+      serviceDueAfterCredit: 8300,
+      payableAmount: 8359,
     });
   });
 

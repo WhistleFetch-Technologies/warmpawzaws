@@ -23,6 +23,22 @@ export function ymdFromBookingDateField(raw: string | Date | null | undefined): 
 /** Terminal for cover adjustment — operational `completed` (OTP) is allowed. */
 const PAY_CREDIT_BLOCKING_STATUSES = new Set(['cancelled', 'refunded']);
 
+/** Styles that may credit Pay Bill. Centre / clinic / tele never credit. */
+const PAY_CREDIT_AT_HOME_STYLES = new Set([
+  'at_home',
+  'home_visit',
+  'home',
+  'sitting',
+  'pet_sitting',
+]);
+
+export function isWapptAtHomeServiceType(serviceType: string | null | undefined): boolean {
+  const key = String(serviceType ?? '')
+    .trim()
+    .toLowerCase();
+  return key.length > 0 && PAY_CREDIT_AT_HOME_STYLES.has(key);
+}
+
 export function isWapptBookingBlockedForPayCredit(status: string | null | undefined): boolean {
   const key = String(status ?? '').toLowerCase();
   return key.length > 0 && PAY_CREDIT_BLOCKING_STATUSES.has(key);
@@ -36,6 +52,14 @@ export function isWapptBookingActiveForPayCredit(status: string | null | undefin
 export function assertBookingEligibleForPayCredit(
   booking: WpayWapptBookingContextRow,
 ): { ok: true } | { ok: false; error: string; status: number } {
+  if (!isWapptAtHomeServiceType(booking.service_type)) {
+    return {
+      ok: false,
+      error: 'Only at-home appointment fees can credit Pay Bill',
+      status: 409,
+    };
+  }
+
   const today = ymdInIst();
   const bookingDate = ymdFromBookingDateField(booking.booking_date);
   if (bookingDate !== today) {
@@ -70,6 +94,7 @@ export function mapWpayAppointmentContextBooking(row: WpayWapptBookingContextRow
   const creditEligible =
     appointmentFee > 0 &&
     bookingDate === today &&
+    isWapptAtHomeServiceType(row.service_type) &&
     !isWapptBookingBlockedForPayCredit(row.status);
 
   return {

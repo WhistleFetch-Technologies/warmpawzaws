@@ -7,9 +7,15 @@ import {
 import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
 import { dbWpayVendorById } from '../repos/wpay-vendor-detail.repo';
 import {
+  dbFindCreditEligibleWapptBookingForPay,
   dbFindOpenWapptBookingForPay,
+  dbIsAppointmentCreditConsumed,
   dbLoadWapptBookingForPayCredit,
 } from '../repos/wpay-appointment-context.repo';
+import {
+  isWapptAtHomeServiceType,
+  resolveWapptAppointmentFeeCredit,
+} from '../shared/wpay-appointment-credit';
 import { WpayCommercialValidationError } from '../shared/wpay-discount';
 import { resolveWpayPayQuote } from '../shared/wpay-quote-resolver';
 import { resolveWpayPromoCategory } from '../shared/resolve-wpay-promo-category';
@@ -49,6 +55,9 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
       return c.json({ success: false, error: 'Invalid bill amount' }, 400);
     }
+    if (requestedBookingId && !UUID_RE.test(requestedBookingId)) {
+      return c.json({ success: false, error: 'Invalid booking id' }, 400);
+    }
 
     const identity = await resolveWpayAuthenticatedCustomer(c, phone);
     if (!identity.ok) {
@@ -61,10 +70,51 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       return c.json({ success: false, error: 'Vendor not found or not available' }, 404);
     }
 
-    const openBooking = UUID_RE.test(requestedBookingId)
+    let appointmentFeeCredit = 0;
+    let appointmentFeeBookingId: string | null = null;
+    let appointmentFeeServiceStyle: string | null = null;
+
+    const creditCandidate = UUID_RE.test(requestedBookingId)
       ? await dbLoadWapptBookingForPayCredit(requestedBookingId, customerId, vendorId)
-      : await dbFindOpenWapptBookingForPay(customerId, vendorId);
-    const bookingId = openBooking?.id ? String(openBooking.id) : null;
+      : await dbFindCreditEligibleWapptBookingForPay(customerId, vendorId);
+
+    if (UUID_RE.test(requestedBookingId) && !creditCandidate) {
+      return c.json({ success: false, error: 'Booking not found for this vendor' }, 404);
+    }
+
+    if (creditCandidate) {
+      if (!isWapptAtHomeServiceType(creditCandidate.service_type)) {
+        // Fail closed on centre: never credit. Explicit centre id does not block Pay Bill.
+      } else {
+        const consumed = await dbIsAppointmentCreditConsumed(String(creditCandidate.id));
+        const creditResult = await resolveWapptAppointmentFeeCredit({
+          booking: creditCandidate,
+          creditAlreadyConsumed: consumed,
+        });
+        if (UUID_RE.test(requestedBookingId) && creditResult.error) {
+          return c.json(
+            { success: false, error: creditResult.error },
+            (creditResult.status as 400 | 409) ?? 409,
+          );
+        }
+        if (!creditResult.error && creditResult.credit > 0) {
+          appointmentFeeCredit = creditResult.credit;
+          appointmentFeeBookingId = String(creditCandidate.id);
+          appointmentFeeServiceStyle = 'at_home';
+        }
+      }
+    }
+
+    const openBooking = appointmentFeeBookingId
+      ? creditCandidate
+      : UUID_RE.test(requestedBookingId)
+        ? creditCandidate
+        : await dbFindOpenWapptBookingForPay(customerId, vendorId);
+    const bookingId = appointmentFeeBookingId
+      ? appointmentFeeBookingId
+      : openBooking?.id
+        ? String(openBooking.id)
+        : null;
     const serviceCategory =
       resolveWpayPromoCategory({
         bookingCategory: openBooking?.service_category,
@@ -136,15 +186,17 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       );
     }
 
-    // Customer discount = promo-engine ₹ only; fee guardrail uses that D.
+    // Customer discount = promo-engine ₹ only; then at-home credit; fees from Q−D.
     const resolved = await resolveWpayPayQuote({
       vendorRow,
       quotedAmount: originalAmount,
       engineDiscount,
+      appointmentFeeCredit,
     });
     const payableAmount = resolved.payableAmount;
     const discountAmount =
       Number(resolved.metadata.quotedDiscountAmount) || resolved.quote.discountAmount || 0;
+    const appliedCredit = resolved.quote.appointmentFeeCredit;
 
     const requestedWallet = Number(body.walletAmount);
     let walletAmount = 0;
@@ -175,6 +227,9 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       serviceCategory,
       categoryId: payCtx.categoryId,
       bookingId,
+      appointmentFeeBookingId,
+      appointmentFeeServiceStyle,
+      appointmentFeeCredit: appliedCredit,
       walletAmount,
       quotedPayableAmount: payableAmount,
       razorpayChargeAmount: razorpayCharge,
@@ -188,7 +243,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         customerId,
         vendorId,
         payableAmount,
-        bookingId,
+        bookingId: appointmentFeeBookingId ?? bookingId,
         clientRequestId: clientRequestId || null,
         quoteMetadata,
       });
@@ -219,8 +274,8 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         razorpaySignature: 'wallet',
         originalAmount,
         discountAmount,
-        bookingId,
-        creditAmount: 0,
+        bookingId: appointmentFeeBookingId,
+        creditAmount: appointmentFeeBookingId && appliedCredit > 0 ? appliedCredit : 0,
       });
       if (completed) {
         try {
@@ -252,10 +307,11 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         paymentId: walletPay.paymentId,
         originalAmount,
         discountAmount,
+        appointmentFeeCredit: appliedCredit,
         payableAmount,
         walletAmount,
         razorpayAmount: 0,
-        bookingId,
+        bookingId: appointmentFeeBookingId ?? bookingId,
         promoEngine,
       });
     }
@@ -265,7 +321,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       vendorId,
       payableAmount,
       chargeAmount: razorpayCharge,
-      bookingId,
+      bookingId: appointmentFeeBookingId ?? bookingId,
       clientRequestId: clientRequestId || null,
       quoteMetadata,
     });
@@ -285,7 +341,8 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         discountPercent: q.discountPercent,
         discountAmount: q.discountAmount,
         servicePayableAmount: q.servicePayableAmount,
-        appointmentFeeCredit: 0,
+        appointmentFeeCredit: q.appointmentFeeCredit,
+        serviceDueAfterCredit: q.serviceDueAfterCredit,
         platformFee: q.platformFee,
         platformFeeGstAmount: q.platformFeeGstAmount,
         convenienceFee: q.convenienceFee,
@@ -293,7 +350,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         payableAmount,
         walletAmount,
         razorpayAmount: order.amount,
-        bookingId,
+        bookingId: appointmentFeeBookingId ?? bookingId,
         promoEngine,
       });
     }
@@ -309,13 +366,13 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       currency: order.currency,
       commercialModel: 'withhold',
       originalAmount: q.originalAmount,
-      appointmentFeeCredit: 0,
+      appointmentFeeCredit: q.appointmentFeeCredit,
       billBase: q.billBase,
       discountAmount: q.discountAmount,
       payableAmount,
       walletAmount,
       razorpayAmount: order.amount,
-      bookingId,
+      bookingId: appointmentFeeBookingId ?? bookingId,
       promoEngine,
     });
   } catch (error: unknown) {

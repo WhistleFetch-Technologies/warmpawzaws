@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import { QrCode } from 'lucide-react';
 import { useWpayVendorId } from '@/lib/warmpawz-pay/use-wpay-vendor-id';
 import {
+  fetchWpayAppointmentContext,
   fetchWpayVendorDetail,
   readCustomerPhoneFromStorage,
+  type WpayAppointmentContext,
   type WpayVendorDetail,
 } from '@/lib/warmpawz-pay/wpay-api';
 import { previewWpayCommercialQuote, previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
@@ -19,6 +21,7 @@ import {
   isGuestApplicationState,
   requestGuestAuthForWpayPay,
 } from '@/lib/guest-auth-gate';
+import { CUSTOMER_AUTH_COMPLETED_EVENT } from '@/lib/customer-auth-session-event';
 import { VendorProfileDashboardHeader } from '@/components/customer/shared/VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from '@/components/customer/shared/VendorHeroPhotoCarousel';
 import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
@@ -70,6 +73,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const [promoEnginePreview, setPromoEnginePreview] =
     useState<PromoEngineEarnPreviewData | null>(null);
   const [useWallet, setUseWallet] = useState(false);
+  const [appointmentContext, setAppointmentContext] = useState<WpayAppointmentContext | null>(null);
   const phone = readCustomerPhoneFromStorage();
   const { wallet } = useCustomerWallet(phone, {
     serviceCategory: vendor?.category,
@@ -92,6 +96,22 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
       .finally(() => setLoading(false));
   }, [resolvedVendorId]);
 
+  const refreshAppointmentContext = useCallback(async () => {
+    if (!resolvedVendorId) return;
+    const customerPhone = readCustomerPhoneFromStorage();
+    if (!customerPhone) return;
+    try {
+      const ctx = await fetchWpayAppointmentContext(resolvedVendorId, customerPhone);
+      if (ctx) setAppointmentContext(ctx);
+    } catch {
+      /* non-fatal */
+    }
+  }, [resolvedVendorId]);
+
+  useEffect(() => {
+    void refreshAppointmentContext();
+  }, [refreshAppointmentContext]);
+
   useEffect(() => {
     if (!resolvedVendorId) return;
     const restored = consumeRestoredWpayPayBillAmount(resolvedVendorId);
@@ -99,13 +119,31 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     setAmountInput(String(restored));
     setQuoteReady(true);
     emitGuestAuthAnalytics('booking_resumed', { kind: 'pay_bill' });
-  }, [resolvedVendorId]);
+    void refreshAppointmentContext();
+  }, [resolvedVendorId, refreshAppointmentContext]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onAuth = () => {
+      void refreshAppointmentContext();
+    };
+    window.addEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuth);
+    return () => window.removeEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuth);
+  }, [refreshAppointmentContext]);
 
   useEffect(() => {
     if (isGuestApplicationState()) {
       emitGuestAuthAnalytics('vendor_viewed', { source: 'pay_bill' });
     }
   }, [resolvedVendorId]);
+
+  const creditEligibleBooking = appointmentContext?.creditEligibleBooking ?? null;
+  const linkedBookingId =
+    creditEligibleBooking?.bookingId ?? readBookingIdFromQuery();
+  const appointmentFeeCredit =
+    creditEligibleBooking?.creditEligible === true
+      ? Number(creditEligibleBooking.appointmentFee) || 0
+      : 0;
 
   const billAmount = useMemo(() => {
     const n = parseFloat(amountInput.replace(/,/g, ''));
@@ -115,10 +153,12 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const engineDiscount = Math.max(0, Number(promoEnginePreview?.engineDiscount) || 0);
   const quote = useMemo(() => {
     if (!vendor || billAmount <= 0) return null;
+    const credit = linkedBookingId && appointmentFeeCredit > 0 ? appointmentFeeCredit : 0;
     if (vendor.commercialModel === 'tier_commission') {
       return previewWpayCommercialQuote({
         originalAmount: billAmount,
         engineDiscount,
+        appointmentFeeCredit: credit,
         maxDiscountAmount: vendor.maxDiscountAmount,
         platformFee: vendor.platformFee ?? 0,
         platformFeeMode: vendor.platformFeeMode ?? 'fixed',
@@ -131,9 +171,10 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     return previewWpayQuote({
       originalAmount: billAmount,
       engineDiscount,
+      appointmentFeeCredit: credit,
       maxDiscountAmount: vendor.maxDiscountAmount,
     });
-  }, [billAmount, vendor, engineDiscount]);
+  }, [billAmount, vendor, engineDiscount, linkedBookingId, appointmentFeeCredit]);
 
   const isTierQuote = quote != null && 'commercialModel' in quote && quote.commercialModel === 'tier_commission';
   const displayPayable = quote != null ? quote.payableAmount : 0;
@@ -242,7 +283,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         vendorName: vendor.name,
         originalAmount: billAmount,
         customerPhone: phone,
-        bookingId: readBookingIdFromQuery(),
+        bookingId: linkedBookingId,
         evaluationId: promoEnginePreview?.evaluationId || null,
         serviceCategory: vendor.category || null,
         walletAmount: walletAmountApplied,
@@ -266,7 +307,17 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     } finally {
       setPaying(false);
     }
-  }, [billAmount, quote, resolvedVendorId, router, vendor, promoEnginePreview?.evaluationId, vendor?.category, walletAmountApplied]);
+  }, [
+    billAmount,
+    linkedBookingId,
+    quote,
+    resolvedVendorId,
+    router,
+    vendor,
+    promoEnginePreview?.evaluationId,
+    vendor?.category,
+    walletAmountApplied,
+  ]);
 
   const onProceedToPay = useCallback(() => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
@@ -354,6 +405,16 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
           </div>
 
           <div className="space-y-4">
+            {creditEligibleBooking ? (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+                <p className="font-semibold">At-home appointment found</p>
+                <p className="mt-1 text-xs text-green-800">
+                  {formatInr(creditEligibleBooking.appointmentFee)} appointment fee credit will
+                  apply after your discount.
+                </p>
+              </div>
+            ) : null}
+
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">Enter Bill Amount</label>
               <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3 py-3">
@@ -403,6 +464,12 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                   <div className="flex justify-between text-gray-600">
                     <span>Service payable</span>
                     <span>{formatInr(quote.servicePayableAmount)}</span>
+                  </div>
+                ) : null}
+                {quote.appointmentFeeCredit > 0 ? (
+                  <div className="flex justify-between text-[#FF6B00]">
+                    <span>Appointment fee credit</span>
+                    <span>- {formatInr(quote.appointmentFeeCredit)}</span>
                   </div>
                 ) : null}
                 {isTierQuote && quote.platformFee > 0 ? (

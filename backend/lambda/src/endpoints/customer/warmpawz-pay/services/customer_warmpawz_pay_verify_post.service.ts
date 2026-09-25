@@ -141,7 +141,10 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
       return c.json({ success: false, error: walletDebit.error }, 400);
     }
 
-    // Appointment credit unwired — never consume credit rows for new Pay Bill payments.
+    // Consume at-home appointment fee credit once (metadata stamped at initiate).
+    const creditAmount = Number(meta.appointmentFeeCredit ?? 0);
+    const creditBookingId =
+      String(meta.appointmentFeeBookingId ?? '').trim() || linkedBookingId;
     let completed;
     try {
       completed = await dbWpayAtomicCompleteVerify({
@@ -151,8 +154,8 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
         razorpaySignature,
         originalAmount,
         discountAmount,
-        bookingId: linkedBookingId,
-        creditAmount: 0,
+        bookingId: creditAmount > 0.009 ? creditBookingId : null,
+        creditAmount: creditAmount > 0.009 ? creditAmount : 0,
       });
     } catch (error) {
       if (error instanceof WpayCreditConsumeConflictError) {
