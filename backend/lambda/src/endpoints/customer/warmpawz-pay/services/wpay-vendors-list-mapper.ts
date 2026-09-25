@@ -3,6 +3,7 @@ import { mapWithConcurrency } from '../../../../services/image';
 import { resolveMerchantDisplayName } from '../../../warmpawz-pay/shared/merchant/merchant-display-name.resolver';
 import { resolveMerchantServiceCategory } from '../../../warmpawz-pay/shared/merchant/merchant-service-category.resolver';
 import type { WpayVendorListDbRow } from '../repos/wpay-vendors-list.repo';
+import { resolveWpayListingDiscountPercents } from '../shared/resolve-wpay-listing-discount-percents';
 
 export const WPAY_LIST_PHOTO_CONCURRENCY = 5;
 
@@ -25,10 +26,6 @@ export function formatWpayVendorAddress(address: string | null, city: string | n
   return line || cityLine || '';
 }
 
-function resolveDiscountPercent(_row: WpayVendorListDbRow): number {
-  return 0;
-}
-
 export async function mapWpayVendorListRows(rows: WpayVendorListDbRow[]): Promise<WpayVendorCardDto[]> {
   const photos = await mapWithConcurrency(rows, WPAY_LIST_PHOTO_CONCURRENCY, async (row) => {
     return getVendorListingPhotoUrl({
@@ -39,6 +36,10 @@ export async function mapWpayVendorListRows(rows: WpayVendorListDbRow[]): Promis
       metadata: row.metadata,
     });
   });
+
+  const discountByVendor = await resolveWpayListingDiscountPercents(
+    rows.map((row) => row.vendor_id),
+  );
 
   return rows.map((row, index) => {
     const categoryMeta = resolveMerchantServiceCategory({
@@ -61,7 +62,7 @@ export async function mapWpayVendorListRows(rows: WpayVendorListDbRow[]): Promis
       phone: row.phone,
       address: formatWpayVendorAddress(row.address, row.city),
       photoUrl: photos[index] ?? null,
-      discountPercent: resolveDiscountPercent(row),
+      discountPercent: discountByVendor.get(row.vendor_id) ?? 0,
       category: categoryMeta.serviceCategoryId !== 'unknown' ? categoryMeta.serviceCategoryId : null,
     };
   });

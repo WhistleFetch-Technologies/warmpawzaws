@@ -33,18 +33,18 @@ describe('normalizeWpayVendorCardAddress', () => {
 });
 
 describe('formatWpayCatalogueDiscountLabel', () => {
-  it('never shows a hardcoded catalogue discount label', () => {
+  it('formats Upto X% when discount percent is positive', () => {
     expect(formatWpayCatalogueDiscountLabel(0)).toBeUndefined();
-    expect(formatWpayCatalogueDiscountLabel(10)).toBeUndefined();
-    expect(formatWpayCatalogueDiscountLabel(20)).toBeUndefined();
+    expect(formatWpayCatalogueDiscountLabel(10)).toBe('Upto 10%');
+    expect(formatWpayCatalogueDiscountLabel(40)).toBe('Upto 40%');
   });
 });
 
 describe('buildWpayDiscountBadges', () => {
-  it('never attaches a Pay Bill discount badge', () => {
+  it('attaches a Pay Bill discount badge when percent is positive', () => {
     expect(buildWpayDiscountBadges(0)).toBeUndefined();
-    expect(buildWpayDiscountBadges(8)).toBeUndefined();
-    expect(buildWpayDiscountBadges(20)).toBeUndefined();
+    expect(buildWpayDiscountBadges(8)).toEqual([{ label: 'Upto 8%', tone: 'discount' }]);
+    expect(buildWpayDiscountBadges(20)).toEqual([{ label: 'Upto 20%', tone: 'discount' }]);
   });
 });
 

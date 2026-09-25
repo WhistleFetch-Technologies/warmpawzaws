@@ -6,6 +6,7 @@ import { resolveMerchantServiceCategory } from '../../../warmpawz-pay/shared/mer
 import type { WpayVendorsNearbyDbRow } from '../repos/wpay-vendors-nearby.repo';
 import { WPAY_LIST_PHOTO_CONCURRENCY } from './wpay-vendors-list-mapper';
 import type { WpayHomeVendorCardDto } from './wpay-vendors-nearby/types';
+import { resolveWpayListingDiscountPercents } from '../shared/resolve-wpay-listing-discount-percents';
 
 function asBool(raw: unknown): boolean {
   return raw === true || raw === 't' || raw === 'true' || raw === 1 || raw === '1';
@@ -56,8 +57,9 @@ function mapDistanceKm(raw: unknown): number | null {
   return Math.round(km * 100) / 100;
 }
 
-function buildPayViaWarmpawzLabel(_discountPercent: number): string {
-  return 'Pay with Warmpawz Pay';
+function buildPayViaWarmpawzLabel(discountPercent: number): string {
+  if (discountPercent <= 0) return 'Pay with Warmpawz Pay';
+  return `Upto ${discountPercent}% off with Warmpawz Pay`;
 }
 
 export async function mapWpayVendorsNearbyRows(
@@ -73,6 +75,11 @@ export async function mapWpayVendorsNearbyRows(
     });
   });
 
+  const payEligibleIds = rows
+    .filter((row) => Boolean(row.warmpawz_pay_eligible))
+    .map((row) => row.vendor_id);
+  const discountByVendor = await resolveWpayListingDiscountPercents(payEligibleIds);
+
   return rows.map((row, index) => {
     const categoryMeta = resolveMerchantServiceCategory({
       customerService: row.customer_service,
@@ -87,7 +94,9 @@ export async function mapWpayVendorsNearbyRows(
       categoryMeta.serviceCategoryId !== 'unknown' ? categoryMeta.serviceCategoryId : 'unknown';
     const warmpawzPayEligible = Boolean(row.warmpawz_pay_eligible);
     const appointmentEligible = Boolean(row.appointment_eligible);
-    const discountPercent = 0;
+    const discountPercent = warmpawzPayEligible
+      ? discountByVendor.get(row.vendor_id) ?? 0
+      : 0;
     const distanceKm = mapDistanceKm(row.distance_km);
     const distanceText =
       distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
