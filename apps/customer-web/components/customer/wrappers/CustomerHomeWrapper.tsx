@@ -74,7 +74,12 @@ import {
 import { isWarmpawzPayCommerceActive, isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { consumeWpayPendingReturnPath, peekWpayPendingReturn } from '@/lib/warmpawz-pay/wpay-pending-return';
-import { buildWapptShellBookingPayload, handleWapptShellScreenNavigate } from '@/lib/wappt-shell-navigation';
+import {
+  buildWapptShellBookingPayload,
+  handleWapptShellScreenNavigate,
+  toWapptProfileShellState,
+  type WapptProfileShellState,
+} from '@/lib/wappt-shell-navigation';
 import { consumeWalkInShellNav } from '@/lib/walk-in-vendor-actions';
 import { resolveHomeVisitVendorListNavigation } from '@/lib/home-visit-wappt-navigation';
 import { resolveWapptDiscoveryShellNav } from '@/lib/warmpawz-appointments/wappt-list-style-config';
@@ -610,13 +615,7 @@ export function CustomerHomeWrapper({
   const [wapptDiscoverySpecialization, setWapptDiscoverySpecialization] = useState<
     string | undefined
   >(undefined);
-  const [wapptProfileData, setWapptProfileData] = useState<{
-    vendorId: string;
-    vendorName?: string;
-    category: string;
-    serviceStyle: string;
-    profileBackScreen?: string;
-  } | null>(null);
+  const [wapptProfileData, setWapptProfileData] = useState<WapptProfileShellState | null>(null);
   const [walkerServiceData, setWalkerServiceData] = useState<any>(null);
   const [selectedPetData, setSelectedPetData] = useState<any>(null);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
@@ -2091,22 +2090,19 @@ export function CustomerHomeWrapper({
     }
     else if (screen === 'wappt-vendor-profile') {
       const profileCategory = String(data?.category || 'vet');
-      setWapptProfileData({
-        vendorId: String(data?.vendorId || ''),
-        vendorName: data?.vendorName,
-        category: profileCategory,
-        serviceStyle: String(
-          data?.serviceStyle || getWapptDefaultDiscoveryStyle(profileCategory),
+      const serviceStyle = String(
+        data?.serviceStyle || getWapptDefaultDiscoveryStyle(profileCategory),
+      );
+      setWapptProfileData(
+        toWapptProfileShellState(
+          data as Record<string, unknown> | undefined,
+          profileCategory,
+          serviceStyle,
         ),
-        profileBackScreen:
-          data?.profileBackScreen || data?.clinicProfileBackScreen || 'wappt-discovery',
-      });
+      );
       navigateToScreen(
         'wappt-vendor-profile',
-        routeKey.wapptProfile(
-          String(data?.vendorId || ''),
-          String(data?.serviceStyle || getWapptDefaultDiscoveryStyle(profileCategory)),
-        ),
+        routeKey.wapptProfile(String(data?.vendorId || ''), serviceStyle),
       );
     }
     else if (screen === 'vet-clinic-booking') navigateToScreen('vet-clinic-booking');
@@ -3628,7 +3624,7 @@ export function CustomerHomeWrapper({
         category={wapptProfileData.category}
         serviceStyle={wapptProfileData.serviceStyle}
         profileBackScreen={wapptProfileData.profileBackScreen || 'wappt-discovery'}
-        onBack={handleBack}
+        onBack={() => backFromBannerOr(handleBack, wapptProfileData as Record<string, unknown>)}
         onNavigate={(screen, navData) => {
           handleWapptShellNavigate(screen, navData, wapptProfileData.category);
         }}

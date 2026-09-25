@@ -149,7 +149,7 @@ describe('bookWalkInAppointment', () => {
 
     bookWalkInAppointment(provider, router);
 
-    expect(router.push).toHaveBeenCalledWith('/');
+    expect(router.replace).toHaveBeenCalledWith('/');
     const raw = sessionStorage.getItem(WALK_IN_PENDING_SHELL_NAV_KEY);
     expect(raw).toBeTruthy();
     const pending = JSON.parse(raw!) as {
@@ -165,7 +165,7 @@ describe('bookWalkInAppointment', () => {
         vendorName: 'Bindu Grooming Service',
         category: 'grooming',
         serviceStyle: 'at_center',
-        profileBackScreen: 'home',
+        profileBackScreen: WALK_IN_VENDORS_PATH,
         returnScreen: WALK_IN_VENDORS_PATH,
         fromBanner: true,
       })

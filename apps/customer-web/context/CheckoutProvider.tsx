@@ -41,6 +41,7 @@ import { navigateToCheckoutSuccessPage } from '@/lib/navigation/navigation-coord
 import { requestLeave } from '@/lib/navigation/leave-guard';
 import { createCustomerNavigation } from '@/lib/navigation/navigation-service';
 import { computeCartMrpTotal } from '@/lib/ecommerce/cart-product-helpers';
+import { resolveCheckoutGoBackAction } from '@/lib/ecommerce/checkout-go-back';
 
 export type CheckoutStep = 'payment' | 'review';
 
@@ -285,13 +286,13 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   const goBack = useCallback(() => {
     void (async () => {
       if (!(await requestLeave())) return;
-      if (step === 'review') {
-        syncStepToUrl('payment');
+      if (resolveCheckoutGoBackAction(step) === 'history-back') {
+        router.back();
         return;
       }
       nav.goToCart({ replace: true });
     })();
-  }, [step, syncStepToUrl, nav]);
+  }, [step, router, nav]);
 
   const selectAddress = useCallback((addr: DeliveryAddress) => {
     if (addr.id) {
