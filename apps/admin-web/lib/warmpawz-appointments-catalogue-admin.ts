@@ -36,6 +36,10 @@ export interface CatalogueListItem {
   readonly city?: string;
   readonly phone?: string;
   readonly appointmentFee: number | null;
+  /** Home (at_home) booking fee; falls back to centre when unset. */
+  readonly appointmentFeeHome: number | null;
+  /** Role service styles for dual-fee UX (at_home / at_center / tele). */
+  readonly serviceStyles: readonly string[];
   readonly publishStatus: PublishStatus | null;
   readonly publishedAt: string | null;
   readonly createdAt: string | null;
@@ -201,6 +205,11 @@ function normalizeCatalogueListItem(raw: RawCatalogueListItem): CatalogueListIte
   const { WarmpawzAppointmentsStatus, warmpawzAppointmentsStatus, readiness, ...rest } = raw;
   return {
     ...rest,
+    appointmentFeeHome:
+      rest.appointmentFeeHome !== undefined && rest.appointmentFeeHome !== null
+        ? rest.appointmentFeeHome
+        : rest.appointmentFee,
+    serviceStyles: Array.isArray(rest.serviceStyles) ? rest.serviceStyles : [],
     warmpawzAppointmentsStatus:
       warmpawzAppointmentsStatus ?? WarmpawzAppointmentsStatus ?? 'Hidden',
     readiness: normalizeReadiness(readiness),
@@ -280,12 +289,14 @@ export async function fetchServiceCategories(): Promise<readonly ServiceCategory
 export async function createCatalogueEntry(
   vendorId: string,
   appointmentFee?: number,
+  appointmentFeeHome?: number,
 ): Promise<CatalogueDetail> {
   const response = await apiClient.post<SuccessEnvelope<RawCatalogueListItem & CatalogueDetail> | CatalogueDetail>(
     WAPPT_CATALOGUE_API_BASE,
     {
       vendorId,
       ...(appointmentFee !== undefined ? { appointmentFee } : {}),
+      ...(appointmentFeeHome !== undefined ? { appointmentFeeHome } : {}),
     },
   );
   return normalizeCatalogueDetail(assertSuccess(response) as RawCatalogueListItem & CatalogueDetail);
@@ -307,10 +318,14 @@ export async function deleteCatalogueEntry(
 export async function updateCatalogueFee(
   catalogueId: string,
   appointmentFee: number,
+  appointmentFeeHome?: number,
 ): Promise<CatalogueDetail> {
   const response = await apiClient.put<SuccessEnvelope<RawCatalogueListItem & CatalogueDetail> | CatalogueDetail>(
     `${WAPPT_CATALOGUE_API_BASE}/${catalogueId}/fee`,
-    { appointmentFee },
+    {
+      appointmentFee,
+      ...(appointmentFeeHome !== undefined ? { appointmentFeeHome } : {}),
+    },
   );
   return normalizeCatalogueDetail(assertSuccess(response) as RawCatalogueListItem & CatalogueDetail);
 }
@@ -318,10 +333,15 @@ export async function updateCatalogueFee(
 export async function bulkUpdateCatalogueFee(
   catalogueIds: readonly string[],
   appointmentFee: number,
+  appointmentFeeHome?: number,
 ): Promise<BulkOperationResponse> {
   const response = await apiClient.post<
     SuccessEnvelope<BulkOperationResponse> | BulkOperationResponse
-  >(`${WAPPT_CATALOGUE_API_BASE}/bulk-fee`, { catalogueIds, appointmentFee });
+  >(`${WAPPT_CATALOGUE_API_BASE}/bulk-fee`, {
+    catalogueIds,
+    appointmentFee,
+    ...(appointmentFeeHome !== undefined ? { appointmentFeeHome } : {}),
+  });
   return assertSuccess(response);
 }
 
@@ -393,6 +413,46 @@ export function formatAppointmentFee(fee: number | null | undefined): string {
     return '—';
   }
   return `₹${fee.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+const HOME_STYLES = new Set(['at_home', 'home_visit', 'home', 'sitting', 'pet_sitting']);
+const CENTRE_STYLES = new Set([
+  'at_center',
+  'at_vendor',
+  'at_clinic',
+  'boarding',
+  'center',
+  'checkin_checkout',
+]);
+
+export function catalogueOffersHomeStyle(
+  serviceStyles: readonly string[] | null | undefined,
+): boolean {
+  return (serviceStyles ?? []).some((s) => HOME_STYLES.has(String(s).toLowerCase()));
+}
+
+export function catalogueOffersCenterStyle(
+  serviceStyles: readonly string[] | null | undefined,
+): boolean {
+  const styles = serviceStyles ?? [];
+  if (styles.length === 0) return true;
+  return styles.some((s) => CENTRE_STYLES.has(String(s).toLowerCase()));
+}
+
+export function formatDualAppointmentFees(item: {
+  appointmentFee: number | null;
+  appointmentFeeHome?: number | null;
+  serviceStyles?: readonly string[];
+}): string {
+  const centre = formatAppointmentFee(item.appointmentFee);
+  const showHome = catalogueOffersHomeStyle(item.serviceStyles);
+  if (!showHome) return centre;
+  const home = formatAppointmentFee(
+    item.appointmentFeeHome ?? item.appointmentFee,
+  );
+  const showCentre = catalogueOffersCenterStyle(item.serviceStyles);
+  if (!showCentre) return `Home ${home}`;
+  return `Centre ${centre} · Home ${home}`;
 }
 
 export function isValidAppointmentFee(value: string): boolean {

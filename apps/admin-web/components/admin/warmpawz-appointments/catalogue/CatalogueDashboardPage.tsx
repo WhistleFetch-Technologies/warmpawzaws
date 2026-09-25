@@ -28,7 +28,7 @@ import {
 import { WarmpawzAppointmentsShell } from '@/components/admin/warmpawz-appointments/shared/WarmpawzAppointmentsShell';
 import { BulkFeeModal } from './BulkFeeModal';
 import { CatalogueFilterBar } from './CatalogueFilterBar';
-import { CatalogueTable } from './CatalogueTable';
+import { CatalogueTable, type CatalogueFeeValues } from './CatalogueTable';
 import { ConfirmDialog } from './ConfirmDialog';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import { Pagination } from './Pagination';
@@ -45,13 +45,14 @@ const PAGE_SIZE = 20;
 async function ensureCatalogueId(
   item: CatalogueListItem,
   appointmentFee?: number,
+  appointmentFeeHome?: number,
 ): Promise<string> {
   if (item.catalogueId) {
     return item.catalogueId;
   }
 
   try {
-    const created = await createCatalogueEntry(item.vendorId, appointmentFee);
+    const created = await createCatalogueEntry(item.vendorId, appointmentFee, appointmentFeeHome);
     if (!created.catalogueId) {
       throw new Error('Failed to create catalogue entry');
     }
@@ -161,16 +162,20 @@ export function CatalogueDashboardPage() {
     bulkFeeMutation.isPending ||
     rowBusyVendorId !== null;
 
-  const saveFee = async (item: CatalogueListItem, appointmentFee: number) => {
-    const catalogueId = await ensureCatalogueId(item, appointmentFee);
-    await updateCatalogueFee(catalogueId, appointmentFee);
+  const saveFee = async (item: CatalogueListItem, fees: CatalogueFeeValues) => {
+    const catalogueId = await ensureCatalogueId(
+      item,
+      fees.appointmentFee,
+      fees.appointmentFeeHome,
+    );
+    await updateCatalogueFee(catalogueId, fees.appointmentFee, fees.appointmentFeeHome);
     return catalogueId;
   };
 
-  const handleSaveFee = async (item: CatalogueListItem, appointmentFee: number) => {
+  const handleSaveFee = async (item: CatalogueListItem, fees: CatalogueFeeValues) => {
     setRowBusyVendorId(item.vendorId);
     try {
-      await saveFee(item, appointmentFee);
+      await saveFee(item, fees);
       await refetch();
       toast.success(`Appointment fee saved for ${item.businessName}.`);
     } catch (cause) {
@@ -182,10 +187,10 @@ export function CatalogueDashboardPage() {
     }
   };
 
-  const handlePublish = async (item: CatalogueListItem, appointmentFee: number) => {
+  const handlePublish = async (item: CatalogueListItem, fees: CatalogueFeeValues) => {
     setRowBusyVendorId(item.vendorId);
     try {
-      const catalogueId = await saveFee(item, appointmentFee);
+      const catalogueId = await saveFee(item, fees);
       await publishMutation.mutateAsync(catalogueId);
       await refetch();
     } catch (cause) {
@@ -234,11 +239,12 @@ export function CatalogueDashboardPage() {
     }
   };
 
-  const handleBulkFeeConfirm = async (appointmentFee: number) => {
+  const handleBulkFeeConfirm = async (fees: CatalogueFeeValues) => {
     try {
       await bulkFeeMutation.mutateAsync({
         catalogueIds: selectedIds,
-        appointmentFee,
+        appointmentFee: fees.appointmentFee,
+        appointmentFeeHome: fees.appointmentFeeHome,
       });
       setBulkFeeOpen(false);
       setSelectedCatalogueIds(new Set());
@@ -424,7 +430,7 @@ export function CatalogueDashboardPage() {
         selectedCount={selectedCount}
         loading={bulkFeeMutation.isPending}
         onOpenChange={setBulkFeeOpen}
-        onConfirm={(appointmentFee) => void handleBulkFeeConfirm(appointmentFee)}
+        onConfirm={(fees) => void handleBulkFeeConfirm(fees)}
       />
     </WarmpawzAppointmentsShell>
   );

@@ -92,8 +92,15 @@ export function useCreateCatalogueEntry() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ vendorId, appointmentFee }: { vendorId: string; appointmentFee?: number }) =>
-      createCatalogueEntry(vendorId, appointmentFee),
+    mutationFn: ({
+      vendorId,
+      appointmentFee,
+      appointmentFeeHome,
+    }: {
+      vendorId: string;
+      appointmentFee?: number;
+      appointmentFeeHome?: number;
+    }) => createCatalogueEntry(vendorId, appointmentFee, appointmentFeeHome),
     onSuccess: (data: CatalogueDetail) => {
       invalidateCatalogueQueries(queryClient);
       toast.success(`Added ${data.businessName} to the catalogue.`);
@@ -111,10 +118,12 @@ export function useUpdateCatalogueFee() {
     mutationFn: ({
       catalogueId,
       appointmentFee,
+      appointmentFeeHome,
     }: {
       catalogueId: string;
       appointmentFee: number;
-    }) => updateCatalogueFee(catalogueId, appointmentFee),
+      appointmentFeeHome?: number;
+    }) => updateCatalogueFee(catalogueId, appointmentFee, appointmentFeeHome),
     onSuccess: (data) => {
       invalidateCatalogueQueries(queryClient, data.catalogueId ?? undefined);
     },
@@ -131,10 +140,12 @@ export function useBulkUpdateCatalogueFee() {
     mutationFn: ({
       catalogueIds,
       appointmentFee,
+      appointmentFeeHome,
     }: {
       catalogueIds: readonly string[];
       appointmentFee: number;
-    }) => bulkUpdateCatalogueFee(catalogueIds, appointmentFee),
+      appointmentFeeHome?: number;
+    }) => bulkUpdateCatalogueFee(catalogueIds, appointmentFee, appointmentFeeHome),
     onSuccess: (result) => {
       invalidateCatalogueQueries(queryClient);
       toastBulkResult('Bulk fee update', result);

@@ -16,8 +16,10 @@ import {
 import { ChevronDown, ChevronRight, Info } from 'lucide-react';
 import type { CatalogueListItem } from '@/lib/warmpawz-appointments-catalogue-admin';
 import {
-  formatAppointmentFee,
+  catalogueOffersCenterStyle,
+  catalogueOffersHomeStyle,
   formatCatalogueDate,
+  formatDualAppointmentFees,
   isValidAppointmentFee,
   shortVendorId,
 } from '@/lib/warmpawz-appointments-catalogue-admin';
@@ -30,23 +32,34 @@ import { ReadinessIndicator } from './ReadinessIndicator';
 import { StatusBadge } from './StatusBadge';
 import { WarmpawzAppointmentsStatusBadge } from './WarmpawzAppointmentsStatusBadge';
 
+export interface CatalogueFeeValues {
+  readonly appointmentFee: number;
+  readonly appointmentFeeHome: number;
+}
+
 export interface CatalogueTableProps {
   readonly items: readonly CatalogueListItem[];
   readonly selectedCatalogueIds: ReadonlySet<string>;
   readonly onSelectionChange: (catalogueIds: ReadonlySet<string>) => void;
   readonly rowBusyVendorId?: string | null;
   readonly disabled?: boolean;
-  readonly onSaveFee: (item: CatalogueListItem, appointmentFee: number) => Promise<void>;
-  readonly onPublish: (item: CatalogueListItem, appointmentFee: number) => Promise<void>;
+  readonly onSaveFee: (item: CatalogueListItem, fees: CatalogueFeeValues) => Promise<void>;
+  readonly onPublish: (item: CatalogueListItem, fees: CatalogueFeeValues) => Promise<void>;
   readonly onUnpublish: (item: CatalogueListItem) => void;
   readonly onDelete: (item: CatalogueListItem) => void;
 }
 
-function initialFeeValue(item: CatalogueListItem): string {
-  if (item.appointmentFee !== null && item.appointmentFee !== undefined) {
-    return String(item.appointmentFee);
-  }
-  return '';
+type FeeDraft = { centre: string; home: string };
+
+function initialFeeDraft(item: CatalogueListItem): FeeDraft {
+  const centre =
+    item.appointmentFee !== null && item.appointmentFee !== undefined
+      ? String(item.appointmentFee)
+      : '';
+  const homeRaw = item.appointmentFeeHome ?? item.appointmentFee;
+  const home =
+    homeRaw !== null && homeRaw !== undefined ? String(homeRaw) : centre;
+  return { centre, home };
 }
 
 export function CatalogueTable({
@@ -61,14 +74,14 @@ export function CatalogueTable({
   onDelete,
 }: CatalogueTableProps) {
   const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
-  const [feeByVendor, setFeeByVendor] = useState<Record<string, string>>({});
+  const [feeByVendor, setFeeByVendor] = useState<Record<string, FeeDraft>>({});
 
   useEffect(() => {
     setFeeByVendor((current) => {
       const next = { ...current };
       for (const item of items) {
         if (next[item.vendorId] === undefined) {
-          next[item.vendorId] = initialFeeValue(item);
+          next[item.vendorId] = initialFeeDraft(item);
         }
       }
       return next;
@@ -92,8 +105,11 @@ export function CatalogueTable({
     );
   }
 
-  const updateFee = (vendorId: string, value: string) => {
-    setFeeByVendor((current) => ({ ...current, [vendorId]: value }));
+  const updateFeeField = (vendorId: string, field: keyof FeeDraft, value: string) => {
+    setFeeByVendor((current) => ({
+      ...current,
+      [vendorId]: { ...(current[vendorId] ?? { centre: '', home: '' }), [field]: value },
+    }));
   };
 
   const toggleRowSelection = (catalogueId: string, checked: boolean) => {
@@ -144,8 +160,22 @@ export function CatalogueTable({
             const rowBusy = rowBusyVendorId === item.vendorId;
             const rowDisabled = disabled || (rowBusyVendorId !== null && !rowBusy);
             const expanded = expandedVendorId === item.vendorId;
-            const feeValue = feeByVendor[item.vendorId] ?? '';
-            const feeValid = isValidAppointmentFee(feeValue);
+            const draft = feeByVendor[item.vendorId] ?? { centre: '', home: '' };
+            const showCentre = catalogueOffersCenterStyle(item.serviceStyles);
+            const showHome = catalogueOffersHomeStyle(item.serviceStyles);
+            const centreValid = !showCentre || isValidAppointmentFee(draft.centre);
+            const homeValid = !showHome || isValidAppointmentFee(draft.home);
+            const feeValid = centreValid && homeValid;
+            const resolvedCentre = showCentre
+              ? Number(draft.centre)
+              : Number(draft.home || draft.centre || 0);
+            const resolvedHome = showHome
+              ? Number(draft.home)
+              : resolvedCentre;
+            const feePayload: CatalogueFeeValues = {
+              appointmentFee: resolvedCentre,
+              appointmentFeeHome: resolvedHome,
+            };
             const canUnpublish = item.publishStatus === 'published' && item.catalogueId;
             const canDelete = item.inCatalogue && item.catalogueId;
             const isSelected = item.catalogueId ? selectedCatalogueIds.has(item.catalogueId) : false;
@@ -202,7 +232,7 @@ export function CatalogueTable({
                   </TableCell>
                   <TableCell>
                     <span className="text-sm font-medium text-gray-900">
-                      {formatAppointmentFee(item.appointmentFee)}
+                      {formatDualAppointmentFees(item)}
                     </span>
                   </TableCell>
                   <TableCell>
@@ -230,32 +260,63 @@ export function CatalogueTable({
                       <div className="space-y-4">
                         <ReadinessDetailPanel readiness={item.readiness} />
                         <div className="flex flex-col gap-4 border-t border-gray-200 pt-4 lg:flex-row lg:items-end lg:justify-between">
-                          <div className="max-w-xs space-y-2">
-                            <div className="flex items-center gap-1.5">
-                              <Label htmlFor={`fee-${item.vendorId}`}>Appointment Fee (₹)</Label>
-                              <Info className="h-3.5 w-3.5 text-gray-400" aria-hidden />
-                            </div>
-                            <div className="relative">
-                              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
-                                ₹
-                              </span>
-                              <Input
-                                id={`fee-${item.vendorId}`}
-                                type="number"
-                                min={0}
-                                step={0.01}
-                                value={feeValue}
-                                disabled={rowDisabled}
-                                placeholder="499"
-                                className="bg-white pl-8"
-                                onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-                                  updateFee(item.vendorId, event.target.value)
-                                }
-                              />
-                            </div>
-                            <p className="text-xs text-gray-500">
-                              Enter a non-negative fee with up to 2 decimal places
-                            </p>
+                          <div className="flex max-w-xl flex-col gap-4 sm:flex-row">
+                            {showCentre ? (
+                              <div className="max-w-xs space-y-2">
+                                <div className="flex items-center gap-1.5">
+                                  <Label htmlFor={`fee-centre-${item.vendorId}`}>
+                                    Centre fee (₹)
+                                  </Label>
+                                  <Info className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+                                </div>
+                                <div className="relative">
+                                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                                    ₹
+                                  </span>
+                                  <Input
+                                    id={`fee-centre-${item.vendorId}`}
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    value={draft.centre}
+                                    disabled={rowDisabled}
+                                    placeholder="499"
+                                    className="bg-white pl-8"
+                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                                      updateFeeField(item.vendorId, 'centre', event.target.value)
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            ) : null}
+                            {showHome ? (
+                              <div className="max-w-xs space-y-2">
+                                <div className="flex items-center gap-1.5">
+                                  <Label htmlFor={`fee-home-${item.vendorId}`}>
+                                    Home fee (₹)
+                                  </Label>
+                                  <Info className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+                                </div>
+                                <div className="relative">
+                                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                                    ₹
+                                  </span>
+                                  <Input
+                                    id={`fee-home-${item.vendorId}`}
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    value={draft.home}
+                                    disabled={rowDisabled}
+                                    placeholder="599"
+                                    className="bg-white pl-8"
+                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                                      updateFeeField(item.vendorId, 'home', event.target.value)
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                             <div className="space-y-1">
@@ -263,7 +324,7 @@ export function CatalogueTable({
                                 type="button"
                                 variant="outline"
                                 disabled={rowDisabled || !feeValid}
-                                onClick={() => void onSaveFee(item, Number(feeValue))}
+                                onClick={() => void onSaveFee(item, feePayload)}
                               >
                                 {rowBusy ? 'Saving…' : 'Save fee'}
                               </Button>
@@ -275,7 +336,7 @@ export function CatalogueTable({
                               <Button
                                 type="button"
                                 disabled={rowDisabled || !feeValid}
-                                onClick={() => void onPublish(item, Number(feeValue))}
+                                onClick={() => void onPublish(item, feePayload)}
                               >
                                 {rowBusy ? 'Publishing…' : 'Publish'}
                               </Button>

@@ -25,6 +25,8 @@ export interface CataloguePublishedAuditMetadata extends CatalogueAuditMetadata 
 export interface CatalogueFeeUpdatedAuditMetadata extends CatalogueAuditMetadata {
   readonly oldFee: number;
   readonly newFee: number;
+  readonly oldFeeHome?: number;
+  readonly newFeeHome?: number;
 }
 
 function toAuditEntity(row: CatalogueRow | CatalogueRowWithVendor): CatalogueAuditEntity {

@@ -1,5 +1,6 @@
 import { query } from '../../../database/rds-connection';
 import { wapptCatalogueCustomerVisibleSql } from './catalogue-eligibility-sql';
+import { pickWapptFeeForStyle } from './wappt-fee-by-style';
 
 export const WAPPT_BOOKING_MODE = 'warmpawz_appointments' as const;
 export const WAPPT_SERVICE_SLUG = 'warmpawz_appointments' as const;
@@ -23,7 +24,7 @@ export function isWarmpawzAppointmentsBooking(body: Record<string, unknown>): bo
 }
 
 export type WapptBookingPreflightResult =
-  | { ok: true; appointmentFee: number; resolvedServiceId: string }
+  | { ok: true; appointmentFee: number; resolvedServiceId: string; feeStyle: string }
   | { ok: false; status: number; message: string };
 
 export type WapptPersistedSelectedService = {
@@ -227,7 +228,7 @@ export async function resolveWarmpawzAppointmentsBookingPreflight(params: {
   serviceStyle?: string;
 }): Promise<WapptBookingPreflightResult> {
   const feeRes = await query(
-    `SELECT c.appointment_fee
+    `SELECT c.appointment_fee, c.appointment_fee_home
      FROM warmpawz_appointments_vendor_catalog c
      INNER JOIN vendors v ON v.id = c.vendor_id
      WHERE c.vendor_id = $1::uuid AND ${wapptCatalogueCustomerVisibleSql('c')}
@@ -242,24 +243,34 @@ export async function resolveWarmpawzAppointmentsBookingPreflight(params: {
     };
   }
 
-  const appointmentFee = Number(feeRes.rows[0].appointment_fee) || 0;
+  const { style } = wapptStyleAliases(params.serviceStyle);
+  const appointmentFee = pickWapptFeeForStyle({
+    centreFee: Number(feeRes.rows[0].appointment_fee) || 0,
+    homeFee:
+      feeRes.rows[0].appointment_fee_home == null
+        ? null
+        : Number(feeRes.rows[0].appointment_fee_home),
+    serviceStyle: style,
+  });
   if (appointmentFee <= 0) {
     return {
       ok: false,
       status: 400,
-      message: 'Appointment fee is not configured for this vendor',
+      message:
+        style === 'at_home'
+          ? 'Home appointment fee is not configured for this vendor'
+          : 'Appointment fee is not configured for this vendor',
     };
   }
 
-  const { style } = wapptStyleAliases(params.serviceStyle);
   const existingId = await findExistingWapptVendorServiceId(params.vendorId, style);
   if (existingId) {
-    return { ok: true, appointmentFee, resolvedServiceId: existingId };
+    return { ok: true, appointmentFee, resolvedServiceId: existingId, feeStyle: style };
   }
 
   const stubId = await ensureWapptStubVendorService(params.vendorId, style, appointmentFee);
   if (stubId) {
-    return { ok: true, appointmentFee, resolvedServiceId: stubId };
+    return { ok: true, appointmentFee, resolvedServiceId: stubId, feeStyle: style };
   }
 
   return {

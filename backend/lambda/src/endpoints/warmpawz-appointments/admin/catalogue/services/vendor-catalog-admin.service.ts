@@ -26,6 +26,7 @@ import type { IVendorEligibilityService } from './interfaces/IVendorEligibilityS
 import type { VendorEligibilitySnapshot } from '../../../repositories/interfaces/IVendorEligibilityRepository';
 import { enrichCatalogueMerchant } from '../../../shared/merchant/catalogue-merchant-enrichment';
 import { resolveMerchantDisplayName } from '../../../shared/merchant/merchant-display-name.resolver';
+import { extractServiceStylesFromRoleConfig } from '../../../shared/wappt-fee-by-style';
 import {
   resolveMerchantServiceCategory,
   type MerchantServiceCategoryInput,
@@ -91,6 +92,7 @@ export class VendorCatalogAdminService {
           vendorId: input.vendorId,
           createdBy: adminUserId,
           appointmentFee: input.appointmentFee,
+          appointmentFeeHome: input.appointmentFeeHome ?? input.appointmentFee,
         });
         await auditService.logCreated(toAuditEntity(row), adminUserId);
         return row;
@@ -196,11 +198,19 @@ export class VendorCatalogAdminService {
       return null;
     }
 
-    if (entry.appointmentFee === input.appointmentFee) {
+    const nextHome =
+      input.appointmentFeeHome !== undefined
+        ? input.appointmentFeeHome
+        : entry.appointmentFeeHome;
+    if (
+      entry.appointmentFee === input.appointmentFee &&
+      entry.appointmentFeeHome === nextHome
+    ) {
       return this.buildCatalogueDetail(entry, this.resolveEligibility(entry));
     }
 
     const oldFee = entry.appointmentFee;
+    const oldFeeHome = entry.appointmentFeeHome;
     let refreshed;
     try {
       refreshed = await withTransaction(async (client) => {
@@ -208,6 +218,7 @@ export class VendorCatalogAdminService {
         const updated = await catalogRepository.updateAppointmentFee({
           catalogueId,
           appointmentFee: input.appointmentFee,
+          appointmentFeeHome: nextHome,
         });
         if (!updated) {
           return null;
@@ -217,6 +228,8 @@ export class VendorCatalogAdminService {
         await auditService.logFeeUpdated(toAuditEntity(row), adminUserId, {
           oldFee,
           newFee: input.appointmentFee,
+          oldFeeHome,
+          newFeeHome: nextHome,
         });
         return row;
       });
@@ -235,8 +248,12 @@ export class VendorCatalogAdminService {
     input: BulkCatalogueFeeRequest,
     adminUserId: string,
   ): Promise<BulkOperationResponse> {
+    const homeFee =
+      input.appointmentFeeHome !== undefined
+        ? input.appointmentFeeHome
+        : input.appointmentFee;
     return this.runBulkOperation(input.catalogueIds, (catalogueId) =>
-      this.updateFeeForBulk(catalogueId, input.appointmentFee, adminUserId),
+      this.updateFeeForBulk(catalogueId, input.appointmentFee, homeFee, adminUserId),
     );
   }
 
@@ -513,6 +530,7 @@ export class VendorCatalogAdminService {
   private async updateFeeForBulk(
     catalogueId: string,
     appointmentFee: number,
+    appointmentFeeHome: number,
     adminUserId: string,
   ): Promise<CatalogueDetail | null> {
     const entry = await this.catalogRepository.findById(catalogueId);
@@ -520,11 +538,15 @@ export class VendorCatalogAdminService {
       return null;
     }
 
-    if (entry.appointmentFee === appointmentFee) {
+    if (
+      entry.appointmentFee === appointmentFee &&
+      entry.appointmentFeeHome === appointmentFeeHome
+    ) {
       return this.buildCatalogueDetail(entry, this.resolveEligibility(entry));
     }
 
     const oldFee = entry.appointmentFee;
+    const oldFeeHome = entry.appointmentFeeHome;
     let refreshed;
     try {
       refreshed = await withTransaction(async (client) => {
@@ -532,15 +554,18 @@ export class VendorCatalogAdminService {
         const updated = await catalogRepository.updateAppointmentFee({
           catalogueId,
           appointmentFee,
+          appointmentFeeHome,
         });
         if (!updated) {
           return null;
         }
 
         const row = this.mergeCatalogueWithVendor(updated, entry);
-        await auditService.logBulkFeeUpdated([toAuditEntity(row)], adminUserId, {
+        await auditService.logFeeUpdated(toAuditEntity(row), adminUserId, {
           oldFee,
           newFee: appointmentFee,
+          oldFeeHome,
+          newFeeHome: appointmentFeeHome,
         });
         return row;
       });
@@ -655,6 +680,8 @@ export class VendorCatalogAdminService {
       city: row.city ?? undefined,
       phone: row.phone ?? undefined,
       appointmentFee: row.appointmentFee,
+      appointmentFeeHome: row.appointmentFeeHome,
+      serviceStyles: extractServiceStylesFromRoleConfig(row.roleConfig),
       publishStatus: row.publishStatus,
       publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
       createdAt: row.createdAt ? row.createdAt.toISOString() : null,
@@ -714,6 +741,8 @@ export class VendorCatalogAdminService {
       city: row.city ?? undefined,
       phone: row.phone ?? undefined,
       appointmentFee: row.appointmentFee,
+      appointmentFeeHome: row.appointmentFeeHome,
+      serviceStyles: extractServiceStylesFromRoleConfig(row.roleConfig),
       publishStatus: row.publishStatus,
       publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),

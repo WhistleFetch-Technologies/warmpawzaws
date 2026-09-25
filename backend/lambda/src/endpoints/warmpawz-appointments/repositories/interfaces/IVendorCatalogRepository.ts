@@ -10,6 +10,8 @@ export interface CatalogueRow {
   readonly id: string;
   readonly vendorId: string;
   readonly appointmentFee: number;
+  /** Home (at_home) fee; defaults to centre fee when not separately set. */
+  readonly appointmentFeeHome: number;
   readonly publishStatus: PublishStatus;
   readonly publishedAt: Date | null;
   readonly createdBy: string | null;
@@ -23,6 +25,7 @@ export interface CatalogueAdminListRow {
   readonly id: string | null;
   readonly vendorId: string;
   readonly appointmentFee: number | null;
+  readonly appointmentFeeHome: number | null;
   readonly publishStatus: PublishStatus | null;
   readonly publishedAt: Date | null;
   readonly createdBy: string | null;
@@ -98,6 +101,7 @@ export interface PublishedVendorRow {
   readonly phone: string | null;
   readonly publishedAt: Date | null;
   readonly appointmentFee: number;
+  readonly appointmentFeeHome: number;
 }
 
 export interface UpdatePublishStatusParams {
@@ -110,11 +114,13 @@ export interface InsertDraftParams {
   readonly vendorId: string;
   readonly createdBy: string | null;
   readonly appointmentFee?: number;
+  readonly appointmentFeeHome?: number;
 }
 
 export interface UpdateAppointmentFeeParams {
   readonly catalogueId: string;
   readonly appointmentFee: number;
+  readonly appointmentFeeHome?: number;
 }
 
 export interface IVendorCatalogRepository {

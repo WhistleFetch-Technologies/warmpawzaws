@@ -29,12 +29,13 @@ import { resolveMerchantDisplayName } from '../shared/merchant/merchant-display-
 const CATALOGUE_TABLE = 'warmpawz_appointments_vendor_catalog';
 
 const CATALOGUE_COLUMNS =
-  'id, vendor_id, appointment_fee, publish_status, published_at, created_by, created_at, updated_at';
+  'id, vendor_id, appointment_fee, appointment_fee_home, publish_status, published_at, created_by, created_at, updated_at';
 
 const CATALOGUE_SELECT = `
   c.id,
   c.vendor_id,
   c.appointment_fee,
+  c.appointment_fee_home,
   c.publish_status,
   c.published_at,
   c.created_by,
@@ -66,6 +67,7 @@ const ADMIN_LIST_SELECT = `
   c.id,
   v.id AS vendor_id,
   c.appointment_fee,
+  c.appointment_fee_home,
   c.publish_status,
   c.published_at,
   c.created_by,
@@ -134,6 +136,7 @@ interface CatalogueDbRow {
   readonly id: string;
   readonly vendor_id: string;
   readonly appointment_fee: string | number;
+  readonly appointment_fee_home: string | number | null;
   readonly publish_status: string;
   readonly published_at: Date | string | null;
   readonly created_by: string | null;
@@ -145,6 +148,7 @@ interface AdminListDbRow {
   readonly id: string | null;
   readonly vendor_id: string;
   readonly appointment_fee: string | number | null;
+  readonly appointment_fee_home: string | number | null;
   readonly publish_status: string | null;
   readonly published_at: Date | string | null;
   readonly created_by: string | null;
@@ -198,6 +202,7 @@ interface PublishedVendorDbRow {
   readonly phone: string | null;
   readonly published_at: Date | string | null;
   readonly appointment_fee: string | number;
+  readonly appointment_fee_home: string | number | null;
 }
 
 type AdminFilterInput = Pick<
@@ -257,6 +262,8 @@ function mapCatalogueRow(row: CatalogueDbRow): CatalogueRow {
     id: row.id,
     vendorId: row.vendor_id,
     appointmentFee: toNumber(row.appointment_fee),
+    appointmentFeeHome:
+      row.appointment_fee_home == null ? toNumber(row.appointment_fee) : toNumber(row.appointment_fee_home),
     publishStatus: asPublishStatus(row.publish_status),
     publishedAt: row.published_at ? toDate(row.published_at) : null,
     createdBy: row.created_by,
@@ -268,11 +275,17 @@ function mapCatalogueRow(row: CatalogueDbRow): CatalogueRow {
 function mapAdminListRow(row: AdminListDbRow): CatalogueAdminListRow {
   const isSoloProvider = row.is_solo_provider === true;
   const inCatalogue = row.id !== null && row.publish_status !== null;
+  const centreFee = row.appointment_fee === null ? null : toNumber(row.appointment_fee);
+  const homeFee =
+    row.appointment_fee_home == null
+      ? centreFee
+      : toNumber(row.appointment_fee_home);
   return {
     inCatalogue,
     id: row.id,
     vendorId: row.vendor_id,
-    appointmentFee: row.appointment_fee === null ? null : toNumber(row.appointment_fee),
+    appointmentFee: centreFee,
+    appointmentFeeHome: homeFee,
     publishStatus: row.publish_status ? asPublishStatus(row.publish_status) : null,
     publishedAt: row.published_at ? toDate(row.published_at) : null,
     createdBy: row.created_by,
@@ -344,6 +357,10 @@ function mapPublishedVendorRow(row: PublishedVendorDbRow): PublishedVendorRow {
     phone: row.phone,
     publishedAt: row.published_at ? toDate(row.published_at) : null,
     appointmentFee: toNumber(row.appointment_fee),
+    appointmentFeeHome:
+      row.appointment_fee_home == null
+        ? toNumber(row.appointment_fee)
+        : toNumber(row.appointment_fee_home),
   };
 }
 
@@ -434,23 +451,27 @@ export class VendorCatalogRepository implements IVendorCatalogRepository {
   constructor(private readonly db: VendorCatalogDbClient = { query }) {}
 
   async insertDraft(params: InsertDraftParams): Promise<CatalogueRow> {
+    const centreFee = params.appointmentFee ?? 0;
+    const homeFee = params.appointmentFeeHome ?? centreFee;
     const sql = `
       INSERT INTO ${CATALOGUE_TABLE} (
         vendor_id,
         appointment_fee,
+        appointment_fee_home,
         publish_status,
         created_by,
         created_at,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
       RETURNING ${CATALOGUE_COLUMNS}
     `;
 
     try {
       const result = await this.db.query(sql, [
         params.vendorId,
-        params.appointmentFee ?? 0,
+        centreFee,
+        homeFee,
         DRAFT,
         toOptionalAdminActorUuid(params.createdBy),
       ]);
@@ -490,12 +511,17 @@ export class VendorCatalogRepository implements IVendorCatalogRepository {
       UPDATE ${CATALOGUE_TABLE}
       SET
         appointment_fee = $2,
+        appointment_fee_home = COALESCE($3, appointment_fee_home, $2),
         updated_at = NOW()
       WHERE id = $1
       RETURNING ${CATALOGUE_COLUMNS}
     `;
 
-    const result = await this.db.query(sql, [params.catalogueId, params.appointmentFee]);
+    const result = await this.db.query(sql, [
+      params.catalogueId,
+      params.appointmentFee,
+      params.appointmentFeeHome ?? null,
+    ]);
     const row = result.rows[0] as CatalogueDbRow | undefined;
     return row ? mapCatalogueRow(row) : null;
   }
@@ -626,7 +652,8 @@ export class VendorCatalogRepository implements IVendorCatalogRepository {
         v.city,
         v.phone,
         c.published_at,
-        c.appointment_fee
+        c.appointment_fee,
+        c.appointment_fee_home
       ${CATALOGUE_DETAIL_FROM_JOIN}
       WHERE ${conditions.join(' AND ')}
       ORDER BY v.business_name ASC, c.id ASC

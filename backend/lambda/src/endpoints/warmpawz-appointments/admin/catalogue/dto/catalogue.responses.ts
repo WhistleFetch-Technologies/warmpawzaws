@@ -19,6 +19,10 @@ export interface CatalogueListItem {
   readonly city?: string;
   readonly phone?: string;
   readonly appointmentFee: number | null;
+  /** Home (at_home) booking fee. */
+  readonly appointmentFeeHome: number | null;
+  /** Role service styles for admin fee UX (at_home / at_center / tele). */
+  readonly serviceStyles: readonly string[];
   readonly publishStatus: PublishStatus | null;
   readonly publishedAt: string | null;
   readonly createdAt: string | null;

@@ -31,6 +31,7 @@ export const createCatalogueRequestSchema = z
   .object({
     vendorId: uuidSchema,
     appointmentFee: appointmentFeeSchema.optional().default(0),
+    appointmentFeeHome: appointmentFeeSchema.optional(),
   })
   .strict();
 
@@ -39,6 +40,7 @@ export type CreateCatalogueRequest = z.infer<typeof createCatalogueRequestSchema
 export const updateCatalogueFeeRequestSchema = z
   .object({
     appointmentFee: appointmentFeeSchema,
+    appointmentFeeHome: appointmentFeeSchema.optional(),
   })
   .strict();
 
@@ -62,6 +64,7 @@ export const bulkCatalogueFeeRequestSchema = z
       .min(1, 'At least one catalogue ID is required')
       .max(MAX_BULK_SIZE, `Bulk operations cannot exceed ${MAX_BULK_SIZE} catalogue IDs`),
     appointmentFee: appointmentFeeSchema,
+    appointmentFeeHome: appointmentFeeSchema.optional(),
   })
   .strict();
 
