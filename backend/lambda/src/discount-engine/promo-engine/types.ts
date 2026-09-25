@@ -166,7 +166,11 @@ export interface AppliedBenefit {
   redeem?: {
     letter: 'V' | 'C' | 'F';
     vendorId?: string;
+    /** Multi-vendor redeem (letter V). Prefer this; `vendorId` kept as first for back-compat. */
+    vendorIds?: string[];
     categoryId?: string;
+    /** Multi-category redeem (letter C). Prefer this; `categoryId` kept as first for back-compat. */
+    categoryIds?: string[];
     ecommerceCategoryId?: string;
     channels: Array<'tele' | 'appointment' | 'paybill' | 'ecommerce'>;
   };

@@ -318,6 +318,26 @@ describe('redeem letter + channel', () => {
     expect(redeemAllows({ services: ['VET'] }, { serviceCategory: 'VET' })).toBe(true);
     expect(redeemAllows({ services: ['VET'] }, { serviceCategory: 'GROOMING' })).toBe(false);
   });
+  it('allows any of several redeem categories (OR)', () => {
+    const multi = {
+      letter: 'C' as const,
+      categoryId: 'c1',
+      categoryIds: ['c1', 'c2'],
+      channels: ['paybill'] as Array<'tele' | 'appointment' | 'paybill' | 'ecommerce'>,
+    };
+    expect(redeemAllows(multi, { categoryId: 'c2', channel: 'paybill' })).toBe(true);
+    expect(redeemAllows(multi, { categoryId: 'c3', channel: 'paybill' })).toBe(false);
+  });
+  it('allows any of several redeem vendors (OR)', () => {
+    const multi = {
+      letter: 'V' as const,
+      vendorId: 'v1',
+      vendorIds: ['v1', 'v2'],
+      channels: ['tele'] as Array<'tele' | 'appointment' | 'paybill' | 'ecommerce'>,
+    };
+    expect(redeemAllows(multi, { vendorId: 'v2', channel: 'tele' })).toBe(true);
+    expect(redeemAllows(multi, { vendorId: 'v9', channel: 'tele' })).toBe(false);
+  });
 });
 
 describe('stacked F + V cashback at checkout', () => {

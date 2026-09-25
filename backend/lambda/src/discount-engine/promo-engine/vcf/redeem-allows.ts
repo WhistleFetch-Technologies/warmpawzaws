@@ -1,5 +1,42 @@
 import type { PromoVcfConfig, SpendChannel } from './types';
 
+function uniqIds(ids: Array<string | undefined | null>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of ids) {
+    const id = String(raw || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** Resolve vendor id list from singular + array (back-compat). */
+export function resolveRedeemVendorIds(
+  redeem: Pick<NonNullable<PromoVcfConfig['redeem']>, 'vendorId' | 'vendorIds'> | null | undefined
+): string[] {
+  if (!redeem) return [];
+  return uniqIds([...(Array.isArray(redeem.vendorIds) ? redeem.vendorIds : []), redeem.vendorId]);
+}
+
+/** Resolve category id list from singular + array (back-compat). */
+export function resolveRedeemCategoryIds(
+  redeem: Pick<NonNullable<PromoVcfConfig['redeem']>, 'categoryId' | 'categoryIds'> | null | undefined
+): string[] {
+  if (!redeem) return [];
+  return uniqIds([
+    ...(Array.isArray(redeem.categoryIds) ? redeem.categoryIds : []),
+    redeem.categoryId,
+  ]);
+}
+
+function parseStringIds(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const ids = uniqIds(raw.map((x) => String(x)));
+  return ids.length ? ids : undefined;
+}
+
 function parseRedeem(raw: unknown): PromoVcfConfig['redeem'] | null {
   if (raw == null) return null;
   let parsed: unknown = raw;
@@ -15,10 +52,16 @@ function parseRedeem(raw: unknown): PromoVcfConfig['redeem'] | null {
   const letter = String(row.letter || '').toUpperCase();
   if (letter !== 'V' && letter !== 'C' && letter !== 'F') return null;
   const channels = Array.isArray(row.channels) ? row.channels.map((c) => String(c)) : [];
+  const vendorIds = parseStringIds(row.vendorIds);
+  const categoryIds = parseStringIds(row.categoryIds);
+  const vendorId = row.vendorId ? String(row.vendorId) : vendorIds?.[0];
+  const categoryId = row.categoryId ? String(row.categoryId) : categoryIds?.[0];
   return {
     letter: letter as 'V' | 'C' | 'F',
-    vendorId: row.vendorId ? String(row.vendorId) : undefined,
-    categoryId: row.categoryId ? String(row.categoryId) : undefined,
+    vendorId,
+    vendorIds: vendorIds || (vendorId ? [vendorId] : undefined),
+    categoryId,
+    categoryIds: categoryIds || (categoryId ? [categoryId] : undefined),
     ecommerceCategoryId: row.ecommerceCategoryId ? String(row.ecommerceCategoryId) : undefined,
     channels: channels as SpendChannel[],
   };
@@ -62,6 +105,7 @@ export type RedeemPayment = {
 
 /**
  * Letter + spend channel for V/C/F credits.
+ * Letter V/C accept singular or multi id lists (OR membership).
  * Rows with a category string and no letter keep today’s category check.
  */
 export function redeemAllows(redeemScope: unknown, payment: RedeemPayment): boolean {
@@ -74,13 +118,19 @@ export function redeemAllows(redeemScope: unknown, payment: RedeemPayment): bool
     if (!channel || !vcf.channels.includes(channel)) return false;
   }
   if (vcf.letter === 'V') {
-    if (!vcf.vendorId || !payment.vendorId || vcf.vendorId !== String(payment.vendorId)) return false;
+    const allowed = resolveRedeemVendorIds(vcf);
+    if (!allowed.length || !payment.vendorId || !allowed.includes(String(payment.vendorId))) {
+      return false;
+    }
   }
   if (vcf.letter === 'C') {
     if (payment.channel === 'ecommerce' && vcf.ecommerceCategoryId) {
       if (vcf.ecommerceCategoryId !== String(payment.ecommerceCategoryId || '')) return false;
-    } else if (!vcf.categoryId || !payment.categoryId || vcf.categoryId !== String(payment.categoryId)) {
-      return false;
+    } else {
+      const allowed = resolveRedeemCategoryIds(vcf);
+      if (!allowed.length || !payment.categoryId || !allowed.includes(String(payment.categoryId))) {
+        return false;
+      }
     }
   }
   return true;

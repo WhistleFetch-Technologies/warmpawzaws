@@ -120,8 +120,14 @@ export interface PromoVcfDraft {
     letter: PromoLetter;
     vendorId?: string;
     vendorName?: string;
+    /** Multi-vendor cashback redeem (letter V). */
+    vendorIds?: string[];
+    vendorNames?: string[];
     categoryId?: string;
     categoryName?: string;
+    /** Multi-category cashback redeem (letter C). */
+    categoryIds?: string[];
+    categoryNames?: string[];
     ecommerceCategoryId?: string;
     channels: PromoSpendChannel[];
   };

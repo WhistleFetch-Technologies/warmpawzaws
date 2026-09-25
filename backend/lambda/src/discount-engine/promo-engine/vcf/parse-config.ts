@@ -48,32 +48,56 @@ function scope(raw: unknown, requireId: boolean): PromoVcfConfig['publish'] | nu
   return { letter, vendorId, categoryId };
 }
 
-/** Same vendor / same category copies publish first, then visit source. */
+/** Same vendor / same category copies publish first, then visit source — only when redeem lists are empty. */
 function inheritRedeemIds(
   redeem: NonNullable<PromoVcfConfig['redeem']>,
   publish: PromoVcfConfig['publish'],
   visitSource: Pick<PromoVcfConfig['visitSource'], 'letter' | 'vendorId' | 'categoryId'>
 ): NonNullable<PromoVcfConfig['redeem']> {
-  if (redeem.letter === 'V' && !redeem.vendorId) {
+  if (redeem.letter === 'V') {
+    const existing = [
+      ...(Array.isArray(redeem.vendorIds) ? redeem.vendorIds : []),
+      redeem.vendorId,
+    ].filter(Boolean) as string[];
+    if (existing.length) {
+      const uniq = [...new Set(existing.map(String))];
+      return { ...redeem, vendorIds: uniq, vendorId: uniq[0], categoryId: undefined, categoryIds: undefined };
+    }
+    const vendorId =
+      publish.letter === 'V'
+        ? publish.vendorId
+        : visitSource.letter === 'V'
+          ? visitSource.vendorId
+          : undefined;
     return {
       ...redeem,
-      vendorId:
-        publish.letter === 'V'
-          ? publish.vendorId
-          : visitSource.letter === 'V'
-            ? visitSource.vendorId
-            : undefined,
+      vendorId,
+      vendorIds: vendorId ? [vendorId] : undefined,
+      categoryId: undefined,
+      categoryIds: undefined,
     };
   }
-  if (redeem.letter === 'C' && !redeem.categoryId) {
+  if (redeem.letter === 'C') {
+    const existing = [
+      ...(Array.isArray(redeem.categoryIds) ? redeem.categoryIds : []),
+      redeem.categoryId,
+    ].filter(Boolean) as string[];
+    if (existing.length) {
+      const uniq = [...new Set(existing.map(String))];
+      return { ...redeem, categoryIds: uniq, categoryId: uniq[0], vendorId: undefined, vendorIds: undefined };
+    }
+    const categoryId =
+      publish.letter === 'C'
+        ? publish.categoryId
+        : visitSource.letter === 'C'
+          ? visitSource.categoryId
+          : undefined;
     return {
       ...redeem,
-      categoryId:
-        publish.letter === 'C'
-          ? publish.categoryId
-          : visitSource.letter === 'C'
-            ? visitSource.categoryId
-            : undefined,
+      categoryId,
+      categoryIds: categoryId ? [categoryId] : undefined,
+      vendorId: undefined,
+      vendorIds: undefined,
     };
   }
   return redeem;
@@ -114,11 +138,19 @@ export function parseVcfConfig(metadata: Record<string, unknown> | undefined | n
       ? r.channels.map((c) => String(c)).filter((c): c is SpendChannel => SPEND.includes(c as SpendChannel))
       : [];
     if (redeemLetter && redeemChannels.length) {
+      const vendorIds = Array.isArray(r.vendorIds)
+        ? r.vendorIds.map((x) => String(x)).filter(Boolean)
+        : undefined;
+      const categoryIds = Array.isArray(r.categoryIds)
+        ? r.categoryIds.map((x) => String(x)).filter(Boolean)
+        : undefined;
       redeem = inheritRedeemIds(
         {
           letter: redeemLetter,
           vendorId: r.vendorId ? String(r.vendorId) : undefined,
+          vendorIds: vendorIds?.length ? [...new Set(vendorIds)] : undefined,
           categoryId: r.categoryId ? String(r.categoryId) : undefined,
+          categoryIds: categoryIds?.length ? [...new Set(categoryIds)] : undefined,
           ecommerceCategoryId: r.ecommerceCategoryId ? String(r.ecommerceCategoryId) : undefined,
           channels: redeemChannels,
         },

@@ -42,7 +42,11 @@ export interface PromoVcfConfig {
   redeem?: {
     letter: Letter;
     vendorId?: string;
+    /** Multi-vendor redeem when letter = V (wallet spend). */
+    vendorIds?: string[];
     categoryId?: string;
+    /** Multi-category redeem when letter = C (wallet spend). */
+    categoryIds?: string[];
     ecommerceCategoryId?: string;
     channels: SpendChannel[];
   };

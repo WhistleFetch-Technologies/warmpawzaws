@@ -107,29 +107,84 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 }
 
-/** Persist Same vendor / Same category IDs from publish, then visit source. */
+/** Persist Same vendor / Same category IDs from publish, then visit source — only when redeem lists empty. */
 function fillRedeemIdsFromAudience(vcf: Record<string, unknown>): Record<string, unknown> {
   const redeem = asRecord(vcf.redeem);
   const letter = String(redeem.letter || '').toUpperCase();
   if (!letter || letter === 'F') return vcf;
   const publish = asRecord(vcf.publish);
   const visit = asRecord(vcf.visitSource);
+
+  const existingVendorIds = [
+    ...(Array.isArray(redeem.vendorIds) ? redeem.vendorIds.map(String) : []),
+    redeem.vendorId ? String(redeem.vendorId) : '',
+  ].filter(Boolean);
+  const existingCategoryIds = [
+    ...(Array.isArray(redeem.categoryIds) ? redeem.categoryIds.map(String) : []),
+    redeem.categoryId ? String(redeem.categoryId) : '',
+  ].filter(Boolean);
+
   if (letter === 'V') {
+    if (existingVendorIds.length) {
+      const uniq = [...new Set(existingVendorIds)];
+      return {
+        ...vcf,
+        redeem: {
+          ...redeem,
+          vendorIds: uniq,
+          vendorId: uniq[0],
+          categoryId: undefined,
+          categoryIds: undefined,
+        },
+      };
+    }
     const vendorId =
       String(publish.letter || '').toUpperCase() === 'V' && publish.vendorId
-        ? publish.vendorId
+        ? String(publish.vendorId)
         : String(visit.letter || '').toUpperCase() === 'V' && visit.vendorId
-          ? visit.vendorId
-          : redeem.vendorId;
-    return { ...vcf, redeem: { ...redeem, vendorId, categoryId: undefined } };
+          ? String(visit.vendorId)
+          : undefined;
+    return {
+      ...vcf,
+      redeem: {
+        ...redeem,
+        vendorId,
+        vendorIds: vendorId ? [vendorId] : undefined,
+        categoryId: undefined,
+        categoryIds: undefined,
+      },
+    };
+  }
+
+  if (existingCategoryIds.length) {
+    const uniq = [...new Set(existingCategoryIds)];
+    return {
+      ...vcf,
+      redeem: {
+        ...redeem,
+        categoryIds: uniq,
+        categoryId: uniq[0],
+        vendorId: undefined,
+        vendorIds: undefined,
+      },
+    };
   }
   const categoryId =
     String(publish.letter || '').toUpperCase() === 'C' && publish.categoryId
-      ? publish.categoryId
+      ? String(publish.categoryId)
       : String(visit.letter || '').toUpperCase() === 'C' && visit.categoryId
-        ? visit.categoryId
-        : redeem.categoryId;
-  return { ...vcf, redeem: { ...redeem, categoryId, vendorId: undefined } };
+        ? String(visit.categoryId)
+        : undefined;
+  return {
+    ...vcf,
+    redeem: {
+      ...redeem,
+      categoryId,
+      categoryIds: categoryId ? [categoryId] : undefined,
+      vendorId: undefined,
+      vendorIds: undefined,
+    },
+  };
 }
 
 export async function createPromotionFromDraft(payload: PromoDraftPayload) {
