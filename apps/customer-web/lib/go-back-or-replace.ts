@@ -982,10 +982,26 @@ export function rememberWpayBackBeforeLeave(opts?: {
   );
 }
 
-/** Warmpawz Pay hub / vendor Back — prior service screen, prior route, or home. */
+export const WPAY_VENDORS_HUB_PATH = '/warmpawz-pay';
+
+/** Pay Bill vendor page (`/warmpawz-pay/vendors/...`) — not the hub, history, or success. */
+export function isWpayVendorPayPath(pathname: string): boolean {
+  const path = (pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
+  return path.startsWith(`${WPAY_VENDORS_HUB_PATH}/vendors/`);
+}
+
+/**
+ * Warmpawz Pay Back.
+ * Vendor pay page returns to the vendor list and keeps the home/shell intent.
+ * Hub list consumes that intent (prior service screen, prior route, or home).
+ */
 export function handleWpayPageBack(router: RouterWithPush): void {
   if (typeof window === 'undefined') {
     router.replace('/');
+    return;
+  }
+  if (isWpayVendorPayPath(window.location.pathname)) {
+    goBackOrReplace(router, WPAY_VENDORS_HUB_PATH);
     return;
   }
   const raw = sessionStorage.getItem(WPAY_BACK_INTENT_KEY);

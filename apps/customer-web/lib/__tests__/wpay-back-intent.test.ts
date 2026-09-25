@@ -5,6 +5,7 @@ import {
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
   WARMPAWZ_SHELL_SCREEN_KEY,
   handleWpayPageBack,
+  isWpayVendorPayPath,
   persistShellScreen,
   rememberWpayBackBeforeLeave,
 } from '../go-back-or-replace';
@@ -52,6 +53,35 @@ describe('Warmpawz Pay service back navigation', () => {
     expect(sessionStorage.getItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY)).toBe('vet');
     expect(sessionStorage.getItem(WPAY_BACK_INTENT_KEY)).toBeNull();
     expect(push).not.toHaveBeenCalledWith('/');
+  });
+
+  it('vendor Pay Bill page returns to the vendor list without consuming home intent', () => {
+    sessionStorage.setItem(
+      WPAY_BACK_INTENT_KEY,
+      JSON.stringify({ kind: 'spa', screen: 'home' }),
+    );
+    Object.defineProperty(window, 'location', {
+      value: {
+        pathname: '/warmpawz-pay/vendors/placeholder',
+        search: '?vendorId=v-1',
+        href: 'http://localhost/warmpawz-pay/vendors/placeholder?vendorId=v-1',
+      },
+      writable: true,
+      configurable: true,
+    });
+    handleWpayPageBack(router);
+    expect(back).toHaveBeenCalled();
+    expect(sessionStorage.getItem(WPAY_BACK_INTENT_KEY)).toBe(
+      JSON.stringify({ kind: 'spa', screen: 'home' }),
+    );
+    expect(replace).not.toHaveBeenCalledWith('/');
+    expect(sessionStorage.getItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY)).toBeNull();
+  });
+
+  it('isWpayVendorPayPath matches vendor pay URLs only', () => {
+    expect(isWpayVendorPayPath('/warmpawz-pay/vendors/placeholder')).toBe(true);
+    expect(isWpayVendorPayPath('/warmpawz-pay')).toBe(false);
+    expect(isWpayVendorPayPath('/warmpawz-pay/history')).toBe(false);
   });
 
   it('persistShellScreen writes the current hub', () => {

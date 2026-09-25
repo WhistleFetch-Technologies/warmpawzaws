@@ -68,25 +68,32 @@ export function bookWalkInAppointment(
   const vendorId = String(provider.id ?? '').trim();
   if (!vendorId) return;
 
-  const profilePayload = {
-    ...buildWarmpawzAppointmentsProfileNav({
+  if (onNavigate) {
+    onNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
+      ...buildWarmpawzAppointmentsProfileNav({
+        vendorId,
+        vendorName: provider.displayName,
+        serviceStyle: resolveWalkInProviderProfileServiceStyle(provider),
+        category: provider.category,
+        profileBackScreen: 'home',
+      }),
+    });
+    return;
+  }
+
+  // /walk-in listing: open profile in the home shell, Back must restore this URL.
+  const data = withBannerNavigationOrigin(
+    buildWarmpawzAppointmentsProfileNav({
       vendorId,
       vendorName: provider.displayName,
       serviceStyle: resolveWalkInProviderProfileServiceStyle(provider),
       category: provider.category,
-      profileBackScreen: 'home',
+      profileBackScreen: WALK_IN_VENDORS_PATH,
     }),
-  };
-
-  if (onNavigate) {
-    onNavigate(WAPPT_VENDOR_PROFILE_SCREEN, profilePayload);
-    return;
-  }
-
-  // /walk-in listing: hand off into home shell so back stack stays consistent.
-  const data = withBannerNavigationOrigin(profilePayload, WALK_IN_VENDORS_PATH);
+    WALK_IN_VENDORS_PATH
+  );
   persistWalkInShellNav(WAPPT_VENDOR_PROFILE_SCREEN, data);
-  router.push('/');
+  router.replace('/');
 }
 
 export function useWalkInVendorActions(onNavigate?: HomeNavigateFn) {

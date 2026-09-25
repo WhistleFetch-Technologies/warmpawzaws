@@ -1,6 +1,7 @@
 import {
   buildWapptShellBookingPayload,
   handleWapptShellScreenNavigate,
+  toWapptProfileShellState,
 } from '@/lib/wappt-shell-navigation';
 import { listWapptHubCategories } from '@/lib/wappt-hub-registry';
 
@@ -139,6 +140,53 @@ describe('handleWapptShellScreenNavigate', () => {
         appointmentsMode: true,
         vendorId: 'w-1',
         selectedServices: [{ id: 'walk-1', serviceId: 'walk-1', name: 'Evening Walk' }],
+      }),
+    );
+  });
+
+  it('toWapptProfileShellState keeps walk-in listing return URL', () => {
+    expect(
+      toWapptProfileShellState(
+        {
+          vendorId: 'v-1',
+          vendorName: 'Groomer',
+          category: 'grooming',
+          serviceStyle: 'at_center',
+          profileBackScreen: '/walk-in',
+          fromBanner: true,
+          returnScreen: '/walk-in',
+        },
+        'grooming',
+        'at_center',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        vendorId: 'v-1',
+        fromBanner: true,
+        returnScreen: '/walk-in',
+        profileBackScreen: '/walk-in',
+      }),
+    );
+  });
+
+  it('handleWapptShellScreenNavigate preserves walk-in banner return on profile', () => {
+    const actions = createActions();
+    handleWapptShellScreenNavigate(
+      'grooming',
+      'wappt-vendor-profile',
+      {
+        vendorId: 'v-1',
+        fromBanner: true,
+        returnScreen: '/walk-in',
+        profileBackScreen: '/walk-in',
+      },
+      actions,
+    );
+    expect(actions.setWapptProfileData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fromBanner: true,
+        returnScreen: '/walk-in',
+        profileBackScreen: '/walk-in',
       }),
     );
   });

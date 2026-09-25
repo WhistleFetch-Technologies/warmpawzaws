@@ -23,7 +23,30 @@ export type WapptProfileShellState = {
   category: string;
   serviceStyle: string;
   profileBackScreen: string;
+  fromBanner?: boolean;
+  returnScreen?: string;
 };
+
+export function toWapptProfileShellState(
+  data: Record<string, unknown> | undefined,
+  fallbackCategory: string,
+  defaultServiceStyle: string,
+): WapptProfileShellState {
+  const payload = data && typeof data === 'object' ? data : {};
+  const fromBanner = payload.fromBanner === true;
+  const returnScreen = String(payload.returnScreen ?? '').trim();
+  return {
+    vendorId: String(payload.vendorId || ''),
+    vendorName: typeof payload.vendorName === 'string' ? payload.vendorName : undefined,
+    category: String(payload.category || fallbackCategory),
+    serviceStyle: String(payload.serviceStyle || defaultServiceStyle),
+    profileBackScreen: String(
+      payload.profileBackScreen || payload.clinicProfileBackScreen || 'wappt-discovery',
+    ),
+    ...(fromBanner ? { fromBanner: true as const } : {}),
+    ...(fromBanner && returnScreen ? { returnScreen } : {}),
+  };
+}
 
 export type WapptShellScreenActions = {
   setWapptProfileData: (data: WapptProfileShellState) => void;
@@ -97,13 +120,13 @@ export function handleWapptShellScreenNavigate(
   const bookingScreen = hubConfig?.bookingScreen;
 
   if (screen === 'wappt-vendor-profile') {
-    actions.setWapptProfileData({
-      vendorId: String(payload.vendorId || ''),
-      vendorName: payload.vendorName as string | undefined,
-      category: String(payload.category || hub),
-      serviceStyle: String(payload.serviceStyle || 'at_center'),
-      profileBackScreen: String(payload.profileBackScreen || 'wappt-discovery'),
-    });
+    actions.setWapptProfileData(
+      toWapptProfileShellState(
+        { ...payload, ...(data || {}) },
+        String(payload.category || hub),
+        String(payload.serviceStyle || 'at_center'),
+      ),
+    );
     actions.navigateToScreen(
       'wappt-vendor-profile',
       actions.routeKeyWapptProfile(
