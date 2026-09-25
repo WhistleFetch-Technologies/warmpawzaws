@@ -48,11 +48,13 @@ import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 import {
   canSelectWapptSlot,
   shouldPromptWapptServicePick,
+  isWapptAtHomeSlotOnly,
   partitionWapptListedServices,
   toWapptRequestedServices,
   toggleWapptOneOffSelection,
   wapptServiceSelectionKey,
 } from '@/lib/wappt-requested-services';
+import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
 
 type TabId = 'overview' | 'services' | 'reviews';
 
@@ -186,10 +188,21 @@ export function WarmpawzAppointmentsVendorProfile({
     [filteredServices],
   );
 
-  const canBookSlot = canSelectWapptSlot({
-    selectableCount: selectableServices.length,
-    selectedCount: selectedServiceIds.size,
+  const isTeleMarketplace = serviceStyle === 'tele';
+  const atHomeSlotOnly = isWapptAtHomeSlotOnly({ category, serviceStyle });
+  const { appointmentFee } = useWapptAppointmentBooking({
+    appointmentsMode: !isTeleMarketplace,
+    vendorId: profileVendorId || vendorId,
+    category,
+    serviceStyle,
   });
+
+  const canBookSlot = atHomeSlotOnly
+    ? true
+    : canSelectWapptSlot({
+        selectableCount: selectableServices.length,
+        selectedCount: selectedServiceIds.size,
+      });
 
   const handleShare = async () => {
     if (!profileVendorId) return;
@@ -207,6 +220,7 @@ export function WarmpawzAppointmentsVendorProfile({
     const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
     if (!vid) return;
     if (
+      !atHomeSlotOnly &&
       shouldPromptWapptServicePick({
         selectableCount: selectableServices.length,
         selectedCount: selectedServiceIds.size,
@@ -238,11 +252,13 @@ export function WarmpawzAppointmentsVendorProfile({
       });
       return;
     }
-    const requested = toWapptRequestedServices(
-      selectableServices.filter((service) =>
-        selectedServiceIds.has(wapptServiceSelectionKey(service)),
-      ),
-    );
+    const requested = atHomeSlotOnly
+      ? []
+      : toWapptRequestedServices(
+          selectableServices.filter((service) =>
+            selectedServiceIds.has(wapptServiceSelectionKey(service)),
+          ),
+        );
     onNavigate(resolveWarmpawzBookingScreen(category), {
       ...buildWarmpawzAppointmentsBookingNav({
         vendorId: vid,
@@ -252,6 +268,7 @@ export function WarmpawzAppointmentsVendorProfile({
         selectedServices: requested,
       }),
       appointmentsMode: true,
+      ...(appointmentFee != null && appointmentFee > 0 ? { initialPrice: appointmentFee } : {}),
     });
   };
 
@@ -260,8 +277,6 @@ export function WarmpawzAppointmentsVendorProfile({
     if (!key) return;
     setSelectedServiceIds((prev) => toggleWapptOneOffSelection(prev, key, selectableServices));
   };
-
-  const isTeleMarketplace = serviceStyle === 'tele';
 
   const visibleTabs = useMemo((): TabId[] => {
     const tabs: TabId[] = ['overview', 'services'];
@@ -551,6 +566,15 @@ export function WarmpawzAppointmentsVendorProfile({
 
             {activeTab === 'services' ? (
               <div className="space-y-4">
+                {atHomeSlotOnly ? (
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+                    Home visit uses a flat appointment fee
+                    {appointmentFee != null && appointmentFee > 0
+                      ? ` (${formatPriceWithSymbol(appointmentFee)})`
+                      : ''}
+                    . Pick a slot to continue — services below are for reference only.
+                  </div>
+                ) : null}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                   <input
@@ -588,7 +612,7 @@ export function WarmpawzAppointmentsVendorProfile({
                       >
                         <div className="mb-2 flex items-start justify-between gap-3">
                           <div className="flex min-w-0 items-start gap-3">
-                            {!isTeleMarketplace && isOneOff ? (
+                            {!isTeleMarketplace && !atHomeSlotOnly && isOneOff ? (
                               <button
                                 type="button"
                                 aria-pressed={isSelected}
@@ -730,13 +754,26 @@ export function WarmpawzAppointmentsVendorProfile({
       {!isTeleMarketplace ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
           <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] shadow-lg">
-            <div className="p-4">
+            <div className="space-y-2 p-4">
+              {appointmentFee != null && appointmentFee > 0 ? (
+                <p className="text-center text-sm text-gray-700">
+                  Appointment fee{' '}
+                  <span className="font-semibold text-[#FF8C42]">
+                    {formatPriceWithSymbol(appointmentFee)}
+                  </span>
+                  {atHomeSlotOnly ? (
+                    <span className="text-gray-500"> · home visit</span>
+                  ) : null}
+                </p>
+              ) : null}
               <Button
                 onClick={handleBookAppointment}
                 className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] sm:text-lg"
               >
                 <Calendar className="mr-2 h-5 w-5" />
-                {selectableServices.length > 0 && selectedServiceIds.size > 0
+                {!atHomeSlotOnly &&
+                selectableServices.length > 0 &&
+                selectedServiceIds.size > 0
                   ? `Select Slot · ${selectedServiceIds.size} selected`
                   : 'Select Slot for Appointment'}
               </Button>

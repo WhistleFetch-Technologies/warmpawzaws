@@ -122,4 +122,96 @@ export function registerVendorWapptAppointmentsEndpoints(app: Hono): void {
       return c.json({ success: false, error: error.message }, 500);
     }
   });
+
+  app.get('/vendor/warmpawz-appointments/catalogue-fee', async (c) => {
+    const vendorId = c.req.header('x-vendor-id') || c.req.query('vendorId');
+    if (!vendorId) return c.json({ success: false, error: 'vendorId required' }, 400);
+    try {
+      const { vendorCatalogRepository } = await import(
+        '../../warmpawz-appointments/repositories/vendor-catalog.repository'
+      );
+      const row = await vendorCatalogRepository.findByVendorId(String(vendorId));
+      if (!row) {
+        return c.json({
+          success: true,
+          inCatalogue: false,
+          appointmentFee: null,
+          appointmentFeeHome: null,
+        });
+      }
+      return c.json({
+        success: true,
+        inCatalogue: true,
+        catalogueId: row.id,
+        appointmentFee: row.appointmentFee,
+        appointmentFeeHome: row.appointmentFeeHome,
+        publishStatus: row.publishStatus,
+      });
+    } catch (error: any) {
+      console.error('[vendor/wappt/catalogue-fee GET]', error);
+      return c.json({ success: false, error: error.message || 'Failed to load fee' }, 500);
+    }
+  });
+
+  app.put('/vendor/warmpawz-appointments/catalogue-fee', async (c) => {
+    const vendorId = c.req.header('x-vendor-id') || c.req.query('vendorId');
+    if (!vendorId) return c.json({ success: false, error: 'vendorId required' }, 400);
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const homeRaw = body.appointmentFeeHome ?? body.appointment_fee_home;
+      if (homeRaw == null || homeRaw === '') {
+        return c.json({ success: false, error: 'appointmentFeeHome is required' }, 400);
+      }
+      const appointmentFeeHome = Number(homeRaw);
+      if (!Number.isFinite(appointmentFeeHome) || appointmentFeeHome < 0) {
+        return c.json({ success: false, error: 'appointmentFeeHome must be a non-negative number' }, 400);
+      }
+      if (Math.round(appointmentFeeHome * 100) !== appointmentFeeHome * 100) {
+        return c.json({ success: false, error: 'appointmentFeeHome must have at most 2 decimal places' }, 400);
+      }
+
+      const { vendorCatalogRepository } = await import(
+        '../../warmpawz-appointments/repositories/vendor-catalog.repository'
+      );
+      const row = await vendorCatalogRepository.findByVendorId(String(vendorId));
+      if (!row) {
+        return c.json(
+          {
+            success: false,
+            error: 'Vendor is not in Warmpawz Appointments catalogue yet. Contact platform admin.',
+          },
+          404,
+        );
+      }
+
+      const centreRaw = body.appointmentFee ?? body.appointment_fee;
+      const appointmentFee =
+        centreRaw != null && centreRaw !== ''
+          ? Number(centreRaw)
+          : row.appointmentFee;
+      if (!Number.isFinite(appointmentFee) || appointmentFee < 0) {
+        return c.json({ success: false, error: 'appointmentFee must be a non-negative number' }, 400);
+      }
+
+      const updated = await vendorCatalogRepository.updateAppointmentFee({
+        catalogueId: row.id,
+        appointmentFee,
+        appointmentFeeHome,
+      });
+      if (!updated) {
+        return c.json({ success: false, error: 'Failed to update catalogue fee' }, 500);
+      }
+      return c.json({
+        success: true,
+        inCatalogue: true,
+        catalogueId: updated.id,
+        appointmentFee: updated.appointmentFee,
+        appointmentFeeHome: updated.appointmentFeeHome,
+        publishStatus: updated.publishStatus,
+      });
+    } catch (error: any) {
+      console.error('[vendor/wappt/catalogue-fee PUT]', error);
+      return c.json({ success: false, error: error.message || 'Failed to update fee' }, 500);
+    }
+  });
 }

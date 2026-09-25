@@ -38,6 +38,37 @@ export function shouldPromptWapptServicePick(opts: {
   return opts.selectableCount > 0 && opts.selectedCount <= 0;
 }
 
+/**
+ * Non-vet at_home WAPPT: skip service pick; charge catalogue home appointment fee.
+ * Vet at_home keeps checkboxes. Tele / at_center unchanged.
+ */
+export function isWapptAtHomeSlotOnly(opts: {
+  category?: string | null;
+  serviceStyle?: string | null;
+}): boolean {
+  const style = String(opts.serviceStyle || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  if (style !== 'at_home' && style !== 'home_visit' && style !== 'home') {
+    return false;
+  }
+  const hub = String(opts.category || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  if (!hub) return true;
+  if (
+    hub === 'vet' ||
+    hub === 'veterinarian' ||
+    hub === 'vet_clinic' ||
+    hub === 'veterinary'
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function toWapptRequestedServices(
   rows: Array<{
     id?: string | null;

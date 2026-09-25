@@ -112,6 +112,10 @@ export function VendorServiceConfigurationScreen({
   const [pricingLocked, setPricingLocked] = useState(false);
   /** Re-render after commerce switch prefetch so price lock reflects warmpawz_pay. */
   const [commerceSwitchReady, setCommerceSwitchReady] = useState(false);
+  const [appointmentFeeCentre, setAppointmentFeeCentre] = useState<number | null>(null);
+  const [appointmentFeeHome, setAppointmentFeeHome] = useState<string>('');
+  const [catalogueFeeLoaded, setCatalogueFeeLoaded] = useState(false);
+  const [savingCatalogueFee, setSavingCatalogueFee] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null); // ✅ Service being edited (opens Edit modal)
   const [editForm, setEditForm] = useState({ price: 0, duration: 30, description: '' }); // ✅ Edit modal form state
   const [savingEdit, setSavingEdit] = useState(false);
@@ -196,6 +200,73 @@ export function VendorServiceConfigurationScreen({
       return;
     }
   }, [isSoloProvider, serviceStyle, onBack]);
+
+  useEffect(() => {
+    if (serviceStyle === 'tele') return;
+    let cancelled = false;
+    setCatalogueFeeLoaded(false);
+    void apiClient
+      .get<{
+        success?: boolean;
+        inCatalogue?: boolean;
+        appointmentFee?: number | null;
+        appointmentFeeHome?: number | null;
+      }>(`/vendor/warmpawz-appointments/catalogue-fee?vendorId=${encodeURIComponent(vendorId)}`)
+      .then((res) => {
+        if (cancelled) return;
+        const centre = Number(res?.appointmentFee);
+        const home = Number(res?.appointmentFeeHome);
+        setAppointmentFeeCentre(Number.isFinite(centre) ? centre : null);
+        setAppointmentFeeHome(
+          Number.isFinite(home) && home >= 0 ? String(home) : '',
+        );
+        setCatalogueFeeLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAppointmentFeeCentre(null);
+          setAppointmentFeeHome('');
+          setCatalogueFeeLoaded(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorId, serviceStyle]);
+
+  const saveCatalogueHomeFee = async () => {
+    const home = Number(appointmentFeeHome);
+    if (!Number.isFinite(home) || home < 0) {
+      toast.error('Enter a valid home appointment fee (₹)');
+      return;
+    }
+    setSavingCatalogueFee(true);
+    try {
+      const res = await apiClient.put<{
+        success?: boolean;
+        appointmentFee?: number;
+        appointmentFeeHome?: number;
+        error?: string;
+      }>(`/vendor/warmpawz-appointments/catalogue-fee?vendorId=${encodeURIComponent(vendorId)}`, {
+        appointmentFeeHome: home,
+        ...(appointmentFeeCentre != null ? { appointmentFee: appointmentFeeCentre } : {}),
+      });
+      if (res?.success === false) {
+        throw new Error(res.error || 'Failed to save home fee');
+      }
+      if (res?.appointmentFeeHome != null) {
+        setAppointmentFeeHome(String(res.appointmentFeeHome));
+      }
+      if (res?.appointmentFee != null) {
+        setAppointmentFeeCentre(Number(res.appointmentFee));
+      }
+      toast.success('Home appointment fee saved. Customers will see this on at-home booking.');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save home appointment fee');
+    } finally {
+      setSavingCatalogueFee(false);
+    }
+  };
   
   // Next-gen CRUD: Vendors can edit price/duration for ALL services (catalog + custom, all styles).
   // No platform price control — vendor-set price reflects immediately on customer web.
@@ -1327,14 +1398,71 @@ export function VendorServiceConfigurationScreen({
                   </>
                 ) : (
                   <>
-                    <strong>Warmpawz Appointments:</strong> Enable or disable services only. Appointment fees are
-                    set by the platform — per-service prices are not shown to customers for this style.
+                    <strong>Warmpawz Appointments:</strong> Enable or disable services only. Customers pay the
+                    platform appointment fee (not per-service list prices). Set your{' '}
+                    <strong>home visit fee</strong> below — centre fee stays as configured by admin.
                   </>
                 )}
               </p>
             </div>
           </div>
         </div>
+
+        {!canEditPricing && serviceStyle !== 'tele' && catalogueFeeLoaded ? (
+          <div className="mx-4 mt-3 rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Appointment fees (customer-facing)</h3>
+              <p className="mt-0.5 text-xs text-gray-500">
+                Shown on customer at-home booking. Centre fee is managed by Warmpawz.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="wappt-fee-centre">Centre fee (₹)</Label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                    ₹
+                  </span>
+                  <Input
+                    id="wappt-fee-centre"
+                    type="number"
+                    disabled
+                    value={appointmentFeeCentre ?? ''}
+                    className="bg-gray-50 pl-8"
+                    placeholder="—"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="wappt-fee-home">Home visit fee (₹)</Label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                    ₹
+                  </span>
+                  <Input
+                    id="wappt-fee-home"
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={appointmentFeeHome}
+                    onChange={(e) => setAppointmentFeeHome(e.target.value)}
+                    className="bg-white pl-8"
+                    placeholder="499"
+                  />
+                </div>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              disabled={savingCatalogueFee || appointmentFeeHome.trim() === ''}
+              className="bg-[#FF8C42] hover:bg-[#ff7a28]"
+              onClick={() => void saveCatalogueHomeFee()}
+            >
+              {savingCatalogueFee ? 'Saving…' : 'Save home fee'}
+            </Button>
+          </div>
+        ) : null}
 
         {/* Services List */}
         <div className="p-4 space-y-4">

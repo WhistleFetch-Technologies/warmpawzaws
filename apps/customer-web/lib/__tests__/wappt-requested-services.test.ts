@@ -2,6 +2,7 @@ import { buildWarmpawzAppointmentsBookingNav } from '@/lib/warmpawz-appointments
 import {
   canSelectWapptSlot,
   shouldPromptWapptServicePick,
+  isWapptAtHomeSlotOnly,
   partitionWapptListedServices,
   toWapptRequestedServices,
   toggleWapptOneOffSelection,
@@ -34,6 +35,16 @@ describe('wappt requested services', () => {
     expect(canSelectWapptSlot({ selectableCount: 2, selectedCount: 1 })).toBe(true);
     expect(shouldPromptWapptServicePick({ selectableCount: 2, selectedCount: 0 })).toBe(true);
     expect(shouldPromptWapptServicePick({ selectableCount: 2, selectedCount: 1 })).toBe(false);
+  });
+
+  it('marks non-vet at_home as slot-only', () => {
+    expect(isWapptAtHomeSlotOnly({ category: 'grooming', serviceStyle: 'at_home' })).toBe(true);
+    expect(isWapptAtHomeSlotOnly({ category: 'training', serviceStyle: 'at_home' })).toBe(true);
+    expect(isWapptAtHomeSlotOnly({ category: 'walker', serviceStyle: 'at_home' })).toBe(true);
+    expect(isWapptAtHomeSlotOnly({ category: 'sitting', serviceStyle: 'at_home' })).toBe(true);
+    expect(isWapptAtHomeSlotOnly({ category: 'vet', serviceStyle: 'at_home' })).toBe(false);
+    expect(isWapptAtHomeSlotOnly({ category: 'grooming', serviceStyle: 'at_center' })).toBe(false);
+    expect(isWapptAtHomeSlotOnly({ category: 'vet', serviceStyle: 'tele' })).toBe(false);
   });
 
   it('strips listed prices from persist/nav payload', () => {
