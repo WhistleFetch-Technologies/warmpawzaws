@@ -1,8 +1,6 @@
 'use client';
 
 import type { PromoEngineDraft } from '@/lib/promo-engine/types';
-import { labelsForCatalogSlugs } from '@/lib/promo-engine/catalog-categories';
-import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
 import {
   describeBenefits,
   describeConditionGroup,
@@ -11,7 +9,6 @@ import {
 import { PromotionEngineStatusBadge } from '../PromotionEngineStatusBadge';
 
 export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
-  const { categories } = useCatalogServiceCategories();
   const { basics } = draft;
   return (
     <div className="space-y-6">
@@ -68,8 +65,7 @@ export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
           <strong>THEN</strong> {describeBenefits(draft.benefitJson)}
         </p>
         <p className="mt-2 text-xs text-slate-500">
-          {basics.name || 'Untitled'} · {basics.startAt || 'no start'} → {basics.endAt || 'no end'} ·{' '}
-          {labelsForCatalogSlugs(basics.serviceCategories, categories) || 'no service'}
+          {basics.name || 'Untitled'} · {basics.startAt || 'no start'} → {basics.endAt || 'no end'}
         </p>
       </div>
     </div>

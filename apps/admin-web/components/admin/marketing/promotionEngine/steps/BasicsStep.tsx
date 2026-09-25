@@ -17,8 +17,6 @@ import {
   type PromoFundingType,
   type StackingPolicy,
 } from '@/lib/promo-engine/types';
-import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
-import { ServiceCategoryChips } from '../ServiceCategoryChips';
 
 export function BasicsStep({
   basics,
@@ -27,17 +25,7 @@ export function BasicsStep({
   basics: PromoEngineBasics;
   onChange: (next: PromoEngineBasics) => void;
 }) {
-  const { categories, loading, error } = useCatalogServiceCategories();
   const patch = (partial: Partial<PromoEngineBasics>) => onChange({ ...basics, ...partial });
-
-  const toggleService = (slug: string) => {
-    const has = basics.serviceCategories.includes(slug);
-    patch({
-      serviceCategories: has
-        ? basics.serviceCategories.filter((s) => s !== slug)
-        : [...basics.serviceCategories, slug],
-    });
-  };
 
   return (
     <div className="space-y-6">
@@ -191,22 +179,6 @@ export function BasicsStep({
         <p className="text-xs text-slate-500">
           Links this engine promo to an existing commercial campaign. Leave empty if none.
         </p>
-      </div>
-
-      <div className="space-y-3">
-        <div>
-          <Label>Services</Label>
-          <p className="mt-1 text-xs text-slate-500">
-            From Admin → Catalogue → Categories. Stored as category slugs.
-          </p>
-        </div>
-        <ServiceCategoryChips
-          categories={categories}
-          selected={basics.serviceCategories}
-          loading={loading}
-          error={error}
-          onToggle={toggleService}
-        />
       </div>
     </div>
   );
