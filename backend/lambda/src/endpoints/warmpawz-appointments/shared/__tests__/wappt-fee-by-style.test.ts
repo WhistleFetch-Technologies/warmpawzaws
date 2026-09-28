@@ -38,6 +38,14 @@ describe('extractServiceStylesFromRoleConfig', () => {
     ]);
   });
 
+  it('reads object-shaped serviceStyles (selected / solo)', () => {
+    expect(
+      extractServiceStylesFromRoleConfig({
+        serviceStyles: { selected: ['at_center', 'at_home'], solo: ['at_home', 'tele'] },
+      }),
+    ).toEqual(['at_center', 'at_home', 'tele']);
+  });
+
   it('returns empty for missing config', () => {
     expect(extractServiceStylesFromRoleConfig(null)).toEqual([]);
   });

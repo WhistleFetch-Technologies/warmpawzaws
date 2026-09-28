@@ -35,9 +35,11 @@ describe('is-warmpawz-pay-pricing-locked', () => {
     expect(normalizeServiceStyleForPricingLock('tele')).toBe('tele');
   });
 
-  it('locks at_home and at_center only', () => {
-    expect(isPricingLockedServiceStyle('at_home')).toBe(true);
+  it('locks at_center only (at_home prices are a vendor menu)', () => {
     expect(isPricingLockedServiceStyle('at_center')).toBe(true);
+    expect(isPricingLockedServiceStyle('at_vendor')).toBe(true);
+    expect(isPricingLockedServiceStyle('at_home')).toBe(false);
+    expect(isPricingLockedServiceStyle('home')).toBe(false);
     expect(isPricingLockedServiceStyle('tele')).toBe(false);
   });
 
@@ -50,11 +52,12 @@ describe('is-warmpawz-pay-pricing-locked', () => {
 
   it('isWarmpawzPayPricingLocked combines switch and style', async () => {
     mockActiveModel('warmpawz_pay');
-    await expect(isWarmpawzPayPricingLocked('at_home')).resolves.toBe(true);
+    await expect(isWarmpawzPayPricingLocked('at_center')).resolves.toBe(true);
+    await expect(isWarmpawzPayPricingLocked('at_home')).resolves.toBe(false);
     await expect(isWarmpawzPayPricingLocked('tele')).resolves.toBe(false);
 
     mockActiveModel('marketplace');
-    await expect(isWarmpawzPayPricingLocked('at_home')).resolves.toBe(false);
+    await expect(isWarmpawzPayPricingLocked('at_center')).resolves.toBe(false);
   });
 
   it('stripVendorServicePriceFields nulls price keys', () => {

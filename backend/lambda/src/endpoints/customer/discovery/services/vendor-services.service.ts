@@ -53,8 +53,13 @@ export async function executevendorServices(c: Context) {
       normalizedStyle === 'tele' ||
       normalizedStyle === 'online' ||
       normalizedStyle === 'video_consultation';
+    // at_home prices are a display-only menu; the customer settles the vendor bill via Pay Bill.
+    const isHomeStyle =
+      normalizedStyle === 'at_home' ||
+      normalizedStyle === 'home' ||
+      normalizedStyle === 'home_visit';
     const omitPricing =
-      !isTeleStyle && (await shouldOmitVendorServicePricing(resolvedVendorId));
+      !isTeleStyle && !isHomeStyle && (await shouldOmitVendorServicePricing(resolvedVendorId));
 
     const servicePage = resolveServiceListPage(c.req.query('limit'), c.req.query('cursor'));
     if (servicePage.cardMode) {

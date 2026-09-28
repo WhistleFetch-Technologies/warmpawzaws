@@ -1,18 +1,17 @@
 import { isWarmpawzPay } from '@/lib/commerce-switch-client';
 
-const LOCKED_STYLES = new Set(['at_home', 'at_center', 'at_vendor', 'clinic', 'home']);
+/** at_home prices stay vendor-editable: customer-facing menu; the bill is settled via Pay Bill. */
+const LOCKED_STYLES = new Set(['at_center', 'at_vendor', 'clinic']);
 
 export function isPricingLockedServiceStyle(serviceStyle?: string | null): boolean {
   const raw = String(serviceStyle || '')
     .toLowerCase()
     .trim()
     .replace(/-/g, '_');
-  if (raw === 'home') return true;
-  if (raw === 'at_vendor' || raw === 'clinic') return true;
   return LOCKED_STYLES.has(raw);
 }
 
-/** Vendor may edit service price only when marketplace mode or tele style. */
+/** Vendor may edit service price in marketplace mode, or for at_home / tele styles. */
 export function canVendorEditServicePrice(serviceStyle?: string | null): boolean {
   if (!isWarmpawzPay()) return true;
   return !isPricingLockedServiceStyle(serviceStyle);

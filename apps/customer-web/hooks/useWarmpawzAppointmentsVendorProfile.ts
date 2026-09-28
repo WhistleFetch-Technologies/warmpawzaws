@@ -16,6 +16,7 @@ import {
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
 import { resolveWapptVendorProfileConfig } from '@/lib/warmpawz-appointments/wappt-vendor-profile-config';
+import { wapptShowsServicePrice } from '@/lib/wappt-requested-services';
 
 export type { WapptFacilityRating } from '@/lib/map-wappt-facility-rating';
 export { mapWapptFacilityRating } from '@/lib/map-wappt-facility-rating';
@@ -247,6 +248,7 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
         const rows = vendorServicesRowsFromResponse(
           res as { services?: unknown[]; packages?: unknown[] },
         );
+        const showPrice = wapptShowsServicePrice(serviceStyle);
         const services =
           config.category === 'vet'
             ? mapVendorServicesForVetHub(rows).map((s) => ({
@@ -259,12 +261,12 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
                 isPackage: s.isPackage,
                 packageDetails: s.packageDetails,
                 metadata: s.metadata,
-                ...(serviceStyle === 'tele' && s.price != null ? { price: Number(s.price) } : {}),
+                ...(showPrice && s.price != null ? { price: Number(s.price) } : {}),
               }))
             : rows.map((row) => {
                 const record = row as Record<string, unknown>;
                 const mapped = mapGenericServiceRow(record);
-                if (serviceStyle === 'tele' && record.price != null) {
+                if (showPrice && record.price != null) {
                   return { ...mapped, price: Number(record.price) };
                 }
                 return mapped;

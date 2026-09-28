@@ -49,6 +49,7 @@ import {
   canSelectWapptSlot,
   shouldPromptWapptServicePick,
   isWapptAtHomeSlotOnly,
+  isWapptHomeStyle,
   partitionWapptListedServices,
   toWapptRequestedServices,
   toggleWapptOneOffSelection,
@@ -190,6 +191,7 @@ export function WarmpawzAppointmentsVendorProfile({
 
   const isTeleMarketplace = serviceStyle === 'tele';
   const atHomeSlotOnly = isWapptAtHomeSlotOnly({ category, serviceStyle });
+  const isHomeMenu = isWapptHomeStyle(serviceStyle);
   const { appointmentFee } = useWapptAppointmentBooking({
     appointmentsMode: !isTeleMarketplace,
     vendorId: profileVendorId || vendorId,
@@ -566,13 +568,14 @@ export function WarmpawzAppointmentsVendorProfile({
 
             {activeTab === 'services' ? (
               <div className="space-y-4">
-                {atHomeSlotOnly ? (
+                {isHomeMenu ? (
                   <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
-                    Home visit uses a flat appointment fee
+                    Book the home visit for the appointment fee
                     {appointmentFee != null && appointmentFee > 0
                       ? ` (${formatPriceWithSymbol(appointmentFee)})`
                       : ''}
-                    . Pick a slot to continue — services below are for reference only.
+                    . Prices below are the provider&apos;s menu — pay the final bill after the
+                    visit using Pay Bill.
                   </div>
                 ) : null}
                 <div className="relative">
@@ -629,7 +632,9 @@ export function WarmpawzAppointmentsVendorProfile({
                             ) : null}
                             <h4 className="text-base font-bold text-gray-900">{service.name}</h4>
                           </div>
-                          {isTeleMarketplace && service.price != null ? (
+                          {(isTeleMarketplace || isHomeMenu) &&
+                          service.price != null &&
+                          service.price > 0 ? (
                             <span className="shrink-0 font-bold text-[#FF8C42]">
                               {formatPriceWithSymbol(service.price)}
                             </span>

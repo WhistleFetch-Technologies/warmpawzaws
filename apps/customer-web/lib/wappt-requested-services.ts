@@ -38,6 +38,22 @@ export function shouldPromptWapptServicePick(opts: {
   return opts.selectableCount > 0 && opts.selectedCount <= 0;
 }
 
+export function isWapptHomeStyle(serviceStyle?: string | null): boolean {
+  const style = String(serviceStyle || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  return style === 'at_home' || style === 'home_visit' || style === 'home';
+}
+
+/**
+ * Service prices shown on the WAPPT profile: tele (bookable price) and at_home
+ * (display-only menu; the vendor's bill is settled via Pay Bill). at_center stays hidden.
+ */
+export function wapptShowsServicePrice(serviceStyle?: string | null): boolean {
+  return serviceStyle === 'tele' || isWapptHomeStyle(serviceStyle);
+}
+
 /**
  * Non-vet at_home WAPPT: skip service pick; charge catalogue home appointment fee.
  * Vet at_home keeps checkboxes. Tele / at_center unchanged.
@@ -46,11 +62,7 @@ export function isWapptAtHomeSlotOnly(opts: {
   category?: string | null;
   serviceStyle?: string | null;
 }): boolean {
-  const style = String(opts.serviceStyle || '')
-    .trim()
-    .toLowerCase()
-    .replace(/-/g, '_');
-  if (style !== 'at_home' && style !== 'home_visit' && style !== 'home') {
+  if (!isWapptHomeStyle(opts.serviceStyle)) {
     return false;
   }
   const hub = String(opts.category || '')

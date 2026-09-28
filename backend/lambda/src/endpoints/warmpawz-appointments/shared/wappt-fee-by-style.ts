@@ -34,8 +34,17 @@ export function extractServiceStylesFromRoleConfig(roleConfig: unknown): string[
   if (!roleConfig || typeof roleConfig !== 'object') return [];
   const cfg = roleConfig as Record<string, unknown>;
   const raw = cfg.serviceStyles ?? cfg.service_styles;
-  if (!Array.isArray(raw)) return [];
-  return raw.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+  let list: unknown[] = [];
+  if (Array.isArray(raw)) {
+    list = raw;
+  } else if (raw && typeof raw === 'object') {
+    // Some roles store { selected: [...], solo: [...], business: [...] }.
+    for (const value of Object.values(raw as Record<string, unknown>)) {
+      if (Array.isArray(value)) list.push(...value);
+    }
+  }
+  const out = list.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+  return Array.from(new Set(out));
 }
 
 export function vendorOffersHomeStyle(serviceStyles: readonly string[]): boolean {

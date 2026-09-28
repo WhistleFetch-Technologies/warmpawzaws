@@ -3,7 +3,8 @@ import { getCommerceResolver } from '../di/commerce-switch-container';
 
 const WARMPAWZ_PAY_MODEL: CommerceModelId = 'warmpawz_pay';
 
-const PRICING_LOCKED_STYLES = new Set(['at_home', 'at_center']);
+/** at_home prices stay vendor-editable: they are a customer-facing menu; payment is via Pay Bill. */
+const PRICING_LOCKED_STYLES = new Set(['at_center']);
 
 /** Normalize vendor/customer service style to at_home | at_center | tele. */
 export function normalizeServiceStyleForPricingLock(serviceStyle: string | null | undefined): string {
@@ -17,7 +18,7 @@ export function normalizeServiceStyleForPricingLock(serviceStyle: string | null 
   return raw;
 }
 
-/** True for at_home / at_center; tele and unknown styles are not locked. */
+/** True for at_center only; at_home, tele and unknown styles are not locked. */
 export function isPricingLockedServiceStyle(serviceStyle: string | null | undefined): boolean {
   return PRICING_LOCKED_STYLES.has(normalizeServiceStyleForPricingLock(serviceStyle));
 }
@@ -27,7 +28,7 @@ export async function isWarmpawzPayActive(): Promise<boolean> {
   return resolved.activeModelId === WARMPAWZ_PAY_MODEL;
 }
 
-/** Commerce Switch warmpawz_pay + at_home/at_center (not tele). */
+/** Commerce Switch warmpawz_pay + at_center. */
 export async function isWarmpawzPayPricingLocked(
   serviceStyle: string | null | undefined,
 ): Promise<boolean> {

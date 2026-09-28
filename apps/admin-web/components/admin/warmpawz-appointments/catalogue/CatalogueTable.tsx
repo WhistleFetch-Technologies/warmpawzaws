@@ -16,10 +16,10 @@ import {
 import { ChevronDown, ChevronRight, Info } from 'lucide-react';
 import type { CatalogueListItem } from '@/lib/warmpawz-appointments-catalogue-admin';
 import {
-  catalogueOffersCenterStyle,
-  catalogueOffersHomeStyle,
+  catalogueHasCentreFee,
   formatCatalogueDate,
-  formatDualAppointmentFees,
+  formatCentreAppointmentFee,
+  formatHomeAppointmentFee,
   isValidAppointmentFee,
   shortVendorId,
 } from '@/lib/warmpawz-appointments-catalogue-admin';
@@ -147,7 +147,8 @@ export function CatalogueTable({
             <TableHead>Vendor</TableHead>
             <TableHead>Business Name</TableHead>
             <TableHead>Category</TableHead>
-            <TableHead>Appointment Fee</TableHead>
+            <TableHead>Centre Fee</TableHead>
+            <TableHead>Home Fee</TableHead>
             <TableHead>Publish Status</TableHead>
             <TableHead>Appointments Status</TableHead>
             <TableHead>Readiness</TableHead>
@@ -161,17 +162,15 @@ export function CatalogueTable({
             const rowDisabled = disabled || (rowBusyVendorId !== null && !rowBusy);
             const expanded = expandedVendorId === item.vendorId;
             const draft = feeByVendor[item.vendorId] ?? { centre: '', home: '' };
-            const showCentre = catalogueOffersCenterStyle(item.serviceStyles);
-            const showHome = catalogueOffersHomeStyle(item.serviceStyles);
+            const showCentre = catalogueHasCentreFee(item);
             const centreValid = !showCentre || isValidAppointmentFee(draft.centre);
-            const homeValid = !showHome || isValidAppointmentFee(draft.home);
+            const homeValid = isValidAppointmentFee(draft.home);
             const feeValid = centreValid && homeValid;
-            const resolvedCentre = showCentre
-              ? Number(draft.centre)
-              : Number(draft.home || draft.centre || 0);
-            const resolvedHome = showHome
-              ? Number(draft.home)
-              : resolvedCentre;
+            const resolvedHome = Number(draft.home);
+            const resolvedCentre =
+              showCentre || isValidAppointmentFee(draft.centre)
+                ? Number(draft.centre)
+                : resolvedHome;
             const feePayload: CatalogueFeeValues = {
               appointmentFee: resolvedCentre,
               appointmentFeeHome: resolvedHome,
@@ -231,8 +230,16 @@ export function CatalogueTable({
                     />
                   </TableCell>
                   <TableCell>
+                    <span
+                      className={`text-sm font-medium ${showCentre ? 'text-gray-900' : 'text-gray-400'}`}
+                      title={showCentre ? undefined : 'Solo providers serve at home only'}
+                    >
+                      {formatCentreAppointmentFee(item)}
+                    </span>
+                  </TableCell>
+                  <TableCell>
                     <span className="text-sm font-medium text-gray-900">
-                      {formatDualAppointmentFees(item)}
+                      {formatHomeAppointmentFee(item)}
                     </span>
                   </TableCell>
                   <TableCell>
@@ -256,7 +263,7 @@ export function CatalogueTable({
                 </TableRow>
                 {expanded ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="bg-gray-50 p-4">
+                    <TableCell colSpan={12} className="bg-gray-50 p-4">
                       <div className="space-y-4">
                         <ReadinessDetailPanel readiness={item.readiness} />
                         <div className="flex flex-col gap-4 border-t border-gray-200 pt-4 lg:flex-row lg:items-end lg:justify-between">
@@ -289,34 +296,32 @@ export function CatalogueTable({
                                 </div>
                               </div>
                             ) : null}
-                            {showHome ? (
-                              <div className="max-w-xs space-y-2">
-                                <div className="flex items-center gap-1.5">
-                                  <Label htmlFor={`fee-home-${item.vendorId}`}>
-                                    Home fee (₹)
-                                  </Label>
-                                  <Info className="h-3.5 w-3.5 text-gray-400" aria-hidden />
-                                </div>
-                                <div className="relative">
-                                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
-                                    ₹
-                                  </span>
-                                  <Input
-                                    id={`fee-home-${item.vendorId}`}
-                                    type="number"
-                                    min={0}
-                                    step={0.01}
-                                    value={draft.home}
-                                    disabled={rowDisabled}
-                                    placeholder="599"
-                                    className="bg-white pl-8"
-                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-                                      updateFeeField(item.vendorId, 'home', event.target.value)
-                                    }
-                                  />
-                                </div>
+                            <div className="max-w-xs space-y-2">
+                              <div className="flex items-center gap-1.5">
+                                <Label htmlFor={`fee-home-${item.vendorId}`}>
+                                  Home fee (₹)
+                                </Label>
+                                <Info className="h-3.5 w-3.5 text-gray-400" aria-hidden />
                               </div>
-                            ) : null}
+                              <div className="relative">
+                                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                                  ₹
+                                </span>
+                                <Input
+                                  id={`fee-home-${item.vendorId}`}
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  value={draft.home}
+                                  disabled={rowDisabled}
+                                  placeholder="599"
+                                  className="bg-white pl-8"
+                                  onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                                    updateFeeField(item.vendorId, 'home', event.target.value)
+                                  }
+                                />
+                              </div>
+                            </div>
                           </div>
                           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                             <div className="space-y-1">

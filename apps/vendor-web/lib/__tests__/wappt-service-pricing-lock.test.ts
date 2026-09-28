@@ -18,11 +18,13 @@ describe('wappt-service-pricing-lock', () => {
     jest.clearAllMocks();
   });
 
-  it('locks at_home and at_center when Warmpawz Pay is active', () => {
+  it('locks at_center only when Warmpawz Pay is active', () => {
     mockedIsWarmpawzPay.mockReturnValue(true);
-    expect(canVendorEditServicePrice('at_home')).toBe(false);
     expect(canVendorEditServicePrice('at_center')).toBe(false);
-    expect(shouldHideVendorServicePrice('at_home')).toBe(true);
+    expect(shouldHideVendorServicePrice('at_center')).toBe(true);
+    expect(canVendorEditServicePrice('at_home')).toBe(true);
+    expect(canVendorEditServicePrice('home')).toBe(true);
+    expect(shouldHideVendorServicePrice('at_home')).toBe(false);
   });
 
   it('allows tele pricing when Warmpawz Pay is active', () => {

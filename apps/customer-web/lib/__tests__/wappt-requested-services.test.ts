@@ -6,6 +6,7 @@ import {
   partitionWapptListedServices,
   toWapptRequestedServices,
   toggleWapptOneOffSelection,
+  wapptShowsServicePrice,
 } from '@/lib/wappt-requested-services';
 
 describe('wappt requested services', () => {
@@ -45,6 +46,14 @@ describe('wappt requested services', () => {
     expect(isWapptAtHomeSlotOnly({ category: 'vet', serviceStyle: 'at_home' })).toBe(false);
     expect(isWapptAtHomeSlotOnly({ category: 'grooming', serviceStyle: 'at_center' })).toBe(false);
     expect(isWapptAtHomeSlotOnly({ category: 'vet', serviceStyle: 'tele' })).toBe(false);
+  });
+
+  it('shows service prices as a menu for at_home and tele, not at_center', () => {
+    expect(wapptShowsServicePrice('at_home')).toBe(true);
+    expect(wapptShowsServicePrice('home_visit')).toBe(true);
+    expect(wapptShowsServicePrice('tele')).toBe(true);
+    expect(wapptShowsServicePrice('at_center')).toBe(false);
+    expect(wapptShowsServicePrice(undefined)).toBe(false);
   });
 
   it('strips listed prices from persist/nav payload', () => {

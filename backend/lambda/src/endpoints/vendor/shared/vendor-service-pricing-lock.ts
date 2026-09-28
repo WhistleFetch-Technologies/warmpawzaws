@@ -37,7 +37,7 @@ export async function rejectVendorServicePriceChangeIfLocked(
   if (!(await isWarmpawzPayPricingLocked(serviceStyle))) return null;
   return {
     error:
-      'Price cannot be changed for at_home/at_center services while Warmpawz Pay + Appointments is active. Contact platform admin for appointment fees.',
+      'Price cannot be changed for at_center services while Warmpawz Pay + Appointments is active. Contact platform admin for appointment fees.',
     code: 'PRICING_LOCKED',
   };
 }

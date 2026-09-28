@@ -415,44 +415,24 @@ export function formatAppointmentFee(fee: number | null | undefined): string {
   return `₹${fee.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
-const HOME_STYLES = new Set(['at_home', 'home_visit', 'home', 'sitting', 'pet_sitting']);
-const CENTRE_STYLES = new Set([
-  'at_center',
-  'at_vendor',
-  'at_clinic',
-  'boarding',
-  'center',
-  'checkin_checkout',
-]);
-
-export function catalogueOffersHomeStyle(
-  serviceStyles: readonly string[] | null | undefined,
-): boolean {
-  return (serviceStyles ?? []).some((s) => HOME_STYLES.has(String(s).toLowerCase()));
+/** Solo providers only serve at_home; Business / Center vendors serve at_center and at_home. */
+export function catalogueHasCentreFee(item: { businessType?: MerchantBusinessType | null }): boolean {
+  return item.businessType !== 'Solo';
 }
 
-export function catalogueOffersCenterStyle(
-  serviceStyles: readonly string[] | null | undefined,
-): boolean {
-  const styles = serviceStyles ?? [];
-  if (styles.length === 0) return true;
-  return styles.some((s) => CENTRE_STYLES.has(String(s).toLowerCase()));
+export function formatCentreAppointmentFee(item: {
+  appointmentFee: number | null;
+  businessType?: MerchantBusinessType | null;
+}): string {
+  if (!catalogueHasCentreFee(item)) return 'N/A';
+  return formatAppointmentFee(item.appointmentFee);
 }
 
-export function formatDualAppointmentFees(item: {
+export function formatHomeAppointmentFee(item: {
   appointmentFee: number | null;
   appointmentFeeHome?: number | null;
-  serviceStyles?: readonly string[];
 }): string {
-  const centre = formatAppointmentFee(item.appointmentFee);
-  const showHome = catalogueOffersHomeStyle(item.serviceStyles);
-  if (!showHome) return centre;
-  const home = formatAppointmentFee(
-    item.appointmentFeeHome ?? item.appointmentFee,
-  );
-  const showCentre = catalogueOffersCenterStyle(item.serviceStyles);
-  if (!showCentre) return `Home ${home}`;
-  return `Centre ${centre} · Home ${home}`;
+  return formatAppointmentFee(item.appointmentFeeHome ?? item.appointmentFee);
 }
 
 export function isValidAppointmentFee(value: string): boolean {
