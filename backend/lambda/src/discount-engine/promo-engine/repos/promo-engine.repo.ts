@@ -221,24 +221,31 @@ export async function dbGetLimits(promotionId: string): Promise<PromoEngineLimit
   };
 }
 
+const LIMIT_COLUMNS = [
+  'per_user',
+  'per_transaction',
+  'daily_limit',
+  'campaign_limit',
+  'budget_limit',
+] as const;
+
+/**
+ * Keys present in `limits` overwrite the stored value — including explicit null, which clears
+ * the limit. Keys absent from `limits` keep their stored value.
+ */
 export async function dbUpsertLimits(
   promotionId: string,
   limits: Partial<PromoEngineLimitsRow>
 ): Promise<void> {
   const existing = await dbGetLimits(promotionId);
   if (existing) {
-    await update(
-      'promo_engine_limits',
-      { promotion_id: promotionId },
-      {
-        per_user: limits.per_user ?? existing.per_user,
-        per_transaction: limits.per_transaction ?? existing.per_transaction,
-        daily_limit: limits.daily_limit ?? existing.daily_limit,
-        campaign_limit: limits.campaign_limit ?? existing.campaign_limit,
-        budget_limit: limits.budget_limit ?? existing.budget_limit,
-        updated_at: new Date().toISOString(),
-      },
-    );
+    const next: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    for (const col of LIMIT_COLUMNS) {
+      next[col] = Object.prototype.hasOwnProperty.call(limits, col)
+        ? (limits[col] ?? null)
+        : existing[col];
+    }
+    await update('promo_engine_limits', { promotion_id: promotionId }, next);
     return;
   }
   await insert('promo_engine_limits', {
@@ -415,6 +422,7 @@ export async function dbCountUsageBatch(opts: {
             ${dailyExpr} AS daily_count
      FROM promo_engine_usage
      WHERE promotion_id = ANY($1::uuid[])
+       AND reversed_at IS NULL
      GROUP BY promotion_id`,
     params,
   );
@@ -435,7 +443,8 @@ export async function dbCountUsage(opts: {
   since?: Date;
 }): Promise<number> {
   const params: unknown[] = [opts.promotionId];
-  let sql = `SELECT COUNT(*)::int AS c FROM promo_engine_usage WHERE promotion_id = $1`;
+  let sql = `SELECT COUNT(*)::int AS c FROM promo_engine_usage
+             WHERE promotion_id = $1 AND reversed_at IS NULL`;
   if (opts.userId) {
     params.push(opts.userId);
     sql += ` AND user_id = $${params.length}`;
@@ -466,6 +475,81 @@ export async function dbInsertUsage(row: {
     if (/unique|duplicate/i.test(msg)) return { inserted: false };
     throw err;
   }
+}
+
+export async function dbGetUsageByIdempotencyKey(
+  idempotencyKey: string,
+): Promise<{ cashback_amount: number; discount_amount: number; reversed_at: string | null } | null> {
+  const res = await query(
+    `SELECT cashback_amount, discount_amount, reversed_at
+     FROM promo_engine_usage WHERE idempotency_key = $1 LIMIT 1`,
+    [idempotencyKey],
+  );
+  const r = res.rows?.[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    cashback_amount: Number(r.cashback_amount ?? 0),
+    discount_amount: Number(r.discount_amount ?? 0),
+    reversed_at: r.reversed_at ? String(r.reversed_at) : null,
+  };
+}
+
+export async function dbSetUsageCashback(idempotencyKey: string, cashback: number): Promise<void> {
+  await query(
+    `UPDATE promo_engine_usage SET cashback_amount = $2 WHERE idempotency_key = $1`,
+    [idempotencyKey, cashback],
+  );
+}
+
+/** Atomic budget_consumed += delta (delta may be negative; never drops below 0). */
+export async function dbAdjustBudgetConsumed(
+  promotionId: string,
+  delta: number,
+): Promise<{ budget_consumed: number; budget_limit: number | null } | null> {
+  const res = await query(
+    `UPDATE promo_engine_promotions
+     SET budget_consumed = GREATEST(0, COALESCE(budget_consumed, 0) + $2::numeric),
+         updated_at = NOW()
+     WHERE id = $1::uuid
+     RETURNING budget_consumed, budget_limit`,
+    [promotionId, delta],
+  );
+  const r = res.rows?.[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    budget_consumed: Number(r.budget_consumed ?? 0),
+    budget_limit: r.budget_limit != null ? Number(r.budget_limit) : null,
+  };
+}
+
+/** Marks every live usage row for a transaction as reversed; returns only rows flipped now. */
+export async function dbMarkUsageReversed(transactionId: string): Promise<
+  Array<{
+    promotion_id: string;
+    user_id: string;
+    evaluation_id: string | null;
+    discount_amount: number;
+    cashback_amount: number;
+  }>
+> {
+  const res = await query(
+    `UPDATE promo_engine_usage
+     SET reversed_at = NOW()
+     WHERE transaction_id = $1 AND reversed_at IS NULL
+     RETURNING promotion_id::text AS promotion_id, user_id, evaluation_id::text AS evaluation_id,
+               discount_amount, cashback_amount`,
+    [transactionId],
+  );
+  return (res.rows || []).map((raw) => {
+    const r = raw as Record<string, unknown>;
+    return {
+      promotion_id: String(r.promotion_id),
+      user_id: String(r.user_id ?? ''),
+      evaluation_id: r.evaluation_id ? String(r.evaluation_id) : null,
+      discount_amount: Number(r.discount_amount ?? 0),
+      cashback_amount: Number(r.cashback_amount ?? 0),
+    };
+  });
 }
 
 export async function dbInsertEvaluation(row: {

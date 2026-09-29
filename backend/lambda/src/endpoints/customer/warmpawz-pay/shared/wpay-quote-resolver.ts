@@ -48,8 +48,9 @@ export async function resolveWpayPayQuote(params: {
       platformFee: settings.platformFee,
       platformFeeMode: settings.platformFeeMode,
       platformFeeGstRate: settings.platformFeeGstRate,
-      convenienceFee: settings.convenienceFee,
-      convenienceFeeMode: settings.convenienceFeeMode,
+      // Convenience fee is retired on Pay Bill — only platform fee + GST is charged.
+      convenienceFee: 0,
+      convenienceFeeMode: 'fixed',
       convenienceGstRate: settings.convenienceGstRate,
       platformGstRate: settings.platformGstRate,
       burnMode: settings.burnMode,

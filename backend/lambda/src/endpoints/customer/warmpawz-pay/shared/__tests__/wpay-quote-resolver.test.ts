@@ -78,7 +78,7 @@ describe('resolveWpayPayQuote', () => {
     expect(resolved.metadata.quotedDiscountAmount).toBe(0);
   });
 
-  it('applies dashboard fees when engine discount creates headroom under Q', async () => {
+  it('applies platform fee only (convenience retired) when engine discount creates headroom under Q', async () => {
     const resolved = await resolveWpayPayQuote({
       vendorRow: {
         catalogue_id: 'cat-1',
@@ -115,8 +115,9 @@ describe('resolveWpayPayQuote', () => {
     if (resolved.commercialModel !== 'tier_commission') return;
     expect(resolved.quote.discountAmount).toBe(80);
     expect(resolved.quote.platformFee).toBe(30);
-    expect(resolved.quote.convenienceFee).toBe(20);
-    expect(resolved.payableAmount).toBe(979);
+    expect(resolved.quote.convenienceFee).toBe(0);
+    expect(resolved.quote.convenienceGstAmount).toBe(0);
+    expect(resolved.payableAmount).toBe(955.4);
     expect(resolved.payableAmount).toBeLessThanOrEqual(1000);
   });
 });

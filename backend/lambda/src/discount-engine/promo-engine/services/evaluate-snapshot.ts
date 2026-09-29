@@ -21,6 +21,8 @@ import type {
 } from '../types';
 import { scoreVcfCandidates } from './evaluate-vcf';
 import { parseVcfConfig } from '../vcf/parse-config';
+import { checkPromoLimits, istDayStart } from './promo-limits';
+import { parseCustomerCopy, type PromoCustomerCopy } from '../customer-copy';
 
 export type EvaluateSnapshot = {
   candidates: PromoEnginePromotionRow[];
@@ -46,8 +48,7 @@ export async function loadEvaluateSnapshot(opts: {
     categoryId: opts.categoryId,
   });
   const ids = candidates.map((c) => c.id);
-  const dayStart = new Date(opts.now);
-  dayStart.setHours(0, 0, 0, 0);
+  const dayStart = istDayStart(opts.now);
   const [rulesByPromo, limitsByPromo, usageByPromo] = await Promise.all([
     dbListRulesForPromotions(ids),
     dbGetLimitsForPromotions(ids),
@@ -56,28 +57,13 @@ export async function loadEvaluateSnapshot(opts: {
   return { candidates, rulesByPromo, limitsByPromo, usageByPromo, behaviour };
 }
 
-function passesLimits(opts: {
-  promo: PromoEnginePromotionRow;
-  limits: PromoEngineLimitsRow | undefined;
-  usage: PromoUsageCounts | undefined;
-}): { ok: boolean; reason?: string } {
-  const budgetCap = opts.limits?.budget_limit ?? opts.promo.budget_limit;
-  if (budgetCap != null && opts.promo.budget_consumed >= Number(budgetCap)) {
-    return { ok: false, reason: 'BUDGET_EXHAUSTED' };
-  }
-  if (opts.limits?.per_user != null && (opts.usage?.user ?? 0) >= opts.limits.per_user) {
-    return { ok: false, reason: 'PER_USER_LIMIT' };
-  }
-  if (opts.limits?.campaign_limit != null && (opts.usage?.campaign ?? 0) >= opts.limits.campaign_limit) {
-    return { ok: false, reason: 'CAMPAIGN_LIMIT' };
-  }
-  if (opts.limits?.daily_limit != null && (opts.usage?.daily ?? 0) >= opts.limits.daily_limit) {
-    return { ok: false, reason: 'DAILY_LIMIT' };
-  }
-  if (opts.limits?.per_transaction != null && opts.limits.per_transaction <= 0) {
-    return { ok: false, reason: 'PER_TRANSACTION_LIMIT' };
-  }
-  return { ok: true };
+function customerCopyFor(
+  snapshot: EvaluateSnapshot,
+  promotionId: string | null | undefined,
+): PromoCustomerCopy | null {
+  if (!promotionId) return null;
+  const promo = snapshot.candidates.find((c) => c.id === promotionId);
+  return promo ? parseCustomerCopy(promo.metadata) : null;
 }
 
 function collectLineBenefits(opts: {
@@ -198,6 +184,7 @@ export function evaluateAgainstSnapshot(
     return {
       eligible: Boolean(vcfScore.winnerId) && vcfScore.winnerBenefits.length > 0,
       winner_promotion_id: vcfScore.winnerId,
+      customer_copy: customerCopyFor(snapshot, vcfScore.winnerId),
       benefits: vcfScore.winnerBenefits,
       summary: {
         gross_amount: amount,
@@ -216,7 +203,7 @@ export function evaluateAgainstSnapshot(
 
   const legacyCandidates = snapshot.candidates.filter((p) => !parseVcfConfig(p.metadata));
   for (const promo of legacyCandidates) {
-    const limitCheck = passesLimits({
+    const limitCheck = checkPromoLimits({
       promo,
       limits: snapshot.limitsByPromo.get(promo.id),
       usage: snapshot.usageByPromo.get(promo.id),
@@ -275,6 +262,7 @@ export function evaluateAgainstSnapshot(
   return {
     eligible: benefits.length > 0,
     winner_promotion_id: benefits[0]?.promotion_id || null,
+    customer_copy: customerCopyFor(snapshot, benefits[0]?.promotion_id),
     benefits,
     summary: {
       gross_amount: amount,

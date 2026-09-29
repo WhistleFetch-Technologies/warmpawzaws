@@ -33,6 +33,9 @@ export type WpayVerifyResponse = {
   discountAmount?: number;
   payableAmount?: number;
   savedAmount?: number;
+  /** Promo cashback credited to the Warmpawz Wallet by this payment (0 when none). */
+  awardedCashback?: number;
+  cashbackExpiryDays?: number | null;
   error?: string;
 };
 

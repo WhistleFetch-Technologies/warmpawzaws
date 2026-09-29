@@ -24,7 +24,7 @@ export async function creditPromoCashback(opts: {
   evaluationId: string;
   expiryDays?: number;
   redeemScope?: ServiceCategory[] | AppliedBenefit['redeem'];
-}): Promise<{ walletTransactionId: string | null; credited: boolean }> {
+}): Promise<{ walletTransactionId: string | null; credited: boolean; expiresAt?: string | null }> {
   if (opts.amount <= 0) return { walletTransactionId: null, credited: false };
 
   const earnedAt = new Date();
@@ -128,6 +128,7 @@ export async function creditPromoCashback(opts: {
     return {
       walletTransactionId: String(txn.rows[0].id),
       credited: true,
+      expiresAt: expiresAt ? expiresAt.toISOString() : null,
     };
   });
 }

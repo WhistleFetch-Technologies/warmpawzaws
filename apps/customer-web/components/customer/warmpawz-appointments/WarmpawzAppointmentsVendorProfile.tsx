@@ -48,7 +48,6 @@ import { requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 import {
   canSelectWapptSlot,
   shouldPromptWapptServicePick,
-  isWapptAtHomeSlotOnly,
   isWapptHomeStyle,
   partitionWapptListedServices,
   toWapptRequestedServices,
@@ -190,7 +189,6 @@ export function WarmpawzAppointmentsVendorProfile({
   );
 
   const isTeleMarketplace = serviceStyle === 'tele';
-  const atHomeSlotOnly = isWapptAtHomeSlotOnly({ category, serviceStyle });
   const isHomeMenu = isWapptHomeStyle(serviceStyle);
   const { appointmentFee } = useWapptAppointmentBooking({
     appointmentsMode: !isTeleMarketplace,
@@ -199,12 +197,10 @@ export function WarmpawzAppointmentsVendorProfile({
     serviceStyle,
   });
 
-  const canBookSlot = atHomeSlotOnly
-    ? true
-    : canSelectWapptSlot({
-        selectableCount: selectableServices.length,
-        selectedCount: selectedServiceIds.size,
-      });
+  const canBookSlot = canSelectWapptSlot({
+    selectableCount: selectableServices.length,
+    selectedCount: selectedServiceIds.size,
+  });
 
   const handleShare = async () => {
     if (!profileVendorId) return;
@@ -222,7 +218,6 @@ export function WarmpawzAppointmentsVendorProfile({
     const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
     if (!vid) return;
     if (
-      !atHomeSlotOnly &&
       shouldPromptWapptServicePick({
         selectableCount: selectableServices.length,
         selectedCount: selectedServiceIds.size,
@@ -254,13 +249,11 @@ export function WarmpawzAppointmentsVendorProfile({
       });
       return;
     }
-    const requested = atHomeSlotOnly
-      ? []
-      : toWapptRequestedServices(
-          selectableServices.filter((service) =>
-            selectedServiceIds.has(wapptServiceSelectionKey(service)),
-          ),
-        );
+    const requested = toWapptRequestedServices(
+      selectableServices.filter((service) =>
+        selectedServiceIds.has(wapptServiceSelectionKey(service)),
+      ),
+    );
     onNavigate(resolveWarmpawzBookingScreen(category), {
       ...buildWarmpawzAppointmentsBookingNav({
         vendorId: vid,
@@ -615,7 +608,7 @@ export function WarmpawzAppointmentsVendorProfile({
                       >
                         <div className="mb-2 flex items-start justify-between gap-3">
                           <div className="flex min-w-0 items-start gap-3">
-                            {!isTeleMarketplace && !atHomeSlotOnly && isOneOff ? (
+                            {!isTeleMarketplace && isOneOff ? (
                               <button
                                 type="button"
                                 aria-pressed={isSelected}
@@ -766,7 +759,7 @@ export function WarmpawzAppointmentsVendorProfile({
                   <span className="font-semibold text-[#FF8C42]">
                     {formatPriceWithSymbol(appointmentFee)}
                   </span>
-                  {atHomeSlotOnly ? (
+                  {isHomeMenu ? (
                     <span className="text-gray-500"> · home visit</span>
                   ) : null}
                 </p>
@@ -776,8 +769,7 @@ export function WarmpawzAppointmentsVendorProfile({
                 className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] sm:text-lg"
               >
                 <Calendar className="mr-2 h-5 w-5" />
-                {!atHomeSlotOnly &&
-                selectableServices.length > 0 &&
+                {selectableServices.length > 0 &&
                 selectedServiceIds.size > 0
                   ? `Select Slot · ${selectedServiceIds.size} selected`
                   : 'Select Slot for Appointment'}

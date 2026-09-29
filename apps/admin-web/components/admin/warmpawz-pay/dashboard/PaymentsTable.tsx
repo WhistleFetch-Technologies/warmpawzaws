@@ -167,14 +167,18 @@ function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
             <span className="text-gray-500">Platform fee GST (exclusive)</span>
             <p className="font-medium">{formatWpayInr(item.platformFeeGstAmount ?? 0)}</p>
           </div>
-          <div>
-            <span className="text-gray-500">Convenience fee</span>
-            <p className="font-medium">{formatWpayInr(item.convenienceFee ?? 0)}</p>
-          </div>
-          <div>
-            <span className="text-gray-500">Convenience GST (exclusive)</span>
-            <p className="font-medium">{formatWpayInr(item.convenienceGstAmount ?? 0)}</p>
-          </div>
+          {(item.convenienceFee ?? 0) > 0 ? (
+            <>
+              <div>
+                <span className="text-gray-500">Convenience fee (legacy)</span>
+                <p className="font-medium">{formatWpayInr(item.convenienceFee ?? 0)}</p>
+              </div>
+              <div>
+                <span className="text-gray-500">Convenience GST (legacy)</span>
+                <p className="font-medium">{formatWpayInr(item.convenienceGstAmount ?? 0)}</p>
+              </div>
+            </>
+          ) : null}
           <div>
             <span className="text-gray-500">Final GST</span>
             <p className="font-semibold text-orange-700">

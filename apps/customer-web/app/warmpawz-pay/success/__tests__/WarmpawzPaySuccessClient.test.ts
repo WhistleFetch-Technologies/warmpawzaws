@@ -73,6 +73,35 @@ describe('WarmpawzPaySuccessClient', () => {
     expect(screen.getByText(/you saved/i)).toBeTruthy();
   });
 
+  it('shows the wallet cashback card and a View wallet action when cashback was credited', async () => {
+    confirm.mockResolvedValue({
+      status: 'success',
+      result: { success: true, paymentId: 'pay-1', savedAmount: 0, awardedCashback: 150, cashbackExpiryDays: 30 },
+    });
+    await act(async () => {
+      render(createElement(WarmpawzPaySuccessClient));
+    });
+    const card = screen.getByTestId('wpay-cashback-credited');
+    expect(card.textContent).toContain('₹150.00 cashback credited!');
+    expect(card.textContent).toContain('use within 30 days');
+    await act(async () => {
+      screen.getByText('View wallet').click();
+    });
+    expect(mockPush).toHaveBeenCalledWith('/wallet');
+  });
+
+  it('omits the cashback card when nothing was credited', async () => {
+    confirm.mockResolvedValue({
+      status: 'success',
+      result: { success: true, paymentId: 'pay-1', savedAmount: 24 },
+    });
+    await act(async () => {
+      render(createElement(WarmpawzPaySuccessClient));
+    });
+    expect(screen.queryByTestId('wpay-cashback-credited')).toBeNull();
+    expect(screen.queryByText('View wallet')).toBeNull();
+  });
+
   it('shows the timeout copy and never says cancelled', async () => {
     confirm.mockResolvedValue({ status: 'timeout' });
     await act(async () => {

@@ -22,6 +22,7 @@ import { canTransition } from '@/lib/promo-engine/status';
 import { labelsForCatalogSlugs } from '@/lib/promo-engine/catalog-categories';
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
 import {
+  effectivePromoStatus,
   PROMO_ENGINE_STATUSES,
   RULE_TYPES,
   type PromoEngineListItem,
@@ -166,7 +167,7 @@ export function PromotionEngineList({
                   <p className="font-medium text-slate-900">{row.name}</p>
                   <p className="mt-1 text-xs text-slate-500">{row.code || '—'}</p>
                 </div>
-                <PromotionEngineStatusBadge status={row.status} />
+                <PromotionEngineStatusBadge status={effectivePromoStatus(row)} />
               </div>
               <p className="text-sm text-slate-600">
                 {labelsForCatalogSlugs(row.serviceCategories, categories) || 'No service'}
@@ -175,17 +176,17 @@ export function PromotionEngineList({
                 <Button type="button" size="sm" variant="ghost" onClick={() => onEdit(row.id)}>
                   Edit
                 </Button>
-                {canTransition(row.status, 'PAUSED') ? (
+                {canTransition(effectivePromoStatus(row), 'PAUSED') ? (
                   <Button type="button" size="sm" variant="ghost" onClick={() => onStatusChange(row.id, 'PAUSED')}>
                     Pause
                   </Button>
                 ) : null}
-                {canTransition(row.status, 'ACTIVE') ? (
+                {canTransition(effectivePromoStatus(row), 'ACTIVE') ? (
                   <Button type="button" size="sm" variant="ghost" onClick={() => onStatusChange(row.id, 'ACTIVE')}>
                     Activate
                   </Button>
                 ) : null}
-                {canTransition(row.status, 'ARCHIVED') ? (
+                {canTransition(effectivePromoStatus(row), 'ARCHIVED') ? (
                   <Button type="button" size="sm" variant="ghost" onClick={() => onStatusChange(row.id, 'ARCHIVED')}>
                     Archive
                   </Button>
@@ -227,7 +228,7 @@ export function PromotionEngineList({
                   <TableCell className="font-medium">{row.name}</TableCell>
                   <TableCell className="text-xs text-slate-500">{row.code || '—'}</TableCell>
                   <TableCell>
-                    <PromotionEngineStatusBadge status={row.status} />
+                    <PromotionEngineStatusBadge status={effectivePromoStatus(row)} />
                   </TableCell>
                   <TableCell className="text-xs">
                     {labelsForCatalogSlugs(row.serviceCategories, categories) || '—'}
@@ -244,7 +245,7 @@ export function PromotionEngineList({
                       <Button type="button" size="sm" variant="ghost" onClick={() => onEdit(row.id)}>
                         Edit
                       </Button>
-                      {canTransition(row.status, 'PAUSED') ? (
+                      {canTransition(effectivePromoStatus(row), 'PAUSED') ? (
                         <Button
                           type="button"
                           size="sm"
@@ -254,7 +255,7 @@ export function PromotionEngineList({
                           Pause
                         </Button>
                       ) : null}
-                      {canTransition(row.status, 'ACTIVE') ? (
+                      {canTransition(effectivePromoStatus(row), 'ACTIVE') ? (
                         <Button
                           type="button"
                           size="sm"
@@ -264,7 +265,7 @@ export function PromotionEngineList({
                           Activate
                         </Button>
                       ) : null}
-                      {canTransition(row.status, 'ARCHIVED') ? (
+                      {canTransition(effectivePromoStatus(row), 'ARCHIVED') ? (
                         <Button
                           type="button"
                           size="sm"

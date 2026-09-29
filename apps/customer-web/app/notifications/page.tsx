@@ -9,7 +9,7 @@ interface Notification {
   id: string;
   title: string;
   message: string;
-  type: 'booking' | 'payment' | 'order' | 'promotion' | 'system';
+  type: 'booking' | 'payment' | 'order' | 'promotion' | 'system' | 'wallet_cashback_credited';
   is_read: boolean;
   created_at: string;
   data?: Record<string, any>;
@@ -76,7 +76,7 @@ export default function NotificationsPage() {
       router.push(`/bookings?id=${notification.data.bookingId}`);
     } else if (notification.type === 'order' && notification.data?.orderId) {
       router.push(`/orders?id=${notification.data.orderId}`);
-    } else if (notification.type === 'payment') {
+    } else if (notification.type === 'payment' || notification.type === 'wallet_cashback_credited') {
       router.push('/wallet');
     }
   };
@@ -87,6 +87,7 @@ export default function NotificationsPage() {
       case 'payment': return '💳';
       case 'order': return '📦';
       case 'promotion': return '🎉';
+      case 'wallet_cashback_credited': return '🪙';
       default: return '🔔';
     }
   };

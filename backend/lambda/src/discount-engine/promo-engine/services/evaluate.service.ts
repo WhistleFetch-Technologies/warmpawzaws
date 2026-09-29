@@ -75,6 +75,7 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
         benefits: body.benefits,
         summary: body.summary,
         winner_promotion_id: body.winner_promotion_id ?? null,
+        customer_copy: body.customer_copy ?? null,
       },
       explain_json: body.explain,
       expires_at: expires.toISOString(),

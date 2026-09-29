@@ -55,8 +55,8 @@ export async function mapWpayVendorDetailRow(
     platformFee: convenience.platformFee,
     platformFeeMode: convenience.platformFeeMode,
     platformFeeGstRate: convenience.platformFeeGstRate,
-    convenienceFee: convenience.convenienceFee,
-    convenienceFeeMode: convenience.convenienceFeeMode,
+    convenienceFee: 0,
+    convenienceFeeMode: 'fixed',
     convenienceGstRate: convenience.convenienceGstRate,
   };
 }

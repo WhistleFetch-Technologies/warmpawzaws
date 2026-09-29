@@ -3,6 +3,8 @@
  * Distinct from legacy platform promotions / coupons.
  */
 
+import type { PromoCustomerCopy } from './customer-copy';
+
 export type PromoEngineStatus =
   | 'DRAFT'
   | 'SCHEDULED'
@@ -181,6 +183,8 @@ export interface EvaluateResult {
   eligible: boolean;
   evaluation_id: string;
   winner_promotion_id?: string | null;
+  /** Admin-configured wording for the winning promotion (metadata.customerCopy). */
+  customer_copy?: PromoCustomerCopy | null;
   benefits: AppliedBenefit[];
   summary: {
     gross_amount: number;

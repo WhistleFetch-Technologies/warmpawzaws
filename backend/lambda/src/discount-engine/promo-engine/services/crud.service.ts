@@ -11,6 +11,12 @@ import {
   dbUsageByPromotion,
   dbInsertAudit,
 } from '../repos/promo-engine.repo';
+import { parseCustomerCopy, validateCustomerCopy } from '../customer-copy';
+import {
+  normalizePromoLimitsInput,
+  validatePromoLimitsInput,
+  type PromoLimitsInput,
+} from './promo-limits';
 import type {
   PromoEngineBenefit,
   PromoEngineConditionGroup,
@@ -46,17 +52,53 @@ export interface PromoDraftPayload {
   metadata?: Record<string, unknown>;
 }
 
-/** Map admin UI draft (camelCase basics) into create/update payload */
+export class PromoValidationError extends Error {}
+
+function resolveBudgetLimit(body: Record<string, unknown>): number | null {
+  const limits = body.limits as Record<string, unknown> | undefined;
+  if (limits && Object.prototype.hasOwnProperty.call(limits, 'budget_limit')) {
+    const v = limits.budget_limit;
+    return v == null || v === '' ? null : Number(v);
+  }
+  return body.budget_limit != null && body.budget_limit !== '' ? Number(body.budget_limit) : null;
+}
+
+function assertValidSchedule(startAt: string | null, endAt: string | null): void {
+  if (!startAt || !endAt) return;
+  const start = new Date(startAt).getTime();
+  const end = new Date(endAt).getTime();
+  if (Number.isFinite(start) && Number.isFinite(end) && end <= start) {
+    throw new PromoValidationError('End date must be after start date');
+  }
+}
+
+/** Map admin UI draft (camelCase basics) into create/update payload. Throws PromoValidationError. */
 export function mapAdminDraftToPayload(body: Record<string, unknown>): PromoDraftPayload {
   const basics = (body.basics || body) as Record<string, unknown>;
   const fundingSplit = basics.fundingSplit || basics.funding_split;
+  const startAt = persistIstDateTime(basics.startAt || basics.start_at || null);
+  const endAt = persistIstDateTime(basics.endAt || basics.end_at || null);
+  assertValidSchedule(startAt, endAt);
+
+  const limitErrors = validatePromoLimitsInput(body.limits);
+  if (limitErrors.length) throw new PromoValidationError(limitErrors.join('; '));
+  const rawCopy =
+    body.customerCopy ?? (body.metadata as Record<string, unknown> | undefined)?.customerCopy;
+  const copyErrors = validateCustomerCopy(rawCopy);
+  if (copyErrors.length) throw new PromoValidationError(copyErrors.join('; '));
+
+  const budgetLimit = resolveBudgetLimit(body);
+  const limits = body.limits
+    ? { ...normalizePromoLimitsInput(body.limits as PromoLimitsInput), budget_limit: budgetLimit }
+    : undefined;
+
   return {
     name: String(basics.name || body.name || 'Untitled'),
     code: basics.code != null ? String(basics.code) : undefined,
     status: (body.status as PromoEngineStatus) || 'DRAFT',
     priority: Number(basics.priority ?? 50),
-    start_at: persistIstDateTime(basics.startAt || basics.start_at || null),
-    end_at: persistIstDateTime(basics.endAt || basics.end_at || null),
+    start_at: startAt,
+    end_at: endAt,
     stacking_policy: (basics.stackingPolicy || basics.stacking_policy || null) as StackingPolicy | null,
     funding_type: (basics.fundingType || basics.funding_type || null) as PromoFundingType | null,
     funding_split: fundingSplit
@@ -80,18 +122,13 @@ export function mapAdminDraftToPayload(body: Record<string, unknown>): PromoDraf
     condition_json: (body.conditionJson || body.condition_json) as PromoEngineConditionGroup | undefined,
     benefit_json: (body.benefitJson || body.benefit_json) as PromoEngineBenefit[] | undefined,
     rule_type: (body.ruleType || body.rule_type || 'GENERIC') as PromoRuleType,
-    limits: (body.limits as PromoDraftPayload['limits']) || undefined,
-    metadata: mergeVcfMetadata(body),
-    budget_limit:
-      body.budget_limit != null
-        ? Number(body.budget_limit)
-        : body.limits && (body.limits as { budget_limit?: number }).budget_limit != null
-          ? Number((body.limits as { budget_limit?: number }).budget_limit)
-          : null,
+    limits,
+    metadata: mergeVcfMetadata(body, rawCopy),
+    budget_limit: budgetLimit,
   };
 }
 
-function mergeVcfMetadata(body: Record<string, unknown>): Record<string, unknown> {
+function mergeVcfMetadata(body: Record<string, unknown>, rawCopy: unknown): Record<string, unknown> {
   const base =
     body.metadata && typeof body.metadata === 'object'
       ? { ...(body.metadata as Record<string, unknown>) }
@@ -99,6 +136,12 @@ function mergeVcfMetadata(body: Record<string, unknown>): Record<string, unknown
   const vcf = body.vcf ?? (body.metadata as Record<string, unknown> | undefined)?.vcf;
   if (vcf && typeof vcf === 'object') {
     base.vcf = fillRedeemIdsFromAudience(vcf as Record<string, unknown>);
+  }
+  const copy = parseCustomerCopy({ customerCopy: rawCopy });
+  if (copy) {
+    base.customerCopy = copy;
+  } else {
+    delete base.customerCopy;
   }
   return base;
 }
@@ -261,6 +304,16 @@ export async function updatePromotionFromDraft(id: string, payload: PromoDraftPa
 }
 
 export async function patchPromotionStatus(id: string, status: PromoEngineStatus) {
+  if (status === 'ACTIVE' || status === 'SCHEDULED') {
+    const current = await dbGetPromotion(id);
+    if (!current) return null;
+    assertValidSchedule(current.start_at, current.end_at);
+    if (current.end_at && new Date(current.end_at).getTime() <= Date.now()) {
+      throw new PromoValidationError(
+        'End date is in the past — set a future end date before activating this promotion',
+      );
+    }
+  }
   const updated = await dbUpdatePromotion(id, { status });
   if (!updated) return null;
   await dbInsertAudit({

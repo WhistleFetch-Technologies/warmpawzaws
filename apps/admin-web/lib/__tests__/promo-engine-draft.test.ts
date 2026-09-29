@@ -1,6 +1,18 @@
-import { applyBasicsToDraft, filterPromoEngineRows, validateBasicsDraft } from '../promo-engine/draft';
+import {
+  applyBasicsToDraft,
+  filterPromoEngineRows,
+  validateBasicsDraft,
+  validateCustomerCopyDraft,
+  validateGoLiveSchedule,
+  validateLimitsDraft,
+} from '../promo-engine/draft';
 import { canTransition } from '../promo-engine/status';
-import { createEmptyDraft, createEmptyBasics, type PromoEngineListItem } from '../promo-engine/types';
+import {
+  createEmptyDraft,
+  createEmptyBasics,
+  effectivePromoStatus,
+  type PromoEngineListItem,
+} from '../promo-engine/types';
 
 function item(partial: Partial<PromoEngineListItem>): PromoEngineListItem {
   return {
@@ -29,7 +41,15 @@ describe('validateBasicsDraft', () => {
     basics.name = 'Winback';
     basics.startAt = '2026-12-01T00:00';
     basics.endAt = '2026-01-01T00:00';
-    expect(validateBasicsDraft(basics)).toContain('End date must be on or after start date');
+    expect(validateBasicsDraft(basics)).toContain('End date must be after start date');
+  });
+
+  it('rejects an end date equal to the start date', () => {
+    const basics = createEmptyBasics();
+    basics.name = 'Same minute';
+    basics.startAt = '2026-09-29T14:52';
+    basics.endAt = '2026-09-29T14:52';
+    expect(validateBasicsDraft(basics)).toContain('End date must be after start date');
   });
 
   it('requires shared split to total 100', () => {
@@ -75,6 +95,47 @@ describe('filterPromoEngineRows', () => {
     expect(
       filterPromoEngineRows(rows, { query: 'boarding', status: 'all', service: 'all', type: 'all' }),
     ).toEqual([]);
+  });
+});
+
+describe('expiry + limits + customer copy', () => {
+  const now = new Date('2026-09-29T09:30:00.000Z'); // 15:00 IST
+
+  it('shows ACTIVE / PAUSED past their IST end as EXPIRED and leaves future ones alone', () => {
+    expect(effectivePromoStatus(item({ status: 'ACTIVE', endAt: '2026-09-29T14:59' }), now)).toBe('EXPIRED');
+    expect(effectivePromoStatus(item({ status: 'PAUSED', endAt: '2026-09-28T23:59' }), now)).toBe('EXPIRED');
+    expect(effectivePromoStatus(item({ status: 'ACTIVE', endAt: '2026-09-29T15:01' }), now)).toBe('ACTIVE');
+    expect(effectivePromoStatus(item({ status: 'DRAFT', endAt: '2026-09-01T00:00' }), now)).toBe('DRAFT');
+    expect(effectivePromoStatus(item({ status: 'ACTIVE', endAt: '' }), now)).toBe('ACTIVE');
+  });
+
+  it('filters by effective status so Expired includes past-end ACTIVE rows', () => {
+    const rows = [
+      item({ id: 'live', status: 'ACTIVE', endAt: '2099-01-01T00:00' }),
+      item({ id: 'ended', status: 'ACTIVE', endAt: '2020-01-01T00:00' }),
+    ];
+    const f = { query: '', service: 'all', type: 'all' };
+    expect(filterPromoEngineRows(rows, { ...f, status: 'EXPIRED' }).map((r) => r.id)).toEqual(['ended']);
+    expect(filterPromoEngineRows(rows, { ...f, status: 'ACTIVE' }).map((r) => r.id)).toEqual(['live']);
+  });
+
+  it('blocks activation when the end date has passed', () => {
+    const basics = createEmptyBasics();
+    basics.endAt = '2026-09-29T14:00';
+    expect(validateGoLiveSchedule(basics, now)).toHaveLength(1);
+    basics.endAt = '2026-10-31T23:59';
+    expect(validateGoLiveSchedule(basics, now)).toEqual([]);
+  });
+
+  it('requires whole-number counts', () => {
+    expect(validateLimitsDraft({ perUser: 1.5 })).toEqual(['Per user must be a whole number (0 or more)']);
+    expect(validateLimitsDraft({ dailyLimit: -1 })).toHaveLength(1);
+    expect(validateLimitsDraft({ perUser: 1, campaignLimit: 0, budgetLimit: 999.5 })).toEqual([]);
+  });
+
+  it('rejects unknown placeholders in customer copy', () => {
+    expect(validateCustomerCopyDraft({ earnLine: 'Get ₹{amount} back' })).toEqual([]);
+    expect(validateCustomerCopyDraft({ earnLine: 'Hi {name}' })[0]).toContain('unknown placeholder {name}');
   });
 });
 

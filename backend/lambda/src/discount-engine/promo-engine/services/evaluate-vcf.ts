@@ -15,6 +15,7 @@ import type {
 } from '../types';
 import type { PromoUsageCounts } from '../repos/promo-engine.repo';
 import type { PromoEngineLimitsRow } from '../types';
+import { checkPromoLimits } from './promo-limits';
 
 export type VcfScoreResult = {
   winnerBenefits: AppliedBenefit[];
@@ -35,30 +36,6 @@ function paymentFromReq(req: EvaluateRequest): {
     categoryId: t.categoryId ? String(t.categoryId) : null,
     amount: Number(t.amount ?? 0) || 0,
   };
-}
-
-function passesLimits(opts: {
-  promo: PromoEnginePromotionRow;
-  limits: PromoEngineLimitsRow | undefined;
-  usage: PromoUsageCounts | undefined;
-}): { ok: boolean; reason?: string } {
-  const budgetCap = opts.limits?.budget_limit ?? opts.promo.budget_limit;
-  if (budgetCap != null && opts.promo.budget_consumed >= Number(budgetCap)) {
-    return { ok: false, reason: 'LIMIT_FAIL' };
-  }
-  if (opts.limits?.per_user != null && (opts.usage?.user ?? 0) >= opts.limits.per_user) {
-    return { ok: false, reason: 'LIMIT_FAIL' };
-  }
-  if (opts.limits?.campaign_limit != null && (opts.usage?.campaign ?? 0) >= opts.limits.campaign_limit) {
-    return { ok: false, reason: 'LIMIT_FAIL' };
-  }
-  if (opts.limits?.daily_limit != null && (opts.usage?.daily ?? 0) >= opts.limits.daily_limit) {
-    return { ok: false, reason: 'LIMIT_FAIL' };
-  }
-  if (opts.limits?.per_transaction != null && opts.limits.per_transaction <= 0) {
-    return { ok: false, reason: 'LIMIT_FAIL' };
-  }
-  return { ok: true };
 }
 
 function attachRedeem(benefits: AppliedBenefit[], redeem: AppliedBenefit['redeem']): AppliedBenefit[] {
@@ -112,7 +89,7 @@ export function scoreVcfCandidates(opts: {
       continue;
     }
 
-    const limitCheck = passesLimits({
+    const limitCheck = checkPromoLimits({
       promo,
       limits: opts.limitsByPromo.get(promo.id),
       usage: opts.usageByPromo.get(promo.id),

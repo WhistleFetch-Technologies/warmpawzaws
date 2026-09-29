@@ -1,3 +1,13 @@
+/** Epoch ms for a wizard datetime-local value, read as Asia/Kolkata wall time (NaN when unparseable). */
+export function istLocalToEpochMs(raw: unknown): number {
+  const s = String(raw ?? '').trim();
+  if (!s) return NaN;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+    return new Date(`${s.length === 16 ? `${s}:00` : s}+05:30`).getTime();
+  }
+  return new Date(s).getTime();
+}
+
 /**
  * datetime-local value for the promo wizard. Detail APIs return UTC ISO (`Z`);
  * browsers reject that in `type="datetime-local"` and the next save would wipe dates.

@@ -54,33 +54,6 @@ export function wapptShowsServicePrice(serviceStyle?: string | null): boolean {
   return serviceStyle === 'tele' || isWapptHomeStyle(serviceStyle);
 }
 
-/**
- * Non-vet at_home WAPPT: skip service pick; charge catalogue home appointment fee.
- * Vet at_home keeps checkboxes. Tele / at_center unchanged.
- */
-export function isWapptAtHomeSlotOnly(opts: {
-  category?: string | null;
-  serviceStyle?: string | null;
-}): boolean {
-  if (!isWapptHomeStyle(opts.serviceStyle)) {
-    return false;
-  }
-  const hub = String(opts.category || '')
-    .trim()
-    .toLowerCase()
-    .replace(/-/g, '_');
-  if (!hub) return true;
-  if (
-    hub === 'vet' ||
-    hub === 'veterinarian' ||
-    hub === 'vet_clinic' ||
-    hub === 'veterinary'
-  ) {
-    return false;
-  }
-  return true;
-}
-
 export function toWapptRequestedServices(
   rows: Array<{
     id?: string | null;

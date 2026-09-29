@@ -16,9 +16,18 @@ function formatInr(n: number): string {
   return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+export const WPAY_SUCCESS_REDIRECT_MS = 1800;
+export const WPAY_SUCCESS_CASHBACK_REDIRECT_MS = 6000;
+
 type SuccessView =
   | { kind: 'confirming' }
-  | { kind: 'success'; saved: number; vendor: string }
+  | {
+      kind: 'success';
+      saved: number;
+      vendor: string;
+      cashback: number;
+      cashbackExpiryDays: number | null;
+    }
   | { kind: 'timeout' }
   | { kind: 'message'; tone: 'error' | 'info'; text: string };
 
@@ -30,10 +39,14 @@ function outcomeToView(
   if (outcome.status === 'aborted') return null;
   if (outcome.status === 'success') {
     const saved = Number(outcome.result.savedAmount ?? outcome.result.discountAmount ?? fallbackSaved);
+    const cashback = Number(outcome.result.awardedCashback ?? 0);
+    const expiry = Number(outcome.result.cashbackExpiryDays);
     return {
       kind: 'success',
       saved: Number.isFinite(saved) ? saved : 0,
       vendor,
+      cashback: Number.isFinite(cashback) && cashback > 0 ? cashback : 0,
+      cashbackExpiryDays: Number.isFinite(expiry) && expiry > 0 ? expiry : null,
     };
   }
   if (outcome.status === 'timeout' || outcome.status === 'pending') {
@@ -74,13 +87,18 @@ export function WarmpawzPaySuccessClient() {
     clearWpayPendingReturn();
   }, [paymentId]);
 
+  const hasCashback = view.kind === 'success' && view.cashback > 0;
+
   useEffect(() => {
     if (view.kind !== 'success') return;
-    const timer = window.setTimeout(() => {
-      router.replace(WPAY_HISTORY_PATH);
-    }, 1800);
+    const timer = window.setTimeout(
+      () => {
+        router.replace(WPAY_HISTORY_PATH);
+      },
+      hasCashback ? WPAY_SUCCESS_CASHBACK_REDIRECT_MS : WPAY_SUCCESS_REDIRECT_MS,
+    );
     return () => window.clearTimeout(timer);
-  }, [view.kind, router]);
+  }, [view.kind, hasCashback, router]);
 
   useEffect(() => {
     if (!paymentId) {
@@ -150,6 +168,31 @@ export function WarmpawzPaySuccessClient() {
           <p className="mt-2 text-sm text-gray-600">
             Thank you for paying {view.vendor} with Warmpawz Pay.
           </p>
+          {view.cashback > 0 ? (
+            <div
+              className="mt-6 flex w-full items-center gap-4 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-100 p-4 text-left shadow-sm"
+              data-testid="wpay-cashback-credited"
+            >
+              <span
+                aria-hidden
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-2xl font-bold text-amber-950 shadow-md ring-4 ring-amber-200"
+              >
+                ₹
+              </span>
+              <div className="min-w-0">
+                <p className="text-lg font-bold text-amber-900">
+                  {formatInr(view.cashback)} cashback credited!
+                </p>
+                <p className="mt-0.5 text-sm text-amber-800">
+                  Added to your Warmpawz Wallet
+                  {view.cashbackExpiryDays
+                    ? ` · use within ${view.cashbackExpiryDays} days`
+                    : ''}
+                  .
+                </p>
+              </div>
+            </div>
+          ) : null}
         </>
       ) : view.kind === 'confirming' ? (
         <>
@@ -175,6 +218,15 @@ export function WarmpawzPaySuccessClient() {
         </>
       )}
       <div className="mt-8 flex w-full flex-col gap-3">
+        {hasCashback ? (
+          <button
+            type="button"
+            onClick={() => router.push('/wallet')}
+            className="w-full rounded-xl bg-amber-500 py-3 text-sm font-semibold text-white"
+          >
+            View wallet
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => router.replace(WPAY_HISTORY_PATH)}

@@ -11,7 +11,13 @@ import {
   DialogTitle,
 } from '@warmpawz/ui';
 import { ChevronLeft, ChevronRight, Save } from 'lucide-react';
-import { applyBasicsToDraft, validateBasicsDraft } from '@/lib/promo-engine/draft';
+import {
+  applyBasicsToDraft,
+  validateBasicsDraft,
+  validateCustomerCopyDraft,
+  validateGoLiveSchedule,
+  validateLimitsDraft,
+} from '@/lib/promo-engine/draft';
 import { validateAudience } from '@/lib/promo-engine/audience';
 import {
   applyVcfToDraft,
@@ -25,6 +31,7 @@ import { BasicsStep } from './steps/BasicsStep';
 import { AudienceStep } from './steps/AudienceStep';
 import { BenefitsStep } from './steps/BenefitsStep';
 import { LimitsStep } from './steps/LimitsStep';
+import { CustomerMessageSection } from './steps/CustomerMessageSection';
 import { ReviewStep } from './steps/ReviewStep';
 
 const STEPS = ['Basics', 'Audience', 'Benefits', 'Limits', 'Review'] as const;
@@ -65,21 +72,34 @@ export function PromotionEngineWizard({
     return applyVcfToDraft(next, syncRedeemAfterAudience(vcfOrEmpty(next)));
   };
 
-  const saveDraft = async () => {
-    const errors = validateBasicsDraft(working.basics);
-    if (errors.length) {
-      toast.error(errors[0]);
-      setStep(0);
-      return;
+  /** Shared save/activate checks; returns false (and jumps to the step) on the first problem. */
+  const passesCommonChecks = (): boolean => {
+    const checks: Array<[string[], number]> = [
+      [validateBasicsDraft(working.basics), 0],
+      [validateCustomerCopyDraft(working.customerCopy), 2],
+      [validateLimitsDraft(working.limits), 3],
+    ];
+    for (const [errors, targetStep] of checks) {
+      if (errors.length) {
+        toast.error(errors[0]);
+        setStep(targetStep);
+        return false;
+      }
     }
+    return true;
+  };
+
+  const saveDraft = async () => {
+    if (!passesCommonChecks()) return;
     await onSaveDraft(prepared());
     setDirty(false);
   };
 
   const activate = async () => {
-    const basicsErrors = validateBasicsDraft(working.basics);
-    if (basicsErrors.length) {
-      toast.error(basicsErrors[0]);
+    if (!passesCommonChecks()) return;
+    const scheduleErrors = validateGoLiveSchedule(working.basics);
+    if (scheduleErrors.length) {
+      toast.error(scheduleErrors[0]);
       setStep(0);
       return;
     }
@@ -154,13 +174,22 @@ export function PromotionEngineWizard({
             />
           ) : null}
           {step === 2 ? (
-            <BenefitsStep
-              draft={working}
-              onChange={(next) => {
-                setWorking(next);
-                setDirty(true);
-              }}
-            />
+            <div className="space-y-6">
+              <BenefitsStep
+                draft={working}
+                onChange={(next) => {
+                  setWorking(next);
+                  setDirty(true);
+                }}
+              />
+              <CustomerMessageSection
+                draft={working}
+                onChange={(next) => {
+                  setWorking(next);
+                  setDirty(true);
+                }}
+              />
+            </div>
           ) : null}
           {step === 3 ? (
             <LimitsStep

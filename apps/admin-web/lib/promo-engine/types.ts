@@ -1,3 +1,5 @@
+import { istLocalToEpochMs } from './datetime';
+
 export const PROMO_ENGINE_STATUSES = [
   'DRAFT',
   'SCHEDULED',
@@ -82,9 +84,62 @@ export interface PromoEngineDraft {
     budgetLimit?: number | null;
   };
   vcf?: PromoVcfDraft;
+  /** Customer-facing message overrides; blank keys fall back to app defaults. */
+  customerCopy?: PromoCustomerCopy;
   createdAt: string;
   updatedAt: string;
 }
+
+export const PROMO_CUSTOMER_COPY_FIELDS = [
+  {
+    key: 'earnLine',
+    label: 'Checkout — cashback line',
+    placeholder: 'Earn ₹{amount} cashback after payment',
+  },
+  {
+    key: 'discountLine',
+    label: 'Checkout — discount line',
+    placeholder: 'Instant discount of ₹{discount} applied',
+  },
+  {
+    key: 'savingsLine',
+    label: 'Pay Bill — savings highlight',
+    placeholder: 'You save ₹{discount} with this offer!',
+  },
+  {
+    key: 'redeemLine',
+    label: 'Checkout — where / how long',
+    placeholder: 'Use it {redeemLabel} · valid {expiryDays} days',
+  },
+  {
+    key: 'termsLine',
+    label: 'Checkout — small print',
+    placeholder: 'Credited to your Warmpawz Wallet only after successful payment.',
+  },
+  {
+    key: 'creditedTitle',
+    label: 'Notification title (after credit)',
+    placeholder: '₹{amount} cashback credited!',
+  },
+  {
+    key: 'creditedBody',
+    label: 'Notification body (after credit)',
+    placeholder: 'Added to your Warmpawz Wallet. Use it before {expiryDate}.',
+  },
+] as const;
+
+export type PromoCustomerCopyKey = (typeof PROMO_CUSTOMER_COPY_FIELDS)[number]['key'];
+export type PromoCustomerCopy = Partial<Record<PromoCustomerCopyKey, string>>;
+
+export const PROMO_CUSTOMER_COPY_PLACEHOLDERS = [
+  'amount',
+  'discount',
+  'expiryDays',
+  'expiryDate',
+  'redeemLabel',
+] as const;
+
+export const PROMO_CUSTOMER_COPY_MAX_LENGTH = 200;
 
 export type PromoLetter = 'V' | 'C' | 'F';
 export type PromoCountChannel = 'tele' | 'appointment' | 'paybill';
@@ -165,6 +220,18 @@ export interface PromoEngineListItem {
   startAt: string;
   endAt: string;
   updatedAt: string;
+}
+
+/** Status to show in admin: a live/scheduled/paused promo whose end date has passed reads as EXPIRED. */
+export function effectivePromoStatus(
+  item: Pick<PromoEngineListItem, 'status' | 'endAt'>,
+  now: Date = new Date(),
+): PromoEngineStatus {
+  if (item.status !== 'ACTIVE' && item.status !== 'SCHEDULED' && item.status !== 'PAUSED') {
+    return item.status;
+  }
+  const end = istLocalToEpochMs(item.endAt);
+  return Number.isFinite(end) && end <= now.getTime() ? 'EXPIRED' : item.status;
 }
 
 export const DEFAULT_FUNDING_SPLIT: PromoFundingSplit = {

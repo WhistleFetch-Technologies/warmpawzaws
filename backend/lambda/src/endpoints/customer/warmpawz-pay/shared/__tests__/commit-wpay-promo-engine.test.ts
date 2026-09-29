@@ -73,4 +73,19 @@ describe('commitWpayPromoEngine awardedCashback writeback', () => {
 
     expect(result.awardedCashback).toBe(200);
   });
+
+  it('never re-evaluates or commits when initiate stored no evaluation (no unquoted cashback)', async () => {
+    const result = await commitWpayPromoEngine({
+      paymentId: 'pay-3',
+      customerId: 'cust-1',
+      vendorId: 'vend-1',
+      originalAmount: 1000,
+      metadata: {},
+    });
+
+    expect(result.awardedCashback).toBe(0);
+    expect(mockSafeEvaluate).not.toHaveBeenCalled();
+    expect(mockSafeCommit).not.toHaveBeenCalled();
+    expect(mockRecordVisit).toHaveBeenCalled();
+  });
 });

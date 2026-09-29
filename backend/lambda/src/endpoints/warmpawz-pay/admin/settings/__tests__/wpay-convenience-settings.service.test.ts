@@ -23,15 +23,34 @@ describe('WpayConvenienceSettingsService', () => {
     await expect(service.getConvenienceSettings()).resolves.toEqual(sample);
   });
 
-  it('writes all fee fields including burnMode back through the repository', async () => {
-    const input = { ...sample, convenienceFee: 25, burnMode: true };
+  it('writes platform fee fields and burnMode, always persisting convenience fee as 0', async () => {
+    const input = { ...sample, convenienceFee: 25, convenienceFeeMode: 'percent' as const, burnMode: true };
+    const persisted = { ...input, convenienceFee: 0, convenienceFeeMode: 'fixed' as const };
     const repository: IWpayConvenienceSettingsRepository = {
       getConvenienceSettings: jest.fn(),
-      putConvenienceSettings: jest.fn().mockResolvedValue(input),
+      putConvenienceSettings: jest.fn().mockResolvedValue(persisted),
     };
 
     const service = new WpayConvenienceSettingsService(repository);
-    await expect(service.putConvenienceSettings(input)).resolves.toEqual(input);
-    expect(repository.putConvenienceSettings).toHaveBeenCalledWith(input);
+    await expect(service.putConvenienceSettings(input)).resolves.toEqual(persisted);
+    expect(repository.putConvenienceSettings).toHaveBeenCalledWith(persisted);
+  });
+
+  it('accepts requests without legacy convenience fields', async () => {
+    const repository: IWpayConvenienceSettingsRepository = {
+      getConvenienceSettings: jest.fn(),
+      putConvenienceSettings: jest.fn().mockImplementation(async (row) => row),
+    };
+
+    const service = new WpayConvenienceSettingsService(repository);
+    const saved = await service.putConvenienceSettings({
+      platformFee: 10,
+      platformFeeMode: 'fixed',
+      platformFeeGstRate: 18,
+      platformGstRate: 18,
+      burnMode: false,
+    });
+    expect(saved.convenienceFee).toBe(0);
+    expect(saved.convenienceGstRate).toBe(18);
   });
 });

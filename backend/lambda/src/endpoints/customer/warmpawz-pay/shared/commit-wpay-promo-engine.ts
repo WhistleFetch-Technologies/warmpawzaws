@@ -21,16 +21,14 @@ export async function commitWpayPromoEngine(opts: {
   const pendingFromMeta = Number(pe.pendingCashback ?? meta.pendingCashback ?? 0);
   const existingAwarded = Number(pe.awardedCashback ?? meta.awardedCashback ?? NaN);
 
-  let evalId =
+  // Only the evaluation stamped at initiate (what the customer was quoted and paid against)
+  // may be committed. Never re-evaluate here — that could credit cashback nobody was shown.
+  const evalId =
     meta.evaluationId || meta.evaluation_id || pe.evaluationId || pe.evaluation_id
       ? String(meta.evaluationId || meta.evaluation_id || pe.evaluationId || pe.evaluation_id)
       : '';
-  const {
-    safeCommitPromotion,
-    safeEvaluatePromotions,
-    loadServerPaymentContext,
-    safeRecordVcfVisitFromPayBill,
-  } = await import('../../../../discount-engine/promo-engine');
+  const { safeCommitPromotion, loadServerPaymentContext, safeRecordVcfVisitFromPayBill } =
+    await import('../../../../discount-engine/promo-engine');
   const ctx = await loadServerPaymentContext({
     surface: 'paybill',
     vendorId: opts.vendorId,
@@ -41,20 +39,6 @@ export async function commitWpayPromoEngine(opts: {
           ? meta.bookingCategoryId
           : null,
   });
-  if (!evalId) {
-    const ev = await safeEvaluatePromotions({
-      user_id: opts.customerId,
-      transaction: {
-        type: 'WPAY',
-        channel: 'paybill',
-        vendor_id: ctx.vendorId || opts.vendorId || undefined,
-        vendorId: ctx.vendorId || opts.vendorId || undefined,
-        categoryId: ctx.categoryId || undefined,
-        amount: opts.originalAmount,
-      },
-    });
-    evalId = ev?.evaluation_id ? String(ev.evaluation_id) : '';
-  }
 
   let awardedCashback = 0;
   if (evalId) {

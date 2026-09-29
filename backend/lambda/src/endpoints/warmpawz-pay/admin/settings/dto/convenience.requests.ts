@@ -4,9 +4,12 @@
  *
  * Stored in admin_settings category 'wpay' only (never Marketplace 'fees').
  * platformGstRate = inclusive extract from platform revenue (C − D).
- * platformFeeGstRate / convenienceGstRate = exclusive (on top of fee).
- * platformFeeMode / convenienceFeeMode: fixed ₹ or percent of post-discount amount.
+ * platformFeeGstRate = exclusive (on top of fee).
+ * platformFeeMode: fixed ₹ or percent of post-discount amount.
  * burnMode = vendor paid full Q; platform funds customer discount.
+ *
+ * Convenience fee is retired on Pay Bill: legacy convenience* fields are accepted
+ * (older admin clients) but the service always persists them as 0.
  */
 import { z } from 'zod';
 
@@ -18,9 +21,9 @@ export const updateConvenienceSettingsRequestSchema = z
     platformFee: nonNegativeNumber,
     platformFeeMode: feeModeSchema,
     platformFeeGstRate: nonNegativeNumber,
-    convenienceFee: nonNegativeNumber,
-    convenienceFeeMode: feeModeSchema,
-    convenienceGstRate: nonNegativeNumber,
+    convenienceFee: nonNegativeNumber.optional(),
+    convenienceFeeMode: feeModeSchema.optional(),
+    convenienceGstRate: nonNegativeNumber.optional(),
     platformGstRate: nonNegativeNumber,
     burnMode: z.coerce.boolean(),
   })

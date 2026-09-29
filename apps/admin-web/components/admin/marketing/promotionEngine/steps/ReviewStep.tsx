@@ -47,6 +47,17 @@ export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
           }
         />
         <ReviewBlock
+          title="CUSTOMER MESSAGE"
+          body={
+            Object.values(draft.customerCopy ?? {}).some((v) => v?.trim())
+              ? `Custom: ${Object.entries(draft.customerCopy ?? {})
+                  .filter(([, v]) => v?.trim())
+                  .map(([k]) => k)
+                  .join(', ')}`
+              : 'Default wording'
+          }
+        />
+        <ReviewBlock
           title="FUNDING"
           body={
             basics.fundingType === 'SHARED'

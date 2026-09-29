@@ -11,7 +11,12 @@ import {
 } from '@/lib/promo-engine/api-client';
 import { newPromoEngineDraft } from '@/lib/promo-engine/local-store';
 import { canTransition } from '@/lib/promo-engine/status';
-import type { PromoEngineDraft, PromoEngineListItem, PromoEngineStatus } from '@/lib/promo-engine/types';
+import {
+  effectivePromoStatus,
+  type PromoEngineDraft,
+  type PromoEngineListItem,
+  type PromoEngineStatus,
+} from '@/lib/promo-engine/types';
 import { PromotionEngineList } from './PromotionEngineList';
 import { PromotionEngineWizard } from './PromotionEngineWizard';
 import { PromotionEngineSimulator } from './PromotionEngineSimulator';
@@ -106,7 +111,7 @@ export function PromotionEngineHub() {
 
   const handleStatus = async (id: string, status: PromoEngineStatus) => {
     const current = rows.find((d) => d.id === id);
-    if (!current || !canTransition(current.status, status)) return;
+    if (!current || !canTransition(effectivePromoStatus(current), status)) return;
     try {
       await patchPromoEngineStatus(id, status);
       toast.success(`Status set to ${status}`);

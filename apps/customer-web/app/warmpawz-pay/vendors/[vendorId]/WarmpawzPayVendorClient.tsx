@@ -28,6 +28,7 @@ import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryP
 import { StarRating } from '@/components/customer/shared/StarRating';
 import {
   PromoEarnPreview,
+  readPromoCustomerCopy,
   type PromoEngineEarnPreviewData,
 } from '@/components/customer/promo-engine/PromoEarnPreview';
 import { CustomerWalletApply } from '@/components/customer/payment/CustomerWalletApply';
@@ -163,8 +164,8 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         platformFee: vendor.platformFee ?? 0,
         platformFeeMode: vendor.platformFeeMode ?? 'fixed',
         platformFeeGstRate: vendor.platformFeeGstRate ?? 18,
-        convenienceFee: vendor.convenienceFee ?? 0,
-        convenienceFeeMode: vendor.convenienceFeeMode ?? 'fixed',
+        convenienceFee: 0,
+        convenienceFeeMode: 'fixed',
         convenienceGstRate: vendor.convenienceGstRate ?? 18,
       });
     }
@@ -210,8 +211,10 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
             evaluationId?: string;
             eligible?: boolean;
             summary?: { cashback?: number; discount?: number };
+            customer_copy?: unknown;
             data?: {
               evaluation_id?: string;
+              customer_copy?: unknown;
               eligible?: boolean;
               summary?: { cashback?: number; discount?: number };
               benefits?: Array<{
@@ -243,10 +246,10 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
           const redeem = cb?.redeem;
           const redeemLabel = redeem
             ? redeem.letter === 'F'
-              ? 'anywhere'
+              ? 'anywhere on Warmpawz'
               : redeem.letter === 'V'
-                ? 'this vendor'
-                : 'this category'
+                ? 'at this vendor'
+                : 'on this category'
             : undefined;
           setPromoEnginePreview({
             evaluationId: payload?.evaluation_id || ev?.evaluation_id || ev?.evaluationId,
@@ -256,6 +259,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
             redeemScope: cb?.redeem_scope || (redeem?.channels ? redeem.channels : []),
             redeemLabel,
             expiryDays: cb?.expiry_days ?? null,
+            customerCopy: readPromoCustomerCopy(payload?.customer_copy ?? ev?.customer_copy),
           });
         } catch {
           setPromoEnginePreview(null);
@@ -431,7 +435,15 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                   className="ml-2 flex-1 bg-transparent text-lg outline-none"
                 />
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-3" data-testid="wpay-wallet-apply">
+                <CustomerWalletApply
+                  wallet={wallet}
+                  useWallet={useWallet}
+                  onToggleUseWallet={() => setUseWallet((prev) => !prev)}
+                  walletAmountApplied={walletAmountApplied}
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
                 {QUICK_AMOUNTS.map((a) => (
                   <button
                     key={a}
@@ -484,46 +496,25 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                     </div>
                   </>
                 ) : null}
-                {isTierQuote && quote.convenienceFee > 0 ? (
-                  <>
-                    <div className="flex justify-between text-gray-600">
-                      <span>Convenience fee</span>
-                      <span>{formatInr(quote.convenienceFee)}</span>
-                    </div>
-                    <div className="flex justify-between text-gray-600">
-                      <span>Convenience GST ({vendor.convenienceGstRate}%)</span>
-                      <span>{formatInr(quote.convenienceGstAmount)}</span>
-                    </div>
-                  </>
+                {walletAmountApplied > 0 ? (
+                  <div className="flex justify-between text-green-700">
+                    <span>Wallet applied</span>
+                    <span>- {formatInr(walletAmountApplied)}</span>
+                  </div>
                 ) : null}
                 <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 font-semibold">
                   <span>You pay</span>
                   <span>{formatInr(displayAfterWallet)}</span>
                 </div>
-                {walletAmountApplied > 0 ? (
-                  <div className="mt-1 flex justify-between text-green-700">
-                    <span>Wallet</span>
-                    <span>- {formatInr(walletAmountApplied)}</span>
+                {promoEnginePreview ? (
+                  <div className="mt-2">
+                    <PromoEarnPreview data={promoEnginePreview} showSavingsLine />
                   </div>
-                ) : null}
-                {engineDiscount > 0 ? (
+                ) : engineDiscount > 0 ? (
                   <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
                     You save {formatInr(engineDiscount)} with this offer!
                   </p>
                 ) : null}
-                {promoEnginePreview ? (
-                  <div className="mt-2">
-                    <PromoEarnPreview data={promoEnginePreview} />
-                  </div>
-                ) : null}
-                <div className="mt-3">
-                  <CustomerWalletApply
-                    wallet={wallet}
-                    useWallet={useWallet}
-                    onToggleUseWallet={() => setUseWallet((prev) => !prev)}
-                    walletAmountApplied={walletAmountApplied}
-                  />
-                </div>
               </div>
             ) : null}
 

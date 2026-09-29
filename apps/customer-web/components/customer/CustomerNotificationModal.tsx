@@ -7,6 +7,7 @@ import {
   Calendar,
   Check,
   CheckCheck,
+  Coins,
   MessageCircle,
   Sparkles,
   Trash2,
@@ -172,6 +173,12 @@ export function CustomerNotificationModal({
 
   const getNotificationIcon = (type: string) => {
     const t = (type || '').toLowerCase();
+    if (t.includes('cashback'))
+      return (
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-amber-500 ring-2 ring-amber-200">
+          <Coins className="h-3 w-3 text-amber-950" />
+        </span>
+      );
     if (t.includes('chat')) return <MessageCircle className="w-5 h-5 text-[#FF8C42]" />;
     if (t.includes('booking') || t.includes('appointment'))
       return <Calendar className="w-5 h-5 text-blue-600" />;
@@ -182,7 +189,7 @@ export function CustomerNotificationModal({
     if (isRead) return 'bg-white border-gray-200 opacity-90';
     const t = (type || '').toLowerCase();
     if (t.includes('booking')) return 'bg-blue-50 border-blue-200 shadow-sm';
-    if (t.includes('payment') || t.includes('loyalty')) return 'bg-amber-50 border-amber-200 shadow-sm';
+    if (t.includes('payment') || t.includes('loyalty') || t.includes('cashback')) return 'bg-amber-50 border-amber-200 shadow-sm';
     return 'bg-gray-50 border-gray-200 shadow-sm';
   };
 

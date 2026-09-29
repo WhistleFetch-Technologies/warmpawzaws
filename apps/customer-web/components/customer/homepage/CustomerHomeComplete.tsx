@@ -3866,6 +3866,11 @@ export function CustomerHomeComplete({
         }}
         onNotificationsRead={() => setNotificationInboxVersion((v) => v + 1)}
         onNotificationClick={(n) => {
+          if (n.type === 'wallet_cashback_credited') {
+            setNotificationModalOpen(false);
+            router.push('/wallet');
+            return;
+          }
           const raw = n.data?.bookingId ?? n.data?.booking_id;
           const bookingId = typeof raw === 'string' ? raw : raw != null ? String(raw) : '';
           if (bookingId && onViewBooking) {

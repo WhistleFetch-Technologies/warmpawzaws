@@ -22,6 +22,24 @@ function readMetadataNumber(meta: Record<string, unknown> | null, key: string): 
   return Number.isFinite(n) ? n : null;
 }
 
+function readCashbackExpiryDays(meta: Record<string, unknown>): number | null {
+  const pe = meta.promoEngine as Record<string, unknown> | undefined;
+  const n = Number(pe?.expiryDays);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function readAwardedCashback(meta: Record<string, unknown>): {
+  awardedCashback: number;
+  cashbackExpiryDays: number | null;
+} {
+  const pe = meta.promoEngine as Record<string, unknown> | undefined;
+  const n = Number(pe?.awardedCashback ?? meta.awardedCashback ?? 0);
+  return {
+    awardedCashback: Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0,
+    cashbackExpiryDays: readCashbackExpiryDays(meta),
+  };
+}
+
 async function tryAccrueWpaySettlement(
   payment: NonNullable<Awaited<ReturnType<typeof dbWpayPaymentByIdForCustomer>>>,
 ): Promise<void> {
@@ -85,6 +103,7 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
         discountAmount: Number(existing.discount_amount ?? 0),
         payableAmount: Number(existing.amount ?? 0),
         savedAmount: Number(existing.discount_amount ?? 0),
+        ...readAwardedCashback((existing.metadata ?? {}) as Record<string, unknown>),
       });
     }
 
@@ -171,9 +190,10 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
     await tryAccrueWpaySettlement(completed);
     tryNotifyWpayVendor(paymentId);
 
+    let awardedCashback = 0;
     try {
       const { commitWpayPromoEngine } = await import('../shared/commit-wpay-promo-engine');
-      await commitWpayPromoEngine({
+      const committed = await commitWpayPromoEngine({
         paymentId,
         customerId,
         vendorId,
@@ -181,6 +201,7 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
         originalAmount,
         metadata: meta,
       });
+      awardedCashback = committed.awardedCashback;
     } catch (peErr) {
       console.warn(
         '[customer/warmpawz-pay/verify] promo-engine commit skipped:',
@@ -195,6 +216,8 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
       discountAmount,
       payableAmount: Number(completed.amount ?? 0),
       savedAmount: discountAmount,
+      awardedCashback,
+      cashbackExpiryDays: readCashbackExpiryDays(meta),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to verify payment';

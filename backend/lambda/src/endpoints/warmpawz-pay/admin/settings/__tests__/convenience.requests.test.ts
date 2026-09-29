@@ -25,6 +25,24 @@ describe('parseUpdateConvenienceSettingsRequest', () => {
     });
   });
 
+  it('accepts payloads without legacy convenience fields', () => {
+    expect(
+      parseUpdateConvenienceSettingsRequest({
+        platformFee: 10,
+        platformFeeMode: 'fixed',
+        platformFeeGstRate: 18,
+        platformGstRate: 18,
+        burnMode: false,
+      }),
+    ).toEqual({
+      platformFee: 10,
+      platformFeeMode: 'fixed',
+      platformFeeGstRate: 18,
+      platformGstRate: 18,
+      burnMode: false,
+    });
+  });
+
   it('rejects negative values', () => {
     expect(() =>
       parseUpdateConvenienceSettingsRequest({

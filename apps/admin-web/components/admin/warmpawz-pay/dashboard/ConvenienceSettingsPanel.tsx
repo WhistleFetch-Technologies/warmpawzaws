@@ -14,9 +14,6 @@ const EMPTY: WpayConvenienceSettings = {
   platformFee: 0,
   platformFeeMode: 'fixed',
   platformFeeGstRate: 18,
-  convenienceFee: 0,
-  convenienceFeeMode: 'fixed',
-  convenienceGstRate: 18,
   platformGstRate: 18,
   burnMode: false,
 };
@@ -66,14 +63,7 @@ export function ConvenienceSettingsPanel() {
 
   useEffect(() => {
     void fetchWpayConvenienceSettings()
-      .then((loaded) =>
-        setSettings({
-          ...EMPTY,
-          ...loaded,
-          platformFeeMode: loaded.platformFeeMode === 'percent' ? 'percent' : 'fixed',
-          convenienceFeeMode: loaded.convenienceFeeMode === 'percent' ? 'percent' : 'fixed',
-        }),
-      )
+      .then((loaded) => setSettings({ ...EMPTY, ...loaded }))
       .catch(() => toast.error('Failed to load WPay fee settings'))
       .finally(() => setLoading(false));
   }, []);
@@ -82,12 +72,7 @@ export function ConvenienceSettingsPanel() {
     setSaving(true);
     try {
       const saved = await updateWpayConvenienceSettings(settings);
-      setSettings({
-        ...EMPTY,
-        ...saved,
-        platformFeeMode: saved.platformFeeMode === 'percent' ? 'percent' : 'fixed',
-        convenienceFeeMode: saved.convenienceFeeMode === 'percent' ? 'percent' : 'fixed',
-      });
+      setSettings({ ...EMPTY, ...saved });
       toast.success('WPay fee settings saved');
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : 'Failed to save settings');
@@ -105,9 +90,9 @@ export function ConvenienceSettingsPanel() {
       <div className="mb-4">
         <h3 className="text-base font-semibold text-gray-900">Global WPay Fee Settings</h3>
         <p className="text-sm text-gray-500">
-          Platform fee and convenience fee are GST-exclusive (GST on top). Percentage mode uses the
-          post-discount customer amount after the Promotion Engine cut. Platform revenue GST is
-          inclusive in the tier commission.
+          Pay Bill charges the platform fee plus GST only. Platform fee is GST-exclusive (GST on
+          top). Percentage mode uses the post-discount customer amount after the Promotion Engine
+          cut. Platform revenue GST is inclusive in the tier commission.
         </p>
       </div>
 
@@ -176,43 +161,6 @@ export function ConvenienceSettingsPanel() {
             value={settings.platformFeeGstRate}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setSettings((s) => ({ ...s, platformFeeGstRate: Number(e.target.value) || 0 }))
-            }
-          />
-        </div>
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Label htmlFor="wpay-convenience-fee">
-              Convenience Fee ({settings.convenienceFeeMode === 'percent' ? '%' : '₹'})
-            </Label>
-            <FeeModeToggle
-              id="wpay-convenience-fee-mode"
-              value={settings.convenienceFeeMode}
-              onChange={(convenienceFeeMode) => setSettings((s) => ({ ...s, convenienceFeeMode }))}
-            />
-          </div>
-          <Input
-            id="wpay-convenience-fee"
-            type="number"
-            min={0}
-            max={settings.convenienceFeeMode === 'percent' ? 100 : undefined}
-            step={settings.convenienceFeeMode === 'percent' ? 0.01 : 1}
-            value={settings.convenienceFee}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setSettings((s) => ({ ...s, convenienceFee: Number(e.target.value) || 0 }))
-            }
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="wpay-convenience-gst">Convenience GST (%)</Label>
-          <Input
-            id="wpay-convenience-gst"
-            type="number"
-            min={0}
-            max={100}
-            step={0.01}
-            value={settings.convenienceGstRate}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setSettings((s) => ({ ...s, convenienceGstRate: Number(e.target.value) || 0 }))
             }
           />
         </div>
