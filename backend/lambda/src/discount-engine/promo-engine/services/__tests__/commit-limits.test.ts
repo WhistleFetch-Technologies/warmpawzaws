@@ -110,16 +110,19 @@ describe('commitPromotion limits re-check + notification', () => {
     repo.dbGetUsageByIdempotencyKey.mockResolvedValue({ cashback_amount: 0, discount_amount: 100, reversed_at: null });
     const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-4' });
     expect(res.already_committed).toBe(true);
+    expect(res.cashback_credited).toBe(0);
     expect(mockCredit).not.toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
     expect(repo.dbAdjustBudgetConsumed).not.toHaveBeenCalled();
   });
 
-  it('does not notify when the wallet row already existed (duplicate credit)', async () => {
+  it('on retry reports the cashback already in the wallet without re-notifying', async () => {
     repo.dbInsertUsage.mockResolvedValue({ inserted: false });
     repo.dbGetUsageByIdempotencyKey.mockResolvedValue({ cashback_amount: 150, discount_amount: 100, reversed_at: null });
     mockCredit.mockResolvedValue({ walletTransactionId: 'wt-1', credited: false });
-    await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-5' });
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-5' });
+    expect(res.already_committed).toBe(true);
+    expect(res.cashback_credited).toBe(150);
     expect(mockCredit).toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
   });

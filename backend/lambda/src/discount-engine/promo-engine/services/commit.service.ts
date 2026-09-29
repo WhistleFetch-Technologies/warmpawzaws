@@ -112,8 +112,10 @@ export async function commitPromotion(req: CommitRequest): Promise<{
     byPromo.set(b.promotion_id, list);
   }
 
+  /** Cashback this transaction holds in the wallet (new or from an earlier attempt). */
   let cashbackCredited = 0;
   let anyInserted = false;
+  let anyNewCredit = false;
 
   for (const [promotionId, promoBenefits] of byPromo) {
     const discount = promoBenefits
@@ -180,8 +182,10 @@ export async function commitPromotion(req: CommitRequest): Promise<{
         expiryDays: cb.expiry_days,
         redeemScope: cb.redeem || cb.redeem_scope,
       });
-      if (!credit.credited) continue;
+      // credited=false means this transaction's wallet credit already exists (retry).
       cashbackCredited += amount;
+      if (!credit.credited) continue;
+      anyNewCredit = true;
       await notifyPromoCashbackCredited({
         userId,
         amount,
@@ -209,12 +213,12 @@ export async function commitPromotion(req: CommitRequest): Promise<{
     }
   }
 
-  if (!anyInserted && cashbackCredited <= 0) {
+  if (!anyInserted && !anyNewCredit) {
     return {
       success: true,
       already_committed: true,
       usage_ids: [],
-      cashback_credited: 0,
+      cashback_credited: round2(cashbackCredited),
     };
   }
 
