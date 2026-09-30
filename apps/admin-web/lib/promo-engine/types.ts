@@ -151,26 +151,33 @@ export type PromoVisitLoop =
   | { kind: 'between'; n: number; m: number }
   | { kind: 'every' };
 
+/**
+ * Audience scope (visit source / publish). Lists hold every selected vendor or category;
+ * the singular id/name mirror the first entry for older readers.
+ */
+export interface PromoAudienceScope {
+  letter: PromoLetter;
+  vendorId?: string;
+  vendorName?: string;
+  vendorIds?: string[];
+  vendorNames?: string[];
+  categoryId?: string;
+  categoryName?: string;
+  categoryIds?: string[];
+  categoryNames?: string[];
+}
+
 export interface PromoVcfDraft {
-  visitSource: {
-    letter: PromoLetter;
-    vendorId?: string;
-    vendorName?: string;
-    categoryId?: string;
-    categoryName?: string;
+  visitSource: PromoAudienceScope & {
     width: 'general' | 'specific';
     channels?: PromoCountChannel[];
+    /** Visits across all selected vendors/categories count together as one group. */
+    countMode?: 'pooled';
   };
   visitLoop: PromoVisitLoop;
   benefitMode: 'discount' | 'cashback' | 'both';
   maxDiscount?: number;
-  publish: {
-    letter: PromoLetter;
-    vendorId?: string;
-    vendorName?: string;
-    categoryId?: string;
-    categoryName?: string;
-  };
+  publish: PromoAudienceScope;
   redeem?: {
     letter: PromoLetter;
     vendorId?: string;

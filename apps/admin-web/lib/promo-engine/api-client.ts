@@ -5,8 +5,10 @@ import type {
   PromoEngineDraft,
   PromoEngineListItem,
   PromoEngineStatus,
+  PromoVcfDraft,
 } from './types';
 import { createEmptyDraft } from './types';
+import { normalizeVcfAudience } from './vcf';
 
 const BASE = '/admin/promo-engine/promotions';
 
@@ -93,8 +95,9 @@ export function cleanCustomerCopy(copy: PromoCustomerCopy | undefined): PromoCus
 
 export function draftToApiBody(draft: PromoEngineDraft): Record<string, unknown> {
   const customerCopy = cleanCustomerCopy(draft.customerCopy);
+  const vcf = draft.vcf ? normalizeVcfAudience(draft.vcf) : undefined;
   const metadata: Record<string, unknown> = {};
-  if (draft.vcf) metadata.vcf = draft.vcf;
+  if (vcf) metadata.vcf = vcf;
   if (customerCopy) metadata.customerCopy = customerCopy;
   return {
     status: draft.status,
@@ -102,7 +105,7 @@ export function draftToApiBody(draft: PromoEngineDraft): Record<string, unknown>
     conditionJson: draft.conditionJson,
     benefitJson: draft.benefitJson,
     ruleType: draft.ruleType,
-    vcf: draft.vcf,
+    vcf,
     customerCopy: customerCopy ?? null,
     metadata: Object.keys(metadata).length ? metadata : undefined,
     limits: draft.limits
@@ -155,12 +158,20 @@ function mapApiPromotionToDraft(p: Record<string, unknown>): PromoEngineDraft {
       ({ operator: 'AND', conditions: [] } as PromoEngineDraft['conditionJson']),
     benefitJson: (p.benefitJson as PromoEngineDraft['benefitJson']) || [],
     ruleType: (p.ruleType as PromoEngineDraft['ruleType']) || 'GENERIC',
-    vcf: (p.vcf as PromoEngineDraft['vcf']) || createEmptyDraft(String(p.id)).vcf,
+    vcf: readVcf(p.vcf) || createEmptyDraft(String(p.id)).vcf,
     customerCopy: readCustomerCopy(p),
     limits: mapLimits(p.limits),
     createdAt: String(p.created_at || p.createdAt || new Date().toISOString()),
     updatedAt: String(p.updated_at || p.updatedAt || new Date().toISOString()),
   };
+}
+
+/** Older promos store a single vendor/category; expose it as a list of one for the multi pickers. */
+export function readVcf(raw: unknown): PromoVcfDraft | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const vcf = raw as PromoVcfDraft;
+  if (!vcf.visitSource || !vcf.publish) return vcf;
+  return normalizeVcfAudience(vcf);
 }
 
 function readCustomerCopy(p: Record<string, unknown>): PromoCustomerCopy | undefined {

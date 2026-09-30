@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import {
   Input,
   Label,
@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@warmpawz/ui';
-import { apiClient } from '@/lib/api-client';
 import type { PromoEngineBenefit, PromoEngineDraft } from '@/lib/promo-engine/types';
 import { createEmptyVcf } from '@/lib/promo-engine/types';
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
@@ -19,7 +18,11 @@ import {
   normalizeRedeemMulti,
   resolveRedeemCategoryIds,
   resolveRedeemVendorIds,
+  resolveScopeCategoryIds,
+  resolveScopeVendorIds,
 } from '@/lib/promo-engine/vcf';
+import { CategoryMultiChips } from './CategoryMultiChips';
+import { VendorMultiPicker } from './VendorMultiPicker';
 
 function discountBenefit(list: PromoEngineBenefit[]): PromoEngineBenefit {
   return list.find((b) => b.type === 'DISCOUNT') || { type: 'DISCOUNT', mode: 'PERCENT', value: 0 };
@@ -34,90 +37,6 @@ function rebuild(discount: PromoEngineBenefit, cashback: PromoEngineBenefit | nu
   if ((discount.value ?? 0) > 0) out.push(discount);
   if (cashback && (cashback.value ?? 0) > 0) out.push(cashback);
   return out;
-}
-
-type VendorHit = { id: string; business_name?: string; businessName?: string; role_display_name?: string };
-
-function RedeemVendorMulti({
-  ids,
-  names,
-  onChange,
-}: {
-  ids: string[];
-  names: string[];
-  onChange: (ids: string[], names: string[]) => void;
-}) {
-  const [q, setQ] = useState('');
-  const [hits, setHits] = useState<VendorHit[]>([]);
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      const query = q.trim();
-      if (query.length < 2) {
-        setHits([]);
-        return;
-      }
-      void apiClient
-        .get<{ vendors?: VendorHit[] }>(`/admin/vendors?q=${encodeURIComponent(query)}&limit=20`)
-        .then((res) => setHits(Array.isArray(res.vendors) ? res.vendors : []))
-        .catch(() => setHits([]));
-    }, 250);
-    return () => window.clearTimeout(t);
-  }, [q]);
-
-  return (
-    <div className="space-y-2">
-      <Label>Vendors where cashback can be spent (multi)</Label>
-      <div className="flex flex-wrap gap-2">
-        {ids.map((id, i) => (
-          <button
-            key={id}
-            type="button"
-            className="inline-flex items-center gap-1 rounded-full border border-[#FF8C42] bg-orange-50 px-3 py-1 text-sm text-[#FF8C42]"
-            onClick={() => {
-              onChange(
-                ids.filter((x) => x !== id),
-                names.filter((_, idx) => ids[idx] !== id)
-              );
-            }}
-          >
-            {names[i] || id}
-            <span aria-hidden>×</span>
-          </button>
-        ))}
-      </div>
-      <Input
-        value={q}
-        placeholder="Search business name to add"
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)}
-        className="min-h-11"
-      />
-      {hits.length ? (
-        <ul className="max-h-40 overflow-y-auto rounded-lg border bg-white text-sm">
-          {hits.map((v) => {
-            const name = v.business_name || v.businessName || v.id;
-            const already = ids.includes(v.id);
-            return (
-              <li key={v.id}>
-                <button
-                  type="button"
-                  disabled={already}
-                  className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-40"
-                  onClick={() => {
-                    onChange([...ids, v.id], [...names, name]);
-                    setQ('');
-                    setHits([]);
-                  }}
-                >
-                  <span>{name}</span>
-                  <span className="text-xs text-slate-500">{already ? 'Added' : v.role_display_name || ''}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-    </div>
-  );
 }
 
 export function BenefitsStep({
@@ -158,15 +77,11 @@ export function BenefitsStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync from Audience when redeem empty
   }, [
     draft.vcf?.visitSource.letter,
-    draft.vcf?.visitSource.vendorId,
-    draft.vcf?.visitSource.vendorName,
-    draft.vcf?.visitSource.categoryId,
-    draft.vcf?.visitSource.categoryName,
+    resolveScopeVendorIds(draft.vcf?.visitSource).join(','),
+    resolveScopeCategoryIds(draft.vcf?.visitSource).join(','),
     draft.vcf?.publish.letter,
-    draft.vcf?.publish.vendorId,
-    draft.vcf?.publish.vendorName,
-    draft.vcf?.publish.categoryId,
-    draft.vcf?.publish.categoryName,
+    resolveScopeVendorIds(draft.vcf?.publish).join(','),
+    resolveScopeCategoryIds(draft.vcf?.publish).join(','),
     draft.vcf?.redeem?.letter,
   ]);
 
@@ -381,54 +296,23 @@ export function BenefitsStep({
 
                 {draft.vcf?.redeem?.letter === 'C' ? (
                   <div className="space-y-2">
-                    <Label>Categories where cashback can be spent (multi)</Label>
-                    {loading ? (
-                      <p className="text-xs text-slate-500">Loading catalogue…</p>
-                    ) : error ? (
-                      <p className="text-xs text-red-600">{error}</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {categories.map((c) => {
-                          const on = redeemCategoryIds.includes(c.id);
-                          return (
-                            <button
-                              key={c.id}
-                              type="button"
-                              className={`rounded-full border px-3 py-1.5 text-sm ${
-                                on ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]' : 'border-slate-200'
-                              }`}
-                              onClick={() => {
-                                const nextIds = on
-                                  ? redeemCategoryIds.filter((id) => id !== c.id)
-                                  : [...redeemCategoryIds, c.id];
-                                const nameById = new Map(
-                                  categories.map((row) => [row.id, row.name] as const)
-                                );
-                                const prevNames = draft.vcf?.redeem?.categoryNames || [];
-                                const nextNames = nextIds.map((id) => {
-                                  if (id === c.id) return c.name;
-                                  const prevIdx = redeemCategoryIds.indexOf(id);
-                                  return (
-                                    (prevIdx >= 0 ? prevNames[prevIdx] : undefined) ||
-                                    nameById.get(id) ||
-                                    id
-                                  );
-                                });
-                                patchRedeem({
-                                  letter: 'C',
-                                  categoryIds: nextIds,
-                                  categoryId: nextIds[0],
-                                  categoryNames: nextNames,
-                                  categoryName: nextNames[0],
-                                });
-                              }}
-                            >
-                              {c.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                    <CategoryMultiChips
+                      label="Categories where cashback can be spent (multi)"
+                      categories={categories}
+                      loading={loading}
+                      error={error}
+                      ids={redeemCategoryIds}
+                      names={draft.vcf?.redeem?.categoryNames || []}
+                      onChange={(ids, names) =>
+                        patchRedeem({
+                          letter: 'C',
+                          categoryIds: ids,
+                          categoryId: ids[0],
+                          categoryNames: names,
+                          categoryName: names[0],
+                        })
+                      }
+                    />
                     {!redeemCategoryIds.length ? (
                       <p className="text-xs text-amber-700">
                         Pick at least one category (Audience seed appears after Visit/Publish = Category).
@@ -439,7 +323,8 @@ export function BenefitsStep({
 
                 {draft.vcf?.redeem?.letter === 'V' ? (
                   <div className="space-y-2">
-                    <RedeemVendorMulti
+                    <VendorMultiPicker
+                      label="Vendors where cashback can be spent (multi)"
                       ids={redeemVendorIds}
                       names={
                         draft.vcf.redeem.vendorNames?.length

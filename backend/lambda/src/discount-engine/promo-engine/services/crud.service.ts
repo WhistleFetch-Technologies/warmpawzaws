@@ -135,7 +135,7 @@ function mergeVcfMetadata(body: Record<string, unknown>, rawCopy: unknown): Reco
       : {};
   const vcf = body.vcf ?? (body.metadata as Record<string, unknown> | undefined)?.vcf;
   if (vcf && typeof vcf === 'object') {
-    base.vcf = fillRedeemIdsFromAudience(vcf as Record<string, unknown>);
+    base.vcf = fillRedeemIdsFromAudience(normalizeAudienceScopes(vcf as Record<string, unknown>));
   }
   const copy = parseCustomerCopy({ customerCopy: rawCopy });
   if (copy) {
@@ -148,6 +148,58 @@ function mergeVcfMetadata(body: Record<string, unknown>, rawCopy: unknown): Reco
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+}
+
+function scopeIdList(list: unknown, single: unknown): string[] {
+  const raw = [...(Array.isArray(list) ? list : []), single];
+  const out: string[] = [];
+  for (const item of raw) {
+    const id = item == null ? '' : String(item).trim();
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/** Ids of an audience scope (V → vendors, C → categories); empty for F / missing. */
+function audienceIds(scope: Record<string, unknown>, letter: 'V' | 'C'): string[] {
+  if (String(scope.letter || '').toUpperCase() !== letter) return [];
+  return letter === 'V'
+    ? scopeIdList(scope.vendorIds, scope.vendorId)
+    : scopeIdList(scope.categoryIds, scope.categoryId);
+}
+
+/** Keep list + singular (first entry) in sync; drop ids that do not belong to the letter. */
+function normalizeScope(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const scope = { ...(raw as Record<string, unknown>) };
+  const letter = String(scope.letter || '').toUpperCase();
+  const vendorIds = letter === 'V' ? scopeIdList(scope.vendorIds, scope.vendorId) : [];
+  const categoryIds = letter === 'C' ? scopeIdList(scope.categoryIds, scope.categoryId) : [];
+  scope.vendorIds = vendorIds.length ? vendorIds : undefined;
+  scope.vendorId = vendorIds[0];
+  scope.categoryIds = categoryIds.length ? categoryIds : undefined;
+  scope.categoryId = categoryIds[0];
+  if (letter !== 'V') {
+    delete scope.vendorName;
+    delete scope.vendorNames;
+  }
+  if (letter !== 'C') {
+    delete scope.categoryName;
+    delete scope.categoryNames;
+  }
+  return scope;
+}
+
+function normalizeAudienceScopes(vcf: Record<string, unknown>): Record<string, unknown> {
+  const next: Record<string, unknown> = {
+    ...vcf,
+    visitSource: normalizeScope(vcf.visitSource),
+    publish: normalizeScope(vcf.publish),
+  };
+  if (next.visitSource && typeof next.visitSource === 'object') {
+    next.visitSource = { ...(next.visitSource as Record<string, unknown>), countMode: 'pooled' };
+  }
+  return next;
 }
 
 /** Persist Same vendor / Same category IDs from publish, then visit source — only when redeem lists empty. */
@@ -181,18 +233,14 @@ function fillRedeemIdsFromAudience(vcf: Record<string, unknown>): Record<string,
         },
       };
     }
-    const vendorId =
-      String(publish.letter || '').toUpperCase() === 'V' && publish.vendorId
-        ? String(publish.vendorId)
-        : String(visit.letter || '').toUpperCase() === 'V' && visit.vendorId
-          ? String(visit.vendorId)
-          : undefined;
+    const fromPublish = audienceIds(publish, 'V');
+    const inherited = fromPublish.length ? fromPublish : audienceIds(visit, 'V');
     return {
       ...vcf,
       redeem: {
         ...redeem,
-        vendorId,
-        vendorIds: vendorId ? [vendorId] : undefined,
+        vendorId: inherited[0],
+        vendorIds: inherited.length ? inherited : undefined,
         categoryId: undefined,
         categoryIds: undefined,
       },
@@ -212,18 +260,14 @@ function fillRedeemIdsFromAudience(vcf: Record<string, unknown>): Record<string,
       },
     };
   }
-  const categoryId =
-    String(publish.letter || '').toUpperCase() === 'C' && publish.categoryId
-      ? String(publish.categoryId)
-      : String(visit.letter || '').toUpperCase() === 'C' && visit.categoryId
-        ? String(visit.categoryId)
-        : undefined;
+  const fromPublish = audienceIds(publish, 'C');
+  const inherited = fromPublish.length ? fromPublish : audienceIds(visit, 'C');
   return {
     ...vcf,
     redeem: {
       ...redeem,
-      categoryId,
-      categoryIds: categoryId ? [categoryId] : undefined,
+      categoryId: inherited[0],
+      categoryIds: inherited.length ? inherited : undefined,
       vendorId: undefined,
       vendorIds: undefined,
     },

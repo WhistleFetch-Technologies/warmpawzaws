@@ -6,6 +6,7 @@ import {
   describeConditionGroup,
   describeRedeemScope,
 } from '@/lib/promo-engine/plain-language';
+import { describeAudienceScope } from '@/lib/promo-engine/vcf';
 import { PromotionEngineStatusBadge } from '../PromotionEngineStatusBadge';
 
 export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
@@ -22,7 +23,7 @@ export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
           title="VISIT / PUBLISH / REDEEM"
           body={
             draft.vcf
-              ? `Visit ${draft.vcf.visitSource.letter} ${draft.vcf.visitSource.width} · ${draft.vcf.visitLoop.kind} · Publish ${draft.vcf.publish.letter} · Redeem ${draft.vcf.redeem?.letter || '—'} ${(draft.vcf.redeem?.channels || []).join(',')}`
+              ? `Visit ${describeAudienceScope(draft.vcf.visitSource)}${draft.vcf.visitSource.letter !== 'F' ? ' pooled' : ''} ${draft.vcf.visitSource.width} · ${draft.vcf.visitLoop.kind} · Publish ${describeAudienceScope(draft.vcf.publish)} · Redeem ${draft.vcf.redeem?.letter || '—'} ${(draft.vcf.redeem?.channels || []).join(',')}`
               : describeConditionGroup(draft.conditionJson)
           }
         />

@@ -19,4 +19,21 @@ describe('dbFindActiveCandidates', () => {
     expect(params[2]).toBeNull();
     expect(params[3]).toBeNull();
   });
+
+  it('matches VCF publish lists by containment as well as the singular id', async () => {
+    mockedQuery.mockClear();
+    await dbFindActiveCandidates({
+      now: new Date('2026-09-18T12:00:00Z'),
+      vendorId: 'vendor-1',
+      categoryId: 'cat-train',
+    });
+    const [sql, params] = mockedQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain(`metadata->'vcf'->'publish'->>'vendorId' = $2::text`);
+    expect(sql).toContain(
+      `COALESCE(metadata->'vcf'->'publish'->'vendorIds', '[]'::jsonb)\n                 @> jsonb_build_array($2::text)`
+    );
+    expect(sql).toContain(`metadata->'vcf'->'publish'->>'categoryId' = $3::text`);
+    expect(sql).toContain(`@> jsonb_build_array($3::text)`);
+    expect(params).toEqual([expect.any(String), 'vendor-1', 'cat-train']);
+  });
 });

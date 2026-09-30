@@ -1,5 +1,7 @@
-import type { PromoEngineDraft, PromoLetter, PromoVcfDraft } from './types';
+import type { PromoAudienceScope, PromoEngineDraft, PromoLetter, PromoVcfDraft } from './types';
 import { createEmptyVcf } from './types';
+
+export type ScopeEntries = { ids: string[]; names: string[] };
 
 function uniqStrings(ids: Array<string | undefined | null>): string[] {
   const out: string[] = [];
@@ -25,6 +27,101 @@ export function resolveRedeemCategoryIds(
 ): string[] {
   if (!redeem) return [];
   return uniqStrings([...(redeem.categoryIds || []), redeem.categoryId]);
+}
+
+/**
+ * Selected vendors (V) or categories (C) of an audience scope, with names aligned by index.
+ * Older drafts with only the singular id read as a list of one.
+ */
+export function audienceScopeEntries(
+  scope: PromoAudienceScope | undefined,
+  letter: 'V' | 'C'
+): ScopeEntries {
+  if (!scope || scope.letter !== letter) return { ids: [], names: [] };
+  const listIds = letter === 'V' ? scope.vendorIds : scope.categoryIds;
+  const listNames = letter === 'V' ? scope.vendorNames : scope.categoryNames;
+  const singleId = String((letter === 'V' ? scope.vendorId : scope.categoryId) || '').trim();
+  const singleName = letter === 'V' ? scope.vendorName : scope.categoryName;
+  const ids: string[] = [];
+  const names: string[] = [];
+  (listIds || []).forEach((raw, i) => {
+    const id = String(raw || '').trim();
+    if (!id || ids.includes(id)) return;
+    ids.push(id);
+    names.push(listNames?.[i] || (id === singleId ? singleName : undefined) || id);
+  });
+  if (singleId && !ids.includes(singleId)) {
+    ids.push(singleId);
+    names.push(singleName || singleId);
+  }
+  return { ids, names };
+}
+
+export function resolveScopeVendorIds(scope: PromoAudienceScope | undefined): string[] {
+  return audienceScopeEntries(scope, 'V').ids;
+}
+
+export function resolveScopeCategoryIds(scope: PromoAudienceScope | undefined): string[] {
+  return audienceScopeEntries(scope, 'C').ids;
+}
+
+/** Replace the vendor (V) or category (C) list; singular id/name follow the first entry. */
+export function withScopeList<T extends PromoAudienceScope>(
+  scope: T,
+  letter: 'V' | 'C',
+  entries: ScopeEntries
+): T {
+  const has = entries.ids.length > 0;
+  if (letter === 'V') {
+    return {
+      ...scope,
+      vendorIds: has ? entries.ids : undefined,
+      vendorNames: has ? entries.ids.map((id, i) => entries.names[i] || id) : undefined,
+      vendorId: entries.ids[0],
+      vendorName: has ? entries.names[0] || entries.ids[0] : undefined,
+    };
+  }
+  return {
+    ...scope,
+    categoryIds: has ? entries.ids : undefined,
+    categoryNames: has ? entries.ids.map((id, i) => entries.names[i] || id) : undefined,
+    categoryId: entries.ids[0],
+    categoryName: has ? entries.names[0] || entries.ids[0] : undefined,
+  };
+}
+
+/** Keep lists and singular fields in sync; clear ids that do not belong to the letter. */
+export function normalizeScopeMulti<T extends PromoAudienceScope>(scope: T): T {
+  const cleared: T = {
+    ...scope,
+    vendorId: undefined,
+    vendorName: undefined,
+    vendorIds: undefined,
+    vendorNames: undefined,
+    categoryId: undefined,
+    categoryName: undefined,
+    categoryIds: undefined,
+    categoryNames: undefined,
+  };
+  if (scope.letter === 'V') return withScopeList(cleared, 'V', audienceScopeEntries(scope, 'V'));
+  if (scope.letter === 'C') return withScopeList(cleared, 'C', audienceScopeEntries(scope, 'C'));
+  return cleared;
+}
+
+/** e.g. "C (Vet Care, Grooming)" or "F". */
+export function describeAudienceScope(scope: PromoAudienceScope): string {
+  if (scope.letter !== 'V' && scope.letter !== 'C') return scope.letter;
+  const { names } = audienceScopeEntries(scope, scope.letter);
+  return names.length ? `${scope.letter} (${names.join(', ')})` : scope.letter;
+}
+
+/** Normalize visit source + publish lists and stamp pooled counting. */
+export function normalizeVcfAudience(vcf: PromoVcfDraft): PromoVcfDraft {
+  return {
+    ...vcf,
+    visitSource: { ...normalizeScopeMulti(vcf.visitSource), countMode: 'pooled' },
+    publish: normalizeScopeMulti(vcf.publish),
+  };
 }
 
 function scopeErrors(
@@ -58,13 +155,25 @@ function scopeErrors(
 
 export function validateVcfAudience(vcf: PromoVcfDraft): string[] {
   const errors: string[] = [];
+  const vs = vcf.visitSource;
   errors.push(
-    ...scopeErrors('Visit source', vcf.visitSource.letter, vcf.visitSource.vendorId, vcf.visitSource.categoryId)
+    ...scopeErrors('Visit source', vs.letter, vs.vendorId, vs.categoryId, {
+      multi: true,
+      vendorIds: vs.vendorIds,
+      categoryIds: vs.categoryIds,
+    })
   );
-  if (vcf.visitSource.width === 'specific' && !(vcf.visitSource.channels || []).length) {
+  if (vs.width === 'specific' && !(vs.channels || []).length) {
     errors.push('Specific visit width needs at least one of tele, appointment, or Pay Bill');
   }
-  errors.push(...scopeErrors('Publish', vcf.publish.letter, vcf.publish.vendorId, vcf.publish.categoryId));
+  const pub = vcf.publish;
+  errors.push(
+    ...scopeErrors('Publish', pub.letter, pub.vendorId, pub.categoryId, {
+      multi: true,
+      vendorIds: pub.vendorIds,
+      categoryIds: pub.categoryIds,
+    })
+  );
   if (!vcf.visitLoop?.kind) errors.push('Pick which visit the offer applies to');
   return errors;
 }
@@ -86,49 +195,14 @@ export function inheritRedeemScopeFromAudience(
   | 'categoryIds'
   | 'categoryNames'
 > {
+  if (letter !== 'V' && letter !== 'C') return {};
+  const fromVisit = audienceScopeEntries(vcf.visitSource, letter);
+  const { ids, names } = fromVisit.ids.length ? fromVisit : audienceScopeEntries(vcf.publish, letter);
+  if (!ids.length) return {};
   if (letter === 'V') {
-    const id =
-      vcf.visitSource.letter === 'V' && vcf.visitSource.vendorId
-        ? vcf.visitSource.vendorId
-        : vcf.publish.letter === 'V' && vcf.publish.vendorId
-          ? vcf.publish.vendorId
-          : undefined;
-    const name =
-      vcf.visitSource.letter === 'V' && vcf.visitSource.vendorId
-        ? vcf.visitSource.vendorName
-        : vcf.publish.letter === 'V'
-          ? vcf.publish.vendorName
-          : undefined;
-    if (!id) return {};
-    return {
-      vendorId: id,
-      vendorName: name,
-      vendorIds: [id],
-      vendorNames: name ? [name] : [id],
-    };
+    return { vendorId: ids[0], vendorName: names[0], vendorIds: ids, vendorNames: names };
   }
-  if (letter === 'C') {
-    const id =
-      vcf.visitSource.letter === 'C' && vcf.visitSource.categoryId
-        ? vcf.visitSource.categoryId
-        : vcf.publish.letter === 'C' && vcf.publish.categoryId
-          ? vcf.publish.categoryId
-          : undefined;
-    const name =
-      vcf.visitSource.letter === 'C' && vcf.visitSource.categoryId
-        ? vcf.visitSource.categoryName
-        : vcf.publish.letter === 'C'
-          ? vcf.publish.categoryName
-          : undefined;
-    if (!id) return {};
-    return {
-      categoryId: id,
-      categoryName: name,
-      categoryIds: [id],
-      categoryNames: name ? [name] : [id],
-    };
-  }
-  return {};
+  return { categoryId: ids[0], categoryName: names[0], categoryIds: ids, categoryNames: names };
 }
 
 export function validateVcfBenefits(vcf: PromoVcfDraft, hasDiscount: boolean, hasCashback: boolean): string[] {
@@ -198,26 +272,9 @@ export function mapRedeemFromAudience(
         vendorName: vcf.redeem?.vendorName || names[0],
       };
     }
-    const fromPublish = vcf.publish.letter === 'V';
-    const fromVisit = vcf.visitSource.letter === 'V';
-    const vendorId = fromPublish
-      ? vcf.publish.vendorId
-      : fromVisit
-        ? vcf.visitSource.vendorId
-        : undefined;
-    const vendorName = fromPublish
-      ? vcf.publish.vendorName
-      : fromVisit
-        ? vcf.visitSource.vendorName
-        : undefined;
-    return {
-      letter: 'V',
-      channels,
-      vendorId,
-      vendorName,
-      vendorIds: vendorId ? [vendorId] : undefined,
-      vendorNames: vendorId ? [vendorName || vendorId] : undefined,
-    };
+    const fromPublish = audienceScopeEntries(vcf.publish, 'V');
+    const seed = fromPublish.ids.length ? fromPublish : audienceScopeEntries(vcf.visitSource, 'V');
+    return withScopeList({ letter: 'V', channels }, 'V', seed);
   }
   const existingCats = resolveRedeemCategoryIds(vcf.redeem);
   if (existingCats.length) {
@@ -233,26 +290,9 @@ export function mapRedeemFromAudience(
       categoryName: vcf.redeem?.categoryName || names[0],
     };
   }
-  const fromPublish = vcf.publish.letter === 'C';
-  const fromVisit = vcf.visitSource.letter === 'C';
-  const categoryId = fromPublish
-    ? vcf.publish.categoryId
-    : fromVisit
-      ? vcf.visitSource.categoryId
-      : undefined;
-  const categoryName = fromPublish
-    ? vcf.publish.categoryName
-    : fromVisit
-      ? vcf.visitSource.categoryName
-      : undefined;
-  return {
-    letter: 'C',
-    channels,
-    categoryId,
-    categoryName,
-    categoryIds: categoryId ? [categoryId] : undefined,
-    categoryNames: categoryId ? [categoryName || categoryId] : undefined,
-  };
+  const fromPublish = audienceScopeEntries(vcf.publish, 'C');
+  const seed = fromPublish.ids.length ? fromPublish : audienceScopeEntries(vcf.visitSource, 'C');
+  return withScopeList({ letter: 'C', channels }, 'C', seed);
 }
 
 export function syncRedeemAfterAudience(vcf: PromoVcfDraft): PromoVcfDraft {

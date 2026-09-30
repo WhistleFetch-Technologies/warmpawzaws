@@ -10,7 +10,11 @@ import {
   dbLoadServiceCategories,
   dbLoadVendorRole,
 } from '../../../../discount-engine/promo-engine/repos/promo-engine.repo';
-import { matchesPublish, parseVcfConfig } from '../../../../discount-engine/promo-engine/vcf/parse-config';
+import {
+  matchesPublish,
+  parseVcfConfig,
+  publishScopeSize,
+} from '../../../../discount-engine/promo-engine/vcf/parse-config';
 import { rankEligible } from '../../../../discount-engine/promo-engine/vcf/rank-eligible';
 import { resolvePaymentContext } from '../../../../discount-engine/promo-engine/vcf/payment-context';
 import type { RankedPromo } from '../../../../discount-engine/promo-engine/vcf/types';
@@ -110,6 +114,7 @@ export async function resolveWpayListingDiscountPercents(
       eligible.push({
         promotionId: promo.id,
         publishLetter: vcf.publish.letter,
+        publishScopeSize: publishScopeSize(vcf.publish),
         priority: Number(promo.priority ?? 0),
         updatedAt: promo.updated_at,
         discount,

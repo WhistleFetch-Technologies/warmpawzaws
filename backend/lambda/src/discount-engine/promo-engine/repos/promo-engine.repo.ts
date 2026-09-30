@@ -303,12 +303,20 @@ export async function dbFindActiveCandidates(opts: {
            OR (
              metadata->'vcf'->'publish'->>'letter' = 'V'
              AND $${vendorParam}::text IS NOT NULL
-             AND metadata->'vcf'->'publish'->>'vendorId' = $${vendorParam}::text
+             AND (
+               metadata->'vcf'->'publish'->>'vendorId' = $${vendorParam}::text
+               OR COALESCE(metadata->'vcf'->'publish'->'vendorIds', '[]'::jsonb)
+                 @> jsonb_build_array($${vendorParam}::text)
+             )
            )
            OR (
              metadata->'vcf'->'publish'->>'letter' = 'C'
              AND $${categoryParam}::text IS NOT NULL
-             AND metadata->'vcf'->'publish'->>'categoryId' = $${categoryParam}::text
+             AND (
+               metadata->'vcf'->'publish'->>'categoryId' = $${categoryParam}::text
+               OR COALESCE(metadata->'vcf'->'publish'->'categoryIds', '[]'::jsonb)
+                 @> jsonb_build_array($${categoryParam}::text)
+             )
            )
          )
        )

@@ -54,6 +54,52 @@ describe('mapAdminDraftToPayload', () => {
     });
   });
 
+  it('normalizes visit/publish lists: singular is the first entry, other-letter ids cleared', () => {
+    const payload = mapAdminDraftToPayload({
+      basics: { name: 'Welcome to pet care' },
+      vcf: {
+        visitSource: {
+          letter: 'C',
+          categoryIds: ['vet', 'groom', 'vet', 'train'],
+          categoryId: 'stale',
+          vendorId: 'old-vendor',
+          vendorName: 'Old',
+          width: 'general',
+        },
+        visitLoop: { kind: 'visit_number', n: 1 },
+        benefitMode: 'discount',
+        publish: { letter: 'V', vendorIds: ['a', 'b'], categoryId: 'x', categoryName: 'X' },
+      },
+    });
+    const vcf = payload.metadata?.vcf as Record<string, Record<string, unknown>>;
+    expect(vcf.visitSource).toMatchObject({
+      categoryIds: ['vet', 'groom', 'train', 'stale'],
+      categoryId: 'vet',
+      countMode: 'pooled',
+    });
+    expect(vcf.visitSource.vendorId).toBeUndefined();
+    expect(vcf.visitSource.vendorName).toBeUndefined();
+    expect(vcf.publish).toMatchObject({ vendorIds: ['a', 'b'], vendorId: 'a' });
+    expect(vcf.publish.categoryId).toBeUndefined();
+    expect(vcf.publish.categoryName).toBeUndefined();
+  });
+
+  it('copies the whole publish category list into Same category redeem', () => {
+    const payload = mapAdminDraftToPayload({
+      basics: { name: 'Group cashback' },
+      vcf: {
+        visitSource: { letter: 'F', width: 'general' },
+        visitLoop: { kind: 'every' },
+        benefitMode: 'cashback',
+        publish: { letter: 'C', categoryIds: ['vet', 'groom'] },
+        redeem: { letter: 'C', channels: ['paybill'] },
+      },
+    });
+    expect(payload.metadata?.vcf).toMatchObject({
+      redeem: { letter: 'C', categoryIds: ['vet', 'groom'], categoryId: 'vet' },
+    });
+  });
+
   it('rejects an end date that is not after the start date', () => {
     expect(() =>
       mapAdminDraftToPayload({

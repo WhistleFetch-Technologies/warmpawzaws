@@ -2,9 +2,24 @@ import type { FallbackReason, Letter, RankedPromo, RankingOverride } from './typ
 
 const LETTER_RANK: Record<Letter, number> = { V: 3, C: 2, F: 1 };
 
+function scopeSize(p: RankedPromo): number {
+  const n = Number(p.publishScopeSize);
+  return Number.isFinite(n) && n > 0 ? n : Number.POSITIVE_INFINITY;
+}
+
+/** Same letter: the narrower publish list is more specific. */
+function byScopeSize(a: RankedPromo, b: RankedPromo): number {
+  const sa = scopeSize(a);
+  const sb = scopeSize(b);
+  if (sa === sb) return 0;
+  return sa < sb ? -1 : 1;
+}
+
 function bySpecificityThenPriority(a: RankedPromo, b: RankedPromo): number {
   const letter = LETTER_RANK[b.publishLetter] - LETTER_RANK[a.publishLetter];
   if (letter !== 0) return letter;
+  const size = byScopeSize(a, b);
+  if (size !== 0) return size;
   const pri = (b.priority || 0) - (a.priority || 0);
   if (pri !== 0) return pri;
   return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
@@ -27,12 +42,15 @@ function fallbackReason(winner: RankedPromo, loser: RankedPromo): FallbackReason
   if (LETTER_RANK[winner.publishLetter] > LETTER_RANK[loser.publishLetter]) {
     return 'LOST_TO_MORE_SPECIFIC';
   }
+  if (winner.publishLetter === loser.publishLetter && byScopeSize(winner, loser) < 0) {
+    return 'LOST_TO_MORE_SPECIFIC';
+  }
   return 'LOST_TO_PRIORITY';
 }
 
 /**
  * Score all eligible, then pick. Does not short-circuit.
- * Default: publish V > C > F, then priority, then later updated_at.
+ * Default: publish V > C > F, then smaller publish list, then priority, then later updated_at.
  * Override runs only if set on the specificity winner; re-sorts that eligible set only.
  */
 export function rankEligible(eligible: RankedPromo[]): {

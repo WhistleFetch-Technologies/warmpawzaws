@@ -5,6 +5,7 @@ import {
   type PromoVcfConfig,
   type RankingOverride,
   type SpendChannel,
+  type VcfScope,
   type VisitLoop,
 } from './types';
 
@@ -36,23 +37,46 @@ function asLoop(raw: unknown): VisitLoop | null {
   return null;
 }
 
-function scope(raw: unknown, requireId: boolean): PromoVcfConfig['publish'] | null {
+function uniqIds(list: unknown, single: unknown): string[] {
+  const raw = [...(Array.isArray(list) ? list : []), single];
+  const out: string[] = [];
+  for (const item of raw) {
+    const id = item == null ? '' : String(item).trim();
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+function scope(raw: unknown, requireId: boolean): VcfScope | null {
   if (!raw || typeof raw !== 'object') return null;
   const row = raw as Record<string, unknown>;
   const letter = asLetter(row.letter);
   if (!letter) return null;
-  const vendorId = row.vendorId ? String(row.vendorId) : undefined;
-  const categoryId = row.categoryId ? String(row.categoryId) : undefined;
-  if (letter === 'V' && requireId && !vendorId) return null;
-  if (letter === 'C' && requireId && !categoryId) return null;
-  return { letter, vendorId, categoryId };
+  if (letter === 'V') {
+    const ids = uniqIds(row.vendorIds, row.vendorId);
+    if (requireId && !ids.length) return null;
+    return { letter, vendorId: ids[0], vendorIds: ids.length ? ids : undefined };
+  }
+  if (letter === 'C') {
+    const ids = uniqIds(row.categoryIds, row.categoryId);
+    if (requireId && !ids.length) return null;
+    return { letter, categoryId: ids[0], categoryIds: ids.length ? ids : undefined };
+  }
+  return { letter };
+}
+
+/** Vendor ids for V, category ids for C, empty for F. */
+export function scopeIds(s: VcfScope): string[] {
+  if (s.letter === 'V') return uniqIds(s.vendorIds, s.vendorId);
+  if (s.letter === 'C') return uniqIds(s.categoryIds, s.categoryId);
+  return [];
 }
 
 /** Same vendor / same category copies publish first, then visit source — only when redeem lists are empty. */
 function inheritRedeemIds(
   redeem: NonNullable<PromoVcfConfig['redeem']>,
-  publish: PromoVcfConfig['publish'],
-  visitSource: Pick<PromoVcfConfig['visitSource'], 'letter' | 'vendorId' | 'categoryId'>
+  publish: VcfScope,
+  visitSource: VcfScope
 ): NonNullable<PromoVcfConfig['redeem']> {
   if (redeem.letter === 'V') {
     const existing = [
@@ -63,16 +87,16 @@ function inheritRedeemIds(
       const uniq = [...new Set(existing.map(String))];
       return { ...redeem, vendorIds: uniq, vendorId: uniq[0], categoryId: undefined, categoryIds: undefined };
     }
-    const vendorId =
+    const inherited =
       publish.letter === 'V'
-        ? publish.vendorId
+        ? scopeIds(publish)
         : visitSource.letter === 'V'
-          ? visitSource.vendorId
-          : undefined;
+          ? scopeIds(visitSource)
+          : [];
     return {
       ...redeem,
-      vendorId,
-      vendorIds: vendorId ? [vendorId] : undefined,
+      vendorId: inherited[0],
+      vendorIds: inherited.length ? inherited : undefined,
       categoryId: undefined,
       categoryIds: undefined,
     };
@@ -86,16 +110,16 @@ function inheritRedeemIds(
       const uniq = [...new Set(existing.map(String))];
       return { ...redeem, categoryIds: uniq, categoryId: uniq[0], vendorId: undefined, vendorIds: undefined };
     }
-    const categoryId =
+    const inherited =
       publish.letter === 'C'
-        ? publish.categoryId
+        ? scopeIds(publish)
         : visitSource.letter === 'C'
-          ? visitSource.categoryId
-          : undefined;
+          ? scopeIds(visitSource)
+          : [];
     return {
       ...redeem,
-      categoryId,
-      categoryIds: categoryId ? [categoryId] : undefined,
+      categoryId: inherited[0],
+      categoryIds: inherited.length ? inherited : undefined,
       vendorId: undefined,
       vendorIds: undefined,
     };
@@ -114,8 +138,8 @@ export function parseVcfConfig(metadata: Record<string, unknown> | undefined | n
   const visitSourceRaw = row.visitSource;
   if (!visitSourceRaw || typeof visitSourceRaw !== 'object') return null;
   const vs = visitSourceRaw as Record<string, unknown>;
-  const letter = asLetter(vs.letter);
-  if (!letter) return null;
+  const visitScope = scope(vs, false);
+  if (!visitScope) return null;
   const width = String(vs.width || 'general') === 'specific' ? 'specific' : 'general';
   const channels = Array.isArray(vs.channels)
     ? vs.channels
@@ -155,11 +179,7 @@ export function parseVcfConfig(metadata: Record<string, unknown> | undefined | n
           channels: redeemChannels,
         },
         publish,
-        {
-          letter,
-          vendorId: vs.vendorId ? String(vs.vendorId) : undefined,
-          categoryId: vs.categoryId ? String(vs.categoryId) : undefined,
-        }
+        visitScope
       );
     }
   }
@@ -167,11 +187,10 @@ export function parseVcfConfig(metadata: Record<string, unknown> | undefined | n
   const ranking = String(row.rankingOverride || '') as RankingOverride;
   return {
     visitSource: {
-      letter,
-      vendorId: vs.vendorId ? String(vs.vendorId) : undefined,
-      categoryId: vs.categoryId ? String(vs.categoryId) : undefined,
+      ...visitScope,
       width,
       channels: width === 'specific' ? channels : undefined,
+      countMode: 'pooled',
     },
     visitLoop,
     benefitMode,
@@ -183,13 +202,19 @@ export function parseVcfConfig(metadata: Record<string, unknown> | undefined | n
   };
 }
 
+/** F matches everything; V/C match when the payment's vendor/category is in the publish list. */
 export function matchesPublish(
-  publish: PromoVcfConfig['publish'],
+  publish: VcfScope,
   ctx: { vendorId?: string | null; categoryId?: string | null }
 ): boolean {
   if (publish.letter === 'F') return true;
-  if (publish.letter === 'V') {
-    return Boolean(publish.vendorId && ctx.vendorId && publish.vendorId === String(ctx.vendorId));
-  }
-  return Boolean(publish.categoryId && ctx.categoryId && publish.categoryId === String(ctx.categoryId));
+  const target = publish.letter === 'V' ? ctx.vendorId : ctx.categoryId;
+  if (!target) return false;
+  return scopeIds(publish).includes(String(target));
+}
+
+/** Publish list size for ranking; F has no list and ranks as the widest. */
+export function publishScopeSize(publish: VcfScope): number | undefined {
+  if (publish.letter === 'F') return undefined;
+  return scopeIds(publish).length || undefined;
 }

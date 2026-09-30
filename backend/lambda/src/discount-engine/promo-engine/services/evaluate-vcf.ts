@@ -3,7 +3,7 @@ import { applyCombinedCap } from '../vcf/combined-cap';
 import { matchesVisitLoop } from '../vcf/visit-loop';
 import { visitCountForPromo } from '../vcf/visit-count';
 import { rankEligible } from '../vcf/rank-eligible';
-import { matchesPublish, parseVcfConfig } from '../vcf/parse-config';
+import { matchesPublish, parseVcfConfig, publishScopeSize } from '../vcf/parse-config';
 import { parseVisitProfile } from '../vcf/visit-profile';
 import type { FallbackReason, RankedPromo, VisitProfile } from '../vcf/types';
 import type {
@@ -132,6 +132,7 @@ export function scoreVcfCandidates(opts: {
     eligible.push({
       promotionId: promo.id,
       publishLetter: vcf.publish.letter,
+      publishScopeSize: publishScopeSize(vcf.publish),
       priority: promo.priority,
       updatedAt: promo.updated_at,
       discount: stamped.filter((b) => b.benefit_type === 'DISCOUNT').reduce((s, b) => s + b.amount, 0),

@@ -124,3 +124,92 @@ describe('scoreVcfCandidates', () => {
     expect(result.rejected).toContainEqual({ promotion_id: 'vendor-promo', reason: 'VISIT_FAIL' });
   });
 });
+
+describe('scoreVcfCandidates pooled multi-category first visit', () => {
+  const group = ['cat-vet', 'cat-groom', 'cat-train'];
+  const welcome = promo({
+    id: 'welcome-group',
+    metadata: {
+      vcf: {
+        visitSource: { letter: 'C', categoryIds: group, width: 'general' },
+        visitLoop: { kind: 'visit_number', n: 1 },
+        benefitMode: 'discount',
+        publish: { letter: 'C', categoryIds: group },
+      },
+    },
+  });
+  const rules = new Map([[welcome.id, [rule(welcome.id, 100)]]]);
+
+  function profileWith(categoryId?: string) {
+    const p = emptyVisitProfile();
+    if (categoryId) {
+      p.categories[categoryId] = {
+        tele: { count: 0, lastAt: null },
+        appointment: { count: 1, lastAt: null },
+        paybill: { count: 0, lastAt: null },
+      };
+    }
+    return p;
+  }
+
+  function run(categoryId: string, history?: string) {
+    return scoreVcfCandidates({
+      candidates: [welcome],
+      rulesByPromo: rules,
+      limitsByPromo: new Map(),
+      usageByPromo: new Map(),
+      behaviour: { user_id: 'u1', overall: {}, services: { vcf: profileWith(history) } as never },
+      req: { user_id: 'u1', transaction: { amount: 500, vendorId: 'v9', categoryId, channel: 'paybill' } },
+    });
+  }
+
+  it('applies to a brand-new customer paying for training', () => {
+    expect(run('cat-train').winnerId).toBe('welcome-group');
+  });
+
+  it('stops applying at grooming and vet once training was used', () => {
+    for (const cat of ['cat-groom', 'cat-vet', 'cat-train']) {
+      const result = run(cat, 'cat-train');
+      expect(result.winnerId).toBeNull();
+      expect(result.rejected).toContainEqual({ promotion_id: 'welcome-group', reason: 'VISIT_FAIL' });
+    }
+  });
+
+  it('still treats a customer with only boarding history as new to the group', () => {
+    expect(run('cat-groom', 'cat-boarding').winnerId).toBe('welcome-group');
+  });
+
+  it('does not publish on a category outside the list', () => {
+    const result = run('cat-boarding');
+    expect(result.winnerId).toBeNull();
+    expect(result.rejected).toEqual([]);
+  });
+
+  it('lets a single-category promo beat the group promo for that category', () => {
+    const trainingOnly = promo({
+      id: 'training-only',
+      priority: 0,
+      metadata: {
+        vcf: {
+          visitSource: { letter: 'C', categoryId: 'cat-train', width: 'general' },
+          visitLoop: { kind: 'visit_number', n: 1 },
+          benefitMode: 'discount',
+          publish: { letter: 'C', categoryId: 'cat-train' },
+        },
+      },
+    });
+    const result = scoreVcfCandidates({
+      candidates: [{ ...welcome, priority: 99 }, trainingOnly],
+      rulesByPromo: new Map([
+        [welcome.id, [rule(welcome.id, 100)]],
+        [trainingOnly.id, [rule(trainingOnly.id, 40)]],
+      ]),
+      limitsByPromo: new Map(),
+      usageByPromo: new Map(),
+      behaviour: { user_id: 'u1', overall: {}, services: { vcf: profileWith() } as never },
+      req: { user_id: 'u1', transaction: { amount: 500, vendorId: 'v9', categoryId: 'cat-train', channel: 'paybill' } },
+    });
+    expect(result.winnerId).toBe('training-only');
+    expect(result.rejected).toContainEqual({ promotion_id: 'welcome-group', reason: 'LOST_TO_MORE_SPECIFIC' });
+  });
+});

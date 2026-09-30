@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   Input,
   Label,
@@ -10,16 +10,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@warmpawz/ui';
-import { apiClient } from '@/lib/api-client';
+import type { CatalogServiceCategory } from '@/lib/promo-engine/catalog-categories';
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
-import { applyVcfToDraft, syncRedeemAfterAudience, vcfOrEmpty } from '@/lib/promo-engine/vcf';
+import {
+  applyVcfToDraft,
+  audienceScopeEntries,
+  normalizeScopeMulti,
+  syncRedeemAfterAudience,
+  vcfOrEmpty,
+  withScopeList,
+} from '@/lib/promo-engine/vcf';
 import type {
+  PromoAudienceScope,
   PromoCountChannel,
   PromoEngineDraft,
   PromoLetter,
   PromoVcfDraft,
   PromoVisitLoop,
 } from '@/lib/promo-engine/types';
+import { CategoryMultiChips } from './CategoryMultiChips';
+import { VendorMultiPicker } from './VendorMultiPicker';
 
 const LETTERS: Array<{ id: PromoLetter; label: string }> = [
   { id: 'V', label: 'Vendor' },
@@ -31,8 +41,6 @@ const COUNT_CHANNELS: Array<{ id: PromoCountChannel; label: string }> = [
   { id: 'appointment', label: 'Appointment' },
   { id: 'paybill', label: 'Pay Bill' },
 ];
-
-type VendorHit = { id: string; business_name?: string; businessName?: string; role_display_name?: string };
 
 function LetterPicker({
   value,
@@ -59,65 +67,39 @@ function LetterPicker({
   );
 }
 
-function VendorSearch({
-  value,
-  label,
-  onPick,
+function ScopeListPicker<T extends PromoAudienceScope>({
+  scope,
+  noun,
+  categories,
+  loading,
+  error,
+  onChange,
 }: {
-  value?: string;
-  label?: string;
-  onPick: (id: string, name: string) => void;
+  scope: T;
+  noun: string;
+  categories: CatalogServiceCategory[];
+  loading: boolean;
+  error: string | null;
+  onChange: (next: T) => void;
 }) {
-  const [q, setQ] = useState(label || '');
-  const [hits, setHits] = useState<VendorHit[]>([]);
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      const query = q.trim();
-      if (query.length < 2) {
-        setHits([]);
-        return;
-      }
-      void apiClient
-        .get<{ vendors?: VendorHit[] }>(`/admin/vendors?q=${encodeURIComponent(query)}&limit=20`)
-        .then((res) => setHits(Array.isArray(res.vendors) ? res.vendors : []))
-        .catch(() => setHits([]));
-    }, 250);
-    return () => window.clearTimeout(t);
-  }, [q]);
+  if (scope.letter !== 'V' && scope.letter !== 'C') return null;
+  const letter = scope.letter;
+  const { ids, names } = audienceScopeEntries(scope, letter);
+  const set = (nextIds: string[], nextNames: string[]) =>
+    onChange(withScopeList(scope, letter, { ids: nextIds, names: nextNames }));
+  if (letter === 'V') {
+    return <VendorMultiPicker label={`Vendors ${noun}`} ids={ids} names={names} onChange={set} />;
+  }
   return (
-    <div className="space-y-2">
-      <Label>Vendor</Label>
-      <Input
-        value={q}
-        placeholder="Search business name"
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)}
-        className="min-h-11"
-      />
-      {value ? <p className="text-xs text-slate-500">Selected id {value}</p> : null}
-      {hits.length ? (
-        <ul className="max-h-40 overflow-y-auto rounded-lg border bg-white text-sm">
-          {hits.map((v) => {
-            const name = v.business_name || v.businessName || v.id;
-            return (
-              <li key={v.id}>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-slate-50"
-                  onClick={() => {
-                    onPick(v.id, name);
-                    setQ(name);
-                    setHits([]);
-                  }}
-                >
-                  <span>{name}</span>
-                  <span className="text-xs text-slate-500">{v.role_display_name || ''}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-    </div>
+    <CategoryMultiChips
+      label={`Categories ${noun}`}
+      categories={categories}
+      loading={loading}
+      error={error}
+      ids={ids}
+      names={names}
+      onChange={set}
+    />
   );
 }
 
@@ -137,24 +119,22 @@ export function AudienceStep({
   const setSourceLetter = (letter: PromoLetter) => {
     patch({
       ...vcf,
-      visitSource: {
-        ...vcf.visitSource,
-        letter,
-        vendorId: letter === 'V' ? vcf.visitSource.vendorId : undefined,
-        categoryId: letter === 'C' ? vcf.visitSource.categoryId : undefined,
-      },
+      visitSource: { ...normalizeScopeMulti({ ...vcf.visitSource, letter }), countMode: 'pooled' },
     });
   };
   const setPublishLetter = (letter: PromoLetter) => {
-    patch({
-      ...vcf,
-      publish: {
-        ...vcf.publish,
-        letter,
-        vendorId: letter === 'V' ? vcf.publish.vendorId : undefined,
-        categoryId: letter === 'C' ? vcf.publish.categoryId : undefined,
-      },
-    });
+    patch({ ...vcf, publish: normalizeScopeMulti({ ...vcf.publish, letter }) });
+  };
+  const sourceLetter = vcf.visitSource.letter;
+  const sourceEntries =
+    sourceLetter === 'V' || sourceLetter === 'C'
+      ? audienceScopeEntries(vcf.visitSource, sourceLetter)
+      : { ids: [], names: [] };
+  const canCopySource =
+    vcf.publish.letter === sourceLetter && sourceLetter !== 'F' && sourceEntries.ids.length > 0;
+  const copySourceToPublish = () => {
+    if (sourceLetter !== 'V' && sourceLetter !== 'C') return;
+    patch({ ...vcf, publish: withScopeList(vcf.publish, sourceLetter, sourceEntries) });
   };
 
   return (
@@ -163,40 +143,19 @@ export function AudienceStep({
         <h3 className="text-base font-semibold">Visit source</h3>
         <p className="text-sm text-slate-500">Whose completed tele, appointment, and Pay Bill visits are counted. Ecommerce never counts.</p>
         <LetterPicker value={vcf.visitSource.letter} onChange={setSourceLetter} />
-        {vcf.visitSource.letter === 'V' ? (
-          <VendorSearch
-            value={vcf.visitSource.vendorId}
-            label={vcf.visitSource.vendorName}
-            onPick={(id, name) =>
-              patch({ ...vcf, visitSource: { ...vcf.visitSource, vendorId: id, vendorName: name } })
-            }
-          />
-        ) : null}
-        {vcf.visitSource.letter === 'C' ? (
-          <div className="space-y-2">
-            <Label>Category</Label>
-            <Select
-              value={vcf.visitSource.categoryId || ''}
-              onValueChange={(id: string) => {
-                const row = categories.find((c) => c.id === id);
-                patch({
-                  ...vcf,
-                  visitSource: { ...vcf.visitSource, categoryId: id, categoryName: row?.name },
-                });
-              }}
-            >
-              <SelectTrigger className="min-h-11 bg-white">
-                <SelectValue placeholder={loading ? 'Loading…' : error || 'Pick a category'} />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <ScopeListPicker
+          scope={vcf.visitSource}
+          noun="whose visits count"
+          categories={categories}
+          loading={loading}
+          error={error}
+          onChange={(visitSource) => patch({ ...vcf, visitSource: { ...visitSource, countMode: 'pooled' } })}
+        />
+        {sourceLetter !== 'F' ? (
+          <p className="text-xs text-slate-500">
+            Visits across all selected are counted together. A customer&apos;s 1st visit to any of them
+            uses up the &quot;1st visit&quot;.
+          </p>
         ) : null}
         <div className="space-y-2">
           <Label>Width</Label>
@@ -326,36 +285,23 @@ export function AudienceStep({
         <h3 className="text-base font-semibold">Publish</h3>
         <p className="text-sm text-slate-500">Who the offer is for. Independent of visit source and redeem.</p>
         <LetterPicker value={vcf.publish.letter} onChange={setPublishLetter} />
-        {vcf.publish.letter === 'V' ? (
-          <VendorSearch
-            value={vcf.publish.vendorId}
-            label={vcf.publish.vendorName}
-            onPick={(id, name) => patch({ ...vcf, publish: { ...vcf.publish, vendorId: id, vendorName: name } })}
-          />
+        {canCopySource ? (
+          <button
+            type="button"
+            className="rounded-full border border-slate-200 px-3 py-1.5 text-sm hover:border-[#FF8C42]"
+            onClick={copySourceToPublish}
+          >
+            Same as visit source
+          </button>
         ) : null}
-        {vcf.publish.letter === 'C' ? (
-          <div className="space-y-2">
-            <Label>Category</Label>
-            <Select
-              value={vcf.publish.categoryId || ''}
-              onValueChange={(id: string) => {
-                const row = categories.find((c) => c.id === id);
-                patch({ ...vcf, publish: { ...vcf.publish, categoryId: id, categoryName: row?.name } });
-              }}
-            >
-              <SelectTrigger className="min-h-11 bg-white">
-                <SelectValue placeholder="Pick a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
+        <ScopeListPicker
+          scope={vcf.publish}
+          noun="where the offer applies"
+          categories={categories}
+          loading={loading}
+          error={error}
+          onChange={(publish) => patch({ ...vcf, publish })}
+        />
         <div className="space-y-2">
           <Label>Ranking override (optional)</Label>
           <Select

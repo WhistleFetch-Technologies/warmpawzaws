@@ -23,22 +23,31 @@ export type RankingOverride =
   | 'max_customer_cashback'
   | 'max_customer_total_value';
 
+/** Pooled: visits across every listed vendor/category add up as one group. */
+export type VisitCountMode = 'pooled';
+
+/**
+ * V/C scope. `vendorIds` / `categoryIds` hold the full list; the singular id is always the
+ * first list entry so older readers keep working.
+ */
+export interface VcfScope {
+  letter: Letter;
+  vendorId?: string;
+  vendorIds?: string[];
+  categoryId?: string;
+  categoryIds?: string[];
+}
+
 export interface PromoVcfConfig {
-  visitSource: {
-    letter: Letter;
-    vendorId?: string;
-    categoryId?: string;
+  visitSource: VcfScope & {
     width: 'general' | 'specific';
     channels?: CountChannel[];
+    countMode?: VisitCountMode;
   };
   visitLoop: VisitLoop;
   benefitMode: 'discount' | 'cashback' | 'both';
   maxDiscount?: number;
-  publish: {
-    letter: Letter;
-    vendorId?: string;
-    categoryId?: string;
-  };
+  publish: VcfScope;
   redeem?: {
     letter: Letter;
     vendorId?: string;
@@ -85,6 +94,8 @@ export type FallbackReason =
 export interface RankedPromo {
   promotionId: string;
   publishLetter: Letter;
+  /** Number of vendors/categories in publish; smaller wins within the same letter. */
+  publishScopeSize?: number;
   priority: number;
   updatedAt: string;
   discount: number;
