@@ -4,7 +4,10 @@ import type {
   PromoCustomerCopy,
   PromoEngineDraft,
   PromoEngineListItem,
+  PromoEnginePublishScope,
   PromoEngineStatus,
+  PromoLetter,
+  PromoSpendChannel,
   PromoVcfDraft,
 } from './types';
 import { createEmptyDraft } from './types';
@@ -120,6 +123,27 @@ export function draftToApiBody(draft: PromoEngineDraft): Record<string, unknown>
   };
 }
 
+const PUBLISH_LETTERS: PromoLetter[] = ['V', 'C', 'F'];
+const SPEND_CHANNELS: PromoSpendChannel[] = ['tele', 'appointment', 'paybill', 'ecommerce'];
+
+function mapPublishScope(raw: unknown): PromoEnginePublishScope | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const row = raw as Record<string, unknown>;
+  const letter = String(row.letter || '').toUpperCase() as PromoLetter;
+  if (!PUBLISH_LETTERS.includes(letter)) return null;
+  const list = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x ?? '')) : []);
+  const ids = list(row.ids).filter(Boolean);
+  const names = list(row.names);
+  return {
+    letter,
+    ids,
+    names: ids.map((id, i) => names[i] || id),
+    channels: list(row.channels).filter((c): c is PromoSpendChannel =>
+      SPEND_CHANNELS.includes(c as PromoSpendChannel),
+    ),
+  };
+}
+
 function mapApiListItem(p: Record<string, unknown>): PromoEngineListItem {
   const services = (p.serviceCategories || p.service_categories || []) as PromoEngineListItem['serviceCategories'];
   return {
@@ -128,6 +152,7 @@ function mapApiListItem(p: Record<string, unknown>): PromoEngineListItem {
     code: String(p.code || ''),
     status: (p.status as PromoEngineStatus) || 'DRAFT',
     serviceCategories: Array.isArray(services) ? services : [],
+    publishScope: mapPublishScope(p.publishScope ?? p.publish_scope),
     ruleType: (p.ruleType || p.rule_type || 'GENERIC') as PromoEngineListItem['ruleType'],
     fundingType: (p.fundingType || p.funding_type || 'WARMPAWZ') as PromoEngineListItem['fundingType'],
     usageCount: Number(p.usageCount ?? p.usage_count ?? 0),

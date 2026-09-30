@@ -217,12 +217,23 @@ export function createEmptyVcf(): PromoVcfDraft {
   };
 }
 
+/** Who a journey promotion is published to (from metadata.vcf.publish). */
+export interface PromoEnginePublishScope {
+  letter: PromoLetter;
+  /** Vendor ids for V, catalogue category ids for C, empty for F. */
+  ids: string[];
+  names: string[];
+  /** Empty = every payment channel. */
+  channels: PromoSpendChannel[];
+}
+
 export interface PromoEngineListItem {
   id: string;
   name: string;
   code: string;
   status: PromoEngineStatus;
   serviceCategories: ServiceCategory[];
+  publishScope?: PromoEnginePublishScope | null;
   ruleType: PromoRuleType;
   fundingType: PromoFundingType;
   usageCount: number;

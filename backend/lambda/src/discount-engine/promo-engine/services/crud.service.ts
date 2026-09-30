@@ -12,6 +12,7 @@ import {
   dbInsertAudit,
 } from '../repos/promo-engine.repo';
 import { parseCustomerCopy, validateCustomerCopy } from '../customer-copy';
+import { summarizePublishScope } from '../vcf/publish-summary';
 import {
   normalizePromoLimitsInput,
   validatePromoLimitsInput,
@@ -401,6 +402,7 @@ export async function listPromotions(filters?: {
       code: p.code || '',
       status: p.status,
       serviceCategories: p.service_categories,
+      publishScope: summarizePublishScope(p.metadata),
       ruleType: rules[0]?.rule_type || 'GENERIC',
       fundingType: p.funding_type || 'WARMPAWZ',
       usageCount: usage.length ? undefined : 0,

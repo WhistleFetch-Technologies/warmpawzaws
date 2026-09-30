@@ -89,20 +89,36 @@ export async function dbListPromotions(filters?: {
   const where: string[] = [];
   if (filters?.status && filters.status !== 'ALL') {
     params.push(filters.status);
-    where.push(`status = $${params.length}`);
+    where.push(`p.status = $${params.length}`);
   }
   if (filters?.service) {
     params.push(filters.service);
-    where.push(`$${params.length} = ANY(service_categories)`);
+    const n = params.length;
+    // Legacy rows carry the slug in service_categories; V/C/F rows publish to category ids.
+    where.push(`(
+      $${n} = ANY(p.service_categories)
+      OR (
+        p.metadata->'vcf'->'publish'->>'letter' = 'C'
+        AND EXISTS (
+          SELECT 1 FROM service_categories sc
+          WHERE (sc.id::text = $${n} OR lower(COALESCE(sc.category_id::text, '')) = lower($${n}))
+            AND (
+              p.metadata->'vcf'->'publish'->>'categoryId' = sc.id::text
+              OR COALESCE(p.metadata->'vcf'->'publish'->'categoryIds', '[]'::jsonb)
+                @> jsonb_build_array(sc.id::text)
+            )
+        )
+      )
+    )`);
   }
   if (filters?.q) {
     params.push(`%${filters.q}%`);
-    where.push(`(name ILIKE $${params.length} OR COALESCE(code, '') ILIKE $${params.length})`);
+    where.push(`(p.name ILIKE $${params.length} OR COALESCE(p.code, '') ILIKE $${params.length})`);
   }
   const sql = `
-    SELECT * FROM promo_engine_promotions
+    SELECT p.* FROM promo_engine_promotions p
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY updated_at DESC
+    ORDER BY p.updated_at DESC
     LIMIT 200`;
   const res = await query(sql, params);
   return (res.rows || []).map((r) => mapPromotion(r as Record<string, unknown>));
@@ -326,13 +342,18 @@ export async function dbFindActiveCandidates(opts: {
   return (res.rows || []).map((r) => mapPromotion(r as Record<string, unknown>));
 }
 
+/**
+ * Inactive categories stay in the list: is_active only hides a category from the customer
+ * services grid (e.g. Pet Shop), and shop vendors still belong to it. Active rows come first
+ * so they win when a role is listed on more than one category.
+ */
 export async function dbLoadServiceCategories(): Promise<
   Array<{ id: string; vendor_roles: unknown }>
 > {
   const res = await query(
     `SELECT id::text AS id, vendor_roles
      FROM service_categories
-     WHERE COALESCE(is_active, true) = true`,
+     ORDER BY COALESCE(is_active, true) DESC, display_order ASC NULLS LAST, id`,
     []
   );
   return (res.rows || []).map((r) => ({

@@ -19,7 +19,7 @@ import {
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { filterPromoEngineRows } from '@/lib/promo-engine/draft';
 import { canTransition } from '@/lib/promo-engine/status';
-import { labelsForCatalogSlugs } from '@/lib/promo-engine/catalog-categories';
+import { serviceLabelForRow } from '@/lib/promo-engine/list-service';
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
 import {
   effectivePromoStatus,
@@ -63,8 +63,8 @@ export function PromotionEngineList({
   };
 
   const filtered = useMemo(
-    () => filterPromoEngineRows(rows, { query, status, service, type }),
-    [rows, query, status, service, type],
+    () => filterPromoEngineRows(rows, { query, status, service, type }, categories),
+    [rows, query, status, service, type, categories],
   );
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -170,7 +170,7 @@ export function PromotionEngineList({
                 <PromotionEngineStatusBadge status={effectivePromoStatus(row)} />
               </div>
               <p className="text-sm text-slate-600">
-                {labelsForCatalogSlugs(row.serviceCategories, categories) || 'No service'}
+                {serviceLabelForRow(row, categories) || 'No service'}
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" size="sm" variant="ghost" onClick={() => onEdit(row.id)}>
@@ -230,8 +230,8 @@ export function PromotionEngineList({
                   <TableCell>
                     <PromotionEngineStatusBadge status={effectivePromoStatus(row)} />
                   </TableCell>
-                  <TableCell className="text-xs">
-                    {labelsForCatalogSlugs(row.serviceCategories, categories) || '—'}
+                  <TableCell className="max-w-[16rem] text-xs">
+                    {serviceLabelForRow(row, categories) || '—'}
                   </TableCell>
                   <TableCell className="text-xs">
                     {row.ruleType === 'CUSTOMER_JOURNEY' ? 'Journey' : 'Generic'}

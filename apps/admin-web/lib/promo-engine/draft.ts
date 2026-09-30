@@ -12,6 +12,8 @@ import {
   toListItem,
 } from './types';
 import { istLocalToEpochMs } from './datetime';
+import type { CatalogServiceCategory } from './catalog-categories';
+import { rowMatchesService } from './list-service';
 
 export function validateBasicsDraft(basics: PromoEngineBasics): string[] {
   const errors: string[] = [];
@@ -92,6 +94,7 @@ export interface PromoEngineListFilters {
 export function filterPromoEngineRows(
   rows: PromoEngineListItem[],
   filters: PromoEngineListFilters,
+  categories: CatalogServiceCategory[] = [],
 ): PromoEngineListItem[] {
   const q = filters.query.trim().toLowerCase();
   return rows.filter((row) => {
@@ -100,7 +103,7 @@ export function filterPromoEngineRows(
       if (!hay.includes(q)) return false;
     }
     if (filters.status !== 'all' && effectivePromoStatus(row) !== filters.status) return false;
-    if (filters.service !== 'all' && !row.serviceCategories.includes(filters.service as PromoEngineListItem['serviceCategories'][number])) {
+    if (filters.service !== 'all' && !rowMatchesService(row, filters.service, categories)) {
       return false;
     }
     if (filters.type !== 'all' && row.ruleType !== filters.type) return false;
