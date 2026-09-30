@@ -82,7 +82,13 @@ export async function resolveWpayListingDiscountPercents(
     for (const promo of row.candidates) {
       const vcf = parseVcfConfig(promo.metadata);
       if (!vcf) continue;
-      if (!matchesPublish(vcf.publish, { vendorId: row.vendorId, categoryId: row.categoryId })) {
+      if (
+        !matchesPublish(vcf.publish, {
+          vendorId: row.vendorId,
+          categoryId: row.categoryId,
+          channel: 'paybill',
+        })
+      ) {
         continue;
       }
 

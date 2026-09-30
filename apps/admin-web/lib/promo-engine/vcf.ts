@@ -115,6 +115,42 @@ export function describeAudienceScope(scope: PromoAudienceScope): string {
   return names.length ? `${scope.letter} (${names.join(', ')})` : scope.letter;
 }
 
+export type VisitChannelLock = 'none' | 'ecommerce_only' | 'ecommerce_required';
+
+/**
+ * A Pet Shop (ecommerce) visit-source category only has ecommerce visits:
+ * only ecommerce categories → channels locked to ecommerce; mixed with service
+ * categories → ecommerce stays on, other channels remain optional.
+ */
+export function visitChannelLock(
+  visitSource: PromoVcfDraft['visitSource'],
+  categories: Array<{ id: string; isEcommerce?: boolean }>
+): VisitChannelLock {
+  if (visitSource.letter !== 'C') return 'none';
+  const ids = audienceScopeEntries(visitSource, 'C').ids;
+  if (!ids.length) return 'none';
+  const ecommerceIds = new Set(categories.filter((c) => c.isEcommerce).map((c) => c.id));
+  const ecomCount = ids.filter((id) => ecommerceIds.has(id)).length;
+  if (!ecomCount) return 'none';
+  return ecomCount === ids.length ? 'ecommerce_only' : 'ecommerce_required';
+}
+
+export function applyVisitChannelLock(
+  visitSource: PromoVcfDraft['visitSource'],
+  lock: VisitChannelLock
+): PromoVcfDraft['visitSource'] {
+  if (lock === 'ecommerce_only') {
+    return { ...visitSource, width: 'specific', channels: ['ecommerce'] };
+  }
+  if (lock === 'ecommerce_required') {
+    const current = visitSource.width === 'specific' ? visitSource.channels || [] : [];
+    const base = current.length ? current : (['tele', 'appointment', 'paybill'] as const);
+    const channels = Array.from(new Set([...base, 'ecommerce' as const]));
+    return { ...visitSource, width: 'specific', channels };
+  }
+  return visitSource;
+}
+
 /** Normalize visit source + publish lists and stamp pooled counting. */
 export function normalizeVcfAudience(vcf: PromoVcfDraft): PromoVcfDraft {
   return {
@@ -164,7 +200,7 @@ export function validateVcfAudience(vcf: PromoVcfDraft): string[] {
     })
   );
   if (vs.width === 'specific' && !(vs.channels || []).length) {
-    errors.push('Specific visit width needs at least one of tele, appointment, or Pay Bill');
+    errors.push('Specific visit width needs at least one of tele, appointment, Pay Bill, or ecommerce');
   }
   const pub = vcf.publish;
   errors.push(

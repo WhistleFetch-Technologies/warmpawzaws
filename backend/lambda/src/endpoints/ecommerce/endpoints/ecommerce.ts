@@ -1242,6 +1242,14 @@ export function registerEcommerceEndpoints(app: Hono) {
           );
         }
       }
+      if (fullyCoveredByWallet && customerId) {
+        const { safeRecordVcfVisitFromShopOrder } = await import('../../../discount-engine/promo-engine');
+        await safeRecordVcfVisitFromShopOrder({
+          orderId,
+          customerId: String(customerId),
+          vendorId: firstVendorId ? String(firstVendorId) : null,
+        });
+      }
 
       const successResponse = {
         success: true,

@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import {
   createWpayRazorpayOrder,
   createWpayWalletOnlyPayment,
+  WpayBookingPaymentInProgressError,
   WpayPaymentAlreadyCompletedError,
 } from '../../../../utils/wpay-razorpay-order';
 import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
@@ -105,16 +106,14 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       }
     }
 
+    // Open booking only informs promo category; the payment row links a booking solely when its
+    // at-home fee is credited, so an unrelated/future appointment never blocks today's Pay Bill.
     const openBooking = appointmentFeeBookingId
       ? creditCandidate
       : UUID_RE.test(requestedBookingId)
         ? creditCandidate
         : await dbFindOpenWapptBookingForPay(customerId, vendorId);
-    const bookingId = appointmentFeeBookingId
-      ? appointmentFeeBookingId
-      : openBooking?.id
-        ? String(openBooking.id)
-        : null;
+    const bookingId = appointmentFeeBookingId;
     const serviceCategory =
       resolveWpayPromoCategory({
         bookingCategory: openBooking?.service_category,
@@ -387,6 +386,12 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
           paymentId: error.paymentId,
           code: 'WPAY_PAYMENT_ALREADY_COMPLETED',
         },
+        409,
+      );
+    }
+    if (error instanceof WpayBookingPaymentInProgressError) {
+      return c.json(
+        { success: false, error: error.message, code: 'WPAY_BOOKING_PAYMENT_IN_PROGRESS' },
         409,
       );
     }

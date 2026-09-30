@@ -85,6 +85,19 @@ async function triggerPendingLoyaltyAwardOnDelivered(
     console.warn('[VENDOR-ORDERS] Loyalty pending award trigger failed (non-fatal):', e?.message);
   }
 }
+async function triggerVcfShopVisitOnDelivered(
+  orderId: string,
+  status: string,
+  previousStatus: string
+): Promise<void> {
+  if (status !== 'delivered' || previousStatus === 'delivered') return;
+  try {
+    const { safeRecordVcfVisitForShopOrderId } = await import('../../../discount-engine/promo-engine');
+    await safeRecordVcfVisitForShopOrderId(orderId);
+  } catch (e) {
+    console.warn('[VENDOR-ORDERS] VCF shop visit write failed (non-fatal):', e);
+  }
+}
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -664,6 +677,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
 
       triggerOrderInvoiceOnDelivered(orderId, status, currentStatus);
       void triggerPendingLoyaltyAwardOnDelivered(orderId, status, currentStatus, vendorId);
+      await triggerVcfShopVisitOnDelivered(orderId, status, currentStatus);
 
       return c.json({ 
         success: true, 
@@ -825,6 +839,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
 
       triggerOrderInvoiceOnDelivered(orderId, status, currentStatus);
       void triggerPendingLoyaltyAwardOnDelivered(orderId, status, currentStatus, vendorId);
+      await triggerVcfShopVisitOnDelivered(orderId, status, currentStatus);
 
       return c.json({ 
         success: true, 

@@ -142,8 +142,9 @@ export const PROMO_CUSTOMER_COPY_PLACEHOLDERS = [
 export const PROMO_CUSTOMER_COPY_MAX_LENGTH = 200;
 
 export type PromoLetter = 'V' | 'C' | 'F';
-export type PromoCountChannel = 'tele' | 'appointment' | 'paybill';
-export type PromoSpendChannel = PromoCountChannel | 'ecommerce';
+/** Visit-source channels. Ecommerce is opt-in (only counted when listed as a specific channel). */
+export type PromoCountChannel = 'tele' | 'appointment' | 'paybill' | 'ecommerce';
+export type PromoSpendChannel = PromoCountChannel;
 export type PromoVisitLoop =
   | { kind: 'visit_number'; n: number }
   | { kind: 'every_nth'; n: number }
@@ -177,7 +178,8 @@ export interface PromoVcfDraft {
   visitLoop: PromoVisitLoop;
   benefitMode: 'discount' | 'cashback' | 'both';
   maxDiscount?: number;
-  publish: PromoAudienceScope;
+  /** `channels` empty/absent = the offer applies on every payment channel. */
+  publish: PromoAudienceScope & { channels?: PromoSpendChannel[] };
   redeem?: {
     letter: PromoLetter;
     vendorId?: string;

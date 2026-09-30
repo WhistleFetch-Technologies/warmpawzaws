@@ -1554,6 +1554,9 @@ export function UniversalServicesByStyle({
                     address: providerAddress,
                     category: finalCategory,
                     serviceKey: finalCategory,
+                    ...(serviceStyle === 'tele'
+                      ? { primaryLabel: 'View Services', showPayCta: false }
+                      : {}),
                     onPrimary: (e) => openProviderProfileForChevron(e, provider),
                     onProfileClick: (e) => openProviderProfileForChevron(e, provider),
                     router,

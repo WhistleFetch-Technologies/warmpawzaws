@@ -311,8 +311,10 @@ export function WarmpawzAppointmentsVendorProfile({
         persona: category,
         category,
         vendorId: vid,
+        serviceId: sid,
+        serviceStyle: 'tele',
         resumeScreen: 'vet-booking',
-        wapptMode: true,
+        wapptMode: false,
       })
     ) {
       return;

@@ -18,8 +18,11 @@ export {
   reverseVcfVisit,
   recordVcfVisitFromBooking,
   recordVcfVisitFromPayBill,
+  recordVcfVisitFromShopOrder,
   safeRecordVcfVisitFromBooking,
   safeRecordVcfVisitFromPayBill,
+  safeRecordVcfVisitFromShopOrder,
+  safeRecordVcfVisitForShopOrderId,
   safeReverseVcfVisit,
 } from './services/visit-writer.service';
 export {

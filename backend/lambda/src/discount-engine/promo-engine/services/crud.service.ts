@@ -190,6 +190,8 @@ function normalizeScope(raw: unknown): unknown {
   return scope;
 }
 
+const PUBLISH_CHANNELS = ['tele', 'appointment', 'paybill', 'ecommerce'];
+
 function normalizeAudienceScopes(vcf: Record<string, unknown>): Record<string, unknown> {
   const next: Record<string, unknown> = {
     ...vcf,
@@ -198,6 +200,17 @@ function normalizeAudienceScopes(vcf: Record<string, unknown>): Record<string, u
   };
   if (next.visitSource && typeof next.visitSource === 'object') {
     next.visitSource = { ...(next.visitSource as Record<string, unknown>), countMode: 'pooled' };
+  }
+  if (next.publish && typeof next.publish === 'object') {
+    const publish = { ...(next.publish as Record<string, unknown>) };
+    const channels = Array.isArray(publish.channels)
+      ? [...new Set(publish.channels.map((c) => String(c).trim().toLowerCase()))].filter((c) =>
+          PUBLISH_CHANNELS.includes(c)
+        )
+      : [];
+    if (channels.length) publish.channels = channels;
+    else delete publish.channels;
+    next.publish = publish;
   }
   return next;
 }

@@ -14,10 +14,12 @@ import type { CatalogServiceCategory } from '@/lib/promo-engine/catalog-categori
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
 import {
   applyVcfToDraft,
+  applyVisitChannelLock,
   audienceScopeEntries,
   normalizeScopeMulti,
   syncRedeemAfterAudience,
   vcfOrEmpty,
+  visitChannelLock,
   withScopeList,
 } from '@/lib/promo-engine/vcf';
 import type {
@@ -25,6 +27,7 @@ import type {
   PromoCountChannel,
   PromoEngineDraft,
   PromoLetter,
+  PromoSpendChannel,
   PromoVcfDraft,
   PromoVisitLoop,
 } from '@/lib/promo-engine/types';
@@ -40,7 +43,43 @@ const COUNT_CHANNELS: Array<{ id: PromoCountChannel; label: string }> = [
   { id: 'tele', label: 'Tele' },
   { id: 'appointment', label: 'Appointment' },
   { id: 'paybill', label: 'Pay Bill' },
+  { id: 'ecommerce', label: 'Ecommerce' },
 ];
+const PUBLISH_CHANNELS: Array<{ id: PromoSpendChannel; label: string }> = COUNT_CHANNELS;
+
+function ChannelChips<T extends string>({
+  options,
+  selected,
+  isDisabled,
+  onToggle,
+}: {
+  options: Array<{ id: T; label: string }>;
+  selected: T[];
+  isDisabled?: (id: T) => boolean;
+  onToggle: (id: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((ch) => {
+        const on = selected.includes(ch.id);
+        const disabled = isDisabled?.(ch.id) ?? false;
+        return (
+          <button
+            key={ch.id}
+            type="button"
+            disabled={disabled}
+            className={`rounded-full border px-3 py-1.5 text-sm ${
+              on ? 'border-[#FF8C42] bg-orange-50' : 'border-slate-200'
+            } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+            onClick={() => onToggle(ch.id)}
+          >
+            {ch.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function LetterPicker({
   value,
@@ -113,8 +152,13 @@ export function AudienceStep({
   const { categories, loading, error } = useCatalogServiceCategories();
   const vcf = vcfOrEmpty(draft);
 
-  const patch = (next: PromoVcfDraft) =>
-    onChange(applyVcfToDraft(draft, syncRedeemAfterAudience(next)));
+  const patch = (next: PromoVcfDraft) => {
+    const lock = visitChannelLock(next.visitSource, categories);
+    const locked = { ...next, visitSource: applyVisitChannelLock(next.visitSource, lock) };
+    onChange(applyVcfToDraft(draft, syncRedeemAfterAudience(locked)));
+  };
+  const channelLock = visitChannelLock(vcf.visitSource, categories);
+  const publishChannels = vcf.publish.channels || [];
 
   const setSourceLetter = (letter: PromoLetter) => {
     patch({
@@ -141,7 +185,10 @@ export function AudienceStep({
     <div className="space-y-6">
       <section className="space-y-4 rounded-2xl border bg-white p-5">
         <h3 className="text-base font-semibold">Visit source</h3>
-        <p className="text-sm text-slate-500">Whose completed tele, appointment, and Pay Bill visits are counted. Ecommerce never counts.</p>
+        <p className="text-sm text-slate-500">
+          Whose completed visits are counted. General counts tele, appointment, and Pay Bill; ecommerce
+          orders count only when you pick Ecommerce as a specific channel.
+        </p>
         <LetterPicker value={vcf.visitSource.letter} onChange={setSourceLetter} />
         <ScopeListPicker
           scope={vcf.visitSource}
@@ -161,6 +208,7 @@ export function AudienceStep({
           <Label>Width</Label>
           <Select
             value={vcf.visitSource.width}
+            disabled={channelLock !== 'none'}
             onValueChange={(w: string) =>
               patch({
                 ...vcf,
@@ -178,28 +226,28 @@ export function AudienceStep({
           </Select>
         </div>
         {vcf.visitSource.width === 'specific' ? (
-          <div className="flex flex-wrap gap-2">
-            {COUNT_CHANNELS.map((ch) => {
-              const on = (vcf.visitSource.channels || []).includes(ch.id);
-              return (
-                <button
-                  key={ch.id}
-                  type="button"
-                  className={`rounded-full border px-3 py-1.5 text-sm ${
-                    on ? 'border-[#FF8C42] bg-orange-50' : 'border-slate-200'
-                  }`}
-                  onClick={() => {
-                    const set = new Set(vcf.visitSource.channels || []);
-                    if (set.has(ch.id)) set.delete(ch.id);
-                    else set.add(ch.id);
-                    patch({ ...vcf, visitSource: { ...vcf.visitSource, channels: Array.from(set) } });
-                  }}
-                >
-                  {ch.label}
-                </button>
-              );
-            })}
-          </div>
+          <ChannelChips
+            options={COUNT_CHANNELS}
+            selected={vcf.visitSource.channels || []}
+            isDisabled={(id) =>
+              channelLock === 'ecommerce_only' || (channelLock === 'ecommerce_required' && id === 'ecommerce')
+            }
+            onToggle={(id) => {
+              const set = new Set(vcf.visitSource.channels || []);
+              if (set.has(id)) set.delete(id);
+              else set.add(id);
+              patch({ ...vcf, visitSource: { ...vcf.visitSource, channels: Array.from(set) } });
+            }}
+          />
+        ) : null}
+        {channelLock === 'ecommerce_only' ? (
+          <p className="text-xs text-slate-500">
+            Ecommerce categories (e.g. Pet Shop) only have shop-order visits, so the channel is Ecommerce.
+          </p>
+        ) : channelLock === 'ecommerce_required' ? (
+          <p className="text-xs text-slate-500">
+            An ecommerce category is selected, so Ecommerce stays on for its shop-order visits.
+          </p>
         ) : null}
       </section>
 
@@ -302,6 +350,26 @@ export function AudienceStep({
           error={error}
           onChange={(publish) => patch({ ...vcf, publish })}
         />
+        <div className="space-y-2">
+          <Label>Channels (optional)</Label>
+          <p className="text-xs text-slate-500">
+            Limit where the offer shows and applies. None selected = every channel.
+          </p>
+          <ChannelChips
+            options={PUBLISH_CHANNELS}
+            selected={publishChannels}
+            onToggle={(id) => {
+              const set = new Set(publishChannels);
+              if (set.has(id)) set.delete(id);
+              else set.add(id);
+              const channels = Array.from(set);
+              patch({
+                ...vcf,
+                publish: { ...vcf.publish, channels: channels.length ? channels : undefined },
+              });
+            }}
+          />
+        </div>
         <div className="space-y-2">
           <Label>Ranking override (optional)</Label>
           <Select

@@ -23,7 +23,7 @@ export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
           title="VISIT / PUBLISH / REDEEM"
           body={
             draft.vcf
-              ? `Visit ${describeAudienceScope(draft.vcf.visitSource)}${draft.vcf.visitSource.letter !== 'F' ? ' pooled' : ''} ${draft.vcf.visitSource.width} · ${draft.vcf.visitLoop.kind} · Publish ${describeAudienceScope(draft.vcf.publish)} · Redeem ${draft.vcf.redeem?.letter || '—'} ${(draft.vcf.redeem?.channels || []).join(',')}`
+              ? `Visit ${describeAudienceScope(draft.vcf.visitSource)}${draft.vcf.visitSource.letter !== 'F' ? ' pooled' : ''} ${draft.vcf.visitSource.width}${draft.vcf.visitSource.width === 'specific' ? ` (${(draft.vcf.visitSource.channels || []).join(',')})` : ''} · ${draft.vcf.visitLoop.kind} · Publish ${describeAudienceScope(draft.vcf.publish)}${draft.vcf.publish.channels?.length ? ` on ${draft.vcf.publish.channels.join(',')}` : ''} · Redeem ${draft.vcf.redeem?.letter || '—'} ${(draft.vcf.redeem?.channels || []).join(',')}`
               : describeConditionGroup(draft.conditionJson)
           }
         />

@@ -116,7 +116,7 @@ function applyDelta(
   return next;
 }
 
-/** Ecommerce is never a visit. Returns the same profile. */
+/** Non-visit channels return the same profile. */
 export function incrementVisitProfile(opts: {
   profile: VisitProfile;
   channel: PaymentChannel | null;

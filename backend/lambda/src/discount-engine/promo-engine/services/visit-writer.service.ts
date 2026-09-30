@@ -1,5 +1,5 @@
 /**
- * Idempotent V/C/F visit writes. Ecommerce never increments.
+ * Idempotent V/C/F visit writes (one per reference id).
  */
 import { query } from '../../../database/rds-connection';
 import {
@@ -187,16 +187,14 @@ export async function recordVcfVisitFromBooking(booking: {
   });
 }
 
-export async function recordVcfVisitFromPayBill(opts: {
-  paymentId: string;
-  customerId: string;
-  vendorId?: string | null;
-  bookingCategoryId?: string | null;
-}): Promise<{ written: boolean; skipped?: string }> {
-  const vendorId = opts.vendorId ? String(opts.vendorId) : null;
+async function resolveVendorVisitScope(
+  vendorIdRaw: string | null | undefined,
+  bookingCategoryId?: string | null
+): Promise<{ vendorId: string | null; categoryId: string | null; roleId: string | null }> {
+  const vendorId = vendorIdRaw ? String(vendorIdRaw) : null;
   const vendor = vendorId ? await dbLoadVendorRole(vendorId) : null;
   const catalogue = await dbLoadServiceCategories();
-  const booked = String(opts.bookingCategoryId || '').trim();
+  const booked = String(bookingCategoryId || '').trim();
   const bookedKnown = catalogue.some((row) => String(row.id) === booked) ? booked : null;
   const categoryId =
     bookedKnown ||
@@ -205,14 +203,70 @@ export async function recordVcfVisitFromPayBill(opts: {
       roleName: vendor?.roleName,
       categories: catalogue,
     });
+  return { vendorId, categoryId, roleId: vendor?.roleId || null };
+}
+
+export async function recordVcfVisitFromPayBill(opts: {
+  paymentId: string;
+  customerId: string;
+  vendorId?: string | null;
+  bookingCategoryId?: string | null;
+}): Promise<{ written: boolean; skipped?: string }> {
+  const scope = await resolveVendorVisitScope(opts.vendorId, opts.bookingCategoryId);
   return recordVcfVisit({
     userId: opts.customerId,
     channel: 'paybill',
-    vendorId,
-    categoryId,
-    roleId: vendor?.roleId || null,
+    ...scope,
     referenceId: opts.paymentId,
   });
+}
+
+/**
+ * Shop order visit (channel `ecommerce`), keyed by order id so cancel/refund reverse it.
+ * Only promotions that list `ecommerce` as a specific visit-source channel count it.
+ */
+export async function recordVcfVisitFromShopOrder(opts: {
+  orderId: string;
+  customerId: string;
+  vendorId?: string | null;
+}): Promise<{ written: boolean; skipped?: string }> {
+  if (!opts.customerId || !opts.orderId) return { written: false, skipped: 'missing_ids' };
+  const scope = await resolveVendorVisitScope(opts.vendorId);
+  return recordVcfVisit({
+    userId: opts.customerId,
+    channel: 'ecommerce',
+    ...scope,
+    referenceId: opts.orderId,
+  });
+}
+
+export async function safeRecordVcfVisitFromShopOrder(
+  opts: Parameters<typeof recordVcfVisitFromShopOrder>[0]
+): Promise<void> {
+  try {
+    await recordVcfVisitFromShopOrder(opts);
+  } catch (err) {
+    console.warn('[vcf] shop order visit write skipped:', err instanceof Error ? err.message : err);
+  }
+}
+
+/** Loads the order, then records the visit — for callers that only hold the order id. */
+export async function safeRecordVcfVisitForShopOrderId(orderId: string): Promise<void> {
+  try {
+    const res = await query(
+      `SELECT customer_id, vendor_id FROM orders WHERE id::text = $1 LIMIT 1`,
+      [String(orderId)]
+    );
+    const row = res.rows?.[0] as { customer_id?: string; vendor_id?: string } | undefined;
+    if (!row?.customer_id) return;
+    await recordVcfVisitFromShopOrder({
+      orderId: String(orderId),
+      customerId: String(row.customer_id),
+      vendorId: row.vendor_id ? String(row.vendor_id) : null,
+    });
+  } catch (err) {
+    console.warn('[vcf] shop order visit write skipped:', err instanceof Error ? err.message : err);
+  }
 }
 
 export async function safeRecordVcfVisitFromBooking(

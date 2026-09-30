@@ -5,7 +5,8 @@ import { visitCountForPromo } from '../vcf/visit-count';
 import { rankEligible } from '../vcf/rank-eligible';
 import { matchesPublish, parseVcfConfig, publishScopeSize } from '../vcf/parse-config';
 import { parseVisitProfile } from '../vcf/visit-profile';
-import type { FallbackReason, RankedPromo, VisitProfile } from '../vcf/types';
+import { isSpendChannel } from '../vcf/channel';
+import type { FallbackReason, RankedPromo, SpendChannel, VisitProfile } from '../vcf/types';
 import type {
   AppliedBenefit,
   CustomerBehaviourProfile,
@@ -28,12 +29,15 @@ export type VcfScoreResult = {
 function paymentFromReq(req: EvaluateRequest): {
   vendorId: string | null;
   categoryId: string | null;
+  channel: SpendChannel | null;
   amount: number;
 } {
   const t = req.transaction || {};
+  const rawChannel = String((t as { channel?: unknown }).channel || '').trim().toLowerCase();
   return {
     vendorId: t.vendorId ? String(t.vendorId) : t.vendor_id ? String(t.vendor_id) : null,
     categoryId: t.categoryId ? String(t.categoryId) : null,
+    channel: isSpendChannel(rawChannel) ? rawChannel : null,
     amount: Number(t.amount ?? 0) || 0,
   };
 }

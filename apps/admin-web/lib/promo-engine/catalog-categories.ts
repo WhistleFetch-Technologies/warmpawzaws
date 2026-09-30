@@ -4,7 +4,11 @@ export interface CatalogServiceCategory {
   id: string;
   slug: string;
   name: string;
+  /** Product / shop category (e.g. Pet Shop) — its visits come only from ecommerce orders. */
+  isEcommerce?: boolean;
 }
+
+const ECOMMERCE_CATEGORY_KEYS = new Set(['shop', 'petshop', 'petproducts', 'ecommerce', 'products']);
 
 const UUID_RE = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
@@ -19,9 +23,14 @@ function readString(...values: unknown[]): string {
   return '';
 }
 
-function isEcommerceCategory(row: Record<string, unknown>): boolean {
+function isEcommerceCategory(row: Record<string, unknown>, slug: string): boolean {
   const type = readString(row.type, row.category_type, row.categoryType).toLowerCase();
-  return type === 'ecommerce' || type === 'product' || type === 'shop';
+  if (type === 'ecommerce' || type === 'product' || type === 'shop') return true;
+  const compact = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return (
+    ECOMMERCE_CATEGORY_KEYS.has(compact(slug)) ||
+    ECOMMERCE_CATEGORY_KEYS.has(compact(readString(row.name, row.display_name, row.displayName)))
+  );
 }
 
 function isInactive(row: Record<string, unknown>): boolean {
@@ -51,14 +60,16 @@ export function normalizeCatalogCategories(raw: unknown): CatalogServiceCategory
   const out: CatalogServiceCategory[] = [];
   for (const item of list) {
     const row = asRecord(item);
-    if (isEcommerceCategory(row) || isInactive(row)) continue;
+    if (isInactive(row)) continue;
     const slug = catalogCategorySlug(row);
     if (!slug || seen.has(slug)) continue;
     seen.add(slug);
+    const ecommerce = isEcommerceCategory(row, slug);
     out.push({
       id: readString(row.id, row.categoryId, row.category_id, slug),
       slug,
       name: catalogCategoryName(row, slug),
+      ...(ecommerce ? { isEcommerce: true } : {}),
     });
   }
   return out;

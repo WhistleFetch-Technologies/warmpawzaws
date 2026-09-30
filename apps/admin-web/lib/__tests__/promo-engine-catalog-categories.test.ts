@@ -6,7 +6,7 @@ import {
 } from '../promo-engine/catalog-categories';
 
 describe('normalizeCatalogCategories', () => {
-  it('keeps catalogue slugs and display names, drops ecommerce and inactive', () => {
+  it('keeps catalogue slugs and display names, drops inactive, flags ecommerce', () => {
     const rows = normalizeCatalogCategories([
       { id: '1', categoryId: 'grooming', name: 'Grooming', status: 'active' },
       { id: '2', slug: 'vet-care', name: 'Vet Care' },
@@ -14,9 +14,19 @@ describe('normalizeCatalogCategories', () => {
       { id: '4', categoryId: 'training', name: 'Training', status: 'inactive' },
       { id: '5', categoryId: 'grooming', name: 'Grooming duplicate' },
     ]);
-    expect(rows.map((r) => r.slug)).toEqual(['grooming', 'vet-care']);
+    expect(rows.map((r) => r.slug)).toEqual(['grooming', 'vet-care', 'boarding']);
     expect(rows[0].name).toBe('Grooming');
     expect(rows[1].name).toBe('Vet Care');
+    expect(rows[0].isEcommerce).toBeUndefined();
+    expect(rows[2].isEcommerce).toBe(true);
+  });
+
+  it('flags the Pet Shop / Pet Products category as ecommerce', () => {
+    const rows = normalizeCatalogCategories([
+      { id: 'a', categoryId: 'shop', name: 'Pet Products' },
+      { id: 'b', categoryId: 'pet-shop', name: 'Pet Shop' },
+    ]);
+    expect(rows.every((r) => r.isEcommerce)).toBe(true);
   });
 
   it('prefers slug over uuid ids', () => {

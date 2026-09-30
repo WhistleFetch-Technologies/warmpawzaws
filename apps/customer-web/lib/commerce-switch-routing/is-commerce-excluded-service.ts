@@ -6,6 +6,18 @@ import type { ServiceBookingRouteContext } from './types';
 
 const EXCLUDED = new Set<string>(COMMERCE_SWITCH_EXCLUDED_DOMAINS);
 
+/** Style spellings that mean a remote (tele) consult even without the word "tele". */
+const VIDEO_STYLE_TOKENS = new Set([
+  'video',
+  'video_call',
+  'video_consult',
+  'video_consultation',
+  'online',
+  'online_consult',
+  'online_consultation',
+  'virtual',
+]);
+
 function normalizeToken(value: string | undefined): string {
   return String(value ?? '')
     .toLowerCase()
@@ -33,6 +45,8 @@ export function isCommerceExcludedService(context: ServiceBookingRouteContext): 
   ].filter(Boolean);
 
   if (tokens.some((t) => t === 'tele' || t.includes('tele'))) return true;
+  const styleTokens = [normalizeToken(context.serviceType), normalizeToken(context.serviceStyle)];
+  if (styleTokens.some((t) => VIDEO_STYLE_TOKENS.has(t))) return true;
   if (tokens.some((t) => matchesExcludedDomain(t))) return true;
 
   // Shop / checkout URL segments

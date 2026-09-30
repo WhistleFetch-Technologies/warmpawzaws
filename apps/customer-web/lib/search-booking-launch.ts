@@ -7,6 +7,7 @@ import {
   normalizeVendorServiceRowForPackage,
 } from '@/lib/vendor-package-purchase-nav';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
+import { resolveSearchServiceStyle } from '@/lib/search-tele-style';
 import { buildVendorShareAppPath } from '@/lib/vendor-profile-share';
 import {
   isBoardingCategory,
@@ -965,7 +966,7 @@ export function launchSearchServiceBooking({
   vendorName,
   service,
   category,
-  serviceStyle: serviceStyleOpt,
+  serviceStyle: rawServiceStyle,
   address = '',
   rating = 0,
   reviewCount = 0,
@@ -973,6 +974,7 @@ export function launchSearchServiceBooking({
   returnSearchUrl,
   activeModelId: activeModelIdParam,
 }: SearchBookingLaunchParams): void {
+  const serviceStyleOpt = resolveSearchServiceStyle(rawServiceStyle, service);
   const activeModelId = activeModelIdParam ?? getActiveCommerceModel();
   const commerceRoute = resolveServiceBookingCommerceRouteForNavigation({
     serviceKey: category,
@@ -1031,6 +1033,28 @@ export function launchSearchServiceBooking({
         return;
       }
       toast.error('Could not start package booking. Please try again or pick another service.');
+      return;
+    }
+  }
+
+  // Tele before Pay: a video consult is prepaid at booking and must never open Pay Bill.
+  // Vet tele only — never route nutrition/training/grooming/boarding/walker/sitting through instant tele.
+  if (
+    !isNutritionCategory(category) &&
+    !isTrainingCategory(category) &&
+    !isGroomingCategory(category) &&
+    !isBoardingCategory(category) &&
+    !isWalkerCategory(category) &&
+    !isSittingCategory(category) &&
+    (serviceStyleOpt === 'tele' || category.toLowerCase().includes('tele'))
+  ) {
+    const teleUrl = buildTeleInstantAutoPayBookingUrl({
+      serviceId: String(service.catalogServiceId || service.vendorServiceId),
+      vendorId: String(vendorId),
+      category,
+    });
+    if (teleUrl) {
+      router.push(teleUrl);
       return;
     }
   }
@@ -1218,29 +1242,9 @@ export function launchSearchServiceBooking({
     return;
   }
 
-  // Vet tele only — never route nutrition/training/grooming/boarding/walker/sitting through instant tele
-  if (
-    !isNutritionCategory(category) &&
-    !isTrainingCategory(category) &&
-    !isGroomingCategory(category) &&
-    !isBoardingCategory(category) &&
-    !isWalkerCategory(category) &&
-    !isSittingCategory(category) &&
-    (serviceStyle === 'tele' || category.toLowerCase().includes('tele'))
-  ) {
-    const teleUrl = buildTeleInstantAutoPayBookingUrl({
-      serviceId: String(service.catalogServiceId || service.vendorServiceId),
-      vendorId: String(vendorId),
-      category,
-    });
-    if (teleUrl) {
-      router.push(teleUrl);
-      return;
-    }
-  }
-
   if (isVetLikeCategoryDetect(category) || persona === 'vet') {
     const serviceIdForBooking = service.catalogServiceId || String(service.vendorServiceId);
+    const vetStyle = serviceStyle === 'tele' ? 'tele' : 'at_center';
     const intent: SearchVetBookingIntent = {
       vendorId: String(vendorId),
       vendorName,
@@ -1248,8 +1252,8 @@ export function launchSearchServiceBooking({
       serviceName: service.name,
       price: service.price,
       duration: service.duration,
-      serviceStyle: 'at_center',
-      serviceType: 'at_center',
+      serviceStyle: vetStyle,
+      serviceType: vetStyle,
       service: serviceObj,
       clinic: {
         id: String(vendorId),

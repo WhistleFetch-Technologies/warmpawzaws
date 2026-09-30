@@ -37,6 +37,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { DEFAULT_COMMISSION_RATE } from '../../../lib/constants/commission';
 import { getVendorTierCommission } from '../../../utils/vendor-tier-commission';
+import { readOrderPromoEvaluationId } from '../../ecommerce/shared/order-promo-evaluation-id';
 import {
   resolveOrderCommissionByOrderId,
   buildCommissionSnapshot,
@@ -522,10 +523,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
               `SELECT metadata FROM orders WHERE id = $1::uuid LIMIT 1`,
               [shopOrder.id],
             );
-            const meta = metaRows.rows?.[0]?.metadata;
-            const parsed = meta && typeof meta === 'string' ? JSON.parse(meta) : meta;
-            const evalId =
-              parsed?.evaluationId || parsed?.promoEngine?.evaluationId || null;
+            const evalId = readOrderPromoEvaluationId(metaRows.rows?.[0]?.metadata);
             if (evalId) {
               const { safeCommitPromotion } = await import(
                 '../../../discount-engine/promo-engine'
@@ -542,6 +540,12 @@ class CreateRazorpayOrderHandler extends BaseHandler {
               '[RAZORPAY-CREATE-ORDER] ecom promo-engine commit (wallet-full) failed:',
               commitErr instanceof Error ? commitErr.message : commitErr,
             );
+          }
+          {
+            const { safeRecordVcfVisitForShopOrderId } = await import(
+              '../../../discount-engine/promo-engine'
+            );
+            await safeRecordVcfVisitForShopOrderId(String(shopOrder.id));
           }
           return this.success({ fullyCoveredByWallet: true, orderId: shopOrder.id });
         }
@@ -564,10 +568,13 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           customerId: customerIdFinal,
           vendorId: vendorIdFinal || '',
         };
+        const orderEval = readOrderPromoEvaluationId(shopOrder.metadata);
         const bodyEval =
           (body as { evaluationId?: string; promoEngineEvaluationId?: string }).evaluationId ||
           (body as { promoEngineEvaluationId?: string }).promoEngineEvaluationId;
-        if (bodyEval) {
+        if (orderEval) {
+          notes.evaluationId = orderEval;
+        } else if (bodyEval) {
           notes.evaluationId = String(bodyEval);
         } else if (customerIdFinal) {
           // Re-evaluate if client omitted evaluationId (cashback-only carts)
@@ -1479,25 +1486,17 @@ class VerifyPaymentHandler extends BaseHandler {
               payment.notes && typeof payment.notes === 'object'
                 ? (payment.notes as Record<string, unknown>)
                 : {};
-            let evalId =
+            const { query: q } = await import('../../../database/rds-connection');
+            const metaRows = await q(
+              `SELECT metadata FROM orders WHERE id = $1::uuid LIMIT 1`,
+              [ecommerceOrderId],
+            );
+            const evalId =
+              readOrderPromoEvaluationId(metaRows.rows?.[0]?.metadata) ||
               notesObj.evaluationId ||
               notesObj.evaluation_id ||
               notesObj.promoEngineEvaluationId ||
               null;
-            if (!evalId) {
-              const { query: q } = await import('../../../database/rds-connection');
-              const metaRows = await q(
-                `SELECT metadata FROM orders WHERE id = $1::uuid LIMIT 1`,
-                [ecommerceOrderId],
-              );
-              const meta = metaRows.rows?.[0]?.metadata;
-              const parsed =
-                meta && typeof meta === 'string' ? JSON.parse(meta) : meta;
-              evalId =
-                parsed?.evaluationId ||
-                parsed?.promoEngine?.evaluationId ||
-                null;
-            }
             const { safeCommitPromotion } = await import(
               '../../../discount-engine/promo-engine'
             );
@@ -1509,6 +1508,12 @@ class VerifyPaymentHandler extends BaseHandler {
             });
           } catch (err) {
             console.warn('[PAYMENT-VERIFY] ecom promo-engine commit failed:', err);
+          }
+          {
+            const { safeRecordVcfVisitForShopOrderId } = await import(
+              '../../../discount-engine/promo-engine'
+            );
+            await safeRecordVcfVisitForShopOrderId(String(ecommerceOrderId));
           }
 
           return {

@@ -160,7 +160,7 @@ const SERVICE_CATALOG = [
     icon_color: 'text-pink-500',
     display_order: 3,
     has_problem_grid: false,
-    vendor_roles: ['shop', 'pet_shop'],
+    vendor_roles: ['shop', 'pet_shop', 'seller'],
     specializations: []
   },
   {

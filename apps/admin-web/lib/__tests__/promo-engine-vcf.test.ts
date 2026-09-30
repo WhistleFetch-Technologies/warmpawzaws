@@ -1,4 +1,5 @@
 import {
+  applyVisitChannelLock,
   audienceScopeEntries,
   describeAudienceScope,
   inheritRedeemScopeFromAudience,
@@ -8,6 +9,7 @@ import {
   syncRedeemAfterAudience,
   validateVcfAudience,
   validateVcfBenefits,
+  visitChannelLock,
   withScopeList,
 } from '../promo-engine/vcf';
 import { createEmptyVcf } from '../promo-engine/types';
@@ -36,6 +38,37 @@ describe('validateVcfAudience', () => {
     v.visitSource.width = 'specific';
     v.visitSource.channels = [];
     expect(validateVcfAudience(v)[0]).toMatch(/at least one/);
+  });
+});
+
+describe('visit channel lock for ecommerce categories', () => {
+  const catalogue = [
+    { id: 'pet-shop', isEcommerce: true },
+    { id: 'vet' },
+  ];
+  it('locks Pet Shop-only visit source to ecommerce', () => {
+    const vs = { letter: 'C' as const, categoryIds: ['pet-shop'], width: 'general' as const };
+    const lock = visitChannelLock(vs, catalogue);
+    expect(lock).toBe('ecommerce_only');
+    expect(applyVisitChannelLock(vs, lock)).toMatchObject({ width: 'specific', channels: ['ecommerce'] });
+  });
+  it('keeps ecommerce on when mixed with a service category', () => {
+    const vs = { letter: 'C' as const, categoryIds: ['vet', 'pet-shop'], width: 'general' as const };
+    const lock = visitChannelLock(vs, catalogue);
+    expect(lock).toBe('ecommerce_required');
+    expect(applyVisitChannelLock(vs, lock).channels).toEqual(['tele', 'appointment', 'paybill', 'ecommerce']);
+  });
+  it('does not lock service-only or non-category sources', () => {
+    expect(visitChannelLock({ letter: 'C', categoryIds: ['vet'], width: 'general' }, catalogue)).toBe('none');
+    expect(visitChannelLock({ letter: 'F', width: 'general' }, catalogue)).toBe('none');
+  });
+});
+
+describe('publish channels', () => {
+  it('survive audience normalization', () => {
+    const v = createEmptyVcf();
+    v.publish = { letter: 'F', channels: ['paybill'] };
+    expect(normalizeVcfAudience(v).publish.channels).toEqual(['paybill']);
   });
 });
 

@@ -44,6 +44,7 @@ describe('scoreVcfCandidates', () => {
     tele: { count: 0, lastAt: null },
     appointment: { count: 0, lastAt: null },
     paybill: { count: 0, lastAt: null },
+    ecommerce: { count: 0, lastAt: null },
   };
 
   const vendor = promo({
@@ -123,6 +124,42 @@ describe('scoreVcfCandidates', () => {
     expect(result.winnerId).toBe('platform-promo');
     expect(result.rejected).toContainEqual({ promotion_id: 'vendor-promo', reason: 'VISIT_FAIL' });
   });
+
+  it('skips a promo whose publish channels exclude the payment channel', () => {
+    const shopOnly = promo({
+      id: 'shop-only',
+      priority: 1,
+      updated_at: '2026-01-01T00:00:00Z',
+      metadata: {
+        vcf: {
+          visitSource: { letter: 'F', width: 'general' },
+          visitLoop: { kind: 'every' },
+          benefitMode: 'discount',
+          publish: { letter: 'F', channels: ['ecommerce'] },
+        },
+      },
+    });
+    const rules = new Map([[shopOnly.id, [rule(shopOnly.id, 40)]]]);
+    const base = {
+      candidates: [shopOnly],
+      rulesByPromo: rules,
+      limitsByPromo: new Map(),
+      usageByPromo: new Map(),
+      behaviour: { user_id: 'u1', overall: {}, services: { vcf: visitProfile } as never },
+    };
+    expect(
+      scoreVcfCandidates({
+        ...base,
+        req: { user_id: 'u1', transaction: { amount: 500, vendorId: 'v1', channel: 'paybill' } },
+      }).winnerId
+    ).toBeNull();
+    expect(
+      scoreVcfCandidates({
+        ...base,
+        req: { user_id: 'u1', transaction: { amount: 500, vendorId: 'v1', channel: 'ecommerce' } },
+      }).winnerId
+    ).toBe('shop-only');
+  });
 });
 
 describe('scoreVcfCandidates pooled multi-category first visit', () => {
@@ -147,6 +184,7 @@ describe('scoreVcfCandidates pooled multi-category first visit', () => {
         tele: { count: 0, lastAt: null },
         appointment: { count: 1, lastAt: null },
         paybill: { count: 0, lastAt: null },
+        ecommerce: { count: 0, lastAt: null },
       };
     }
     return p;

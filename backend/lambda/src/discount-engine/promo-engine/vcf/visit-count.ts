@@ -1,5 +1,11 @@
 import { scopeIds } from './parse-config';
-import { COUNT_CHANNELS, type CountChannel, type PromoVcfConfig, type VisitProfile } from './types';
+import {
+  COUNT_CHANNELS,
+  GENERAL_COUNT_CHANNELS,
+  type CountChannel,
+  type PromoVcfConfig,
+  type VisitProfile,
+} from './types';
 
 function cellCount(
   cells: Record<CountChannel, { count: number }> | undefined,
@@ -17,12 +23,13 @@ function channelsForSource(source: PromoVcfConfig['visitSource']): CountChannel[
   if (source.width === 'specific' && source.channels?.length) {
     return source.channels.filter((c) => COUNT_CHANNELS.includes(c));
   }
-  return [...COUNT_CHANNELS];
+  return [...GENERAL_COUNT_CHANNELS];
 }
 
 /**
  * Visit count for **this** promotion only.
- * Ecommerce is never included. General = tele + appointment + paybill in that V/C/F scope.
+ * General = tele + appointment + paybill in that V/C/F scope. Ecommerce counts only when
+ * listed as a specific channel.
  * V/C lists are pooled: visits across every listed vendor/category add up as one group.
  */
 export function visitCountForPromo(profile: VisitProfile, source: PromoVcfConfig['visitSource']): number {

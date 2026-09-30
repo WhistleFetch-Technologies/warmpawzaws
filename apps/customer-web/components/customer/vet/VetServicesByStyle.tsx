@@ -1408,6 +1408,9 @@ export function VetServicesByStyle({
                   address: getProviderAddress(provider) || 'Location on booking',
                   category: 'vet',
                   serviceKey: 'vet',
+                  ...(serviceStyle === 'tele'
+                    ? { primaryLabel: 'View Services', showPayCta: false }
+                    : {}),
                   onPrimary: (e) => openVetProviderProfile(e, provider),
                   onProfileClick: (e) => openVetProviderProfile(e, provider),
                   router,

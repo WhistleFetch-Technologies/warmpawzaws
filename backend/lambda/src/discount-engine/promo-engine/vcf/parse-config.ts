@@ -147,8 +147,21 @@ export function parseVcfConfig(metadata: Record<string, unknown> | undefined | n
         .filter((c): c is CountChannel => COUNT_CHANNELS.includes(c as CountChannel))
     : undefined;
   const visitLoop = asLoop(row.visitLoop) || { kind: 'every' };
-  const publish = scope(row.publish, true);
-  if (!publish) return null;
+  const publishScope = scope(row.publish, true);
+  if (!publishScope) return null;
+  const publishRaw = row.publish as Record<string, unknown>;
+  const publishChannels = Array.isArray(publishRaw.channels)
+    ? [
+        ...new Set(
+          publishRaw.channels
+            .map((c) => String(c))
+            .filter((c): c is SpendChannel => SPEND.includes(c as SpendChannel))
+        ),
+      ]
+    : [];
+  const publish: PromoVcfConfig['publish'] = publishChannels.length
+    ? { ...publishScope, channels: publishChannels }
+    : publishScope;
 
   const modeRaw = String(row.benefitMode || '').toLowerCase();
   const benefitMode: PromoVcfConfig['benefitMode'] =
@@ -202,11 +215,17 @@ export function parseVcfConfig(metadata: Record<string, unknown> | undefined | n
   };
 }
 
-/** F matches everything; V/C match when the payment's vendor/category is in the publish list. */
+/**
+ * F matches every vendor/category; V/C match when the payment's vendor/category is in the
+ * publish list. When `publish.channels` is set, the payment channel must also be listed.
+ */
 export function matchesPublish(
-  publish: VcfScope,
-  ctx: { vendorId?: string | null; categoryId?: string | null }
+  publish: PromoVcfConfig['publish'],
+  ctx: { vendorId?: string | null; categoryId?: string | null; channel?: SpendChannel | null }
 ): boolean {
+  if (publish.channels?.length) {
+    if (!ctx.channel || !publish.channels.includes(ctx.channel)) return false;
+  }
   if (publish.letter === 'F') return true;
   const target = publish.letter === 'V' ? ctx.vendorId : ctx.categoryId;
   if (!target) return false;

@@ -1,4 +1,4 @@
-import type { PaymentChannel } from './types';
+import type { CountChannel, PaymentChannel } from './types';
 
 const TELE = new Set(['tele', 'video_consultation', 'video', 'online', 'online_consultation']);
 const APPOINTMENT = new Set([
@@ -35,8 +35,11 @@ export function classifyPaymentChannel(opts: {
   return null;
 }
 
-export function isCountChannel(channel: PaymentChannel): channel is 'tele' | 'appointment' | 'paybill' {
-  return channel === 'tele' || channel === 'appointment' || channel === 'paybill';
+/** Channels written to the visit profile (ecommerce included; promos opt in to counting it). */
+export function isCountChannel(channel: PaymentChannel): channel is CountChannel {
+  return (
+    channel === 'tele' || channel === 'appointment' || channel === 'paybill' || channel === 'ecommerce'
+  );
 }
 
 export function inferEvaluateSurface(tx: {

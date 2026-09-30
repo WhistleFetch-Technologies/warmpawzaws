@@ -1,14 +1,19 @@
 /**
  * V / C / F contract. Visit source, publish, and redeem are independent.
- * Ecommerce is a spend channel only — never a visit.
+ * Ecommerce orders are recorded as visits but only count for promotions that list
+ * `ecommerce` as a specific visit-source channel.
  */
 
 export type Letter = 'V' | 'C' | 'F';
-export type CountChannel = 'tele' | 'appointment' | 'paybill';
-export type SpendChannel = CountChannel | 'ecommerce';
+export type CountChannel = 'tele' | 'appointment' | 'paybill' | 'ecommerce';
+export type SpendChannel = CountChannel;
 export type PaymentChannel = SpendChannel;
 
-export const COUNT_CHANNELS: CountChannel[] = ['tele', 'appointment', 'paybill'];
+/** Every channel a visit cell holds. */
+export const COUNT_CHANNELS: CountChannel[] = ['tele', 'appointment', 'paybill', 'ecommerce'];
+
+/** "General" visit source counts service visits only; ecommerce is opt-in. */
+export const GENERAL_COUNT_CHANNELS: CountChannel[] = ['tele', 'appointment', 'paybill'];
 
 export type VisitLoop =
   | { kind: 'visit_number'; n: number }
@@ -47,7 +52,8 @@ export interface PromoVcfConfig {
   visitLoop: VisitLoop;
   benefitMode: 'discount' | 'cashback' | 'both';
   maxDiscount?: number;
-  publish: VcfScope;
+  /** `channels` empty/absent = every payment channel. */
+  publish: VcfScope & { channels?: SpendChannel[] };
   redeem?: {
     letter: Letter;
     vendorId?: string;
@@ -108,6 +114,7 @@ export function emptyChannelCells(): Record<CountChannel, ChannelCell> {
     tele: { count: 0, lastAt: null },
     appointment: { count: 0, lastAt: null },
     paybill: { count: 0, lastAt: null },
+    ecommerce: { count: 0, lastAt: null },
   };
 }
 

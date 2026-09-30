@@ -34,6 +34,19 @@ describe('resolveServiceBookingCommerceRoute', () => {
     expect(route.effectiveModelId).toBe('marketplace');
   });
 
+  it('treats video-type styles as tele even under warmpawz_pay', () => {
+    getActiveCommerceModel.mockReturnValue('warmpawz_pay');
+    for (const serviceStyle of ['video', 'video_consultation', 'Online Consult']) {
+      const route = resolveServiceBookingCommerceRouteForNavigation({
+        serviceKey: 'vet',
+        category: 'vet',
+        serviceStyle,
+      });
+      expect(route.excludedDomain).toBe(true);
+      expect(route.useMarketplaceFlow).toBe(true);
+    }
+  });
+
   it('returns marketplace for excluded nutrition category', () => {
     const route = resolveServiceBookingCommerceRoute({
       serviceKey: 'nutritionist',

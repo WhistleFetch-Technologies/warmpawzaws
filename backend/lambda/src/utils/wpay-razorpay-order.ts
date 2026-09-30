@@ -12,6 +12,92 @@ export class WpayPaymentAlreadyCompletedError extends Error {
   }
 }
 
+export class WpayBookingPaymentInProgressError extends Error {
+  constructor() {
+    super(
+      'An earlier payment for this appointment is still processing. Check Pay Bill history or try again in a few minutes.',
+    );
+    this.name = 'WpayBookingPaymentInProgressError';
+  }
+}
+
+const STALE_WALLET_ATTEMPT_MS = 2 * 60 * 1000;
+const SUPERSEDED_REASON = 'superseded_stale_pay_bill';
+
+/** A Razorpay order is abandoned when it has no payment attempts, or every attempt failed. */
+export function isAbandonedRazorpayOrder(
+  payments: Array<{ status?: string | null }> | null | undefined,
+): boolean {
+  const items = Array.isArray(payments) ? payments : [];
+  return items.every((p) => String(p?.status ?? '').toLowerCase() === 'failed');
+}
+
+type ActiveBookingPaymentRow = {
+  id: string;
+  razorpay_order_id: string | null;
+  payment_source: string | null;
+  customer_id: string | null;
+  created_at: string | Date | null;
+};
+
+/**
+ * One payable attempt per booking (idx_payments_one_active_per_booking). A new credited Pay Bill
+ * may replace this customer's earlier Pay Bill attempt only when Razorpay shows nothing in flight.
+ */
+async function supersedeStaleBookingPayBill(params: {
+  bookingId: string;
+  customerId: string;
+  idempotencyKey: string;
+}): Promise<void> {
+  const active = await query(
+    `SELECT id::text AS id, razorpay_order_id, payment_source, customer_id::text AS customer_id, created_at
+     FROM payments
+     WHERE booking_id = $1::uuid
+       AND LOWER(COALESCE(payment_status, '')) IN ('pending', 'processing')
+       AND idempotency_key IS DISTINCT FROM $2
+     LIMIT 1`,
+    [params.bookingId, params.idempotencyKey],
+  );
+  const row = active.rows[0] as ActiveBookingPaymentRow | undefined;
+  if (!row?.id) return;
+  if (row.payment_source !== 'warmpawz_pay' || row.customer_id !== params.customerId) {
+    throw new WpayBookingPaymentInProgressError();
+  }
+
+  if (row.razorpay_order_id) {
+    let attempts: Array<{ status?: string }> | undefined;
+    try {
+      const res = (await razorpayRequest(
+        `/orders/${encodeURIComponent(row.razorpay_order_id)}/payments`,
+        'GET',
+        undefined,
+        10000,
+      )) as { items?: Array<{ status?: string }> };
+      attempts = res?.items ?? [];
+    } catch {
+      throw new WpayBookingPaymentInProgressError();
+    }
+    if (!isAbandonedRazorpayOrder(attempts)) {
+      throw new WpayBookingPaymentInProgressError();
+    }
+  } else {
+    const createdMs = row.created_at ? new Date(row.created_at).getTime() : 0;
+    if (Number.isFinite(createdMs) && Date.now() - createdMs < STALE_WALLET_ATTEMPT_MS) {
+      throw new WpayBookingPaymentInProgressError();
+    }
+  }
+
+  await query(
+    `UPDATE payments
+     SET payment_status = 'failed',
+         failure_reason = COALESCE(NULLIF(BTRIM(failure_reason), ''), $2),
+         updated_at = NOW()
+     WHERE id = $1::uuid
+       AND LOWER(COALESCE(payment_status, '')) IN ('pending', 'processing')`,
+    [row.id, SUPERSEDED_REASON],
+  );
+}
+
 const CLIENT_REQUEST_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -202,7 +288,7 @@ export async function createWpayRazorpayOrder(params: {
   const discountAmount = Number(quoteMetadata.quotedDiscountAmount ?? 0);
   const originalAmount = Number(quotedOriginal);
 
-  try {
+  const insertPending = async () => {
     const payRows = await insert('payments', {
       booking_id: bookingId ?? null,
       customer_id: customerId,
@@ -223,21 +309,23 @@ export async function createWpayRazorpayOrder(params: {
         quotedPayableAmount: amt,
       },
     });
-
     const row = Array.isArray(payRows) ? payRows[0] : payRows;
     const paymentId = row?.id != null ? String(row.id) : '';
     if (!paymentId) {
       throw new Error('Failed to create payment row');
     }
-
     return {
-      orderId: razorpayOrder.id,
+      orderId: razorpayOrder.id!,
       amount: (razorpayOrder.amount ?? Math.round(chargeAmt * 100)) / 100,
       amountPaise: razorpayOrder.amount ?? Math.round(chargeAmt * 100),
       currency: razorpayOrder.currency || 'INR',
       keyId: config.keyId,
       paymentId,
     };
+  };
+
+  try {
+    return await insertPending();
   } catch (error: unknown) {
     if (!isUniqueViolation(error)) throw error;
 
@@ -250,9 +338,18 @@ export async function createWpayRazorpayOrder(params: {
     const racedPending = raced ? reusePendingOrder(raced, config.keyId, chargeAmt) : null;
     if (racedPending) return racedPending;
 
-    throw new Error(
-      'A payment for this request already exists. Close checkout and start Pay Bill again.',
-    );
+    if (!bookingId) {
+      throw new Error(
+        'A payment for this request already exists. Close checkout and start Pay Bill again.',
+      );
+    }
+    await supersedeStaleBookingPayBill({ bookingId, customerId, idempotencyKey });
+    try {
+      return await insertPending();
+    } catch (retryError: unknown) {
+      if (isUniqueViolation(retryError)) throw new WpayBookingPaymentInProgressError();
+      throw retryError;
+    }
   }
 }
 
@@ -290,28 +387,56 @@ export async function createWpayWalletOnlyPayment(params: {
   const discountAmount = Number(params.quoteMetadata.quotedDiscountAmount ?? 0);
   const originalAmount = Number(quotedOriginal);
 
-  const payRows = await insert('payments', {
-    booking_id: params.bookingId ?? null,
-    customer_id: params.customerId,
-    vendor_id: params.vendorId,
-    razorpay_order_id: null,
-    amount: amt,
-    original_amount: Number.isFinite(originalAmount) ? originalAmount : amt,
-    discount_amount: Number.isFinite(discountAmount) ? discountAmount : 0,
-    currency: 'INR',
-    payment_method: 'wallet',
-    payment_status: 'pending',
-    payment_source: 'warmpawz_pay',
-    idempotency_key: idempotencyKey,
-    metadata: {
-      ...params.quoteMetadata,
-      clientRequestId,
-      razorpayChargeAmount: 0,
-      quotedPayableAmount: amt,
-      walletOnly: true,
-    },
-  });
-  const row = Array.isArray(payRows) ? payRows[0] : payRows;
+  const insertPending = () =>
+    insert('payments', {
+      booking_id: params.bookingId ?? null,
+      customer_id: params.customerId,
+      vendor_id: params.vendorId,
+      razorpay_order_id: null,
+      amount: amt,
+      original_amount: Number.isFinite(originalAmount) ? originalAmount : amt,
+      discount_amount: Number.isFinite(discountAmount) ? discountAmount : 0,
+      currency: 'INR',
+      payment_method: 'wallet',
+      payment_status: 'pending',
+      payment_source: 'warmpawz_pay',
+      idempotency_key: idempotencyKey,
+      metadata: {
+        ...params.quoteMetadata,
+        clientRequestId,
+        razorpayChargeAmount: 0,
+        quotedPayableAmount: amt,
+        walletOnly: true,
+      },
+    });
+
+  let payRows: unknown;
+  try {
+    payRows = await insertPending();
+  } catch (error: unknown) {
+    if (!isUniqueViolation(error) || !params.bookingId) throw error;
+    const raced = await findWpayPaymentByIdempotency({
+      idempotencyKey,
+      vendorId: params.vendorId,
+      customerId: params.customerId,
+    });
+    assertNotCompleted(raced);
+    if (raced?.id && String(raced.payment_status ?? '').toLowerCase() === 'pending') {
+      return { paymentId: String(raced.id), amount: amt };
+    }
+    await supersedeStaleBookingPayBill({
+      bookingId: params.bookingId,
+      customerId: params.customerId,
+      idempotencyKey,
+    });
+    try {
+      payRows = await insertPending();
+    } catch (retryError: unknown) {
+      if (isUniqueViolation(retryError)) throw new WpayBookingPaymentInProgressError();
+      throw retryError;
+    }
+  }
+  const row = (Array.isArray(payRows) ? payRows[0] : payRows) as { id?: unknown } | undefined;
   const paymentId = row?.id != null ? String(row.id) : '';
   if (!paymentId) {
     throw new Error('Failed to create payment row');

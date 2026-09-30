@@ -1,5 +1,5 @@
 import { classifyPaymentChannel, inferEvaluateSurface, resolveSpendChannelFromBooking } from '../channel';
-import { parseVcfConfig } from '../parse-config';
+import { matchesPublish, parseVcfConfig } from '../parse-config';
 import { categoryIdFromVendorRole } from '../category-from-role';
 import { resolvePaymentContext } from '../payment-context';
 import { visitCountForPromo } from '../visit-count';
@@ -146,11 +146,13 @@ describe('visit count is per promo source', () => {
     tele: { count: 4, lastAt: null },
     appointment: { count: 1, lastAt: null },
     paybill: { count: 3, lastAt: null },
+    ecommerce: { count: 6, lastAt: null },
   };
   profile.categories.c1 = {
     tele: { count: 10, lastAt: null },
     appointment: { count: 0, lastAt: null },
     paybill: { count: 0, lastAt: null },
+    ecommerce: { count: 2, lastAt: null },
   };
 
   function source(partial: PromoVcfConfig['visitSource']): PromoVcfConfig['visitSource'] {
@@ -175,6 +177,65 @@ describe('visit count is per promo source', () => {
   });
   it('does not mix vendor counts into platform F', () => {
     expect(visitCountForPromo(profile, source({ letter: 'F', width: 'general' }))).toBe(3);
+  });
+  it('leaves ecommerce out of general visit sources', () => {
+    expect(
+      visitCountForPromo(profile, source({ letter: 'C', categoryId: 'c1', width: 'general' }))
+    ).toBe(10);
+  });
+  it('counts ecommerce only when a specific source opts in', () => {
+    expect(
+      visitCountForPromo(
+        profile,
+        source({ letter: 'V', vendorId: 'v1', width: 'specific', channels: ['ecommerce'] })
+      )
+    ).toBe(6);
+    expect(
+      visitCountForPromo(
+        profile,
+        source({ letter: 'C', categoryId: 'c1', width: 'specific', channels: ['tele', 'ecommerce'] })
+      )
+    ).toBe(12);
+  });
+});
+
+describe('parseVcfConfig channels', () => {
+  const base = {
+    visitLoop: { kind: 'every' },
+    benefitMode: 'discount',
+  };
+  it('keeps ecommerce as a specific visit-source channel', () => {
+    const vcf = parseVcfConfig({
+      vcf: {
+        ...base,
+        visitSource: { letter: 'C', categoryId: 'pet-shop', width: 'specific', channels: ['ecommerce'] },
+        publish: { letter: 'F' },
+      },
+    });
+    expect(vcf?.visitSource.channels).toEqual(['ecommerce']);
+  });
+  it('reads publish channels and drops unknown ones', () => {
+    const vcf = parseVcfConfig({
+      vcf: {
+        ...base,
+        visitSource: { letter: 'F', width: 'general' },
+        publish: { letter: 'F', channels: ['paybill', 'bogus', 'paybill'] },
+      },
+    });
+    expect(vcf?.publish.channels).toEqual(['paybill']);
+  });
+  it('treats missing publish channels as every channel', () => {
+    const vcf = parseVcfConfig({
+      vcf: { ...base, visitSource: { letter: 'F', width: 'general' }, publish: { letter: 'F' } },
+    });
+    expect(vcf?.publish.channels).toBeUndefined();
+    expect(matchesPublish(vcf!.publish, { channel: 'tele' })).toBe(true);
+  });
+  it('restricts publish to listed channels', () => {
+    const publish = { letter: 'V' as const, vendorId: 'v1', channels: ['paybill' as const] };
+    expect(matchesPublish(publish, { vendorId: 'v1', channel: 'paybill' })).toBe(true);
+    expect(matchesPublish(publish, { vendorId: 'v1', channel: 'ecommerce' })).toBe(false);
+    expect(matchesPublish(publish, { vendorId: 'v1', channel: null })).toBe(false);
   });
 });
 
@@ -276,12 +337,20 @@ describe('visit profile writer primitives', () => {
     expect(next.vendors.v1.paybill.count).toBe(1);
     expect(next.vendors.v1.categoryId).toBe('c1');
   });
-  it('does not write ecommerce as a visit', () => {
+  it('writes ecommerce into its own cell', () => {
     const next = incrementVisitProfile({
       profile: emptyVisitProfile(),
       channel: 'ecommerce',
       vendorId: 'v1',
+      categoryId: 'pet-shop',
     });
+    expect(next.platform.ecommerce.count).toBe(1);
+    expect(next.platform.paybill.count).toBe(0);
+    expect(next.categories['pet-shop'].ecommerce.count).toBe(1);
+    expect(next.vendors.v1.ecommerce.count).toBe(1);
+  });
+  it('ignores a null channel', () => {
+    const next = incrementVisitProfile({ profile: emptyVisitProfile(), channel: null, vendorId: 'v1' });
     expect(next).toEqual(emptyVisitProfile());
   });
   it('decrements the same cell once', () => {
