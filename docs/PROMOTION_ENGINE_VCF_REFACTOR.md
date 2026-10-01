@@ -47,7 +47,7 @@ A promotion is one of three:
 - Cashback only
 - Discount and cashback together
 
-When both are on, **max discount** is the ceiling on the two combined. The instant cut and the cashback together cannot go past that cap.
+When both are on, **max discount** caps the instant cut only. Cashback is always paid in full and is never reduced by that cap.
 
 ### 4. Where it is published
 
@@ -234,16 +234,15 @@ Score **all** available promotions, then pick. Do not short-circuit after the fi
 
 ---
 
-## Combined cap
+## Discount cap
 
-When `benefitMode` is `both` and `maxDiscount` is set:
+When `benefitMode` is `discount` or `both` and `maxDiscount` is set:
 
 1. Compute the discount (percent or fixed), not above the bill.
-2. Compute the cashback (percent or fixed).
-3. If discount + cashback is above `maxDiscount`, cut cashback first.
-4. If the discount alone is above `maxDiscount`, cut the discount to the cap and set cashback to 0.
+2. If the discount is above `maxDiscount`, cut the discount to the cap.
+3. Compute the cashback (percent or fixed). `maxDiscount` never reduces it; a per-benefit `max_amount` on the cashback line still applies.
 
-Discount only uses `maxDiscount` as today’s per-line cap. Cashback only is not cut by that field; expiry still applies.
+Cashback only is not cut by `maxDiscount`; expiry still applies.
 
 ---
 
@@ -375,11 +374,11 @@ Same function, same snapshot, same rank. The only difference is `persist: false`
 4. **Score every available promo in memory**  
    For each row: sum visit count from **that** promo’s V/C/F + general/specific channels; apply visit loop; apply dates/budget/per-user (`passesLimits`, including `per_transaction`).  
    Fail → keep the row as a fallback with `VISIT_FAIL` or `LIMIT_FAIL`. Do not apply its benefit.  
-   Pass → eligible set with computed discount/cashback (combined cap **not** applied yet).
+   Pass → eligible set with computed discount/cashback (discount cap **not** applied yet).
 
 5. **Rank the eligible set**  
    Default: publish V > C > F, then `priority` desc, then later `updated_at`.  
-   If the winner’s campaign has `least_platform_loss` | `max_customer_discount` | `max_customer_cashback` | `max_customer_total_value`, re-sort **only that eligible set** with that strategy. Then apply combined max cap on the winner (`calculate-benefits`).
+   If the winner’s campaign has `least_platform_loss` | `max_customer_discount` | `max_customer_cashback` | `max_customer_total_value`, re-sort **only that eligible set** with that strategy. Then apply the max discount cap to the winner's discount only (`evaluate-vcf.ts`); cashback is not reduced.
 
 6. **Return one winner + ordered fallbacks**  
    Reasons: `LOST_TO_MORE_SPECIFIC`, `LOST_TO_PRIORITY`, `VISIT_FAIL`, `LIMIT_FAIL`. Customer UI shows the winner only. Commit uses `evaluationId`. On expiry or limit race, re-run this pipeline and take the next eligible row in the same order.
@@ -408,7 +407,7 @@ Existing files to extend, not replace: `evaluate-snapshot.ts`, `evaluate.service
 
 ### Fallbacks vs stacking
 
-`resolveStack` stays for benefit shape on the **single winner** (discount + cashback together, combined cap). It is not a second ranking pass across V/C/F. Losers never add a second discount.
+`resolveStack` stays for benefit shape on the **single winner** (discount + cashback together, discount-only cap). It is not a second ranking pass across V/C/F. Losers never add a second discount.
 
 ---
 
@@ -420,10 +419,10 @@ Work stays on `feature/promo-engine-v1`. Each phase ships with unit tests before
 
 | Phase | Name | Ships | Does not |
 | --- | --- | --- | --- |
-| **1** | Context + primitives | Channel classifier, role → `service_categories.id` (no invented slug), `PromoVcfConfig` / `VisitProfile` types, visit-count from **that** promo’s V/C/F + general/specific channels, visit-loop match, specificity rank V > C > F (override only if set), combined-cap helper. Tests only. | Checkout, profile writes, SQL candidate filter |
+| **1** | Context + primitives | Channel classifier, role → `service_categories.id` (no invented slug), `PromoVcfConfig` / `VisitProfile` types, visit-count from **that** promo’s V/C/F + general/specific channels, visit-loop match, specificity rank V > C > F (override only if set), discount-cap helper. Tests only. | Checkout, profile writes, SQL candidate filter |
 | **2** | Visit profile writer | Idempotent increment on booking/tele completed+paid and Pay Bill capture. Three buckets (platform, category id, vendor id). Ecommerce never writes. Refund/cancel decrements once. | Evaluate ranking, admin UI |
 | **3** | Evaluate pipeline | Narrow `dbFindActiveCandidates` (ACTIVE + window + publish F or C=this category or V=this vendor). One snapshot. Score **all** available. Failures → `VISIT_FAIL` / `LIMIT_FAIL`. Rank eligible. One winner + ordered fallbacks. `persist: false` on preview. Old rows without `visitSource` keep today’s category condition. | Admin form rebuild, backfill |
-| **4** | Cap + redeem | Combined max discount in `calculate-benefits`. Commit copies redeem letter/channels/expiry onto the wallet row. Spend checks letter + channel. | New checkout screens |
+| **4** | Cap + redeem | Max discount caps the instant discount only in `calculate-benefits` (cashback never reduced). Commit copies redeem letter/channels/expiry onto the wallet row. Spend checks letter + channel. | New checkout screens |
 | **5** | Checkout wiring | Same evaluate contract on Pay Bill, tele/appointment, ecommerce. Server-resolved context. Engine is the only customer cut. Debounce Pay Bill ~300ms. Reuse `evaluationId` when amount, vendor, channel unchanged. | Changing §1–6 |
 | **6** | Admin + quote UI | Audience: visit source, publish, redeem as **three separate** V/C/F choices. Live vendor/category pickers. Customer shows winner only. | Second discount UI |
 | **7** | Backfill + sign-off | Dev backfill of completed bookings and captured Pay Bills, keyed so it cannot double-count. Run the **Done when** list. | Prod backfill without explicit ask |
@@ -438,7 +437,7 @@ Work stays on `feature/promo-engine-v1`. Each phase ships with unit tests before
 | `promo-engine/vcf/visit-count.ts` | Sum cells for **this** promo’s visit source only. General = tele+appointment+paybill. Ecommerce excluded. |
 | `promo-engine/vcf/visit-loop.ts` | Upcoming visit = completed count + 1. First visit is n = 1 (count 0). |
 | `promo-engine/vcf/rank-eligible.ts` | Score-all list → winner. Default V > C > F, then priority, then later `updated_at`. Override re-sorts eligible only if set on the specificity winner. |
-| `promo-engine/vcf/combined-cap.ts` | When both benefits: cut cashback first, then discount, so instant cut + cashback never exceed max discount. |
+| `promo-engine/vcf/discount-cap.ts` | Cap the instant discount at max discount. Cashback is never reduced. |
 
 Later phases extend `evaluate-snapshot.ts`, `promo-engine.repo.ts`, `behaviour.service.ts`, Pay Bill / booking / ecommerce hooks, and the admin audience step. Do not replace `resolveStack` — it still shapes the **single winner’s** discount+cashback.
 

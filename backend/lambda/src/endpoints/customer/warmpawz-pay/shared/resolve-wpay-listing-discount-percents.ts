@@ -102,7 +102,7 @@ export async function resolveWpayListingDiscountPercents(
         ruleId: rule.id,
         benefits: rule.benefit_json || [],
         orderAmount: REF_AMOUNT,
-        combinedMax: vcf.maxDiscount,
+        maxDiscount: vcf.maxDiscount,
         benefitMode: vcf.benefitMode,
       });
       const discount = applied

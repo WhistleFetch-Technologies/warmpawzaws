@@ -1,5 +1,5 @@
 import { calculateBenefits } from '../benefits/calculate-benefits';
-import { applyCombinedCap } from '../vcf/combined-cap';
+import { applyDiscountCap } from '../vcf/discount-cap';
 import { matchesVisitLoop } from '../vcf/visit-loop';
 import { visitCountForPromo } from '../vcf/visit-count';
 import { rankEligible } from '../vcf/rank-eligible';
@@ -49,18 +49,18 @@ function attachRedeem(benefits: AppliedBenefit[], redeem: AppliedBenefit['redeem
   );
 }
 
-function capWinner(benefits: AppliedBenefit[], maxDiscount: number | undefined, bill: number): AppliedBenefit[] {
+function capWinnerDiscount(
+  benefits: AppliedBenefit[],
+  maxDiscount: number | undefined,
+  bill: number
+): AppliedBenefit[] {
   if (maxDiscount == null || !Number.isFinite(maxDiscount)) return benefits;
   const discount = benefits.filter((b) => b.benefit_type === 'DISCOUNT').reduce((s, b) => s + b.amount, 0);
-  const cashback = benefits.filter((b) => b.benefit_type === 'CASHBACK').reduce((s, b) => s + b.amount, 0);
-  const capped = applyCombinedCap({ discount, cashback, maxDiscount, billAmount: bill });
+  const capped = applyDiscountCap({ discount, cashback: 0, maxDiscount, billAmount: bill });
   const dScale = discount > 0 ? capped.discount / discount : 0;
-  const cScale = cashback > 0 ? capped.cashback / cashback : 0;
   return benefits
     .map((b) =>
-      b.benefit_type === 'DISCOUNT'
-        ? { ...b, amount: Math.round(b.amount * dScale * 100) / 100 }
-        : { ...b, amount: Math.round(b.amount * cScale * 100) / 100 }
+      b.benefit_type === 'DISCOUNT' ? { ...b, amount: Math.round(b.amount * dScale * 100) / 100 } : b
     )
     .filter((b) => b.amount > 0);
 }
@@ -161,7 +161,7 @@ export function scoreVcfCandidates(opts: {
   const vcf = vcfById.get(ranked.winner.promotionId);
   let winnerBenefits = benefitsByPromo.get(ranked.winner.promotionId) || [];
   if (vcf?.benefitMode === 'both') {
-    winnerBenefits = capWinner(winnerBenefits, vcf.maxDiscount, pay.amount);
+    winnerBenefits = capWinnerDiscount(winnerBenefits, vcf.maxDiscount, pay.amount);
   }
 
   return {

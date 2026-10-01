@@ -51,7 +51,7 @@ export {
   loadServerPaymentContext,
   hydrateEvaluateRequest,
 } from './services/payment-context-load.service';
-export { applyCombinedCap } from './vcf/combined-cap';
+export { applyDiscountCap } from './vcf/discount-cap';
 export {
   classifyPaymentChannel,
   inferEvaluateSurface,

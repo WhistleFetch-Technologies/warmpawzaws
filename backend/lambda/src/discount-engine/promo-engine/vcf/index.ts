@@ -11,7 +11,7 @@ export { resolvePaymentContext } from './payment-context';
 export { visitCountForPromo } from './visit-count';
 export { matchesVisitLoop } from './visit-loop';
 export { rankEligible } from './rank-eligible';
-export { applyCombinedCap } from './combined-cap';
+export { applyDiscountCap } from './discount-cap';
 export { parseVcfConfig, matchesPublish, publishScopeSize, scopeIds } from './parse-config';
 export { parseVisitProfile, incrementVisitProfile, decrementVisitProfile } from './visit-profile';
 export { redeemAllows, resolveRedeemVendorIds, resolveRedeemCategoryIds } from './redeem-allows';

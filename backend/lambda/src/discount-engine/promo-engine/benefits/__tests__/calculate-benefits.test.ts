@@ -27,20 +27,36 @@ describe('promo-engine benefits + stacking', () => {
     expect(benefits.find((b) => b.benefit_type === 'CASHBACK')?.amount).toBe(150);
   });
 
-  it('applies combined max when both benefits are on', () => {
+  it('does not cut cashback when discount + cashback exceeds max discount', () => {
     const benefits = calculateBenefits({
       promotionId: 'P1',
       ruleId: 'R1',
       orderAmount: 1000,
       benefitMode: 'both',
-      combinedMax: 100,
+      maxDiscount: 100,
       benefits: [
         { type: 'DISCOUNT', mode: 'FIXED', value: 80 },
         { type: 'CASHBACK', mode: 'FIXED', value: 50 },
       ],
     });
     expect(benefits.find((b) => b.benefit_type === 'DISCOUNT')?.amount).toBe(80);
-    expect(benefits.find((b) => b.benefit_type === 'CASHBACK')?.amount).toBe(20);
+    expect(benefits.find((b) => b.benefit_type === 'CASHBACK')?.amount).toBe(50);
+  });
+
+  it('caps only the discount in both mode', () => {
+    const benefits = calculateBenefits({
+      promotionId: 'P1',
+      ruleId: 'R1',
+      orderAmount: 1000,
+      benefitMode: 'both',
+      maxDiscount: 200,
+      benefits: [
+        { type: 'DISCOUNT', value_type: 'PERCENTAGE', value: 45 },
+        { type: 'CASHBACK', mode: 'FIXED', value: 50 },
+      ],
+    });
+    expect(benefits.find((b) => b.benefit_type === 'DISCOUNT')?.amount).toBe(200);
+    expect(benefits.find((b) => b.benefit_type === 'CASHBACK')?.amount).toBe(50);
   });
 
   it('keeps one discount by priority but allows cashback with DISCOUNT_WITH_CASHBACK', () => {

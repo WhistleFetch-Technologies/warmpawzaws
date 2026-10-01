@@ -162,6 +162,71 @@ describe('scoreVcfCandidates', () => {
   });
 });
 
+describe('scoreVcfCandidates max discount with cashback', () => {
+  const vetVisit2 = promo({
+    id: 'vet-visit-2',
+    metadata: {
+      vcf: {
+        visitSource: { letter: 'C', categoryId: 'cat-vet', width: 'general' },
+        visitLoop: { kind: 'visit_number', n: 2 },
+        benefitMode: 'both',
+        maxDiscount: 200,
+        expiryDays: 30,
+        publish: { letter: 'C', categoryId: 'cat-vet' },
+        redeem: { letter: 'C', categoryId: 'cat-vet', channels: ['paybill'] },
+      },
+    },
+  });
+  const rules = new Map<string, PromoEngineRuleRow[]>([
+    [
+      vetVisit2.id,
+      [
+        {
+          ...rule(vetVisit2.id),
+          benefit_json: [
+            { type: 'DISCOUNT', value_type: 'PERCENTAGE', value: 45 },
+            { type: 'CASHBACK', mode: 'FIXED', value: 50 },
+          ],
+        },
+      ],
+    ],
+  ]);
+  const profile = emptyVisitProfile();
+  profile.categories['cat-vet'] = {
+    tele: { count: 0, lastAt: null },
+    appointment: { count: 0, lastAt: null },
+    paybill: { count: 1, lastAt: null },
+    ecommerce: { count: 0, lastAt: null },
+  };
+
+  function run(amount: number) {
+    return scoreVcfCandidates({
+      candidates: [vetVisit2],
+      rulesByPromo: rules,
+      limitsByPromo: new Map(),
+      usageByPromo: new Map(),
+      behaviour: { user_id: 'u1', overall: {}, services: { vcf: profile } as never },
+      req: { user_id: 'u1', transaction: { amount, vendorId: 'v1', categoryId: 'cat-vet', channel: 'paybill' } },
+    });
+  }
+
+  function amounts(result: ReturnType<typeof run>) {
+    const sum = (type: string) =>
+      result.winnerBenefits.filter((b) => b.benefit_type === type).reduce((s, b) => s + b.amount, 0);
+    return { discount: sum('DISCOUNT'), cashback: sum('CASHBACK') };
+  }
+
+  it('caps the discount at max discount and still pays the full cashback', () => {
+    const result = run(1000);
+    expect(result.winnerId).toBe('vet-visit-2');
+    expect(amounts(result)).toEqual({ discount: 200, cashback: 50 });
+  });
+
+  it('pays full cashback when discount + cashback exceeds the cap but discount does not', () => {
+    expect(amounts(run(400))).toEqual({ discount: 180, cashback: 50 });
+  });
+});
+
 describe('scoreVcfCandidates pooled multi-category first visit', () => {
   const group = ['cat-vet', 'cat-groom', 'cat-train'];
   const welcome = promo({

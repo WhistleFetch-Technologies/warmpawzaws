@@ -5,7 +5,7 @@ import { resolvePaymentContext } from '../payment-context';
 import { visitCountForPromo } from '../visit-count';
 import { matchesVisitLoop } from '../visit-loop';
 import { rankEligible } from '../rank-eligible';
-import { applyCombinedCap } from '../combined-cap';
+import { applyDiscountCap } from '../discount-cap';
 import { incrementVisitProfile, decrementVisitProfile } from '../visit-profile';
 import { redeemAllows } from '../redeem-allows';
 import { emptyVisitProfile, type PromoVcfConfig, type RankedPromo } from '../types';
@@ -308,15 +308,25 @@ describe('specificity rank', () => {
   });
 });
 
-describe('combined cap', () => {
-  it('cuts cashback first then discount', () => {
-    expect(applyCombinedCap({ discount: 80, cashback: 50, maxDiscount: 100, billAmount: 500 })).toEqual({
+describe('discount cap', () => {
+  it('never reduces cashback when discount + cashback exceeds the cap', () => {
+    expect(applyDiscountCap({ discount: 80, cashback: 50, maxDiscount: 100, billAmount: 500 })).toEqual({
       discount: 80,
-      cashback: 20,
+      cashback: 50,
     });
-    expect(applyCombinedCap({ discount: 120, cashback: 40, maxDiscount: 100, billAmount: 500 })).toEqual({
+  });
+
+  it('caps only the discount and keeps full cashback', () => {
+    expect(applyDiscountCap({ discount: 120, cashback: 40, maxDiscount: 100, billAmount: 500 })).toEqual({
       discount: 100,
-      cashback: 0,
+      cashback: 40,
+    });
+  });
+
+  it('keeps discount within the bill and ignores a missing cap', () => {
+    expect(applyDiscountCap({ discount: 700, cashback: 15, maxDiscount: null, billAmount: 500 })).toEqual({
+      discount: 500,
+      cashback: 15,
     });
   });
 });

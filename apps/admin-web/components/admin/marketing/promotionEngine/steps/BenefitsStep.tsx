@@ -187,7 +187,7 @@ export function BenefitsStep({
                 className="min-h-11"
               />
               <p className="text-xs text-slate-500">
-                When discount and cashback are both on, this caps the two combined.
+                Caps the instant discount only. Cashback is always paid in full.
               </p>
             </div>
           </div>
