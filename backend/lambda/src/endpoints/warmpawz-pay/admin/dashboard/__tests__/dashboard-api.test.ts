@@ -90,6 +90,28 @@ describe('GET /admin/warmpawz-pay/dashboard', () => {
     expect(body.data.generatedAt).toBe('2026-07-23T12:00:00.000Z');
   });
 
+  it('forwards month query params to the dashboard service', async () => {
+    const dashboardService = createDashboardService();
+    const appWithAuth = new Hono();
+    appWithAuth.use('*', async (c, next) => {
+      setUserId(c, 'uat-admin-user');
+      await next();
+    });
+    registerDashboardAdminRoutes(appWithAuth, { dashboardService });
+
+    const authedRes = await appWithAuth.request(
+      'http://localhost/admin/warmpawz-pay/dashboard?year=2026&month=8',
+      { headers: { Authorization: 'Bearer test-token' } },
+    );
+
+    expect(authedRes.status).toBe(200);
+    expect(dashboardService.getDashboard).toHaveBeenCalledWith({
+      mode: 'month',
+      year: 2026,
+      month: 8,
+    });
+  });
+
   it('returns 401 when admin is not authenticated', async () => {
     const app = new Hono();
     registerDashboardAdminRoutes(app, {

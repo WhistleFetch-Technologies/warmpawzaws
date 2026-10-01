@@ -1,4 +1,8 @@
 import { apiClient } from '@/lib/api-client';
+import {
+  appendWpayDashboardDateParams,
+  type WpayPaymentsFilters,
+} from '@/lib/warmpawz-pay-payments-export';
 
 export const WPAY_DASHBOARD_API_BASE = '/admin/warmpawz-pay/dashboard';
 
@@ -62,9 +66,17 @@ export function isDashboardMetricAvailable(metric?: { available?: boolean }): bo
   return metric?.available !== false;
 }
 
-export async function fetchWarmpawzPayDashboard(): Promise<WarmpawzPayDashboardData> {
+export async function fetchWarmpawzPayDashboard(
+  filters?: Pick<WpayPaymentsFilters, 'mode' | 'yearMonth' | 'fromDate' | 'toDate'>,
+): Promise<WarmpawzPayDashboardData> {
+  const qs = new URLSearchParams();
+  if (filters) {
+    appendWpayDashboardDateParams(qs, filters);
+  }
+  const query = qs.toString();
+  const path = query ? `${WPAY_DASHBOARD_API_BASE}?${query}` : WPAY_DASHBOARD_API_BASE;
   const response = await apiClient.get<
     SuccessEnvelope<WarmpawzPayDashboardData> | WarmpawzPayDashboardData
-  >(WPAY_DASHBOARD_API_BASE);
+  >(path);
   return assertSuccess(response);
 }

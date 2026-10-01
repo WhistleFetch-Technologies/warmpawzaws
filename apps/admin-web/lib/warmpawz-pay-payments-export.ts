@@ -1,6 +1,6 @@
 import { getApiBaseUrl, isUatMode } from '@/lib/api-client';
 
-export type WpayPaymentsFilterMode = 'month' | 'range';
+export type WpayPaymentsFilterMode = 'month' | 'range' | 'all';
 export type WpayPayoutStatusFilter = 'all' | 'pending' | 'settled';
 
 export interface WpayPaymentsFilters {
@@ -88,7 +88,36 @@ export function appendWpayPaymentsDateParams(
   }
 }
 
+/** Dashboard money cards: date window only (not vendor / payout). */
+export function appendWpayDashboardDateParams(
+  qs: URLSearchParams,
+  filters: Pick<WpayPaymentsFilters, 'mode' | 'yearMonth' | 'fromDate' | 'toDate'>,
+): void {
+  appendWpayPaymentsDateParams(qs, {
+    mode: filters.mode,
+    yearMonth: filters.yearMonth,
+    fromDate: filters.fromDate,
+    toDate: filters.toDate,
+    payoutStatus: 'all',
+    vendorSearch: '',
+  });
+}
+
+export function wpayMoneyPeriodLabel(
+  filters: Pick<WpayPaymentsFilters, 'mode' | 'yearMonth' | 'fromDate' | 'toDate'>,
+): string {
+  if (filters.mode === 'all') return 'All time';
+  if (filters.mode === 'month' && filters.yearMonth) {
+    return `${filters.yearMonth} (IST)`;
+  }
+  if (filters.mode === 'range' && filters.fromDate && filters.toDate) {
+    return `${filters.fromDate} to ${filters.toDate} (IST)`;
+  }
+  return 'Selected period (IST)';
+}
+
 export function areWpayPaymentsFiltersReady(filters: WpayPaymentsFilters): boolean {
+  if (filters.mode === 'all') return true;
   if (filters.mode === 'month') {
     return /^(\d{4})-(\d{2})$/.test(filters.yearMonth);
   }

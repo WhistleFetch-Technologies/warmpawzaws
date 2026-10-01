@@ -42,6 +42,7 @@ describe('PaymentsFilterBar', () => {
     );
 
     expect(screen.getByLabelText('Month (IST)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /All time/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Download Excel/i })).toBeInTheDocument();
   });
 

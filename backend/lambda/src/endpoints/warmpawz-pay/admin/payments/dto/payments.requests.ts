@@ -187,6 +187,13 @@ export function parsePaymentsExportQuery(
   });
 }
 
+/** Dashboard money cards — same IST month/range as the payments list; omitted params = all time. */
+export function parsePaymentsDateFilterFromQuery(
+  query: Record<string, string | undefined>,
+): WpayPaymentsDateFilter {
+  return parsePaymentsExportQuery(query).dateFilter;
+}
+
 export function parsePaymentsSettleBody(body: unknown): PaymentsSettleBody {
   return paymentsSettleBodySchema.parse(body);
 }

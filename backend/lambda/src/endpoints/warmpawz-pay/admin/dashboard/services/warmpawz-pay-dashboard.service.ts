@@ -1,4 +1,5 @@
 import type { DashboardDataDTO } from '../dto/dashboard.responses';
+import type { WpayPaymentsDateFilter } from '../../payments/dto/payments.requests';
 import type { IDashboardMetricsRepository } from '../../../repositories/interfaces/IDashboardMetricsRepository';
 import { dashboardMetricsRepository } from '../../../repositories/dashboard-metrics.repository';
 
@@ -20,7 +21,9 @@ export class WarmpawzPayDashboardService {
     private readonly metricsRepository: IDashboardMetricsRepository = dashboardMetricsRepository,
   ) {}
 
-  async getDashboard(): Promise<DashboardDataDTO> {
+  async getDashboard(
+    dateFilter: WpayPaymentsDateFilter = { mode: 'none' },
+  ): Promise<DashboardDataDTO> {
     console.info(`${WARMPAWZ_PAY_DASHBOARD_LOG_PREFIX} Loading dashboard metrics`);
 
     try {
@@ -36,7 +39,7 @@ export class WarmpawzPayDashboardService {
         this.metricsRepository.getAverageDiscountPercent(),
         this.metricsRepository.countDraftUnpublished(),
         this.metricsRepository.countPayEnabledTiers(),
-        this.metricsRepository.getPayBillMoneyTotals(),
+        this.metricsRepository.getPayBillMoneyTotals(dateFilter),
         this.metricsRepository.getBurnMode(),
       ]);
 

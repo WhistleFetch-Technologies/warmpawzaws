@@ -8,6 +8,7 @@ import {
   DashboardMetricsLoadError,
   WARMPAWZ_PAY_DASHBOARD_LOG_PREFIX,
 } from '../services/warmpawz-pay-dashboard.service';
+import { parsePaymentsDateFilterFromQuery } from '../../payments/dto/payments.requests';
 
 export async function dashboardGetHandler(
   c: Context,
@@ -16,7 +17,8 @@ export async function dashboardGetHandler(
   console.info(`${WARMPAWZ_PAY_DASHBOARD_LOG_PREFIX} GET /admin/warmpawz-pay/dashboard`);
 
   try {
-    const data = await deps.dashboardService.getDashboard();
+    const dateFilter = parsePaymentsDateFilterFromQuery(c.req.query());
+    const data = await deps.dashboardService.getDashboard(dateFilter);
     return wpayAdminSuccessResponse(c, data);
   } catch (error) {
     if (error instanceof DashboardMetricsLoadError) {

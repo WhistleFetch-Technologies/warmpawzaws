@@ -69,7 +69,19 @@ describe('WarmpawzPayDashboardService', () => {
     expect(repository.countDraftUnpublished).toHaveBeenCalledTimes(1);
     expect(repository.countPayEnabledTiers).toHaveBeenCalledTimes(1);
     expect(repository.getPayBillMoneyTotals).toHaveBeenCalledTimes(1);
+    expect(repository.getPayBillMoneyTotals).toHaveBeenCalledWith({ mode: 'none' });
     expect(repository.getBurnMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the date filter to money totals only', async () => {
+    const repository = createRepository();
+    const service = new WarmpawzPayDashboardService(repository);
+    const dateFilter = { mode: 'month' as const, year: 2026, month: 8 };
+
+    await service.getDashboard(dateFilter);
+
+    expect(repository.getPayBillMoneyTotals).toHaveBeenCalledWith(dateFilter);
+    expect(repository.countPublishedMerchants).toHaveBeenCalledTimes(1);
   });
 
   it('wraps repository failures', async () => {

@@ -1,4 +1,5 @@
 import {
+  parsePaymentsDateFilterFromQuery,
   parsePaymentsExportQuery,
   parsePaymentsListQuery,
   wpayPaymentsFilterLabel,
@@ -77,5 +78,14 @@ describe('payments.requests', () => {
     const result = parsePaymentsExportQuery({ year: '2026', month: '8' });
     expect(result.dateFilter).toEqual({ mode: 'month', year: 2026, month: 8 });
     expect(wpayPaymentsFilterLabel(result.dateFilter)).toBe('2026-08');
+  });
+
+  it('parses dashboard date filter without page params', () => {
+    expect(parsePaymentsDateFilterFromQuery({ year: '2026', month: '8' })).toEqual({
+      mode: 'month',
+      year: 2026,
+      month: 8,
+    });
+    expect(parsePaymentsDateFilterFromQuery({})).toEqual({ mode: 'none' });
   });
 });

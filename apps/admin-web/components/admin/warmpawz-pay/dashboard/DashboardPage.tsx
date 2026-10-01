@@ -9,6 +9,7 @@ import {
   settleWarmpawzPayPayments,
 } from '@/lib/warmpawz-pay-payments-admin';
 import type { WpayPaymentsFilters } from '@/lib/warmpawz-pay-payments-admin';
+import { wpayMoneyPeriodLabel } from '@/lib/warmpawz-pay-payments-export';
 import { AnalyticsErrorState } from '@/components/admin/marketing/analytics/AnalyticsStateViews';
 import { EmptyState } from '@/components/admin/warmpawz-pay/catalogue/EmptyState';
 import { DashboardMetricsSkeleton } from './DashboardMetricsSkeleton';
@@ -26,7 +27,7 @@ export function DashboardPage() {
   );
   const [selectedPaymentIds, setSelectedPaymentIds] = useState<Set<string>>(new Set());
   const [settling, setSettling] = useState(false);
-  const { data, isLoading, error, refresh } = useWarmpawzPayDashboard();
+  const { data, isLoading, error, refresh } = useWarmpawzPayDashboard(paymentsFilters);
   const paymentsQuery = useWarmpawzPayPayments(
     paymentsPage,
     PAYMENTS_PAGE_SIZE,
@@ -88,6 +89,20 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      <PaymentsFilterBar
+        filters={paymentsFilters}
+        onFiltersChange={handleFiltersChange}
+        disabled={paymentsQuery.isLoading || isLoading || settling}
+        settleDisabled={selectedPendingCount === 0}
+        settleLabel={
+          selectedPendingCount > 0
+            ? `Settle selected (${selectedPendingCount})`
+            : 'Settle selected'
+        }
+        settling={settling}
+        onSettle={() => void handleSettle()}
+      />
+
       {isLoading ? <DashboardMetricsSkeleton /> : null}
 
       {!isLoading && error ? (
@@ -101,7 +116,12 @@ export function DashboardPage() {
         <EmptyState title="No merchants have been published yet." />
       ) : null}
 
-      {!isLoading && !error && data ? <MetricsGrid metrics={data.metrics} /> : null}
+      {!isLoading && !error && data ? (
+        <MetricsGrid
+          metrics={data.metrics}
+          moneyPeriodLabel={wpayMoneyPeriodLabel(paymentsFilters)}
+        />
+      ) : null}
 
       <ConvenienceSettingsPanel />
 
@@ -112,20 +132,6 @@ export function DashboardPage() {
             Orders paid via Warmpawz Pay · mark vendor payouts settled after offline transfer
           </p>
         </div>
-
-        <PaymentsFilterBar
-          filters={paymentsFilters}
-          onFiltersChange={handleFiltersChange}
-          disabled={paymentsQuery.isLoading || settling}
-          settleDisabled={selectedPendingCount === 0}
-          settleLabel={
-            selectedPendingCount > 0
-              ? `Settle selected (${selectedPendingCount})`
-              : 'Settle selected'
-          }
-          settling={settling}
-          onSettle={() => void handleSettle()}
-        />
 
         {paymentsQuery.isLoading ? (
           <p className="text-sm text-gray-500">Loading orders…</p>

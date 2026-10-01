@@ -1,3 +1,5 @@
+import type { WpayPaymentsDateFilter } from '../../admin/payments/dto/payments.requests';
+
 export interface WpayDashboardMoneyTotals {
   readonly payBillOrders: number;
   readonly customerPaid: number;
@@ -10,6 +12,6 @@ export interface IDashboardMetricsRepository {
   getAverageDiscountPercent(): Promise<number>;
   countDraftUnpublished(): Promise<number>;
   countPayEnabledTiers(): Promise<number>;
-  getPayBillMoneyTotals(): Promise<WpayDashboardMoneyTotals>;
+  getPayBillMoneyTotals(dateFilter?: WpayPaymentsDateFilter): Promise<WpayDashboardMoneyTotals>;
   getBurnMode(): Promise<boolean>;
 }
