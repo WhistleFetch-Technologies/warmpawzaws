@@ -1,7 +1,9 @@
 import {
+  appendWpayDashboardDateParams,
   appendWpayPaymentsDateParams,
   buildWpayPaymentsExportPath,
   currentIstYearMonth,
+  wpayMoneyPeriodLabel,
 } from '../warmpawz-pay-payments-export';
 
 describe('warmpawz-pay-payments-export', () => {
@@ -45,5 +47,36 @@ describe('warmpawz-pay-payments-export', () => {
 
   it('returns current IST year-month in YYYY-MM format', () => {
     expect(currentIstYearMonth()).toMatch(/^\d{4}-\d{2}$/);
+  });
+
+  it('omits date params for all-time mode', () => {
+    const qs = new URLSearchParams();
+    appendWpayDashboardDateParams(qs, {
+      mode: 'all',
+      yearMonth: '2026-08',
+      fromDate: '2026-08-01',
+      toDate: '2026-08-06',
+    });
+    expect(qs.get('year')).toBeNull();
+    expect(qs.get('fromDate')).toBeNull();
+  });
+
+  it('labels money period for month and all-time', () => {
+    expect(
+      wpayMoneyPeriodLabel({
+        mode: 'month',
+        yearMonth: '2026-08',
+        fromDate: '',
+        toDate: '',
+      }),
+    ).toBe('2026-08 (IST)');
+    expect(
+      wpayMoneyPeriodLabel({
+        mode: 'all',
+        yearMonth: '',
+        fromDate: '',
+        toDate: '',
+      }),
+    ).toBe('All time');
   });
 });

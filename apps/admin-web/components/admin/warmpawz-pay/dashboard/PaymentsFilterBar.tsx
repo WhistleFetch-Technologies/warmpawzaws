@@ -93,6 +93,18 @@ export function PaymentsFilterBar({
           >
             Date range
           </button>
+          <button
+            type="button"
+            onClick={() => setMode('all')}
+            disabled={disabled}
+            className={`rounded px-3 py-1.5 text-sm font-medium ${
+              filters.mode === 'all'
+                ? 'bg-orange-500 text-white'
+                : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            All time
+          </button>
         </div>
 
         {filters.mode === 'month' ? (
@@ -107,7 +119,7 @@ export function PaymentsFilterBar({
               className="rounded-md border border-gray-300 bg-white px-3 py-2"
             />
           </label>
-        ) : (
+        ) : filters.mode === 'range' ? (
           <>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-gray-600">From (IST)</span>
@@ -132,7 +144,7 @@ export function PaymentsFilterBar({
               />
             </label>
           </>
-        )}
+        ) : null}
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-gray-600">Vendor</span>

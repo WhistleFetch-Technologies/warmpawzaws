@@ -36,9 +36,14 @@ describe('warmpawz-pay-dashboard-admin', () => {
       },
     });
 
-    const data = await fetchWarmpawzPayDashboard();
+    const data = await fetchWarmpawzPayDashboard({
+      mode: 'month',
+      yearMonth: '2026-08',
+      fromDate: '',
+      toDate: '',
+    });
 
-    expect(mockedGet).toHaveBeenCalledWith('/admin/warmpawz-pay/dashboard');
+    expect(mockedGet).toHaveBeenCalledWith('/admin/warmpawz-pay/dashboard?year=2026&month=8');
     expect(data.metrics.publishedMerchants.value).toBe(4);
     expect(data.metrics.payBillOrders.value).toBe(3);
     expect(data.metrics.platformRevenue).toEqual({ value: 20, available: true });

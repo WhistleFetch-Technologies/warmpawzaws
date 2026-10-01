@@ -3,10 +3,15 @@ import {
   fetchWarmpawzPayDashboard,
   type WarmpawzPayDashboardData,
 } from '@/lib/warmpawz-pay-dashboard-admin';
+import {
+  areWpayPaymentsFiltersReady,
+  type WpayPaymentsFilters,
+} from '@/lib/warmpawz-pay-payments-export';
 
 export const warmpawzPayDashboardQueryKeys = {
   all: ['warmpawz-pay-dashboard'] as const,
-  detail: () => [...warmpawzPayDashboardQueryKeys.all, 'detail'] as const,
+  detail: (filters: Pick<WpayPaymentsFilters, 'mode' | 'yearMonth' | 'fromDate' | 'toDate'>) =>
+    [...warmpawzPayDashboardQueryKeys.all, 'detail', filters] as const,
 };
 
 export interface UseWarmpawzPayDashboardResult {
@@ -17,11 +22,20 @@ export interface UseWarmpawzPayDashboardResult {
   readonly refresh: () => Promise<unknown>;
 }
 
-export function useWarmpawzPayDashboard(): UseWarmpawzPayDashboardResult {
+export function useWarmpawzPayDashboard(
+  filters: WpayPaymentsFilters,
+): UseWarmpawzPayDashboardResult {
+  const dateKey = {
+    mode: filters.mode,
+    yearMonth: filters.yearMonth,
+    fromDate: filters.fromDate,
+    toDate: filters.toDate,
+  };
   const query = useQuery({
-    queryKey: warmpawzPayDashboardQueryKeys.detail(),
-    queryFn: fetchWarmpawzPayDashboard,
+    queryKey: warmpawzPayDashboardQueryKeys.detail(dateKey),
+    queryFn: () => fetchWarmpawzPayDashboard(dateKey),
     staleTime: 30_000,
+    enabled: areWpayPaymentsFiltersReady(filters),
   });
 
   return {

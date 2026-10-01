@@ -84,6 +84,6 @@ describe('DashboardMetricsRepository', () => {
     const repo = new DashboardMetricsRepository(db, undefined, paymentTotals);
 
     await expect(repo.getPayBillMoneyTotals()).resolves.toEqual(totals);
-    expect(paymentTotals).toHaveBeenCalledWith(db);
+    expect(paymentTotals).toHaveBeenCalledWith(db, { mode: 'none' });
   });
 });

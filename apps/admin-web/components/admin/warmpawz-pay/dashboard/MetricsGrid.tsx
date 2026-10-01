@@ -12,6 +12,7 @@ import { formatWpayInr } from '@/lib/warmpawz-pay-payments-admin';
 
 export interface MetricsGridProps {
   readonly metrics: DashboardMetrics;
+  readonly moneyPeriodLabel?: string;
 }
 
 function formatPercent(value: number): string {
@@ -28,7 +29,7 @@ function formatMoney(metric?: DashboardMetricValue): string {
   return formatWpayInr(dashboardMetricCount(metric));
 }
 
-export function MetricsGrid({ metrics }: MetricsGridProps) {
+export function MetricsGrid({ metrics, moneyPeriodLabel = 'Selected period (IST)' }: MetricsGridProps) {
   return (
     <div className="space-y-6">
       <section
@@ -38,6 +39,9 @@ export function MetricsGrid({ metrics }: MetricsGridProps) {
         <h2 id="warmpawz-pay-catalogue-metrics-heading" className="sr-only">
           Catalogue health
         </h2>
+        <p className="col-span-full text-xs text-gray-500">
+          Catalogue counts are current and are not limited by the date filter.
+        </p>
         <MetricCard
           title="Published Merchants"
           value={formatCount(dashboardMetricCount(metrics.publishedMerchants))}
@@ -79,21 +83,21 @@ export function MetricsGrid({ metrics }: MetricsGridProps) {
         <MetricCard
           title="Pay Bill Orders"
           value={formatCount(dashboardMetricCount(metrics.payBillOrders))}
-          subtitle="Completed Pay Bill payments"
+          subtitle={`Completed Pay Bill payments · ${moneyPeriodLabel}`}
           icon={Receipt}
           iconClassName="text-orange-500"
         />
         <MetricCard
           title="Customer Paid"
           value={formatMoney(metrics.customerPaid)}
-          subtitle="Sum of payable amounts"
+          subtitle={`Sum of payable amounts · ${moneyPeriodLabel}`}
           icon={Wallet}
           iconClassName="text-orange-500"
         />
         <MetricCard
           title="Customer Saved"
           value={formatMoney(metrics.customerSaved)}
-          subtitle="Sum of customer discounts"
+          subtitle={`Sum of customer discounts · ${moneyPeriodLabel}`}
           icon={Percent}
           iconClassName="text-green-500"
         />
@@ -106,7 +110,7 @@ export function MetricsGrid({ metrics }: MetricsGridProps) {
           }
           subtitle={
             isDashboardMetricAvailable(metrics.platformRevenue)
-              ? 'Sum of Warmpawz Pay revenue'
+              ? `Sum of Warmpawz Pay revenue · ${moneyPeriodLabel}`
               : 'Hidden while Burn / Test mode is active'
           }
           icon={TrendingUp}

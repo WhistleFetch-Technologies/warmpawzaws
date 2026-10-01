@@ -273,13 +273,16 @@ function asDashboardMoney(value: unknown): number {
 }
 
 /**
- * All-time aggregates for completed Warmpawz Pay Bill payments.
+ * Aggregates for completed Warmpawz Pay Bill payments.
  * Reuses the same success filter as the admin payments list (`total` / row source).
+ * Optional IST month/range uses the same `completed_at` window as the payments list.
  * Sums persisted payment and settlement-breakup amounts — does not recalculate fees.
  */
 export async function dbWpayAdminPaymentsDashboardTotals(
   db: { query: typeof query } = { query },
+  dateFilter: WpayPaymentsDateFilter = { mode: 'none' },
 ): Promise<WpayAdminPaymentsDashboardTotals> {
+  const datePart = buildWpayPaymentsDateFilterSql(dateFilter, 1);
   const result = await db.query(
     `SELECT
         COUNT(p.id)::int AS pay_bill_orders,
@@ -299,7 +302,8 @@ export async function dbWpayAdminPaymentsDashboardTotals(
      LEFT JOIN settlements s
        ON s.payment_id = p.id
       AND s.order_type = 'warmpawz_pay'
-     WHERE ${WPAY_PAYMENTS_BASE_WHERE}`,
+     WHERE ${WPAY_PAYMENTS_BASE_WHERE}${datePart.sql}`,
+    datePart.params,
   );
 
   const row = result.rows[0] as

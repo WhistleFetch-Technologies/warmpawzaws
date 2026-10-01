@@ -1,6 +1,7 @@
 import type { QueryResult } from 'pg';
 import { query } from '../../../database/rds-connection';
 import { PUBLISHED } from '../constants/publish-status';
+import type { WpayPaymentsDateFilter } from '../admin/payments/dto/payments.requests';
 import type {
   IDashboardMetricsRepository,
   WpayDashboardMoneyTotals,
@@ -39,12 +40,16 @@ export class DashboardMetricsRepository implements IDashboardMetricsRepository {
   >;
   private readonly paymentTotals: (
     db: DashboardMetricsDbClient,
+    dateFilter?: WpayPaymentsDateFilter,
   ) => Promise<WpayDashboardMoneyTotals>;
 
   constructor(
     private readonly db: DashboardMetricsDbClient = { query },
     convenienceSettings?: Pick<IWpayConvenienceSettingsRepository, 'getConvenienceSettings'>,
-    paymentTotals?: (db: DashboardMetricsDbClient) => Promise<WpayDashboardMoneyTotals>,
+    paymentTotals?: (
+      db: DashboardMetricsDbClient,
+      dateFilter?: WpayPaymentsDateFilter,
+    ) => Promise<WpayDashboardMoneyTotals>,
   ) {
     this.convenienceSettings = convenienceSettings ?? wpayConvenienceSettingsRepository;
     this.paymentTotals = paymentTotals ?? dbWpayAdminPaymentsDashboardTotals;
@@ -98,8 +103,10 @@ export class DashboardMetricsRepository implements IDashboardMetricsRepository {
     return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
   }
 
-  async getPayBillMoneyTotals(): Promise<WpayDashboardMoneyTotals> {
-    return this.paymentTotals(this.db);
+  async getPayBillMoneyTotals(
+    dateFilter: WpayPaymentsDateFilter = { mode: 'none' },
+  ): Promise<WpayDashboardMoneyTotals> {
+    return this.paymentTotals(this.db, dateFilter);
   }
 
   async getBurnMode(): Promise<boolean> {
