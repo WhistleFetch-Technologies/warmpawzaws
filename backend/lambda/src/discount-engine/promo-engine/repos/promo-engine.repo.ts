@@ -618,10 +618,16 @@ export async function dbInsertAudit(row: {
   });
 }
 
+/**
+ * customer_behaviour_profiles.user_id is TEXT. select()/update() auto-cast uuid-looking
+ * *_id filters to ::uuid, which needs a text=uuid operator that exists on dev only.
+ */
 export async function dbGetBehaviour(userId: string): Promise<Record<string, unknown> | null> {
-  const rows = await select('customer_behaviour_profiles', { user_id: userId });
-  if (!rows.length) return null;
-  return rows[0] as Record<string, unknown>;
+  const res = await query(
+    `SELECT * FROM customer_behaviour_profiles WHERE user_id = $1::text LIMIT 1`,
+    [userId],
+  );
+  return (res.rows?.[0] as Record<string, unknown> | undefined) ?? null;
 }
 
 export async function dbUpsertBehaviour(opts: {
@@ -631,14 +637,11 @@ export async function dbUpsertBehaviour(opts: {
 }): Promise<void> {
   const existing = await dbGetBehaviour(opts.userId);
   if (existing) {
-    await update(
-      'customer_behaviour_profiles',
-      { user_id: opts.userId },
-      {
-        overall: JSON.stringify(opts.overall),
-        services: JSON.stringify(opts.services),
-        updated_at: new Date().toISOString(),
-      },
+    await query(
+      `UPDATE customer_behaviour_profiles
+       SET overall = $2::jsonb, services = $3::jsonb, updated_at = NOW()
+       WHERE user_id = $1::text`,
+      [opts.userId, JSON.stringify(opts.overall), JSON.stringify(opts.services)],
     );
     return;
   }

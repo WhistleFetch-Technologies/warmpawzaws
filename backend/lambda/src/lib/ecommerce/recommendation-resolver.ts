@@ -233,6 +233,11 @@ async function fetchSimilarProductRows(
   return (result.rows || []) as Record<string, unknown>[];
 }
 
+/** Cart line keys may be `productId::variantId`; product columns are uuid. */
+function baseProductId(raw: unknown): string {
+  return String(raw ?? '').split('::')[0].trim();
+}
+
 export async function resolveCartRecommendations(input: {
   items: CartRecommendationItem[];
   limit?: number;
@@ -241,7 +246,7 @@ export async function resolveCartRecommendations(input: {
   const items = Array.isArray(input.items) ? input.items : [];
 
   const excludeIds = new Set(
-    items.map((i) => String(i.productId || '')).filter(Boolean),
+    items.map((i) => baseProductId(i.productId)).filter(Boolean),
   );
 
   const categorySpend = new Map<string, number>();
@@ -316,7 +321,7 @@ export async function resolveProductRecommendations(input: {
   limit?: number;
 }): Promise<Record<string, unknown>[]> {
   const limit = clampRecommendationLimit(input.limit);
-  const productId = String(input.productId || '').trim();
+  const productId = baseProductId(input.productId);
   if (!productId) return [];
 
   const alsoBoughtRows = await fetchAlsoBoughtRows(productId, limit);

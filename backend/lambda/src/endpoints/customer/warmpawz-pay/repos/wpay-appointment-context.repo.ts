@@ -21,6 +21,9 @@ export type WpayWapptBookingContextRow = {
   owner_name: string | null;
 };
 
+/** bookings.booking_datetime exists on dev only; derive from IST wall-clock columns. */
+const BOOKING_DATETIME_EXPR = `((b.booking_date + b.booking_time) AT TIME ZONE 'Asia/Kolkata')`;
+
 const BOOKING_SELECT = `
   SELECT b.id,
          b.vendor_id,
@@ -28,7 +31,7 @@ const BOOKING_SELECT = `
          b.status,
          b.booking_date,
          b.booking_time,
-         b.booking_datetime,
+         ${BOOKING_DATETIME_EXPR} AS booking_datetime,
          b.service_type,
          b.service_category,
          b.commerce_mode,
@@ -69,7 +72,7 @@ export async function dbFindOpenWapptBookingForPay(
     `${BOOKING_SELECT}
      WHERE ${WAPPT_FILTER}
        AND ${WAPPT_PAY_CREDIT_STATUS_FILTER}
-     ORDER BY COALESCE(b.booking_datetime, b.created_at) DESC
+     ORDER BY COALESCE(${BOOKING_DATETIME_EXPR}, b.created_at) DESC
      LIMIT 1`,
     [customerId, vendorId, WAPPT_BOOKING_MODE],
   );
@@ -87,7 +90,7 @@ export async function dbFindCreditEligibleWapptBookingForPay(
        AND b.booking_date = $4::date
        AND ${WAPPT_PAY_CREDIT_STATUS_FILTER}
        AND ${WAPPT_AT_HOME_SERVICE_TYPE_FILTER}
-     ORDER BY COALESCE(b.booking_datetime, b.created_at) DESC
+     ORDER BY COALESCE(${BOOKING_DATETIME_EXPR}, b.created_at) DESC
      LIMIT 1`,
     [customerId, vendorId, WAPPT_BOOKING_MODE, today],
   );
