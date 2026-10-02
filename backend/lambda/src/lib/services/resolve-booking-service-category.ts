@@ -84,7 +84,7 @@ export async function resolveBookingServiceCategory(
     try {
       const res = await query(
         `SELECT v.category AS vendor_category,
-                r.customer_service, r.config, r.category AS role_category
+                r.customer_service, r.config
          FROM vendors v
          LEFT JOIN roles r ON r.id = v.role_id
          WHERE v.id = $1::uuid

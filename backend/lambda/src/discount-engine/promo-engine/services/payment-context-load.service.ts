@@ -66,7 +66,7 @@ export async function hydrateEvaluateRequest(req: EvaluateRequest): Promise<Eval
       ...req,
       transaction: {
         ...t,
-        channel: ctx.channel || t.channel,
+        channel: (ctx.channel || t.channel) as EvaluateRequest['transaction']['channel'],
         vendorId: ctx.vendorId || vendorId || undefined,
         vendor_id: ctx.vendorId || vendorId || undefined,
         categoryId: ctx.categoryId || bookingCategoryId || undefined,
