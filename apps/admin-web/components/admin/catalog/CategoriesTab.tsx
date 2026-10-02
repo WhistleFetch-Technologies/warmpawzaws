@@ -843,16 +843,17 @@ export function CategoriesTab() {
         iconColor: formData.iconColor,
         status: 'active',
         hasProblemGrid: false,
-        vendorRoles: [],
         customerVisibilityType: formData.customerVisibilityType || 'GLOBAL',
         customerVisibilityState: formData.customerVisibilityState || '',
         customerVisibilityCity: formData.customerVisibilityCity || '',
         customerDashboardCardActive: formData.customerDashboardCardActive !== false,
       };
+      // vendor_roles drives promo-engine category matching; the form has no editor for it,
+      // so updates must not send it or the mapping is wiped.
       if (catModal.category) {
         await apiClient.put(`/admin/catalog/categories/${catModal.category.id}`, payload);
       } else {
-        await apiClient.post('/admin/catalog/categories', payload);
+        await apiClient.post('/admin/catalog/categories', { ...payload, vendorRoles: [] });
       }
       setCatModal({ open: false });
       loadCategories();
