@@ -38,7 +38,9 @@ export function sqlTimestampInEarningsPeriod(
   const col = columnExpr;
   const ymd = resolveEarningsAnchorYmd(anchorYmd);
   const tz = EARNINGS_PERIOD_TZ;
-  const dayStart = `('${ymd}'::date AT TIME ZONE '${tz}')`;
+  // Bounds must be `timestamp` before AT TIME ZONE. A bare `date` is promoted to timestamptz at
+  // session-TZ (UTC) midnight, which shifts the IST start to 11:00.
+  const dayStart = `('${ymd}'::timestamp AT TIME ZONE '${tz}')`;
   const dayEnd = `(('${ymd}'::date + interval '1 day') AT TIME ZONE '${tz}')`;
 
   switch (period) {
@@ -47,9 +49,9 @@ export function sqlTimestampInEarningsPeriod(
     case 'week':
       return `(${col} IS NOT NULL AND ${col} >= (('${ymd}'::date - interval '6 days') AT TIME ZONE '${tz}') AND ${col} < ${dayEnd})`;
     case 'month':
-      return `(${col} IS NOT NULL AND ${col} >= (date_trunc('month', '${ymd}'::date) AT TIME ZONE '${tz}') AND ${col} < ${dayEnd})`;
+      return `(${col} IS NOT NULL AND ${col} >= (date_trunc('month', '${ymd}'::timestamp) AT TIME ZONE '${tz}') AND ${col} < ${dayEnd})`;
     case 'year':
-      return `(${col} IS NOT NULL AND ${col} >= (date_trunc('year', '${ymd}'::date) AT TIME ZONE '${tz}') AND ${col} < ${dayEnd})`;
+      return `(${col} IS NOT NULL AND ${col} >= (date_trunc('year', '${ymd}'::timestamp) AT TIME ZONE '${tz}') AND ${col} < ${dayEnd})`;
     default:
       return 'TRUE';
   }

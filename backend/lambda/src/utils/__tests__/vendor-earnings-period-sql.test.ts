@@ -12,7 +12,8 @@ describe('vendor earnings period SQL', () => {
 
   it('windows a calendar day in IST around the anchor, not now()', () => {
     const sql = sqlTimestampInEarningsPeriod('day', 've.realized_at', '2026-09-04');
-    expect(sql).toContain("'2026-09-04'::date AT TIME ZONE 'Asia/Kolkata'");
+    expect(sql).toContain("'2026-09-04'::timestamp AT TIME ZONE 'Asia/Kolkata'");
+    expect(sql).not.toContain("'2026-09-04'::date AT TIME ZONE");
     expect(sql).toContain("'2026-09-04'::date + interval '1 day'");
     expect(sql).not.toContain('now()');
     expect(sql).toContain(EARNINGS_PERIOD_TZ);
@@ -23,7 +24,7 @@ describe('vendor earnings period SQL', () => {
     const month = sqlTimestampInEarningsPeriod('month', 've.realized_at', '2026-09-04');
     expect(week).toContain("- interval '6 days'");
     expect(week).toContain("'2026-09-04'::date + interval '1 day'");
-    expect(month).toContain("date_trunc('month', '2026-09-04'::date)");
+    expect(month).toContain("date_trunc('month', '2026-09-04'::timestamp)");
     expect(month).toContain("'2026-09-04'::date + interval '1 day'");
   });
 
