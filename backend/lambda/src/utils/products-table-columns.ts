@@ -60,11 +60,14 @@ export function resolveStorefrontProductOrderBy(sortParam: string, cols: Set<str
       }
       return safe;
     case 'popular':
-    default:
+    default: {
+      // Admin merchandising rank (migration 1122): lower first, so demoted products sink.
+      const rank = hasCol(cols, 'storefront_rank') ? 'p.storefront_rank ASC, ' : '';
       if (hasCol(cols, 'review_count')) {
         const tie = hasCol(cols, 'created_at') ? ', p.created_at DESC' : '';
-        return `p.review_count DESC NULLS LAST${tie}`;
+        return `${rank}p.review_count DESC NULLS LAST${tie}`;
       }
-      return safe;
+      return `${rank}${safe}`;
+    }
   }
 }

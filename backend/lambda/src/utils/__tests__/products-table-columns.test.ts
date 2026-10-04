@@ -59,5 +59,36 @@ describe('products-table-columns', () => {
       const sql = resolveStorefrontProductOrderBy('unknown', legacyCols);
       expect(sql).toBe('p.created_at DESC');
     });
+
+    describe('storefront_rank (migration 1122)', () => {
+      const rankedCols = new Set([...fullCols, 'storefront_rank']);
+
+      it('popular orders by rank first so demoted products (e.g. Munchies) sink', () => {
+        expect(resolveStorefrontProductOrderBy('popular', rankedCols)).toBe(
+          'p.storefront_rank ASC, p.review_count DESC NULLS LAST, p.created_at DESC',
+        );
+        expect(resolveStorefrontProductOrderBy('', rankedCols)).toBe(
+          'p.storefront_rank ASC, p.review_count DESC NULLS LAST, p.created_at DESC',
+        );
+      });
+
+      it('popular still ranks first when review_count is missing', () => {
+        expect(
+          resolveStorefrontProductOrderBy('popular', new Set([...legacyCols, 'storefront_rank'])),
+        ).toBe('p.storefront_rank ASC, p.created_at DESC');
+      });
+
+      it('explicit sorts ignore the rank', () => {
+        for (const sort of ['price_low', 'price_high', 'newest', 'rating']) {
+          expect(resolveStorefrontProductOrderBy(sort, rankedCols)).not.toContain('storefront_rank');
+        }
+      });
+
+      it('is omitted until the migration adds the column', () => {
+        expect(resolveStorefrontProductOrderBy('popular', fullCols)).not.toContain(
+          'storefront_rank',
+        );
+      });
+    });
   });
 });
