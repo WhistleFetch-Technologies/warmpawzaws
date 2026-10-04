@@ -78,6 +78,8 @@ describe('DashboardMetricsRepository', () => {
       customerPaid: 10,
       customerSaved: 1,
       platformRevenue: 3,
+      platformFee: 45,
+      platformFeeGst: 8.1,
     };
     const paymentTotals = jest.fn().mockResolvedValue(totals);
     const db = { query: jest.fn() };

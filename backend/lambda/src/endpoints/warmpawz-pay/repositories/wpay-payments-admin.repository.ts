@@ -264,6 +264,8 @@ export type WpayAdminPaymentsDashboardTotals = {
   readonly customerPaid: number;
   readonly customerSaved: number;
   readonly platformRevenue: number;
+  readonly platformFee: number;
+  readonly platformFeeGst: number;
 };
 
 function asDashboardMoney(value: unknown): number {
@@ -297,7 +299,27 @@ export async function dbWpayAdminPaymentsDashboardTotals(
             )
           ),
           0
-        ) AS platform_revenue
+        ) AS platform_revenue,
+        COALESCE(
+          SUM(
+            COALESCE(
+              NULLIF(s.settlement_breakup->>'platformFee', '')::numeric,
+              NULLIF(p.metadata->>'platformFee', '')::numeric,
+              0
+            )
+          ),
+          0
+        ) AS platform_fee,
+        COALESCE(
+          SUM(
+            COALESCE(
+              NULLIF(s.settlement_breakup->>'platformFeeGstAmount', '')::numeric,
+              NULLIF(p.metadata->>'platformFeeGstAmount', '')::numeric,
+              0
+            )
+          ),
+          0
+        ) AS platform_fee_gst
      FROM payments p
      LEFT JOIN settlements s
        ON s.payment_id = p.id
@@ -312,6 +334,8 @@ export async function dbWpayAdminPaymentsDashboardTotals(
         customer_paid?: number | string;
         customer_saved?: number | string;
         platform_revenue?: number | string;
+        platform_fee?: number | string;
+        platform_fee_gst?: number | string;
       }
     | undefined;
 
@@ -320,5 +344,7 @@ export async function dbWpayAdminPaymentsDashboardTotals(
     customerPaid: asDashboardMoney(row?.customer_paid),
     customerSaved: asDashboardMoney(row?.customer_saved),
     platformRevenue: asDashboardMoney(row?.platform_revenue),
+    platformFee: asDashboardMoney(row?.platform_fee),
+    platformFeeGst: asDashboardMoney(row?.platform_fee_gst),
   };
 }

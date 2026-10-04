@@ -36,6 +36,8 @@ function createDashboardService(
         customerPaid: { value: 1200 },
         customerSaved: { value: 80 },
         platformRevenue: { value: 40, available: true },
+        platformFee: { value: 90 },
+        platformFeeGst: { value: 16.2 },
       },
       generatedAt: '2026-07-23T12:00:00.000Z',
     }),
@@ -87,6 +89,8 @@ describe('GET /admin/warmpawz-pay/dashboard', () => {
     expect(body.data.metrics.customerPaid).toEqual({ value: 1200 });
     expect(body.data.metrics.customerSaved).toEqual({ value: 80 });
     expect(body.data.metrics.platformRevenue).toEqual({ value: 40, available: true });
+    expect(body.data.metrics.platformFee).toEqual({ value: 90 });
+    expect(body.data.metrics.platformFeeGst).toEqual({ value: 16.2 });
     expect(body.data.generatedAt).toBe('2026-07-23T12:00:00.000Z');
   });
 

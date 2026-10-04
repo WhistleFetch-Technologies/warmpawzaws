@@ -55,6 +55,8 @@ export class WarmpawzPayDashboardService {
           platformRevenue: burnMode
             ? { value: null, available: false }
             : { value: asMetricCount(moneyTotals.platformRevenue).value, available: true },
+          platformFee: asMetricCount(moneyTotals.platformFee),
+          platformFeeGst: asMetricCount(moneyTotals.platformFeeGst),
         },
         generatedAt: new Date().toISOString(),
       };

@@ -9,6 +9,8 @@ describe('dbWpayAdminPaymentsDashboardTotals', () => {
           customer_paid: '1234.5',
           customer_saved: '80.25',
           platform_revenue: '40.1',
+          platform_fee: '315',
+          platform_fee_gst: '56.7',
         },
       ],
     });
@@ -18,6 +20,8 @@ describe('dbWpayAdminPaymentsDashboardTotals', () => {
       customerPaid: 1234.5,
       customerSaved: 80.25,
       platformRevenue: 40.1,
+      platformFee: 315,
+      platformFeeGst: 56.7,
     });
 
     expect(query).toHaveBeenCalledTimes(1);
@@ -28,6 +32,10 @@ describe('dbWpayAdminPaymentsDashboardTotals', () => {
     expect(sql).toContain('SUM(p.amount)');
     expect(sql).toContain('SUM(p.discount_amount)');
     expect(sql).toContain("settlement_breakup->>'wpayRevenueAmount'");
+    expect(sql).toContain("settlement_breakup->>'platformFee'");
+    expect(sql).toContain("p.metadata->>'platformFee'");
+    expect(sql).toContain("settlement_breakup->>'platformFeeGstAmount'");
+    expect(sql).toContain("p.metadata->>'platformFeeGstAmount'");
     expect(sql).not.toContain('pending');
     expect(sql).not.toContain('failed');
     expect(query.mock.calls[0][1]).toEqual([]);
@@ -58,6 +66,8 @@ describe('dbWpayAdminPaymentsDashboardTotals', () => {
       customerPaid: 0,
       customerSaved: 0,
       platformRevenue: 0,
+      platformFee: 0,
+      platformFeeGst: 0,
     });
   });
 });

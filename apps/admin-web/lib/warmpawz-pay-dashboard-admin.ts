@@ -24,6 +24,8 @@ export interface DashboardMetrics {
   readonly customerPaid: DashboardMetricValue;
   readonly customerSaved: DashboardMetricValue;
   readonly platformRevenue: DashboardOptionalMetricValue;
+  readonly platformFee?: DashboardMetricValue;
+  readonly platformFeeGst?: DashboardMetricValue;
 }
 
 export interface WarmpawzPayDashboardData {

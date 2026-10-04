@@ -1,6 +1,16 @@
 'use client';
 
-import { FileText, Layers, Percent, Receipt, Store, TrendingUp, Wallet } from 'lucide-react';
+import {
+  FileText,
+  IndianRupee,
+  Landmark,
+  Layers,
+  Percent,
+  Receipt,
+  Store,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
 import { MetricCard, metricAvailabilityFromFlag } from '@/components/admin/shared/MetricCard';
 import {
   dashboardMetricCount,
@@ -119,6 +129,20 @@ export function MetricsGrid({ metrics, moneyPeriodLabel = 'Selected period (IST)
             isDashboardMetricAvailable(metrics.platformRevenue),
           )}
           unavailableLabel="N/A"
+        />
+        <MetricCard
+          title="Platform Fee"
+          value={formatMoney(metrics.platformFee)}
+          subtitle={`Sum of platform fees (GST-exclusive) · ${moneyPeriodLabel}`}
+          icon={IndianRupee}
+          iconClassName="text-orange-500"
+        />
+        <MetricCard
+          title="Platform Fee GST"
+          value={formatMoney(metrics.platformFeeGst)}
+          subtitle={`Sum of GST on platform fees · ${moneyPeriodLabel}`}
+          icon={Landmark}
+          iconClassName="text-orange-500"
         />
       </section>
     </div>

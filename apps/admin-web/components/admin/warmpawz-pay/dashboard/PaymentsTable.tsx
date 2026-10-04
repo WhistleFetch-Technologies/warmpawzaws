@@ -300,6 +300,8 @@ export function PaymentsTable({
               <TableHead className="text-right">Wallet Used</TableHead>
               <TableHead className="text-right">Customer Paid</TableHead>
               <TableHead className="text-right">Platform Revenue</TableHead>
+              <TableHead className="text-right">Platform Fee</TableHead>
+              <TableHead className="text-right">Platform Fee GST</TableHead>
               <TableHead className="text-right">Final GST</TableHead>
               <TableHead className="text-right">Vendor Payable</TableHead>
               <TableHead className="text-right">Paid At</TableHead>
@@ -420,6 +422,12 @@ export function PaymentsTable({
                           : formatWpayInr(item.wpayRevenueAmount ?? 0)
                         : '—'}
                     </TableCell>
+                    <TableCell className="text-right text-gray-800">
+                      {isTier ? formatWpayInr(item.platformFee ?? 0) : '—'}
+                    </TableCell>
+                    <TableCell className="text-right text-orange-700">
+                      {isTier ? formatWpayInr(item.platformFeeGstAmount ?? 0) : '—'}
+                    </TableCell>
                     <TableCell className="text-right font-medium text-orange-700">
                       {isTier ? formatWpayInr(item.finalGstAmount ?? 0) : '—'}
                     </TableCell>
@@ -436,7 +444,7 @@ export function PaymentsTable({
                   </TableRow>
                   {expanded ? (
                     <TableRow>
-                      <TableCell colSpan={14} className="bg-gray-50 px-6 py-4">
+                      <TableCell colSpan={16} className="bg-gray-50 px-6 py-4">
                         <PaymentDetailDrawer item={item} />
                       </TableCell>
                     </TableRow>

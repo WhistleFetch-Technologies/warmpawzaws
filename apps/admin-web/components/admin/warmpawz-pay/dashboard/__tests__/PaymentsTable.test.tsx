@@ -83,6 +83,32 @@ describe('PaymentsTable', () => {
     expect(screen.getByText('Wallet Used')).toBeInTheDocument();
   });
 
+  it('shows Platform Fee and Platform Fee GST columns, also in burn mode', () => {
+    const { container } = render(
+      <PaymentsTable
+        items={[{ ...burnItem, platformFee: 45, platformFeeGstAmount: 8.1, finalGstAmount: 8.1 }]}
+        page={1}
+        pageSize={5}
+        total={1}
+        onPageChange={() => undefined}
+        {...selectionProps}
+      />,
+    );
+
+    const headers = Array.from(container.querySelectorAll('thead th')).map((th) => th.textContent);
+    const feeIdx = headers.indexOf('Platform Fee');
+    const feeGstIdx = headers.indexOf('Platform Fee GST');
+    expect(headers.indexOf('Platform Revenue')).toBeLessThan(feeIdx);
+    expect(feeGstIdx).toBe(feeIdx + 1);
+    expect(headers[feeGstIdx + 1]).toBe('Final GST');
+
+    const cells = Array.from(container.querySelectorAll('tbody tr:first-child td')).map(
+      (td) => td.textContent,
+    );
+    expect(cells[feeIdx]).toBe('₹45.00');
+    expect(cells[feeGstIdx]).toBe('₹8.10');
+  });
+
   it('tints pending rows and allows selecting only pending payouts', () => {
     const onSelectedPaymentIdsChange = jest.fn();
     const settled: WpayAdminPaymentItem = {

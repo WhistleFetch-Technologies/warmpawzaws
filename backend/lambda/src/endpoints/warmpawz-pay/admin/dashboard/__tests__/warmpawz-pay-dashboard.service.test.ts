@@ -17,6 +17,8 @@ function createRepository(
       customerPaid: 900,
       customerSaved: 100,
       platformRevenue: 50,
+      platformFee: 90,
+      platformFeeGst: 16.2,
     }),
     getBurnMode: jest.fn().mockResolvedValue(false),
     ...overrides,
@@ -38,6 +40,8 @@ describe('WarmpawzPayDashboardService', () => {
     expect(result.metrics.customerPaid).toEqual({ value: 900 });
     expect(result.metrics.customerSaved).toEqual({ value: 100 });
     expect(result.metrics.platformRevenue).toEqual({ value: 50, available: true });
+    expect(result.metrics.platformFee).toEqual({ value: 90 });
+    expect(result.metrics.platformFeeGst).toEqual({ value: 16.2 });
     expect(result.generatedAt).toEqual(expect.any(String));
     expect(() => new Date(result.generatedAt).toISOString()).not.toThrow();
   });
@@ -52,6 +56,8 @@ describe('WarmpawzPayDashboardService', () => {
 
     expect(result.metrics.platformRevenue).toEqual({ value: null, available: false });
     expect(result.metrics.customerPaid).toEqual({ value: 900 });
+    expect(result.metrics.platformFee).toEqual({ value: 90 });
+    expect(result.metrics.platformFeeGst).toEqual({ value: 16.2 });
     expect(repository.getPayBillMoneyTotals).toHaveBeenCalledTimes(1);
   });
 

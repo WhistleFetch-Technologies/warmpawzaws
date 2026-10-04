@@ -5,6 +5,8 @@ export interface WpayDashboardMoneyTotals {
   readonly customerPaid: number;
   readonly customerSaved: number;
   readonly platformRevenue: number;
+  readonly platformFee: number;
+  readonly platformFeeGst: number;
 }
 
 export interface IDashboardMetricsRepository {

@@ -83,6 +83,8 @@ const sampleDashboardData: WarmpawzPayDashboardData = {
     customerPaid: { value: 200 },
     customerSaved: { value: 20 },
     platformRevenue: { value: 10, available: true },
+    platformFee: { value: 2475 },
+    platformFeeGst: { value: 445.5 },
   },
   generatedAt: '2026-07-23T12:00:00.000Z',
 };

@@ -17,6 +17,10 @@ export interface DashboardMetricsDTO {
   readonly customerPaid: DashboardMetricValue;
   readonly customerSaved: DashboardMetricValue;
   readonly platformRevenue: DashboardOptionalMetricValue;
+  /** Platform fee charged on top of the discounted bill (GST-exclusive). Shown in burn mode too. */
+  readonly platformFee: DashboardMetricValue;
+  /** GST on the platform fee. */
+  readonly platformFeeGst: DashboardMetricValue;
 }
 
 export interface DashboardDataDTO {
