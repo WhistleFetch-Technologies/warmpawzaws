@@ -12,6 +12,8 @@ import {
   slotOccupancyLockPair,
 } from '../slot-occupancy';
 import { bookingConsumesCapacity } from '../payment-hold';
+import { pgDateToYmd } from '../ist-scheduling';
+import { overlapParamsFromBookingRow } from '../booking-slot-overlap';
 
 const lambdaRoot = join(__dirname, '../../..');
 
@@ -280,5 +282,58 @@ describe('availability occupancy rules (tests 1, 4, 5, 7, 8, 11, 12)', () => {
   test('resolveDurationMinutes uses service config, not a hardcoded 60', () => {
     expect(resolveDurationMinutes(45, 30)).toBe(45);
     expect(resolveDurationMinutes(undefined, null, 90)).toBe(90);
+  });
+});
+
+describe('pg date values reach SQL as YYYY-MM-DD (prod reschedule / verify 500)', () => {
+  // node-pg returns `date` columns as a local-midnight Date.
+  const pgDate = new Date(2026, 8, 4);
+
+  test('pgDateToYmd handles Date, String(Date), ISO strings and empty input', () => {
+    expect(pgDateToYmd(pgDate)).toBe('2026-09-04');
+    expect(pgDateToYmd(String(pgDate))).toBe('2026-09-04');
+    expect(pgDateToYmd('2026-09-04')).toBe('2026-09-04');
+    expect(pgDateToYmd('2026-09-04T00:00:00.000Z')).toBe('2026-09-04');
+    expect(pgDateToYmd(null)).toBe('');
+  });
+
+  test('occupancy query binds YYYY-MM-DD when given a pg Date or its String()', async () => {
+    for (const date of [pgDate, String(pgDate)]) {
+      const binds: unknown[][] = [];
+      const db = async (sql: string, params?: unknown[]) => {
+        binds.push(params || []);
+        if (String(sql).includes('vendor_availability_v2')) {
+          return { rows: [{ max_capacity: 1, win_start: '09:00', win_end: '20:00' }] };
+        }
+        return { rows: [] };
+      };
+      const ok = await evaluateSlotAvailability(db, {
+        vendorId: 'v1',
+        date: date as unknown as string,
+        startTime: '19:30:00',
+        durationMinutes: 30,
+        excludeBookingId: 'b1',
+      });
+      expect(ok).toBe(true);
+      expect(binds[0][1]).toBe('2026-09-04');
+    }
+  });
+
+  test('lock key uses YYYY-MM-DD so reschedule and create share the same lock', () => {
+    expect(slotOccupancyLockPair('v1', String(pgDate), null)[0]).toBe('v1|2026-09-04|nostaff');
+  });
+
+  test('verify-payment overlap params use YYYY-MM-DD, not "Sun Oct 04"', () => {
+    const params = overlapParamsFromBookingRow(
+      { vendor_id: 'v1', booking_date: new Date(2026, 9, 4), booking_time: '17:15:00' },
+      'b1'
+    );
+    expect(params?.bookingDate).toBe('2026-10-04');
+  });
+
+  test('reschedule handler normalizes the stored booking_date before SQL', () => {
+    const file = read('src/endpoints/booking/endpoints/bookings-enhanced.booking.ts');
+    expect(file).toContain('const oldDate = pgDateToYmd(currentBooking.booking_date)');
+    expect(file).not.toContain('date: String(oldDate)');
   });
 });

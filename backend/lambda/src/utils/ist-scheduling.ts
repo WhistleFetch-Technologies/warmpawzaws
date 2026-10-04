@@ -41,6 +41,23 @@ export function dayOfWeekFromYmd(ymd: string): number {
   return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay();
 }
 
+/**
+ * YYYY-MM-DD from a Postgres `date` value. node-pg returns `date` columns as a local-midnight
+ * JS Date, and `String(date)` gives "Fri Sep 04 2026 00:00:00 GMT+0000 (...)" which Postgres
+ * rejects as `::date`. Local getters match how pg built the Date and how String() printed it.
+ */
+export function pgDateToYmd(value: unknown): string {
+  const fromDate = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : fromDate(value);
+  const s = String(value ?? '').trim();
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  if (!s) return '';
+  const parsed = new Date(s);
+  return Number.isNaN(parsed.getTime()) ? s : fromDate(parsed);
+}
+
 /** Add calendar days to YYYY-MM-DD (no timezone drift; India has no DST). */
 export function addDaysToYmd(ymd: string, deltaDays: number): string {
   const [y, m, d] = ymd.split('-').map(Number);

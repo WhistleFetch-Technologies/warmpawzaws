@@ -3,6 +3,7 @@
  */
 
 import { SQL_BOOKING_BLOCKS_SLOT } from './payment-hold';
+import { pgDateToYmd } from './ist-scheduling';
 
 export type BookingSlotOverlapParams = {
   vendorId: string;
@@ -76,9 +77,10 @@ export async function loadBlockingBookingsForSlot(
        AND ($3::uuid IS NULL OR id != $3::uuid)
        AND ${SQL_BOOKING_BLOCKS_SLOT}`;
 
+  const dateYmd = pgDateToYmd(bookingDate);
   const overlapParams = staffId
-    ? [vendorId, bookingDate, staffId, excludeBookingId ?? null]
-    : [vendorId, bookingDate, excludeBookingId ?? null];
+    ? [vendorId, dateYmd, staffId, excludeBookingId ?? null]
+    : [vendorId, dateYmd, excludeBookingId ?? null];
 
   const { rows } = await runQuery(overlapQuery, overlapParams);
   return rows;
@@ -111,7 +113,7 @@ export function overlapParamsFromBookingRow(
   }
   return {
     vendorId: String(bookingRow.vendor_id),
-    bookingDate: String(bookingRow.booking_date).slice(0, 10),
+    bookingDate: pgDateToYmd(bookingRow.booking_date),
     bookingTime: String(bookingRow.booking_time).slice(0, 5),
     durationMinutes: Math.max(
       15,

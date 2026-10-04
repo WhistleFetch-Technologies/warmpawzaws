@@ -54,6 +54,7 @@ import {
   buildBookingPaymentResumeContext,
 } from '../../../utils/payment-hold';
 import { assertSlotAvailableInTx, acquireSlotOccupancyLock, evaluateSlotAvailability, SlotConflictError } from '../../../utils/slot-occupancy';
+import { pgDateToYmd } from '../../../utils/ist-scheduling';
 import { resolveCustomerIdFromPhone } from '../../../utils/customer-coordinates';
 import {
   previewCustomerCancellationRefundByMethod,
@@ -4293,8 +4294,8 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const oldStatus = currentBooking.status;
     
     // Store old slot information for release tracking
-    const oldDate = currentBooking.booking_date;
-    const oldTime = currentBooking.booking_time;
+    const oldDate = pgDateToYmd(currentBooking.booking_date);
+    const oldTime = String(currentBooking.booking_time ?? '');
 
     // Validate that booking can be rescheduled
     const reschedulableStatuses = ['pending', 'pending_payment', 'confirmed'];
@@ -4309,7 +4310,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     // Prevent rescheduling to the same slot
-    if (oldDate === newDate && oldTime === newTime) {
+    if (oldDate === pgDateToYmd(newDate) && oldTime.slice(0, 5) === String(newTime).slice(0, 5)) {
       return this.error(
         'Booking is already scheduled for this date and time. Please select a different slot.',
         400,
@@ -4327,7 +4328,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
       let oldSlotWillBeAvailable = true;
 
       await withTransaction(async (client) => {
-        const lockDates = [...new Set([String(oldDate), String(newDate)])].sort();
+        const lockDates = [...new Set([oldDate, pgDateToYmd(newDate)])].sort();
         for (const d of lockDates) {
           await acquireSlotOccupancyLock(client, String(currentBooking.vendor_id), d, rescheduleStaffId);
         }
@@ -4359,8 +4360,8 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         oldSlotWillBeAvailable = await evaluateSlotAvailability(client, {
           vendorId: String(currentBooking.vendor_id),
-          date: String(oldDate),
-          startTime: String(oldTime),
+          date: oldDate,
+          startTime: oldTime,
           durationMinutes: rescheduleDuration,
           staffId: rescheduleStaffId,
           excludeBookingId: bookingId,

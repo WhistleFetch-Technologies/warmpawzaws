@@ -7,7 +7,7 @@
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../database/rds-connection';
 import { SQL_BOOKING_BLOCKS_SLOT } from './payment-hold';
-import { dayOfWeekFromYmd } from './ist-scheduling';
+import { dayOfWeekFromYmd, pgDateToYmd } from './ist-scheduling';
 
 export const SLOT_CONFLICT_CODE = 'SLOT_CONFLICT';
 export const SLOT_CONFLICT_MESSAGE = 'This time slot is already booked. Please select a different time.';
@@ -104,7 +104,7 @@ export function slotOccupancyLockPair(
   staffId?: string | null
 ): [string, string] {
   const staffKey = staffId ? String(staffId) : 'nostaff';
-  return [`${vendorId}|${dateYmd}|${staffKey}`, SLOT_OCCUPANCY_LOCK_NAMESPACE];
+  return [`${vendorId}|${pgDateToYmd(dateYmd)}|${staffKey}`, SLOT_OCCUPANCY_LOCK_NAMESPACE];
 }
 
 /** Transaction-scoped lock. Safe when no booking rows exist yet (unlike SELECT FOR UPDATE). */
@@ -131,7 +131,7 @@ export async function loadOccupyingBookings(
   }
 ): Promise<OccupyingBooking[]> {
   const q = asQueryFn(db);
-  const bind: any[] = [params.vendorId, params.date];
+  const bind: any[] = [params.vendorId, pgDateToYmd(params.date)];
   let staffSql = '';
   if (params.staffId === null) {
     staffSql = ' AND staff_id IS NULL';
@@ -175,7 +175,7 @@ async function queryVendorWindowCapacity(
   dateYmd: string,
   startTime: string
 ): Promise<number> {
-  const dow = dayOfWeekFromYmd(dateYmd);
+  const dow = dayOfWeekFromYmd(pgDateToYmd(dateYmd));
   const startMin = parseBookingTimeMinutes(startTime);
   const { rows } = await q(
     `SELECT COALESCE(max_capacity, 1) AS max_capacity,
