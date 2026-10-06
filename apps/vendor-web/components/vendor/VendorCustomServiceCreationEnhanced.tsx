@@ -994,7 +994,13 @@ export function VendorCustomServiceCreationEnhanced({
     setUsageInterval(details.usageInterval || 'total');
     setDiscountPercentage(Number(details.discountPercentage) || 0);
     setMembershipBenefits(details.membershipBenefits?.length ? details.membershipBenefits : ['']);
-    setIncludedServices(details.includedServices || []);
+    setIncludedServices(
+      (details.includedServices || []).map((row) => ({
+        id: row.id,
+        name: row.name,
+        quantity: row.quantity ?? 1,
+      })),
+    );
     setBillingCycle(details.subscriptionBillingCycle || 'monthly');
     if (details.pricingBySize) {
       setSmallPrice(details.pricingBySize.small || 0);
