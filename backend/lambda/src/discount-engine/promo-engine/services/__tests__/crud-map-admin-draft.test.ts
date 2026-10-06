@@ -19,6 +19,31 @@ describe('mapAdminDraftToPayload', () => {
     );
   });
 
+  it('stores applyToPackages on metadata.vcf and defaults missing to false', () => {
+    const yes = mapAdminDraftToPayload({
+      basics: { name: 'Package yes' },
+      vcf: {
+        visitSource: { letter: 'C', categoryId: 'grooming', width: 'general' },
+        visitLoop: { kind: 'every' },
+        benefitMode: 'discount',
+        publish: { letter: 'C', categoryId: 'grooming' },
+        applyToPackages: true,
+      },
+    });
+    expect(yes.metadata?.vcf).toMatchObject({ applyToPackages: true });
+
+    const no = mapAdminDraftToPayload({
+      basics: { name: 'Package no' },
+      vcf: {
+        visitSource: { letter: 'F', width: 'general' },
+        visitLoop: { kind: 'every' },
+        benefitMode: 'discount',
+        publish: { letter: 'F' },
+      },
+    });
+    expect(no.metadata?.vcf).toMatchObject({ applyToPackages: false });
+  });
+
   it('stores independent visit/publish/redeem on metadata.vcf', () => {
     const payload = mapAdminDraftToPayload({
       basics: { name: 'Vendor ladder' },

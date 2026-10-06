@@ -26,6 +26,10 @@ export type VcfScoreResult = {
   hadVcfCandidates: boolean;
 };
 
+function isPackageTransaction(req: EvaluateRequest): boolean {
+  return String(req.transaction?.type || '').toUpperCase() === 'PACKAGE';
+}
+
 function paymentFromReq(req: EvaluateRequest): {
   vendorId: string | null;
   categoryId: string | null;
@@ -90,6 +94,13 @@ export function scoreVcfCandidates(opts: {
     vcfById.set(promo.id, vcf);
 
     if (!matchesPublish(vcf.publish, pay)) {
+      continue;
+    }
+
+    // Packages follow the same visit + publish (vendor / category / platform) rules,
+    // but only when the promo explicitly opts in. No (or unset) means no package discount.
+    if (isPackageTransaction(opts.req) && vcf.applyToPackages !== true) {
+      rejected.push({ promotion_id: promo.id, reason: 'PACKAGE_EXCLUDED' });
       continue;
     }
 

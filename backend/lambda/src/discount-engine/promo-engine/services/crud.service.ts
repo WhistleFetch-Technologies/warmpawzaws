@@ -198,6 +198,7 @@ function normalizeAudienceScopes(vcf: Record<string, unknown>): Record<string, u
     ...vcf,
     visitSource: normalizeScope(vcf.visitSource),
     publish: normalizeScope(vcf.publish),
+    applyToPackages: vcf.applyToPackages === true,
   };
   if (next.visitSource && typeof next.visitSource === 'object') {
     next.visitSource = { ...(next.visitSource as Record<string, unknown>), countMode: 'pooled' };

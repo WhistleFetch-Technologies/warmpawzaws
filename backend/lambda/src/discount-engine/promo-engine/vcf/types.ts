@@ -67,6 +67,11 @@ export interface PromoVcfConfig {
   };
   expiryDays?: number;
   rankingOverride?: RankingOverride;
+  /**
+   * Package purchases (transaction type PACKAGE) get this offer only when true.
+   * Missing or false: visit/publish can still match bookings, but packages get no discount.
+   */
+  applyToPackages?: boolean;
 }
 
 export interface ChannelCell {

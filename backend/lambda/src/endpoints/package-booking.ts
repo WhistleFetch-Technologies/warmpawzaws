@@ -52,6 +52,7 @@ import {
   type VendorPackageComputation,
 } from '../utils/vendor-package-razorpay-flow';
 import { quotePackagePricing, resolvePackagePolicySnapshot, type PackagePricingResult } from '../utils/package-pricing';
+import { packageChargeAfterPromo } from '../discount-engine/promo-engine/services/package-promo-charge';
 
 function packageGstPersistFields(pricing: PackagePricingResult | null | undefined) {
   if (!pricing) return {};
@@ -125,6 +126,8 @@ async function evaluatePackagePromoEngine(opts: {
   vendorId?: string;
   amount: number;
   serviceCategory?: string;
+  /** Quote previews must not write an evaluation row. Purchase commits with persist true. */
+  persist?: boolean;
 }): Promise<Record<string, unknown> | null> {
   try {
     const { safeEvaluatePromotions, loadServerPaymentContext } = await import(
@@ -136,7 +139,7 @@ async function evaluatePackagePromoEngine(opts: {
     });
     const ev = await safeEvaluatePromotions({
       user_id: opts.customerId,
-      persist: true,
+      persist: opts.persist !== false,
       transaction: {
         type: 'PACKAGE',
         channel: ctx.channel || undefined,
@@ -1909,14 +1912,32 @@ export function registerPackageBookingEndpoints(app: Hono) {
           : null;
       const grossTotal = roundMoney(pricing ? pricing.totalAmount : comp.priceNum);
       const packageGst = roundMoney(pricing ? pricing.gstAmount : 0);
+      const packageBase = roundMoney(pricing ? pricing.basePrice : comp.priceNum);
+      const packagePromoEngine = await evaluatePackagePromoEngine({
+        customerId,
+        vendorId: String(comp.vendorId || ''),
+        amount: packageBase,
+        serviceCategory: String(
+          (comp as { businessServiceType?: string }).businessServiceType ||
+            pricing?.businessServiceType ||
+            'PACKAGE'
+        ).toUpperCase(),
+      });
+      const packageDiscount = packageChargeAfterPromo({
+        grossTotal,
+        basePrice: packageBase,
+        gstAmount: packageGst,
+        engineDiscount: Number(packagePromoEngine?.engineDiscount) || 0,
+      });
+      const chargeGross = packageDiscount.chargeGross;
       let walletApplied = 0;
       const walletOperationKey =
         idempotencyKey || `pkg_wallet_${customerId}_${String(vendorServiceId)}_${Date.now()}`;
       if (comp.priceNum > 0 && !hasRazorpayProof && useWallet) {
-        const walletTarget = requestedWalletAmount > 0 ? requestedWalletAmount : grossTotal;
+        const walletTarget = requestedWalletAmount > 0 ? requestedWalletAmount : chargeGross;
         // GST must be collected via Razorpay — wallet eligible is gross − GST.
         const split = computeWalletBookingSplit({
-          grossTotal,
+          grossTotal: chargeGross,
           walletIntent: walletTarget,
           walletBalance: walletTarget,
           gstAmount: packageGst,
@@ -1928,14 +1949,14 @@ export function registerPackageBookingEndpoints(app: Hono) {
         );
       } else if (comp.priceNum > 0 && hasRazorpayProof && useWallet) {
         const split = computeWalletBookingSplit({
-          grossTotal,
+          grossTotal: chargeGross,
           walletIntent: requestedWalletAmount,
           walletBalance: requestedWalletAmount,
           gstAmount: packageGst,
         });
         walletApplied = split.walletApplied;
       }
-      const payableAfterWallet = roundMoney(Math.max(0, grossTotal - walletApplied));
+      const payableAfterWallet = roundMoney(Math.max(0, chargeGross - walletApplied));
       // Never finalize as wallet-only when GST remains — force Razorpay for GST.
       const canWalletOnlyFinalize = payableAfterWallet <= 0.009 && packageGst < 0.01;
       const policyInputForFinalize = {
@@ -1950,16 +1971,6 @@ export function registerPackageBookingEndpoints(app: Hono) {
         },
       };
 
-      const packagePromoEngine = await evaluatePackagePromoEngine({
-        customerId,
-        vendorId: String(comp.vendorId || ''),
-        amount: Number(pricing?.basePrice ?? grossTotal) || 0,
-        serviceCategory: String(
-          (comp as { businessServiceType?: string }).businessServiceType ||
-            pricing?.businessServiceType ||
-            'PACKAGE'
-        ).toUpperCase(),
-      });
       const packageEvaluationId =
         packagePromoEngine?.evaluationId != null
           ? String(packagePromoEngine.evaluationId)
@@ -1986,10 +1997,11 @@ export function registerPackageBookingEndpoints(app: Hono) {
               convenienceFee: pricing.convenienceFee,
               deliveryFee: pricing.deliveryFee,
               packagingFee: pricing.packagingFee,
-              totalAmount: pricing.totalAmount,
+              totalAmount: chargeGross,
               businessServiceType: pricing.businessServiceType,
             }
           : null,
+        discount: packageDiscount.discount,
         walletApplied,
         payableAfterWallet,
         promoEngine: packagePromoEngine,
@@ -2026,7 +2038,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
             gst_rate: pricing ? pricing.gstRate : null,
             platform_fee: pricing ? pricing.platformFee : 0,
             convenience_fee: pricing ? pricing.convenienceFee : 0,
-            total_amount: grossTotal,
+            total_amount: chargeGross,
             currency: 'INR',
             payment_method: 'wallet',
             payment_status: 'completed',
@@ -2039,7 +2051,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
             sessionSchedule,
             paymentId: walletPaymentId || null,
             policy: policyInputForFinalize,
-            totalCharged: grossTotal,
+            totalCharged: chargeGross,
             ...packageGstPersistFields(pricing),
           });
           const { parentBookingId } = await createPackageBookingsAfterPayment({
@@ -2202,7 +2214,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
             razorpayOrderId,
             paymentId: paymentIdForExisting,
             policy: policyInputForFinalize,
-            totalCharged: grossTotal,
+            totalCharged: chargeGross,
             ...packageGstPersistFields(pricing),
           });
 
@@ -2264,7 +2276,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
           razorpayOrderId,
           paymentId: String(payRow.id),
           policy: policyInputForFinalize,
-          totalCharged: grossTotal,
+          totalCharged: chargeGross,
           ...packageGstPersistFields(pricing),
         });
 
@@ -2930,6 +2942,25 @@ export function registerPackageBookingEndpoints(app: Hono) {
       }
 
       const policy = resolvePackagePolicySnapshot(comp);
+      const quoteBase = roundMoney(pricing.basePrice);
+      const quoteGst = roundMoney(pricing.gstAmount);
+      const quoteGross = roundMoney(pricing.totalAmount);
+      const quotePromo =
+        customerId != null
+          ? await evaluatePackagePromoEngine({
+              customerId,
+              vendorId: String(comp.vendorId || ''),
+              amount: quoteBase,
+              persist: false,
+              serviceCategory: String(pricing.businessServiceType || 'PACKAGE').toUpperCase(),
+            })
+          : null;
+      const quoteCharge = packageChargeAfterPromo({
+        grossTotal: quoteGross,
+        basePrice: quoteBase,
+        gstAmount: quoteGst,
+        engineDiscount: Number(quotePromo?.engineDiscount) || 0,
+      });
 
       return c.json({
         success: true,
@@ -2957,9 +2988,11 @@ export function registerPackageBookingEndpoints(app: Hono) {
         convenienceFee: pricing.convenienceFee,
         deliveryFee: pricing.deliveryFee,
         packagingFee: pricing.packagingFee,
-        finalPrice: pricing.totalAmount,
-        totalAmount: pricing.totalAmount,
+        discount: quoteCharge.discount,
+        finalPrice: quoteCharge.chargeGross,
+        totalAmount: quoteCharge.chargeGross,
         businessServiceType: pricing.businessServiceType,
+        promoEngine: quotePromo,
         policy: {
           cancellationPolicy: policy.cancellationPolicy,
           refundPolicy: policy.refundPolicy,

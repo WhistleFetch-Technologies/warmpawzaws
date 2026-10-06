@@ -212,6 +212,7 @@ export function parseVcfConfig(metadata: Record<string, unknown> | undefined | n
     redeem,
     expiryDays: row.expiryDays != null ? Number(row.expiryDays) : undefined,
     rankingOverride: OVERRIDES.includes(ranking) ? ranking : undefined,
+    applyToPackages: row.applyToPackages === true,
   };
 }
 

@@ -125,6 +125,75 @@ describe('scoreVcfCandidates', () => {
     expect(result.rejected).toContainEqual({ promotion_id: 'vendor-promo', reason: 'VISIT_FAIL' });
   });
 
+  it('applies a published promo to a package only when applyToPackages is yes', () => {
+    const withPackages = promo({
+      id: 'pkg-yes',
+      metadata: {
+        vcf: {
+          visitSource: { letter: 'F', width: 'general' },
+          visitLoop: { kind: 'every' },
+          benefitMode: 'discount',
+          publish: { letter: 'F' },
+          applyToPackages: true,
+        },
+      },
+    });
+    const withoutPackages = promo({
+      id: 'pkg-no',
+      metadata: {
+        vcf: {
+          visitSource: { letter: 'V', vendorId: 'v1', width: 'general' },
+          visitLoop: { kind: 'every' },
+          benefitMode: 'discount',
+          publish: { letter: 'V', vendorId: 'v1' },
+          applyToPackages: false,
+        },
+      },
+    });
+    const rules = new Map([
+      [withPackages.id, [rule(withPackages.id, 80)]],
+      [withoutPackages.id, [rule(withoutPackages.id, 50)]],
+    ]);
+    const packageReq = {
+      user_id: 'u1',
+      transaction: { type: 'PACKAGE', amount: 500, vendorId: 'v1', categoryId: 'c1', channel: 'appointment' as const },
+    };
+    const yes = scoreVcfCandidates({
+      candidates: [withPackages],
+      rulesByPromo: rules,
+      limitsByPromo: new Map(),
+      usageByPromo: new Map(),
+      behaviour: { user_id: 'u1', overall: {}, services: { vcf: visitProfile } as never },
+      req: packageReq,
+    });
+    expect(yes.winnerId).toBe('pkg-yes');
+    expect(yes.winnerBenefits.reduce((s, b) => s + b.amount, 0)).toBe(80);
+
+    const no = scoreVcfCandidates({
+      candidates: [withoutPackages],
+      rulesByPromo: rules,
+      limitsByPromo: new Map(),
+      usageByPromo: new Map(),
+      behaviour: { user_id: 'u1', overall: {}, services: { vcf: visitProfile } as never },
+      req: packageReq,
+    });
+    expect(no.winnerId).toBeNull();
+    expect(no.rejected).toContainEqual({ promotion_id: 'pkg-no', reason: 'PACKAGE_EXCLUDED' });
+
+    const bookingStillWins = scoreVcfCandidates({
+      candidates: [withoutPackages],
+      rulesByPromo: rules,
+      limitsByPromo: new Map(),
+      usageByPromo: new Map(),
+      behaviour: { user_id: 'u1', overall: {}, services: { vcf: visitProfile } as never },
+      req: {
+        user_id: 'u1',
+        transaction: { type: 'BOOKING', amount: 500, vendorId: 'v1', categoryId: 'c1', channel: 'appointment' },
+      },
+    });
+    expect(bookingStillWins.winnerId).toBe('pkg-no');
+  });
+
   it('skips a promo whose publish channels exclude the payment channel', () => {
     const shopOnly = promo({
       id: 'shop-only',

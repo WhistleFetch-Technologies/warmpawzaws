@@ -201,6 +201,11 @@ export interface PromoVcfDraft {
     | 'max_customer_discount'
     | 'max_customer_cashback'
     | 'max_customer_total_value';
+  /**
+   * When true, package bookings for this visit/publish scope (vendor, category, or platform)
+   * receive the discount. False or unset: packages are excluded.
+   */
+  applyToPackages?: boolean;
 }
 
 export function createEmptyVcf(): PromoVcfDraft {
@@ -214,6 +219,7 @@ export function createEmptyVcf(): PromoVcfDraft {
       channels: ['tele', 'appointment', 'paybill', 'ecommerce'],
     },
     expiryDays: 30,
+    applyToPackages: false,
   };
 }
 

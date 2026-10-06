@@ -371,6 +371,36 @@ export function AudienceStep({
           />
         </div>
         <div className="space-y-2">
+          <Label>Apply to packages</Label>
+          <p className="text-xs text-slate-500">
+            Uses the visit and publish you set above (vendor, category, or platform). Yes applies
+            the discount when a customer books a package in that scope. No leaves package bookings
+            at full price.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { id: true, label: 'Yes' },
+                { id: false, label: 'No' },
+              ] as const
+            ).map((opt) => {
+              const on = (vcf.applyToPackages === true) === opt.id;
+              return (
+                <button
+                  key={opt.label}
+                  type="button"
+                  className={`rounded-full border px-3 py-1.5 text-sm ${
+                    on ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]' : 'border-slate-200'
+                  }`}
+                  onClick={() => patch({ ...vcf, applyToPackages: opt.id })}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="space-y-2">
           <Label>Ranking override (optional)</Label>
           <Select
             value={vcf.rankingOverride || 'unset'}
