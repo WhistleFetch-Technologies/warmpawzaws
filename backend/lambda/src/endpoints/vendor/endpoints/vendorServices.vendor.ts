@@ -32,7 +32,10 @@ import {
   rejectVendorServicePriceChangeIfLocked,
   stripVendorServicePriceFields,
 } from '../shared/vendor-service-pricing-lock';
-import { buildVendorServiceUpdateData } from '../../../utils/vendor-service-publish-sync';
+import {
+  buildVendorServiceUpdateData,
+  mergeVendorServicePackageMetadata,
+} from '../../../utils/vendor-service-publish-sync';
 
 // ----------------------------------------------------------------------------
 // Category normalization helpers
@@ -237,6 +240,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
           isEnabled: s.is_enabled,
           isCustomService: true,
           isPackage: s.metadata?.isPackage || false,
+          packageType: s.metadata?.packageType,
           packageDetails: s.metadata?.packageDetails,
           submittedForApprovalAt: s.submitted_for_approval_at,
           rejectionReason: s.rejection_reason,
@@ -1229,6 +1233,20 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
 
       const updateData = buildVendorServiceUpdateData(serviceData as Record<string, unknown>);
+
+      const serviceIdIsUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+      if (serviceIdIsUuid && serviceData.packageDetails && typeof serviceData.packageDetails === 'object') {
+        const metaRow = await query(
+          `SELECT metadata FROM vendor_services WHERE id = $1::uuid AND vendor_id = $2::uuid LIMIT 1`,
+          [serviceId, vendorId],
+        );
+        const merged = mergeVendorServicePackageMetadata(
+          metaRow.rows[0]?.metadata,
+          serviceData as Record<string, unknown>,
+        );
+        if (merged) updateData.metadata = merged;
+      }
 
       // ✅ FIX: Validate that at least one field is being updated
       if (Object.keys(updateData).length === 0) {

@@ -2,6 +2,7 @@ import {
   applyVendorServicePublishEnableSync,
   buildVendorServiceUpdateData,
   isVendorServicePublishedStatus,
+  mergeVendorServicePackageMetadata,
 } from '../vendor-service-publish-sync';
 
 describe('isVendorServicePublishedStatus', () => {
@@ -45,5 +46,37 @@ describe('applyVendorServicePublishEnableSync', () => {
     const data: Record<string, unknown> = { is_enabled: true, price: 500 };
     applyVendorServicePublishEnableSync(data);
     expect(data.publish_status).toBeUndefined();
+  });
+});
+
+describe('mergeVendorServicePackageMetadata', () => {
+  it('keeps existing metadata and writes the edited package price', () => {
+    const merged = mergeVendorServicePackageMetadata(
+      {
+        isPackage: true,
+        packageType: 'session',
+        specialization_ids: ['walk-daily'],
+        packageDetails: { totalSessions: 10, price: 10000 },
+      },
+      {
+        packageType: 'session',
+        packageDetails: { totalSessions: 12, sessionDuration: 45, price: 8000 },
+      },
+    );
+    expect(merged).toEqual({
+      isPackage: true,
+      packageType: 'session',
+      specialization_ids: ['walk-daily'],
+      packageDetails: {
+        totalSessions: 12,
+        price: 8000,
+        packagePrice: 8000,
+        sessionDuration: 45,
+      },
+    });
+  });
+
+  it('returns undefined when packageDetails is missing', () => {
+    expect(mergeVendorServicePackageMetadata({ isPackage: true }, { price: 100 })).toBeUndefined();
   });
 });

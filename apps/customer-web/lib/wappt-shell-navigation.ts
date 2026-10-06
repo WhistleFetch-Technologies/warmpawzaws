@@ -58,6 +58,8 @@ export type WapptShellScreenActions = {
   setWalkerBookingState: (payload: Record<string, unknown>) => void;
   openBoardingBooking: (payload: Record<string, unknown>) => void;
   openSittingBooking: (payload: Record<string, unknown>) => void;
+  /** Package checkout for any hub whose vendor has a package. */
+  openPurchasePackage?: (payload: Record<string, unknown> | undefined) => void;
 };
 
 const BOOKING_SCREEN_ALIASES = new Set([
@@ -109,6 +111,11 @@ export function handleWapptShellScreenNavigate(
   data: Record<string, unknown> | undefined,
   actions: WapptShellScreenActions,
 ): void {
+  if (screen === 'purchase-package' && actions.openPurchasePackage) {
+    actions.openPurchasePackage(data);
+    return;
+  }
+
   const hub = resolveHubCategory(discoveryCategory);
   const payload = buildWapptShellBookingPayload(String(hub), {
     ...(data || {}),

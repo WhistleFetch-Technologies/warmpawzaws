@@ -99,6 +99,24 @@ describe('handleWapptShellScreenNavigate', () => {
     );
   });
 
+  it('opens package checkout for every hub that has a package', () => {
+    for (const hub of ['vet', 'grooming', 'training', 'walker', 'boarding', 'sitting'] as const) {
+      const actions = createActions();
+      const openPurchasePackage = jest.fn();
+      handleWapptShellScreenNavigate(
+        hub,
+        'purchase-package',
+        { vendorId: 'v-1', vendorServiceId: 'pkg-1', serviceName: 'Day package', price: 1000 },
+        { ...actions, openPurchasePackage },
+      );
+      expect(openPurchasePackage).toHaveBeenCalledWith(
+        expect.objectContaining({ vendorId: 'v-1', vendorServiceId: 'pkg-1' }),
+      );
+      expect(actions.navigateToScreen).not.toHaveBeenCalled();
+      expect(actions.handleVetNavigate).not.toHaveBeenCalled();
+    }
+  });
+
   it('routes sitting booking through sitting opener', () => {
     const actions = createActions();
     handleWapptShellScreenNavigate(

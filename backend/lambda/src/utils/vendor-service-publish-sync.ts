@@ -63,3 +63,53 @@ export function buildVendorServiceUpdateData(serviceData: Record<string, unknown
   applyVendorServicePublishEnableSync(updateData);
   return updateData;
 }
+
+function asMetadataObject(existing: unknown): Record<string, unknown> {
+  let value = existing;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value) as unknown;
+    } catch {
+      return {};
+    }
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return {};
+}
+
+/**
+ * Merge an edit of packageDetails into existing vendor_services.metadata
+ * without dropping specializations or other keys already stored on the row.
+ */
+export function mergeVendorServicePackageMetadata(
+  existing: unknown,
+  serviceData: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const incoming = serviceData.packageDetails;
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return undefined;
+
+  const base = asMetadataObject(existing);
+  const prevDetails = asMetadataObject(base.packageDetails);
+  const nextDetails: Record<string, unknown> = {
+    ...prevDetails,
+    ...(incoming as Record<string, unknown>),
+  };
+  const rawPrice = nextDetails.price ?? nextDetails.packagePrice ?? serviceData.price;
+  const price = rawPrice == null || rawPrice === '' ? NaN : Number(rawPrice);
+  if (Number.isFinite(price) && price >= 0) {
+    nextDetails.price = price;
+    nextDetails.packagePrice = price;
+  }
+
+  const packageType = serviceData.packageType ?? base.packageType;
+  return {
+    ...base,
+    isPackage: true,
+    ...(packageType != null && String(packageType).trim()
+      ? { packageType: String(packageType) }
+      : {}),
+    packageDetails: nextDetails,
+  };
+}

@@ -11,11 +11,14 @@ export function buildVendorServicesCardResponse(opts: {
   page: Record<string, unknown>[];
   nextCursor: string | null;
   omitPricing: boolean;
+  /** Full package catalogue so Book Packages is not stuck behind service pagination. */
+  packages?: Record<string, unknown>[];
 }) {
-  const { page, nextCursor, omitPricing } = opts;
+  const { page, nextCursor, omitPricing, packages } = opts;
   return {
     success: true as const,
     services: toServiceCardDTOList(page, { omitPricing }),
+    packages: toServiceCardDTOList(packages ?? [], { omitPricing }),
     nextCursor,
     count: page.length,
     ...(omitPricing ? { warmpawzAppointments: true as const } : {}),

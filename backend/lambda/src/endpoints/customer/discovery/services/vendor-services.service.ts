@@ -71,11 +71,13 @@ export async function executevendorServices(c: Context) {
         servicePage.offset,
         fetchedExtra,
       );
+      const packageRows = (combined as Record<string, unknown>[]).filter((row) => row.isPackage);
       return c.json(
         buildVendorServicesCardResponse({
           page: page as Record<string, unknown>[],
           nextCursor,
           omitPricing,
+          packages: packageRows,
         }),
       );
     }

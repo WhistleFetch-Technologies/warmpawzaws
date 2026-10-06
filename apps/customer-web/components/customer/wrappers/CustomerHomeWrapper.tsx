@@ -2242,9 +2242,12 @@ export function CustomerHomeWrapper({
           setVetServiceData(mergeBannerNavigationPayload(null, payload));
           navigateToScreen('pet-sitter-booking');
         },
+        openPurchasePackage: (payload) => {
+          openPurchasePackageScreen(payload ?? null);
+        },
       });
     },
-    [wapptDiscoveryCategory, navigateToScreen, openBoardingBookingScreen],
+    [wapptDiscoveryCategory, navigateToScreen, openBoardingBookingScreen, openPurchasePackageScreen],
   );
 
   const handleProblemGridVendorProfile = (ctx: VendorProfileFromProblemContext) => {

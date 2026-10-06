@@ -295,6 +295,7 @@ export function VendorCustomServiceCreationEnhanced({
   // ============================================================================
   
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [customServices, setCustomServices] = useState<CustomService[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -444,6 +445,7 @@ export function VendorCustomServiceCreationEnhanced({
 
   // ✅ FIX: Ensure non-trainer/walker/sitter solo providers cannot create packages
   useEffect(() => {
+    if (editingServiceId) return;
     if (isSoloProvider && !isTrainerWalkerSitter && isPackage) {
       setIsPackage(false);
     }
@@ -451,7 +453,7 @@ export function VendorCustomServiceCreationEnhanced({
     if (isSoloProvider && isTrainerWalkerSitter && isPackage && packageType !== 'session') {
       setPackageType('session');
     }
-  }, [isSoloProvider, isTrainerWalkerSitter, isPackage, packageType]);
+  }, [isSoloProvider, isTrainerWalkerSitter, isPackage, packageType, editingServiceId]);
   
   // Set fallback category label for non-walker/trainer roles (walkers/trainers wait for catalogue UUID)
   useEffect(() => {
@@ -649,7 +651,9 @@ export function VendorCustomServiceCreationEnhanced({
     // ✅ Duplicate name check (case-insensitive) - service names must be unique per vendor
     const nameNorm = (s: string) => (s || '').trim().toLowerCase();
     const isDuplicateName = customServices.some(
-      (s) => nameNorm(s.serviceName || s.name || '') === nameNorm(serviceName)
+      (s) =>
+        s.id !== editingServiceId &&
+        nameNorm(s.serviceName || s.name || '') === nameNorm(serviceName)
     );
     if (isDuplicateName) {
       toast.error('A service with this name already exists. Please use a different name.');
@@ -717,6 +721,40 @@ export function VendorCustomServiceCreationEnhanced({
     
     try {
       setSaving(true);
+
+      if (editingServiceId) {
+        const details = buildPackageDetails() as Record<string, unknown>;
+        const priceEditable = canVendorEditServicePrice(selectedServiceStyle);
+        if (!priceEditable) {
+          delete details.price;
+          delete details.packagePrice;
+        }
+        const body: Record<string, unknown> = {
+          serviceName: serviceName.trim(),
+          description: description.trim(),
+          duration: isPackage && packageType === 'session' ? sessionDuration : duration,
+          isPackage: true,
+          packageType,
+          packageDetails: details,
+        };
+        if (priceEditable) {
+          body.price = packagePrice;
+          body.customPrice = packagePrice;
+        }
+        const data = await apiClient.put(
+          `/vendor/${vendorId}/services/${editingServiceId}`,
+          body,
+        ) as any;
+        if (data?.success !== false && !data?.error) {
+          toast.success('Package updated');
+          resetForm();
+          setShowCreateDialog(false);
+          await loadCustomServices();
+        } else {
+          toast.error(data?.error || 'Failed to update package');
+        }
+        return;
+      }
       
       const effectiveCategoryName = categoryName === 'other' && subCategoryName.trim()
         ? subCategoryName.trim()
@@ -829,7 +867,15 @@ export function VendorCustomServiceCreationEnhanced({
 
   const handleUpdatePrice = async (service: any) => {
     const currentPrice = service.price ?? service.customPrice ?? 0;
-    const raw = window.prompt('Enter new price (₹)', String(currentPrice));
+    const packagePriceNow = Number(
+      service.packageDetails?.price ??
+        service.packageDetails?.packagePrice ??
+        currentPrice,
+    );
+    const raw = window.prompt(
+      'Enter new price (₹)',
+      String(service.isPackage ? packagePriceNow : currentPrice),
+    );
     if (raw == null || raw === '') return;
     const newPrice = parseFloat(String(raw).replace(/[^0-9.]/g, ''));
     if (Number.isNaN(newPrice) || newPrice < 0) {
@@ -837,10 +883,20 @@ export function VendorCustomServiceCreationEnhanced({
       return;
     }
     try {
-      const data = await apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
+      const body: Record<string, unknown> = {
         price: newPrice,
         customPrice: newPrice,
-      }) as any;
+      };
+      if (service.isPackage) {
+        body.isPackage = true;
+        body.packageType = service.packageType;
+        body.packageDetails = {
+          ...(service.packageDetails || {}),
+          price: newPrice,
+          packagePrice: newPrice,
+        };
+      }
+      const data = await apiClient.put(`/vendor/${vendorId}/services/${service.id}`, body) as any;
       if (data?.success !== false) {
         toast.success('Price updated');
         await loadCustomServices();
@@ -903,9 +959,51 @@ export function VendorCustomServiceCreationEnhanced({
     setPetTypes([]);
     setSelectedMicroCategory(null);
     setSelectedSpecializationIds([]);
+    setEditingServiceId(null);
     if (effectiveStyles.length > 0) {
       setSelectedServiceStyle(effectiveStyles[0]);
     }
+  };
+
+  const handleEditPackage = (service: CustomService) => {
+    const details = service.packageDetails || {};
+    setEditingServiceId(service.id || null);
+    setServiceName(service.serviceName || service.name || '');
+    setDescription(service.description || '');
+    setDuration(Number(service.duration) || 60);
+    setIsPackage(true);
+    setPackageType((service.packageType || 'session') as PackageType);
+    const sessionType = details.sessionType;
+    setSessionPackageType(sessionType === 'week' || sessionType === 'month' ? sessionType : 'day');
+    setPackagePeriodCount(Number(details.packagePeriodCount) || 1);
+    setSessionFrequency(Number(details.sessionFrequency ?? details.sessionsPerDay) || 1);
+    setSessionDuration(Number(details.sessionDuration ?? service.duration) || 60);
+    const nextPrice = Number(details.price ?? details.packagePrice ?? service.price ?? 0) || 0;
+    setPackagePrice(nextPrice);
+    setPrice(nextPrice);
+    setValidityDays(Number(details.validityDays) || 30);
+    setMaxUsageCount(details.maxUsageCount ?? -1);
+    setUsageInterval(details.usageInterval || 'total');
+    setDiscountPercentage(Number(details.discountPercentage) || 0);
+    setMembershipBenefits(details.membershipBenefits?.length ? details.membershipBenefits : ['']);
+    setIncludedServices(details.includedServices || []);
+    setBillingCycle(details.subscriptionBillingCycle || 'monthly');
+    if (details.pricingBySize) {
+      setSmallPrice(details.pricingBySize.small || 0);
+      setMediumPrice(details.pricingBySize.medium || 0);
+      setLargePrice(details.pricingBySize.large || 0);
+      setExtraLargePrice(details.pricingBySize.extraLarge || 0);
+    }
+    const style = service.serviceStyle || service.service_style;
+    if (style === 'at_home' || style === 'at_center' || style === 'tele') {
+      setSelectedServiceStyle(style);
+    }
+    if (service.categoryName) {
+      setCategoryName(service.categoryName);
+      const looksLikeId = /^[0-9a-f-]{36}$/i.test(service.categoryName);
+      setPlatformCategoryId(looksLikeId ? service.categoryName : null);
+    }
+    setShowCreateDialog(true);
   };
 
   const getStatusBadge = (status: string) => {
@@ -1123,8 +1221,18 @@ export function VendorCustomServiceCreationEnhanced({
                     Unpublish
                   </Button>
                 )}
-                {!service.isPackage &&
-                  canVendorEditServicePrice(service.serviceStyle ?? service.service_style ?? serviceStyle) && (
+                {service.isPackage && (
+                  <Button
+                    onClick={() => handleEditPackage(service)}
+                    size="sm"
+                    variant="outline"
+                    className="text-[#FF8C42] border-orange-200 hover:bg-orange-50"
+                  >
+                    <Pencil className="w-4 h-4 mr-1" />
+                    Edit Package
+                  </Button>
+                )}
+                {canVendorEditServicePrice(service.serviceStyle ?? service.service_style ?? serviceStyle) && (
                   <Button
                     onClick={() => handleUpdatePrice(service)}
                     size="sm"
@@ -1153,12 +1261,18 @@ export function VendorCustomServiceCreationEnhanced({
       )}
 
       {/* Create Service Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Dialog
+        open={showCreateDialog}
+        onOpenChange={(open) => {
+          setShowCreateDialog(open);
+          if (!open) setEditingServiceId(null);
+        }}
+      >
         <DialogContent className="max-w-[420px] max-h-[90vh] overflow-y-auto bg-white border border-gray-200 shadow-xl rounded-2xl">
           <DialogHeader className="border-b border-gray-100 pb-4 mb-4 space-y-2 bg-gradient-to-r from-[#FF8C42]/10 to-[#FF6B35]/10 -mx-6 -mt-6 px-6 pt-6 rounded-t-2xl">
             <DialogTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
-              Create Custom Service
+              {editingServiceId ? 'Edit Package' : 'Create Custom Service'}
             </DialogTitle>
             <DialogDescription className="text-sm text-gray-600 mt-2 leading-relaxed">
               {vendorRoleCategory === 'trainer_walker' 
@@ -1347,6 +1461,7 @@ export function VendorCustomServiceCreationEnhanced({
                   id="isPackage"
                   checked={isPackage}
                   onCheckedChange={setIsPackage}
+                  disabled={Boolean(editingServiceId)}
                 />
               </div>
             )}
@@ -1795,12 +1910,12 @@ export function VendorCustomServiceCreationEnhanced({
               {saving ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                  Creating...
+                  {editingServiceId ? 'Saving...' : 'Creating...'}
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />
-                  Create Service
+                  {editingServiceId ? 'Save Package' : 'Create Service'}
                 </>
               )}
             </Button>
