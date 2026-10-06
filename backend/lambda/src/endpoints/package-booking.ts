@@ -149,10 +149,10 @@ async function evaluatePackagePromoEngine(opts: {
         amount: opts.amount,
       },
     });
-    if (!ev?.evaluation_id) return null;
+    if (!ev) return null;
     const cashbackBenefit = (ev.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
     return {
-      evaluationId: ev.evaluation_id,
+      evaluationId: ev.evaluation_id || null,
       pendingCashback: ev.summary.cashback,
       engineDiscount: ev.summary.discount,
       eligible: ev.eligible,
