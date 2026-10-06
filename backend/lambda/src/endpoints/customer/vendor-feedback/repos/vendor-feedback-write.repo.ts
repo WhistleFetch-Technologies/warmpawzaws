@@ -37,9 +37,11 @@ export async function dbInsertVendorFeedbackReview(
       `INSERT INTO reviews (vendor_id, customer_id, booking_id, payment_id, rating, comment,
                             service_type, source_type, transaction_at,
                             is_verified, is_published, is_approved, approved_at)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $7, $8, true, true, true, NOW())
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, true, true, true, NOW())
        ON CONFLICT DO NOTHING
        RETURNING id`,
+      // service_type (varchar) and source_type (text) need separate params: Postgres
+      // rejects one param inferred as both types (42P08).
       [
         input.vendorId,
         input.customerId,
@@ -47,6 +49,7 @@ export async function dbInsertVendorFeedbackReview(
         input.paymentId,
         input.rating,
         input.comment,
+        input.reviewSource,
         input.reviewSource,
         input.transactionAt,
       ]
