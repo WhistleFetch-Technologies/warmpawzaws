@@ -210,6 +210,7 @@ import { registerAdminIntegrationEndpoints } from 'src/endpoints/admin/endpoints
 import { registerAdminGovernanceEnhancedEndpoints } from 'src/endpoints/admin/endpoints/admin-governance-enhanced';
 import { registerCustomerAppointmentsEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-appointments';
 import { registerCustomerWarmpawzPayEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-warmpawz-pay';
+import { registerCustomerVendorFeedbackEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-vendor-feedback';
 import { registerCustomerWarmpawzAppointmentsEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-warmpawz-appointments';
 import { registerCustomerOrdersEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-orders';
 import { registerAdminCustomServicesEndpoints } from 'src/endpoints/admin/endpoints/admin-custom-services';
@@ -681,6 +682,7 @@ registerCustomerWarmpawzAppointmentsEndpoints(app);
 // /customer/appointments MUST register before /customer/:customerId or "appointments" is captured as :customerId → list API never runs.
 registerCustomerAppointmentsEndpoints(app);
 registerCustomerWarmpawzPayEndpoints(app); // /customer/warmpawz-pay/vendors — before /customer/:customerId
+registerCustomerVendorFeedbackEndpoints(app); // /customer/vendor-feedback/* — before /customer/:customerId
 registerCustomerWarmpawzAppointmentsEndpoints(app); // /customer/warmpawz-appointments/* — before /customer/:customerId
 // Specialized flows under /customer/* (pet-matching, holiday-packages) MUST register before /customer/:customerId
 // or paths like /customer/pet-matching are captured as customerId="pet-matching" and return 4xx.

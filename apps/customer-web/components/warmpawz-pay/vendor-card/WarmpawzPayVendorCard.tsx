@@ -96,7 +96,9 @@ function PremiumWarmpawzPayVendorCard({
   profileAriaLabel,
   onProfileClick,
   className,
+  variant,
 }: WarmpawzPayVendorCardProps) {
+  const isCompact = variant === 'compact';
   const categoryText = normalizeCopy(categoryLabel) || normalizeCopy(subtitle);
   const { bodyAvailability, footerHint: resolvedFooterHint } = resolveAvailabilityDisplay(
     availabilityText,
@@ -123,20 +125,33 @@ function PremiumWarmpawzPayVendorCard({
         className,
       )}
     >
-      <div className="p-4">
-        <div className="flex min-w-0 items-start gap-4">
+      <div className={isCompact ? 'p-3' : 'p-4'}>
+        <div className={cn('flex min-w-0 items-start', isCompact ? 'gap-3' : 'gap-4')}>
           <DiscoveryProviderAvatar
             name={name}
             photo={imageUrl ?? undefined}
-            className="h-28 w-28 shrink-0 rounded-2xl border border-orange-100 object-cover shadow-sm"
-            fallbackClassName="flex h-28 w-28 shrink-0 items-center justify-center rounded-2xl border border-orange-100 bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] text-2xl font-bold text-[#FF8C42]"
+            className={cn(
+              'shrink-0 border border-orange-100 object-cover shadow-sm',
+              isCompact ? 'h-16 w-16 rounded-xl' : 'h-28 w-28 rounded-2xl',
+            )}
+            fallbackClassName={cn(
+              'flex shrink-0 items-center justify-center border border-orange-100 bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] font-bold text-[#FF8C42]',
+              isCompact ? 'h-16 w-16 rounded-xl text-lg' : 'h-28 w-28 rounded-2xl text-2xl',
+            )}
           />
 
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="truncate text-lg font-bold leading-tight text-gray-900">{name}</h3>
+                  <h3
+                    className={cn(
+                      'truncate font-bold leading-tight text-gray-900',
+                      isCompact ? 'text-base' : 'text-lg',
+                    )}
+                  >
+                    {name}
+                  </h3>
                   {showVerified ? (
                     <span className="inline-flex shrink-0 items-center">
                       <Shield className="h-4 w-4 text-green-500" aria-hidden />

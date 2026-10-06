@@ -53,7 +53,7 @@ export type WarmpawzPayVendorCardProps = {
   /** Profile chevron aria-label — supplied by parent */
   profileAriaLabel?: string;
   className?: string;
-  /** compact = Pay Hub; rich = appointment discovery (legacy parity) */
+  /** compact = small avatar + tight padding (feedback sheet); rich (default) = discovery / Pay Hub */
   variant?: WarmpawzPayVendorCardVariant;
   /** Rich layout — category chip (defaults to subtitle) */
   categoryLabel?: string;
