@@ -973,8 +973,16 @@ export function VendorCustomServiceCreationEnhanced({
     setDuration(Number(service.duration) || 60);
     setIsPackage(true);
     setPackageType((service.packageType || 'session') as PackageType);
-    const sessionType = details.sessionType;
-    setSessionPackageType(sessionType === 'week' || sessionType === 'month' ? sessionType : 'day');
+    const rawSession = String(details.sessionType || 'day');
+    const sessionType: SessionPackageType =
+      rawSession === 'weekly' || rawSession === 'week'
+        ? 'weekly'
+        : rawSession === 'monthly' || rawSession === 'month'
+          ? 'monthly'
+          : rawSession === 'yearly' || rawSession === 'year'
+            ? 'yearly'
+            : 'day';
+    setSessionPackageType(sessionType);
     setPackagePeriodCount(Number(details.packagePeriodCount) || 1);
     setSessionFrequency(Number(details.sessionFrequency ?? details.sessionsPerDay) || 1);
     setSessionDuration(Number(details.sessionDuration ?? service.duration) || 60);
