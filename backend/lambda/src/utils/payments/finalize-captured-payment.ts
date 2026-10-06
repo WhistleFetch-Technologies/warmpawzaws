@@ -186,6 +186,13 @@ export async function finalizeCapturedPayment(
       return;
     }
 
+    // WPay pays a vendor bill against an already-paid booking/order; it must never be
+    // treated as a duplicate or unfulfillable capture of that entity.
+    if (String(payment.payment_source || '') === 'warmpawz_pay') {
+      result = { outcome: 'already_final', paymentId };
+      return;
+    }
+
     const bookingId = payment.booking_id ? String(payment.booking_id) : null;
     const orderId = payment.order_id && !bookingId ? String(payment.order_id) : null;
 

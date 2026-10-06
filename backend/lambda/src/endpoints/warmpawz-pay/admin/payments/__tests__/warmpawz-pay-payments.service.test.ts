@@ -167,6 +167,68 @@ describe('WarmpawzPayPaymentsService', () => {
     expect(result.items[0]?.payoutStatus).toBe('unavailable');
   });
 
+  it('exposes appointment fee credit and Razorpay charge from the commercial snapshot', async () => {
+    mockedPage.mockResolvedValue({
+      total: 1,
+      rows: [
+        {
+          ...baseRow,
+          original_amount: 2420,
+          discount_amount: 350,
+          payable_amount: 1624.1,
+          settlement_id: 'set-1',
+          settlement_status: 'pending',
+          payment_metadata: { commercialModel: 'tier_commission', appointmentFeeCredit: 499 },
+          settlement_breakup: {
+            commercialModel: 'tier_commission',
+            appointmentFeeCredit: 499,
+            walletAmount: 499,
+            razorpayChargeAmount: 1125.1,
+            vendorPayableAmount: 2420,
+          },
+        },
+      ],
+    });
+
+    const service = new WarmpawzPayPaymentsService();
+    const result = await service.listPayments({
+      page: 1,
+      pageSize: 5,
+      dateFilter: { mode: 'month', year: 2026, month: 10 },
+      payoutStatus: 'all',
+      vendorSearch: '',
+    });
+
+    expect(result.items[0]?.appointmentFeeCredit).toBe(499);
+    expect(result.items[0]?.walletAmount).toBe(499);
+    expect(result.items[0]?.razorpayChargeAmount).toBe(1125.1);
+  });
+
+  it('defaults appointment fee credit to 0 when the snapshot has none', async () => {
+    mockedPage.mockResolvedValue({
+      total: 1,
+      rows: [
+        {
+          ...baseRow,
+          settlement_id: 'set-1',
+          settlement_status: 'pending',
+          settlement_breakup: { commercialModel: 'tier_commission', vendorPayableAmount: 1000 },
+        },
+      ],
+    });
+
+    const service = new WarmpawzPayPaymentsService();
+    const result = await service.listPayments({
+      page: 1,
+      pageSize: 5,
+      dateFilter: { mode: 'month', year: 2026, month: 10 },
+      payoutStatus: 'all',
+      vendorSearch: '',
+    });
+
+    expect(result.items[0]?.appointmentFeeCredit).toBe(0);
+  });
+
   it('exports xlsx rows with filename for month filter', async () => {
     mockedExport.mockResolvedValue([
       {
