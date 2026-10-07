@@ -594,7 +594,6 @@ async function restoreWalletAfterUnfulfillableCapture(params: {
        WHERE transaction_type = 'debit'
          AND (
            (reference_type = 'booking_payment' AND reference_id::text = $1)
-           OR booking_id = $1::uuid
            OR description ILIKE $2
          )`,
       [params.entityId, `%${params.entityId}%`]
@@ -603,10 +602,9 @@ async function restoreWalletAfterUnfulfillableCapture(params: {
       `SELECT COALESCE(SUM(amount), 0)::text AS total
        FROM wallet_transactions
        WHERE transaction_type = 'credit'
-         AND COALESCE(reference_type, '') = 'booking_refund'
+         AND COALESCE(reference_type, '') IN ('booking_refund', 'booking_refund_sync')
          AND (
-           booking_id = $1::uuid
-           OR reference_id::text = $1
+           reference_id::text = $1
            OR description ILIKE $2
          )`,
       [params.entityId, `%${params.entityId}%`]

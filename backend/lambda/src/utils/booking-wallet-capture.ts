@@ -24,13 +24,13 @@ export async function sumBookingWalletLedger(bookingId: string): Promise<{
 }> {
   if (!bookingId) return { debited: 0, credited: 0, net: 0 };
   const like = `%${bookingId}%`;
+  // wallet_transactions has no booking_id column on dev/prod; bookings are keyed by reference_id.
   const debit = await query(
     `SELECT COALESCE(SUM(amount), 0)::text AS total
      FROM wallet_transactions
      WHERE transaction_type = 'debit'
        AND (
          (reference_type = 'booking_payment' AND reference_id::text = $1)
-         OR booking_id = $1::uuid
          OR description ILIKE $2
        )`,
     [bookingId, like]
@@ -41,8 +41,7 @@ export async function sumBookingWalletLedger(bookingId: string): Promise<{
      WHERE transaction_type = 'credit'
        AND COALESCE(reference_type, '') IN ('booking_refund', 'booking_refund_sync')
        AND (
-         booking_id = $1::uuid
-         OR reference_id::text = $1
+         reference_id::text = $1
          OR description ILIKE $2
        )`,
     [bookingId, like]
@@ -118,7 +117,6 @@ export async function debitReservedWalletForBookingInTransaction(
        WHERE transaction_type = 'debit'
          AND (
            (reference_type = 'booking_payment' AND reference_id::text = $1)
-           OR booking_id = $1::uuid
            OR description ILIKE $2
          )`,
       [bookingId, `%${bookingId}%`]
