@@ -130,8 +130,42 @@ export async function dbVendorAvailableSlots14(resolvedVendorId, date) {
           );
 }
 
-export async function dbVendorAvailableSlots15(staffQuery, params) {
-  return await query(staffQuery, params)
+export async function dbStaffSlotsForDate(filters: {
+  vendorId: string;
+  date: string;
+  staffId?: string | null;
+  serviceId?: string | null;
+}) {
+  const params: unknown[] = [filters.vendorId, filters.date];
+  let sql = `
+    SELECT DISTINCT
+      sas.id as slot_id,
+      sas.staff_id,
+      s.name as staff_name,
+      s.photo_url as staff_photo,
+      sas.start_time,
+      sas.end_time,
+      sas.is_available,
+      sss.lead_time_minutes,
+      sss.buffer_time_minutes
+    FROM staff_availability_slots sas
+    INNER JOIN staff s ON sas.staff_id = s.id
+    LEFT JOIN staff_slot_services sss ON sas.id = sss.slot_id
+    WHERE s.vendor_id = $1
+      AND sas.date = $2
+      AND sas.is_available = true
+      AND s.is_active = true
+      AND s.mobile_verified = true`;
+  if (filters.staffId) {
+    params.push(filters.staffId);
+    sql += ` AND s.id = $${params.length}`;
+  }
+  if (filters.serviceId) {
+    params.push(filters.serviceId);
+    sql += ` AND sss.service_id = $${params.length}`;
+  }
+  sql += ` ORDER BY sas.start_time, s.name`;
+  return await query(sql, params);
 }
 
 /** Staff-slot tables are optional (not migrated everywhere); only query them when usable. */

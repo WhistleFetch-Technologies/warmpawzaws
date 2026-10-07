@@ -66,7 +66,10 @@ export async function executevendorAvailableSlots(c: Context) {
       const { vendorId } = c.req.param();
       const date = c.req.query('date');
       // Vendor VA2 rows use canonical styles (tele, at_home); listings/catalog often send video_consultation / home_visit.
-      const serviceStyleRaw = String(c.req.query('serviceStyle') || 'at_home').trim();
+      // Missing style defaults to clinic, matching booking create + payment resume (never guess home visit).
+      const requestedStyle = String(c.req.query('serviceStyle') ?? '').trim();
+      const serviceStyleRaw =
+        requestedStyle && requestedStyle !== 'undefined' && requestedStyle !== 'null' ? requestedStyle : 'at_center';
       const serviceStyle = normalizeAvailabilityServiceStyle(serviceStyleRaw) || normalizeServiceStyle(serviceStyleRaw) || serviceStyleRaw;
       const staffId = c.req.query('staffId');
       const serviceId = c.req.query('serviceId');
@@ -353,54 +356,12 @@ export async function executevendorAvailableSlots(c: Context) {
           .dbVendorHasStaffSlotScheduling(String(resolvedVendorId))
           .catch(() => false));
       if (staffSlotsUsable) {
-        let staffQuery = `
-          SELECT DISTINCT 
-            sas.id as slot_id,
-            sas.staff_id,
-            s.name as staff_name,
-            s.photo_url as staff_photo,
-            sas.start_time,
-            sas.end_time,
-            sas.is_available,
-            sss.lead_time_minutes,
-            sss.buffer_time_minutes
-          FROM staff_availability_slots sas
-          INNER JOIN staff s ON sas.staff_id = s.id
-          LEFT JOIN staff_slot_services sss ON sas.id = sss.slot_id
-          LEFT JOIN services srv ON sss.service_id = srv.id
-          WHERE s.vendor_id = $1
-          AND sas.date = $2
-          AND sas.is_available = true
-          AND s.is_active = true
-          AND s.mobile_verified = true
-        `;
-        const params: any[] = [resolvedVendorId, date];
-        let paramIndex = 3;
-
-        if (staffId) {
-          staffQuery += ` AND s.id = $${paramIndex}`;
-          params.push(staffId);
-          paramIndex++;
-        }
-
-        if (serviceId) {
-          staffQuery += ` AND sss.service_id = $${paramIndex}`;
-          params.push(serviceId);
-          paramIndex++;
-        }
-
-        // Filter by service style - removed since services table doesn't have service_style column
-        // Service style filtering is handled at vendor_services level, not at staff_slot_services level
-        // staffQuery += ` AND (srv.service_style = $${paramIndex} OR srv.service_style IS NULL)`;
-        // params.push(serviceStyle);
-        // paramIndex++;
-
-        staffQuery += ` ORDER BY sas.start_time, s.name`;
-
-        const staffSlotsResult = await vendor_available_slotsRepo.dbVendorAvailableSlots15(staffQuery, params).catch((err) => {
-          console.warn('[SLOTS] Staff availability query failed, falling back to vendor hours:', err.message);
-          return { rows: [] };
-        });
+        const staffSlotsResult = await vendor_available_slotsRepo
+          .dbStaffSlotsForDate({ vendorId: String(resolvedVendorId), date, staffId, serviceId })
+          .catch((err) => {
+            console.warn('[SLOTS] Staff availability query failed, falling back to vendor hours:', err.message);
+            return { rows: [] as any[] };
+          });
 
         if (staffSlotsResult.rows.length > 0) {
           let existingBookingsResult: { rows: any[] };
