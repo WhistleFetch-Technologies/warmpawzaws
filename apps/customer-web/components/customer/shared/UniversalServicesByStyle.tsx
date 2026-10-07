@@ -687,11 +687,14 @@ export function UniversalServicesByStyle({
   // ✅ FIX: Pass all selected services to booking (matches vet/grooming flow)
   const handleBookServices = () => {
     const vid = String(profileProvider?.vendorId || profileProvider?.providerId || '');
+    const style =
+      appointmentsMode && wapptStyleFilter !== 'all' ? wapptStyleFilter : serviceStyle;
     if (
       requestGuestAuthForProfileContinue({
         persona: String(roleId || finalCategory || 'booking'),
         category: finalCategory || String(roleId || 'booking'),
         vendorId: vid,
+        serviceStyle: style,
         resumeScreen: bookingScreen,
         wapptMode: appointmentsMode,
       })
@@ -700,7 +703,6 @@ export function UniversalServicesByStyle({
     }
     if (appointmentsMode && profileProvider) {
       const vid = String(profileProvider.vendorId || profileProvider.providerId || '');
-      const style = wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;
       const requested = toWapptRequestedServices(
         Array.from(selectedServices)
           .map((id) => profileProvider.services.find((s) => s.id === id || s.serviceId === id))

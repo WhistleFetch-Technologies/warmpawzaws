@@ -145,6 +145,27 @@ describe('requestGuestAuth', () => {
     expect(JSON.stringify(intent)).not.toMatch(/jwt|access_token|password|otp/i);
   });
 
+  it('WAPPT Select Slot keeps the home-visit style across guest login', () => {
+    registerGuestAuthModalOpener(jest.fn());
+    const blocked = requestGuestAuthForProfileContinue({
+      persona: 'vet',
+      category: 'vet',
+      vendorId: 'vendor-1',
+      serviceStyle: 'at_home',
+      resumeScreen: 'vet-booking',
+      wapptMode: true,
+    });
+    expect(blocked).toBe(true);
+    const intent = readGuestBookingIntent();
+    expect(intent).toMatchObject({
+      vendorId: 'vendor-1',
+      serviceStyle: 'at_home',
+      wapptMode: true,
+      resumeScreen: 'vet-booking',
+    });
+    expect(isGuestAppointmentJourney(intent!)).toBe(true);
+  });
+
   it('requestGuestAuthForWpayVendor opens the modal with the vendor return path', () => {
     const opener = jest.fn();
     registerGuestAuthModalOpener(opener);

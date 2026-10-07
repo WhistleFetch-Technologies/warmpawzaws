@@ -550,11 +550,14 @@ export function VetServicesByStyle({
   // This matches the grooming flow where multiple services can be selected
   const handleBookServices = () => {
     const vid = String(profileProvider?.vendorId || profileProvider?.providerId || vendorId || '');
+    const style =
+      appointmentsMode && wapptStyleFilter !== 'all' ? wapptStyleFilter : serviceStyle;
     if (
       requestGuestAuthForProfileContinue({
         persona: 'vet',
         category: 'vet',
         vendorId: vid,
+        serviceStyle: style,
         resumeScreen: 'vet-booking',
         wapptMode: appointmentsMode,
       })
@@ -563,8 +566,6 @@ export function VetServicesByStyle({
     }
     if (appointmentsMode && profileProvider) {
       const vid = String(profileProvider.vendorId || profileProvider.providerId || '');
-      const style =
-        wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;
       onNavigate(resolveWarmpawzBookingScreen(category), {
         ...buildWarmpawzAppointmentsBookingNav({
           vendorId: vid,

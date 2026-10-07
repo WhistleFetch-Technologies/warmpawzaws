@@ -2072,6 +2072,7 @@ export function CustomerHomeWrapper({
           persona: 'vet',
           category: 'vet',
           vendorId: String(data?.vendorId || data?.clinicId || ''),
+          serviceStyle: data?.serviceStyle ? String(data.serviceStyle) : undefined,
           resumeScreen: 'vet-booking',
           wapptMode: data?.appointmentsMode === true,
         })
@@ -3655,6 +3656,7 @@ export function CustomerHomeWrapper({
           persona: 'vet',
           category: 'vet',
           vendorId: String(data?.vendorId || data?.clinicId || ''),
+          serviceStyle: String(data?.serviceStyle || 'at_center'),
           resumeScreen: 'vet-booking',
           wapptMode: data?.appointmentsMode === true,
         })
@@ -3692,6 +3694,7 @@ export function CustomerHomeWrapper({
           persona: 'vet',
           category: 'vet',
           vendorId: String(data?.vendorId || data?.clinicId || vetServiceData?.id || ''),
+          serviceStyle: String(data?.serviceStyle || 'at_center'),
           resumeScreen: 'vet-booking',
           wapptMode: data?.appointmentsMode === true || vetServiceData?.appointmentsMode === true,
         })

@@ -233,6 +233,7 @@ export function WarmpawzAppointmentsVendorProfile({
         persona: category,
         category,
         vendorId: vid,
+        serviceStyle,
         resumeScreen: resolveWarmpawzBookingScreen(category === 'nutrition' ? 'nutrition' : category),
         wapptMode: true,
       })
