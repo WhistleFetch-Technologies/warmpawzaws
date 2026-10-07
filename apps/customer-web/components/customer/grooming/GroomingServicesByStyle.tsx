@@ -738,10 +738,51 @@ export function GroomingServicesByStyle({
 
   // ✅ FIX: Pass all selected services to booking, not just the first one
   // This matches the vet flow where multiple services can be selected
+  const buildSelectedServicesBookingData = (selectedServicesData: any[]) => {
+    const firstService = selectedServicesData[0];
+    const bookingData: any = {
+      vendorId: profileProvider!.providerId || profileProvider!.vendorId,
+      vendorName: profileProvider!.name,
+      serviceType: 'grooming',
+      serviceStyle,
+      selectedServices: selectedServicesData,
+      serviceId: firstService?.id || firstService?.serviceId,
+      serviceName: firstService?.name,
+      price: totalPrice,
+      duration: selectedServicesData.reduce((sum, s) => sum + (s?.duration || 0), 0),
+    };
+    if (profileProvider!.providerType === 'vendor') {
+      bookingData.vendorId = profileProvider!.providerId;
+      bookingData.vendorName = profileProvider!.name;
+    } else {
+      bookingData.staffId = profileProvider!.providerId;
+      bookingData.staffName = profileProvider!.name;
+      bookingData.vendorId = profileProvider!.vendorId;
+      bookingData.vendorName = profileProvider!.vendorName;
+      bookingData.isIndividualProvider = profileProvider!.isIndividualProvider;
+    }
+    return bookingData;
+  };
+
   const handleBookServices = () => {
     const vid = String(profileProvider?.vendorId || profileProvider?.providerId || '');
     const style =
       appointmentsMode && wapptStyleFilter !== 'all' ? wapptStyleFilter : serviceStyle;
+    const wapptNav =
+      appointmentsMode && profileProvider
+        ? {
+            ...buildWarmpawzAppointmentsBookingNav({
+              vendorId: String(profileProvider.vendorId || profileProvider.providerId || ''),
+              vendorName: profileProvider.name,
+              serviceStyle: style,
+              category,
+            }),
+            appointmentsMode: true,
+          }
+        : null;
+    const pickedServices = Array.from(selectedServices)
+      .map((id) => profileProvider?.services.find((s) => s.id === id || s.serviceId === id))
+      .filter(Boolean);
     if (
       requestGuestAuthForProfileContinue({
         persona: 'grooming',
@@ -750,21 +791,17 @@ export function GroomingServicesByStyle({
         serviceStyle: style,
         resumeScreen: 'grooming-booking',
         wapptMode: appointmentsMode,
+        bookingNav:
+          wapptNav ??
+          (profileProvider && pickedServices.length > 0
+            ? buildSelectedServicesBookingData(pickedServices)
+            : undefined),
       })
     ) {
       return;
     }
-    if (appointmentsMode && profileProvider) {
-      const vid = String(profileProvider.vendorId || profileProvider.providerId || '');
-      onNavigate(resolveWarmpawzBookingScreen(category), {
-        ...buildWarmpawzAppointmentsBookingNav({
-          vendorId: vid,
-          vendorName: profileProvider.name,
-          serviceStyle: style,
-          category,
-        }),
-        appointmentsMode: true,
-      });
+    if (wapptNav) {
+      onNavigate(resolveWarmpawzBookingScreen(category), wapptNav);
       return;
     }
     if (selectedServices.size === 0) {
@@ -808,35 +845,7 @@ export function GroomingServicesByStyle({
         }
       }
 
-      // ✅ FIX: Pass all selected services, not just the first one
-      // Build booking data similar to VetCenterProfileView
-      const firstService = selectedServicesData[0];
-      const bookingData: any = {
-        vendorId: profileProvider!.providerId || profileProvider!.vendorId,
-        vendorName: profileProvider!.name,
-        serviceType: 'grooming',
-        serviceStyle,
-        selectedServices: selectedServicesData, // ✅ Pass array of selected services
-        // Also include first service for backward compatibility
-        serviceId: firstService?.id || firstService?.serviceId,
-        serviceName: firstService?.name,
-        price: totalPrice, // Total price of all selected services
-        duration: selectedServicesData.reduce((sum, s) => sum + (s?.duration || 0), 0),
-      };
-
-      if (profileProvider!.providerType === 'vendor') {
-        bookingData.vendorId = profileProvider!.providerId;
-        bookingData.vendorName = profileProvider!.name;
-      } else {
-        // Staff or individual provider
-        bookingData.staffId = profileProvider!.providerId;
-        bookingData.staffName = profileProvider!.name;
-        bookingData.vendorId = profileProvider!.vendorId;
-        bookingData.vendorName = profileProvider!.vendorName;
-        bookingData.isIndividualProvider = profileProvider!.isIndividualProvider;
-      }
-
-      onNavigate('grooming-booking', bookingData);
+      onNavigate('grooming-booking', buildSelectedServicesBookingData(selectedServicesData));
     }
   };
 

@@ -99,7 +99,7 @@ export function registerDeliveryTrackingEndpoints(app: Hono) {
       const { status, notes } = body;
 
       // ✅ FIX: Add debug logging and normalize status
-      console.log(`[delivery/update-status] Tracking ID: ${trackingId}, Requested status: ${status}, Body:`, JSON.stringify(body));
+      console.log(`[delivery/update-status] Tracking ID: ${trackingId}, Requested status: ${status}, Body keys:`, Object.keys(body || {}).join(', '));
       
       // Check if tracking exists first
       const existingTracking = await select('delivery_tracking', { id: trackingId });

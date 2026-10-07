@@ -2486,7 +2486,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             );
             
             otpCode = otp;
-            console.log(`✅ [BOOKING-CREATE] Auto-generated OTP ${otp} for confirmed booking ${booking.id}`);
+            console.log(`✅ [BOOKING-CREATE] Auto-generated OTP for confirmed booking ${booking.id}`);
             
             // Send OTP via SMS (async)
             if (booking.customer_phone || booking.customer_id) {
@@ -4998,7 +4998,7 @@ export function registerBookingOTPEndpoint(app: Hono) {
         }
       }
 
-      console.log(`✅ [BOOKING-OTP] Generated OTP ${otp} for booking ${bookingId}`);
+      console.log(`✅ [BOOKING-OTP] Generated OTP for booking ${bookingId}`);
 
       return c.json({
         success: true,

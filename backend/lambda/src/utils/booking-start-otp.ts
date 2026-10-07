@@ -94,7 +94,7 @@ export async function ensureBookingStartOtpIfNeeded(
 
     if (updated.rows.length > 0) {
       console.log(
-        `${logPrefix} OTP ${otpCode} generated for booking ${bookingId} (service_type: ${serviceType})`
+        `${logPrefix} OTP generated for booking ${bookingId} (service_type: ${serviceType})`
       );
       return { generated: true, otpCode };
     }

@@ -134,6 +134,20 @@ export async function dbVendorAvailableSlots15(staffQuery, params) {
   return await query(staffQuery, params)
 }
 
+/** Staff-slot tables are optional (not migrated everywhere); only query them when usable. */
+export async function dbVendorHasStaffSlotScheduling(vendorId: string): Promise<boolean> {
+  const result = await query(
+    `SELECT to_regclass('public.staff_availability_slots') IS NOT NULL
+        AND to_regclass('public.staff_slot_services') IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM staff s
+          WHERE s.vendor_id::text = $1 AND s.is_active = true AND s.mobile_verified = true
+        ) AS usable`,
+    [vendorId],
+  );
+  return result.rows[0]?.usable === true;
+}
+
 export async function dbVendorAvailableSlots16(resolvedVendorId, date) {
   const occupying = await loadOccupyingBookings(query, {
     vendorId: resolvedVendorId,

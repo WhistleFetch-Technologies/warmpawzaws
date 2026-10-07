@@ -95,7 +95,9 @@ export async function sendSMS(
 
   // Check if SMS is enabled
   if (!SMS_ENABLED) {
-    console.log(`[SMS Mock] Would send to ${normalizedPhone}: ${message}`);
+    console.log(
+      `[SMS Mock] Would send to ${normalizedPhone}: ${message.replace(/\b\d{4,8}\b/g, '****')}`
+    );
     return {
       messageId: `mock-${Date.now()}`,
       phoneNumber: normalizedPhone,

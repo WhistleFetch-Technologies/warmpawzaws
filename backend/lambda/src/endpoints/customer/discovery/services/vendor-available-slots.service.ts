@@ -347,7 +347,12 @@ export async function executevendorAvailableSlots(c: Context) {
       }
 
       // Staff-based availability (at_home/tele): still uses staff_availability_slots; past-window enforced below
-      if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
+      const staffSlotsUsable =
+        (serviceStyle === 'at_home' || serviceStyle === 'tele') &&
+        (await vendor_available_slotsRepo
+          .dbVendorHasStaffSlotScheduling(String(resolvedVendorId))
+          .catch(() => false));
+      if (staffSlotsUsable) {
         let staffQuery = `
           SELECT DISTINCT 
             sas.id as slot_id,

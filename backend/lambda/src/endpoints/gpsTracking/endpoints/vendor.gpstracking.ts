@@ -314,7 +314,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const { otp, vendorId } = (c as any).get('validatedBody') as z.infer<typeof completeBookingRequestSchema>;
 
       console.log(`[COMPLETE-BOOKING] Request body------------------------>: ${JSON.stringify((c.req as unknown as { body: unknown }).body)}`);
-      console.log(`[COMPLETE-BOOKING] OTP: ${otp}, Vendor ID: ${vendorId}`);
+      console.log(`[COMPLETE-BOOKING] OTP provided: ${otp ? 'yes' : 'no'}, Vendor ID: ${vendorId}`);
       console.log(`[COMPLETE-BOOKING] Booking ID: ${bookingId}`);
       // Resolve vendorId (may be vendor_identity.id) to canonical vendors.id
       const resolvedVendorId = await resolveVendorId(vendorId);
@@ -1373,7 +1373,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const providedOTP = String(otp).trim();
 
       if (expectedOTP !== providedOTP) {
-        console.error(`❌ [START-SESSION] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOTP}"`);
+        console.error(`❌ [START-SESSION] Invalid OTP for booking ${bookingId}`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
       }
 

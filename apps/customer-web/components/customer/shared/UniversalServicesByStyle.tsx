@@ -685,10 +685,64 @@ export function UniversalServicesByStyle({
   };
 
   // ✅ FIX: Pass all selected services to booking (matches vet/grooming flow)
+  const buildSelectedServicesBookingData = (selectedServicesData: any[]) => {
+    const bookingServices =
+      roleId === 'trainer' ||
+      (serviceStyle === 'tele' && roleId === 'veterinarian')
+        ? [selectedServicesData[0]]
+        : selectedServicesData;
+    const firstService = bookingServices[0];
+    const bookingData: any = {
+      vendorId: profileProvider!.providerId || profileProvider!.vendorId,
+      vendorName: profileProvider!.name,
+      serviceStyle,
+      selectedServices: bookingServices,
+      serviceId: firstService?.id || firstService?.serviceId,
+      serviceName: firstService?.name,
+      price: bookingServices.reduce((sum, s) => sum + (s?.price || 0), 0),
+      duration: bookingServices.reduce((sum, s) => sum + (s?.duration || 0), 0),
+      providerName: profileProvider!.name,
+      service: firstService, // Backward compatibility
+    };
+    if (profileProvider!.providerType === 'vendor') {
+      bookingData.vendorId = profileProvider!.providerId;
+      bookingData.vendorName = profileProvider!.name;
+    } else {
+      bookingData.staffId = profileProvider!.staffId || profileProvider!.providerId;
+      bookingData.staffName = profileProvider!.name;
+      bookingData.vendorId = profileProvider!.vendorId;
+      bookingData.vendorName = profileProvider!.vendorName;
+    }
+    if (roleId === 'walker') {
+      bookingData.serviceType = bookingData.serviceType || 'walking';
+      bookingData.walker = {
+        name: bookingData.vendorName || profileProvider!.name,
+        vendorId: bookingData.vendorId,
+      };
+    }
+    return bookingData;
+  };
+
   const handleBookServices = () => {
     const vid = String(profileProvider?.vendorId || profileProvider?.providerId || '');
     const style =
       appointmentsMode && wapptStyleFilter !== 'all' ? wapptStyleFilter : serviceStyle;
+    const pickedServices = Array.from(selectedServices)
+      .map((id) => profileProvider?.services.find((s) => s.id === id || s.serviceId === id))
+      .filter(Boolean) as any[];
+    const wapptNav =
+      appointmentsMode && profileProvider
+        ? {
+            ...buildWarmpawzAppointmentsBookingNav({
+              vendorId: String(profileProvider.vendorId || profileProvider.providerId || ''),
+              vendorName: profileProvider.name,
+              serviceStyle: style,
+              category: finalCategory,
+              selectedServices: toWapptRequestedServices(pickedServices),
+            }),
+            appointmentsMode: true,
+          }
+        : null;
     if (
       requestGuestAuthForProfileContinue({
         persona: String(roleId || finalCategory || 'booking'),
@@ -697,27 +751,17 @@ export function UniversalServicesByStyle({
         serviceStyle: style,
         resumeScreen: bookingScreen,
         wapptMode: appointmentsMode,
+        bookingNav:
+          wapptNav ??
+          (profileProvider && pickedServices.length > 0
+            ? buildSelectedServicesBookingData(pickedServices)
+            : undefined),
       })
     ) {
       return;
     }
-    if (appointmentsMode && profileProvider) {
-      const vid = String(profileProvider.vendorId || profileProvider.providerId || '');
-      const requested = toWapptRequestedServices(
-        Array.from(selectedServices)
-          .map((id) => profileProvider.services.find((s) => s.id === id || s.serviceId === id))
-          .filter(Boolean) as Array<{ id?: string; serviceId?: string; name?: string }>,
-      );
-      onNavigate(resolveWarmpawzBookingScreen(finalCategory), {
-        ...buildWarmpawzAppointmentsBookingNav({
-          vendorId: vid,
-          vendorName: profileProvider.name,
-          serviceStyle: style,
-          category: finalCategory,
-          selectedServices: requested,
-        }),
-        appointmentsMode: true,
-      });
+    if (wapptNav) {
+      onNavigate(resolveWarmpawzBookingScreen(finalCategory), wapptNav);
       return;
     }
     if (selectedServices.size === 0) {
@@ -769,41 +813,7 @@ export function UniversalServicesByStyle({
         }
       }
 
-      const bookingServices =
-        roleId === 'trainer' ||
-        (serviceStyle === 'tele' && roleId === 'veterinarian')
-          ? [selectedServicesData[0]]
-          : selectedServicesData;
-      const firstService = bookingServices[0];
-      const bookingData: any = {
-        vendorId: profileProvider!.providerId || profileProvider!.vendorId,
-        vendorName: profileProvider!.name,
-        serviceStyle,
-        selectedServices: bookingServices,
-        serviceId: firstService?.id || firstService?.serviceId,
-        serviceName: firstService?.name,
-        price: bookingServices.reduce((sum, s) => sum + (s?.price || 0), 0),
-        duration: bookingServices.reduce((sum, s) => sum + (s?.duration || 0), 0),
-        providerName: profileProvider!.name,
-        service: firstService, // Backward compatibility
-      };
-      if (profileProvider!.providerType === 'vendor') {
-        bookingData.vendorId = profileProvider!.providerId;
-        bookingData.vendorName = profileProvider!.name;
-      } else {
-        bookingData.staffId = profileProvider!.staffId || profileProvider!.providerId;
-        bookingData.staffName = profileProvider!.name;
-        bookingData.vendorId = profileProvider!.vendorId;
-        bookingData.vendorName = profileProvider!.vendorName;
-      }
-      if (roleId === 'walker') {
-        bookingData.serviceType = bookingData.serviceType || 'walking';
-        bookingData.walker = {
-          name: bookingData.vendorName || profileProvider!.name,
-          vendorId: bookingData.vendorId,
-        };
-      }
-      onNavigate(bookingScreen, bookingData);
+      onNavigate(bookingScreen, buildSelectedServicesBookingData(selectedServicesData));
     }
   };
 

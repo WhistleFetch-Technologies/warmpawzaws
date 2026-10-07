@@ -132,6 +132,11 @@ export type GuestBookingIntentV1 = {
   search?: GuestSearchSnapshot;
   /** Set when a meaningful conversion started — used for TTL abandonment only. */
   funnelStarted?: 'booking' | 'checkout';
+  /**
+   * Exact shell nav payload the logged-in path would open the booking screen with
+   * (vendorName, selectedServices, initialPrice, returnScreen, bookingMode…). Display hint only.
+   */
+  bookingNav?: Record<string, unknown>;
 };
 
 const INTENT_TTL_MS = GUEST_JOURNEY_TTL_MS;
@@ -295,6 +300,80 @@ export function resolveResumeScreen(intent: GuestBookingIntentV1): string | unde
   return raw;
 }
 
+const BOOKING_NAV_MAX_CHARS = 24_000;
+
+/** JSON-safe copy without auth fields; dropped when too large for storage. */
+export function sanitizeGuestBookingNav(nav: unknown): Record<string, unknown> | undefined {
+  if (!nav || typeof nav !== 'object' || Array.isArray(nav)) return undefined;
+  try {
+    const json = JSON.stringify(nav);
+    if (!json || json.length > BOOKING_NAV_MAX_CHARS) return undefined;
+    return stripAuthFieldsFromRecord(JSON.parse(json) as Record<string, unknown>);
+  } catch {
+    return undefined;
+  }
+}
+
+function firstPresent(...values: unknown[]): unknown {
+  return values.find((v) => v !== undefined && v !== null && v !== '');
+}
+
+/**
+ * Booking-screen state after guest login. In-memory state is kept only when it belongs
+ * to the same vendor (modal login inside the booking screen); otherwise start clean.
+ */
+export function buildRestoredBookingState(
+  intent: GuestBookingIntentV1,
+  prev: Record<string, unknown> | null | undefined
+): Record<string, unknown> {
+  const sameVendor =
+    !!prev &&
+    typeof prev === 'object' &&
+    !!intent.vendorId &&
+    String(prev.vendorId || '') === String(intent.vendorId);
+  const base: Record<string, unknown> = sameVendor ? { ...prev } : {};
+  const nav: Record<string, unknown> =
+    intent.bookingNav && typeof intent.bookingNav === 'object' ? intent.bookingNav : {};
+  const persona = String(intent.persona || intent.category || '').toLowerCase();
+  const style = firstPresent(intent.serviceStyle, nav.serviceStyle, base.serviceStyle) as
+    | string
+    | undefined;
+  // Boarding/sitting/walker routers read serviceType as the category; the rest read it as the style.
+  const categoryServiceType =
+    persona === 'boarding' || persona === 'swimming'
+      ? persona
+      : persona === 'sitting' || persona === 'sitter' || persona === 'pet_sitter'
+        ? 'sitting'
+        : persona === 'walker' || persona === 'walking'
+          ? 'walking'
+          : null;
+
+  return {
+    ...base,
+    ...nav,
+    vendorId: firstPresent(intent.vendorId, nav.vendorId, base.vendorId),
+    serviceId: firstPresent(intent.serviceId, nav.serviceId, base.serviceId),
+    serviceStyle: style,
+    serviceType: categoryServiceType
+      ? firstPresent(nav.serviceType, categoryServiceType)
+      : firstPresent(style, nav.serviceType, base.serviceType),
+    category: firstPresent(nav.category, intent.category, intent.persona, base.category),
+    bookingDate: firstPresent(intent.date, nav.bookingDate, base.bookingDate),
+    bookingTime: firstPresent(intent.time, nav.bookingTime, base.bookingTime),
+    slotId: firstPresent(intent.slotId, nav.slotId, base.slotId),
+    appointmentType: firstPresent(intent.appointmentType, nav.appointmentType, base.appointmentType),
+    appointmentsMode:
+      intent.wapptMode === true || nav.appointmentsMode === true || base.appointmentsMode === true,
+    price: firstPresent(intent.price, nav.price, base.price),
+    offerId: firstPresent(intent.offerId, nav.offerId, base.offerId),
+    promotionId: firstPresent(intent.promotionId, nav.promotionId, base.promotionId),
+    packageId: firstPresent(intent.packageId, nav.packageId, base.packageId),
+    variantId: firstPresent(intent.variantId, nav.variantId, base.variantId),
+    slotNeedsRevalidation: true,
+    openAddPetAfterRestore: transactionRequiresPet(intent),
+  };
+}
+
 /** Appointment/slot booking only — never WPay, cart, search, or add-pet. */
 export function isGuestAppointmentJourney(intent: GuestBookingIntentV1 | null | undefined): boolean {
   if (!intent) return false;
@@ -329,9 +408,26 @@ export function persistGuestBookingIntentForAuth(
   intent: Omit<GuestBookingIntentV1, 'v' | 'savedAt'>
 ): Omit<GuestBookingIntentV1, 'v' | 'savedAt'> {
   const existing = readGuestBookingIntent();
-  const incomingKind =
+  // Sidebar "Login" / generic redirect: nothing to resume. Persisting it would pose as a
+  // booking, skip new-customer profile setup, and re-fire booking_resumed after login.
+  const progress = readGuestBookingProgress() || {};
+  const isPlainLogin =
+    !intent.kind &&
+    !intent.resumeScreen &&
+    !intent.vendorId &&
+    !intent.openAddPet &&
+    (!intent.returnPath || intent.returnPath === '/') &&
+    !progress.resumeScreen &&
+    !progress.vendorId;
+  if (isPlainLogin && !existing) {
+    return { ...intent, kind: 'other', returnPath: '/' };
+  }
+  const incomingKind: GuestJourneyKind =
     intent.kind || (intent.resumeScreen === 'add-pet' ? 'add_pet' : existing?.kind || 'booking');
-  if (existing && !shouldReplaceGuestJourney(existing, { ...intent, kind: incomingKind })) {
+  if (
+    existing &&
+    (isPlainLogin || !shouldReplaceGuestJourney(existing, { ...intent, kind: incomingKind }))
+  ) {
     if (canUseStorage() && existing.resumeScreen) {
       try {
         sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, existing.resumeScreen);
@@ -344,11 +440,11 @@ export function persistGuestBookingIntentForAuth(
       returnPath: existing.returnPath,
     };
   }
-  const progress = readGuestBookingProgress() || {};
   const merged: Omit<GuestBookingIntentV1, 'v' | 'savedAt'> = {
     ...progress,
     ...intent,
-    kind: incomingKind || progress.kind || (intent.resumeScreen === 'add-pet' ? 'add_pet' : 'booking'),
+    bookingNav: sanitizeGuestBookingNav(intent.bookingNav),
+    kind: incomingKind,
     search: intent.search || progress.search,
     returnPath: intent.returnPath || progress.returnPath || '/',
     funnelStarted:

@@ -385,7 +385,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     const { phone, otp } = validationResult.data;
-    console.log(`[AUTH] 📝 Phone: ${phone}, OTP: ${otp}`);
+    console.log(`[AUTH] 📝 Phone: ${phone}, OTP provided: ${otp ? 'yes' : 'no'}`);
     //Referral code extraction 
     // Extract referralCode from body (optional, not in schema)
     // Try multiple possible locations in the request
@@ -422,7 +422,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
     } else {
       console.log(`[AUTH] ⚠️ No referral code found in request`);
       if (body) {
-        console.log(`[AUTH] 📝 Full body: ${JSON.stringify(body).substring(0, 500)}`);
+        console.log(`[AUTH] 📝 Body keys: ${Object.keys(body as object).join(', ')}`);
         // Check all possible referral code fields
         console.log(`[AUTH] 📝 body.referralCode: ${(body as any)?.referralCode || 'NOT FOUND'}`);
         console.log(`[AUTH] 📝 body.pendingReferralCode: ${(body as any)?.pendingReferralCode || 'NOT FOUND'}`);

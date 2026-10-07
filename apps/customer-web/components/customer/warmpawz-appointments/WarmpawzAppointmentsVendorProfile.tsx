@@ -228,46 +228,48 @@ export function WarmpawzAppointmentsVendorProfile({
       setActiveTab('services');
       return;
     }
+    const bookingScreen =
+      category === 'nutrition' ? 'nutritionist-booking' : resolveWarmpawzBookingScreen(category);
+    const bookingNav =
+      category === 'nutrition'
+        ? {
+            vendorId: vid,
+            vendorName: providerName,
+            nutritionist: { id: vid, name: providerName },
+            serviceStyle,
+            serviceType: serviceStyle,
+            returnScreen: 'wappt-vendor-profile',
+          }
+        : {
+            ...buildWarmpawzAppointmentsBookingNav({
+              vendorId: vid,
+              vendorName: providerName,
+              serviceStyle,
+              category,
+              selectedServices: toWapptRequestedServices(
+                selectableServices.filter((service) =>
+                  selectedServiceIds.has(wapptServiceSelectionKey(service)),
+                ),
+              ),
+            }),
+            appointmentsMode: true,
+            ...(appointmentFee != null && appointmentFee > 0 ? { initialPrice: appointmentFee } : {}),
+          };
     if (
       requestGuestAuthForProfileContinue({
         persona: category,
         category,
         vendorId: vid,
         serviceStyle,
-        resumeScreen: resolveWarmpawzBookingScreen(category === 'nutrition' ? 'nutrition' : category),
+        resumeScreen: bookingScreen,
         wapptMode: true,
+        bookingNav,
       })
     ) {
       return;
     }
     if (!canBookSlot) return;
-    if (category === 'nutrition') {
-      onNavigate('nutritionist-booking', {
-        vendorId: vid,
-        vendorName: providerName,
-        nutritionist: { id: vid, name: providerName },
-        serviceStyle,
-        serviceType: serviceStyle,
-        returnScreen: 'wappt-vendor-profile',
-      });
-      return;
-    }
-    const requested = toWapptRequestedServices(
-      selectableServices.filter((service) =>
-        selectedServiceIds.has(wapptServiceSelectionKey(service)),
-      ),
-    );
-    onNavigate(resolveWarmpawzBookingScreen(category), {
-      ...buildWarmpawzAppointmentsBookingNav({
-        vendorId: vid,
-        vendorName: providerName,
-        serviceStyle,
-        category,
-        selectedServices: requested,
-      }),
-      appointmentsMode: true,
-      ...(appointmentFee != null && appointmentFee > 0 ? { initialPrice: appointmentFee } : {}),
-    });
+    onNavigate(bookingScreen, bookingNav);
   };
 
   const handleToggleService = (service: { id?: string; serviceId?: string }) => {
@@ -309,20 +311,7 @@ export function WarmpawzAppointmentsVendorProfile({
     const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
     const sid = String(service.serviceId || service.id || '').trim();
     if (!vid || !sid) return;
-    if (
-      requestGuestAuthForProfileContinue({
-        persona: category,
-        category,
-        vendorId: vid,
-        serviceId: sid,
-        serviceStyle: 'tele',
-        resumeScreen: 'vet-booking',
-        wapptMode: false,
-      })
-    ) {
-      return;
-    }
-    onNavigate('vet-booking', {
+    const bookingNav = {
       vendorId: vid,
       vendorName: providerName,
       serviceType: 'tele',
@@ -334,7 +323,22 @@ export function WarmpawzAppointmentsVendorProfile({
       appointmentsMode: false,
       category,
       returnScreen: 'wappt-vendor-profile',
-    });
+    };
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: category,
+        category,
+        vendorId: vid,
+        serviceId: sid,
+        serviceStyle: 'tele',
+        resumeScreen: 'vet-booking',
+        wapptMode: false,
+        bookingNav,
+      })
+    ) {
+      return;
+    }
+    onNavigate('vet-booking', bookingNav);
   };
 
   if (loading) {

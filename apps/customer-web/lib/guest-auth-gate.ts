@@ -217,6 +217,8 @@ export function requestGuestAuthForProfileContinue(opts: {
   serviceStyle?: string;
   resumeScreen: string;
   wapptMode?: boolean;
+  /** Payload the logged-in path passes to the booking screen — restored verbatim after login. */
+  bookingNav?: Record<string, unknown>;
 }): boolean {
   const wapptMode = opts.wapptMode === true;
   return requestGuestAuthForBooking({
@@ -230,6 +232,7 @@ export function requestGuestAuthForProfileContinue(opts: {
     wapptMode,
     returnPath: '/',
     resumeScreen: opts.resumeScreen,
+    bookingNav: opts.bookingNav,
   });
 }
 

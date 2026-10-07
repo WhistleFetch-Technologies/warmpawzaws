@@ -104,7 +104,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const { bookingId } = c.req.param();
       const { otp, vendorId } = await c.req.json();
 
-      console.log(`📋 [COMPLETE-BOOKING] Vendor ${vendorId} completing booking ${bookingId} with OTP: ${otp}`);
+      console.log(`📋 [COMPLETE-BOOKING] Vendor ${vendorId} completing booking ${bookingId} (OTP provided: ${otp ? 'yes' : 'no'})`);
 
       // ✅ CRITICAL FIX: Resolve vendorId (may be vendor_identity.id) to canonical vendors.id
       const resolvedVendorId = await resolveVendorId(vendorId);
@@ -248,7 +248,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       if (expectedOTP !== providedOTP) {
-        console.error(`❌ [COMPLETE-BOOKING] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOTP}" (Walker: ${isWalkerService})`);
+        console.error(`❌ [COMPLETE-BOOKING] Invalid OTP for booking ${bookingId} (Walker: ${isWalkerService})`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
       }
       
@@ -1097,7 +1097,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const { bookingId } = c.req.param();
       const { otp, vendorId } = await c.req.json();
 
-      console.log(`🚀 [START-SESSION] Vendor ${vendorId} starting session for booking ${bookingId} with OTP: ${otp}`);
+      console.log(`🚀 [START-SESSION] Vendor ${vendorId} starting session for booking ${bookingId} (OTP provided: ${otp ? 'yes' : 'no'})`);
 
       // Get booking
       const bookings = await select('bookings', { id: bookingId });
@@ -1122,7 +1122,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const providedOTP = String(otp).trim();
 
       if (expectedOTP !== providedOTP) {
-        console.error(`❌ [START-SESSION] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOTP}"`);
+        console.error(`❌ [START-SESSION] Invalid OTP for booking ${bookingId}`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
       }
 
@@ -1414,7 +1414,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
       
       if (expectedOTP !== providedOtp) {
-        console.error(`❌ [OTP-VERIFY] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOtp}" (Walker: ${isWalkerService}, Action: ${action})`);
+        console.error(`❌ [OTP-VERIFY] Invalid OTP for booking ${bookingId} (Walker: ${isWalkerService}, Action: ${action})`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.', verified: false }, 400);
       }
 
@@ -1651,7 +1651,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
       
       if (expectedOTP !== providedOtp) {
-        console.error(`❌ [VERIFY-OTP] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOtp}" (Walker: ${isWalkerService}, Action: ${action || 'complete'})`);
+        console.error(`❌ [VERIFY-OTP] Invalid OTP for booking ${bookingId} (Walker: ${isWalkerService}, Action: ${action || 'complete'})`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.', verified: false }, 400);
       }
 
