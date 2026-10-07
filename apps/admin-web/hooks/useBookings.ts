@@ -84,17 +84,58 @@ export function useUpdateBookingStatus() {
   });
 }
 
+export type AdminRefundMethod = 'wallet' | 'original' | 'none';
+export type AdminRefundAmountMode = 'full' | 'policy';
+
+export interface AdminCancelResult {
+  bookingId: string;
+  action: 'cancel_and_refund' | 'cancel_only' | 'refund_only';
+  previousStatus: string;
+  status: string;
+  refund: {
+    amount: number;
+    percentage: number;
+    method: AdminRefundMethod;
+    status: string;
+    message: string;
+  } | null;
+  refundSkippedReason: string | null;
+}
+
 export function useCancelBooking() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ bookingId, reason }: { bookingId: string; reason?: string }) => {
-      return await apiClient.post(`/admin/bookings/${bookingId}/cancel`, { reason });
+    mutationFn: async ({
+      bookingId,
+      reason,
+      refundMethod = 'wallet',
+      amountMode = 'full',
+    }: {
+      bookingId: string;
+      reason: string;
+      refundMethod?: AdminRefundMethod;
+      amountMode?: AdminRefundAmountMode;
+    }) => {
+      const res = await apiClient.post<{ success: boolean; data: AdminCancelResult }>(
+        `/admin/bookings/${encodeURIComponent(bookingId)}/cancel`,
+        { reason, refundMethod, amountMode },
+      );
+      return res.data;
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] });
       queryClient.invalidateQueries({ queryKey: ['booking', variables.bookingId] });
-      toast.success('Booking cancelled');
+      const refundMsg = data?.refund?.message || data?.refundSkippedReason;
+      if (data?.refund?.status === 'failed') {
+        toast.error(refundMsg || 'Booking cancelled, but the refund failed');
+      } else {
+        toast.success(
+          data?.action === 'refund_only'
+            ? refundMsg || 'Refund issued'
+            : `Booking cancelled${refundMsg ? ` — ${refundMsg}` : ''}`,
+        );
+      }
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to cancel booking');

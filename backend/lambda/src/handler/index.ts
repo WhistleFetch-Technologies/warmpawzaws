@@ -148,6 +148,7 @@ import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor/endp
 import { registerSchedulingPolicyEndpoints } from '../endpoints/scheduling-policies';
 import { registerAdminComprehensiveEndpoints } from '../endpoints/admin/endpoints/admin-comprehensive';
 import { registerAdminCustomerEndpoints } from '../endpoints/admin/endpoints/admin-customer-endpoints';
+import { registerAdminBookingCancelEndpoints } from '../endpoints/admin/endpoints/admin-booking-cancel-endpoints';
 import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
 import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard-missing';
 import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-config';
@@ -702,6 +703,7 @@ registerWarmpawzAppointmentsPoliciesAdminRoutes(app);
 registerAdminAiCopilotEndpoints(app);
 registerCommercialAiCopilotEndpoints(app);
 registerAdminCustomerEndpoints(app);
+registerAdminBookingCancelEndpoints(app);
 registerVideoCallEndpoints(app);
 registerPackageSessionEndpoints(app);
 registerSearchEndpoints(app);

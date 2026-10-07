@@ -199,23 +199,29 @@ export async function notifyBookingCancelled(params: {
   bookingTimeDisplay: string;
   reason: string;
   refundInfo?: unknown;
+  cancelledBy?: 'customer' | 'admin';
 }): Promise<void> {
   const whenPart =
     `${params.bookingDateDisplay ? ` on ${params.bookingDateDisplay}` : ''}` +
     `${params.bookingTimeDisplay ? ` at ${params.bookingTimeDisplay}` : ''}`;
+  const vendorMessage =
+    params.cancelledBy === 'admin'
+      ? `Warmpawz support cancelled ${params.customerName}'s ${params.serviceTypeLabel} booking${whenPart}. Reason: ${params.reason}`
+      : `${params.customerName} cancelled their ${params.serviceTypeLabel} booking${whenPart}. Reason: ${params.reason}`;
 
   await dispatchNotification({
     recipientId: params.vendorId,
     recipientType: 'vendor',
     notificationType: 'booking_cancelled',
     title: 'Booking Cancelled',
-    message: `${params.customerName} cancelled their ${params.serviceTypeLabel} booking${whenPart}. Reason: ${params.reason}`,
+    message: vendorMessage,
     channels: { inApp: true, push: true },
     data: {
       bookingId: params.bookingId,
       customerId: params.customerId,
       customerName: params.customerName,
       cancellationReason: params.reason,
+      cancelledBy: params.cancelledBy ?? 'customer',
       refundInfo: params.refundInfo,
       dedupeKey: `booking-${params.bookingId}-cancelled-vendor`,
     },
