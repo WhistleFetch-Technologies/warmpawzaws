@@ -21,6 +21,7 @@ import { select, query } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
+import { sqlCountsTowardBookingMetrics } from '../../../utils/booking-cancellation-metrics';
 import { requireAdminAuth } from './admin.controller';
 import {
 	getTemporaryVendorSuppressionParams,
@@ -72,7 +73,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
            COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed'), 0) as total_revenue,
            COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed' AND booking_date >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
          FROM bookings
-         WHERE vendor_id = $1 ${dateFilter}`,
+         WHERE vendor_id = $1 AND ${sqlCountsTowardBookingMetrics()} ${dateFilter}`,
         params
       );
 

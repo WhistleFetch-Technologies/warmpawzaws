@@ -18,6 +18,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/b
 import { query, select, update, insert, deleteRows, upsert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { sqlCountsTowardBookingMetrics } from '../../../utils/booking-cancellation-metrics';
 // Password verification
 import * as crypto from 'crypto';
 import { resolveAdminPermissions, DEFAULT_MASTER_ADMIN_EMAIL } from '../../../utils/admin-rbac-permissions';
@@ -938,9 +939,11 @@ class GetVendorDetailsHandler extends BaseHandler {
             'isActive', st.is_active
           )), '[]'::json) FROM staff st WHERE st.vendor_id = v.id AND st.is_active = true) as staff_list,
           -- Stats
-          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status <> 'pending_payment') as total_bookings,
+          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status <> 'pending_payment'
+             AND ${sqlCountsTowardBookingMetrics('b')}) as total_bookings,
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings,
-          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'cancelled') as cancelled_bookings,
+          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'cancelled'
+             AND ${sqlCountsTowardBookingMetrics('b')}) as cancelled_bookings,
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status IN ('pending', 'confirmed')) as pending_bookings,
           (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as total_revenue,
           (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed' AND b.created_at >= DATE_TRUNC('month', CURRENT_DATE)) as this_month_revenue,

@@ -4,6 +4,7 @@
 import type { Hono } from 'hono';
 import { query, select, update } from '../../../database/rds-connection';
 import { requireAdminAuth } from './admin.controller';
+import { sqlCountsTowardBookingMetrics } from '../../../utils/booking-cancellation-metrics';
 import { createCustomerPortalCode, consumeCustomerPortalCodeAndBuildPayload } from '../../../lib/services/admin/customer-portal-session-service';
 import {
   customerAdminDisplayLocation,
@@ -345,6 +346,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
           AVG(rating) FILTER (WHERE rating IS NOT NULL) as avg_rating
         FROM bookings
         WHERE created_at >= NOW() - INTERVAL '${days} days'
+          AND ${sqlCountsTowardBookingMetrics()}
       `).catch(() => ({
         rows: [{ completed_bookings: 0, cancelled_bookings: 0, total_bookings: 0, avg_rating: 0 }],
       }));
@@ -519,6 +521,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
         FROM customers c
         LEFT JOIN transactions t ON t.customer_id = c.id AND t.created_at >= NOW() - INTERVAL '30 days'
         LEFT JOIN bookings b ON b.customer_id = c.id AND b.created_at >= NOW() - INTERVAL '30 days'
+          AND ${sqlCountsTowardBookingMetrics('b')}
         WHERE COALESCE(c.is_active, true) = true
         GROUP BY c.id, c.full_name, c.phone
         HAVING 
@@ -594,6 +597,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
           ROUND(AVG(b.rating) FILTER (WHERE b.rating IS NOT NULL), 1) as avg_rating
         FROM customers c
         LEFT JOIN bookings b ON b.customer_id = c.id AND b.created_at >= NOW() - INTERVAL '30 days'
+          AND ${sqlCountsTowardBookingMetrics('b')}
         GROUP BY c.id, c.full_name, c.phone
         HAVING COUNT(b.id) > 3 AND (
           COUNT(b.id) FILTER (WHERE b.status = 'cancelled')::numeric / NULLIF(COUNT(b.id), 0) > 0.25
@@ -899,7 +903,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
           COUNT(b.id) FILTER (WHERE b.status = 'cancelled') as cancelled_bookings,
           COUNT(b.id) FILTER (WHERE b.status = 'completed' AND b.rating IS NOT NULL AND b.rating < 3) as low_rated_bookings
         FROM customers c
-        LEFT JOIN bookings b ON b.customer_id = c.id
+        LEFT JOIN bookings b ON b.customer_id = c.id AND ${sqlCountsTowardBookingMetrics('b')}
         WHERE COALESCE(c.is_active, true) = true
         GROUP BY c.id, c.full_name, c.phone
         HAVING COUNT(b.id) FILTER (WHERE b.status = 'cancelled') > 5

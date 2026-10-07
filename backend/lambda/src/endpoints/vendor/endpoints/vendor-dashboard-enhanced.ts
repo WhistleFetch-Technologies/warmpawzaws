@@ -43,6 +43,7 @@ import {
   sqlExcludeSuppressedVendorEarningsRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { resolveVendorDashboardTimeframeRange } from '../../../utils/vendor-dashboard-timeframe';
+import { sqlCountsTowardBookingMetrics } from '../../../utils/booking-cancellation-metrics';
 import { applyVendorBookingDisplayFields } from '../../warmpawz-appointments/shared/vendor-booking-display';
 import {
   SQL_EXCLUDE_WAPPT_BOOKING_EARNINGS,
@@ -642,6 +643,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         `SELECT * FROM bookings b
          WHERE b.vendor_id = $1 
            AND b.created_at >= $2
+           AND ${sqlCountsTowardBookingMetrics('b')}
            ${analyticBookFrag}
          ORDER BY b.created_at DESC`,
         [vendorId, periodStart.toISOString(), ...(analyticSup ? [analyticSup.vendorIds, analyticSup.cutoffDateIst] : [])]

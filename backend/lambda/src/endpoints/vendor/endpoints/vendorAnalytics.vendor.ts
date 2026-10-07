@@ -19,6 +19,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { SQL_SHOP_ORDER_VENDOR_VISIBLE } from '../../../utils/shop-vendor-visibility';
+import { sqlCountsTowardBookingMetrics } from '../../../utils/booking-cancellation-metrics';
 import {
   SQL_VENDOR_COMMISSION_AMOUNT,
   SQL_VENDOR_GOODS_AMOUNT,
@@ -147,6 +148,7 @@ class GetDashboardAnalyticsHandler extends BaseHandler {
           WHERE vendor_id = $1 
             AND booking_date >= $2 
             AND booking_date <= $3
+            AND ${sqlCountsTowardBookingMetrics()}
         `, [vendorId, startDate, endDate]);
       } catch (error: any) {
         // If UUID validation fails, return empty stats
@@ -471,6 +473,7 @@ class GetBookingAnalyticsHandler extends BaseHandler {
         WHERE vendor_id = $1 
           AND booking_date >= $2 
           AND booking_date <= $3
+          AND ${sqlCountsTowardBookingMetrics()}
         GROUP BY DATE(booking_date)
         ORDER BY date ASC
       `, [vendorId, startDate, endDate]);
@@ -518,6 +521,7 @@ class GetBookingAnalyticsHandler extends BaseHandler {
         FROM bookings
         WHERE vendor_id = $1 
           AND status = 'cancelled'
+          AND ${sqlCountsTowardBookingMetrics()}
           AND booking_date >= $2 
           AND booking_date <= $3
         GROUP BY cancellation_reason
