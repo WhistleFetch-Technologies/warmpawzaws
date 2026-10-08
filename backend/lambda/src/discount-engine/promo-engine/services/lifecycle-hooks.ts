@@ -12,6 +12,8 @@ export async function safeCommitPromotion(opts: {
   transactionId: string;
   paymentId?: string | null;
   userId?: string | null;
+  invoiceAmount?: number | null;
+  walletUsed?: number | null;
 }): Promise<{ ok: boolean; already?: boolean; cashback?: number; skipped?: boolean }> {
   if (!opts.evaluationId) {
     return { ok: true, skipped: true };
@@ -22,6 +24,8 @@ export async function safeCommitPromotion(opts: {
       transaction_id: opts.transactionId,
       payment_id: opts.paymentId || undefined,
       user_id: opts.userId || undefined,
+      invoice_amount: opts.invoiceAmount ?? undefined,
+      wallet_used: opts.walletUsed ?? undefined,
     });
     return {
       ok: result.success,

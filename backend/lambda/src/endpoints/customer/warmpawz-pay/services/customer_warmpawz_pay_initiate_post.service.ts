@@ -224,6 +224,16 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       walletOnly = capped.walletOnly;
     }
 
+    const { cashbackAfterWalletSpend } = await import('../../../../discount-engine/promo-engine');
+    if (promoEngine && walletAmount > 0.009) {
+      const quotedCashback = Math.max(0, Number(promoEngine.pendingCashback) || 0);
+      promoEngine = {
+        ...promoEngine,
+        cashbackBeforeWallet: quotedCashback,
+        pendingCashback: cashbackAfterWalletSpend(quotedCashback, originalAmount, walletAmount),
+      };
+    }
+
     const quoteMetadata = {
       ...resolved.metadata,
       serviceCategory,

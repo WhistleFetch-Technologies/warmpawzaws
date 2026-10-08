@@ -7,6 +7,7 @@ export {
   toDatetimeLocalIst,
 } from './dsl/category-aliases';
 export { calculateBenefits } from './benefits/calculate-benefits';
+export { cashbackAfterWalletSpend } from './benefits/cashback-after-wallet';
 export { resolveStack } from './stacking/resolve-stack';
 export { evaluatePromotions, loadBehaviourProfile } from './services/evaluate.service';
 export { loadEvaluateSnapshot, evaluateAgainstSnapshot } from './services/evaluate-snapshot';

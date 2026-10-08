@@ -40,6 +40,9 @@ export async function commitWpayPromoEngine(opts: {
           : null,
   });
 
+  const walletUsed = Math.max(0, Number(meta.walletAmount) || 0);
+  const invoice = Number(opts.originalAmount);
+
   let awardedCashback = 0;
   if (evalId) {
     const commitResult = await safeCommitPromotion({
@@ -47,6 +50,8 @@ export async function commitWpayPromoEngine(opts: {
       transactionId: opts.paymentId,
       paymentId: opts.razorpayPaymentId || null,
       userId: opts.customerId,
+      invoiceAmount: Number.isFinite(invoice) && invoice > 0 ? invoice : null,
+      walletUsed,
     });
     if (commitResult.ok) {
       const credited = Number(commitResult.cashback ?? 0);

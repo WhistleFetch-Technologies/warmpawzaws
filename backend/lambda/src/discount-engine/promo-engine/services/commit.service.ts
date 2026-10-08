@@ -21,6 +21,7 @@ import {
 } from './promo-limits';
 import { rangeCountLimitExceededAfterInsert, type RangeLimitReason } from '../vcf/amount-range';
 import { parseCustomerCopy } from '../customer-copy';
+import { cashbackAfterWalletSpend } from '../benefits/cashback-after-wallet';
 import type { AppliedBenefit, CommitRequest } from '../types';
 
 function parseJson(v: unknown): Record<string, unknown> {
@@ -102,7 +103,19 @@ async function resolveAllowedCashbackAfterInsert(opts: {
   return { allowed: round2(allowed), reason };
 }
 
-/** Benefits of one promotion come from a single range; pre-range evaluations may lack rule_id. */
+/** Quoted cashback was on the full invoice. Wallet spent on this payment does not earn again. */
+function scaleCashbackForWalletSpend(
+  benefits: AppliedBenefit[],
+  invoice: number | undefined,
+  walletUsed: number | undefined,
+): AppliedBenefit[] {
+  if (invoice == null || walletUsed == null) return benefits;
+  return benefits.map((b) => {
+    if (b.benefit_type !== 'CASHBACK') return b;
+    return { ...b, amount: cashbackAfterWalletSpend(b.amount, invoice, walletUsed) };
+  });
+}
+
 function ruleIdOf(benefits: AppliedBenefit[]): string | null {
   const id = benefits.find((b) => b.rule_id)?.rule_id;
   return id && /^[0-9a-f-]{36}$/i.test(id) ? id : null;
@@ -126,7 +139,11 @@ export async function commitPromotion(req: CommitRequest): Promise<{
 
   const userId = req.user_id || String(evalRow.user_id);
   const result = parseJson(evalRow.result_json);
-  const benefits = (Array.isArray(result.benefits) ? result.benefits : []) as AppliedBenefit[];
+  const benefits = scaleCashbackForWalletSpend(
+    (Array.isArray(result.benefits) ? result.benefits : []) as AppliedBenefit[],
+    req.invoice_amount,
+    req.wallet_used,
+  );
   const customerCopy = parseCustomerCopy({ customerCopy: result.customer_copy });
 
   if (!benefits.length) {
