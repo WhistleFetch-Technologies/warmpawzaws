@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { createEmptyDraft } from './types';
 import { normalizeVcfAudience } from './vcf';
+import { nonZeroBenefits, rangesFromApi, rangesToApi } from './ranges';
 
 const BASE = '/admin/promo-engine/promotions';
 
@@ -81,7 +82,13 @@ export async function evaluatePromoEngine(body: {
   evaluation_id: string;
   benefits: Array<{ benefit_type: string; amount: number; promotion_id: string }>;
   summary: { gross_amount: number; discount: number; payable: number; cashback: number };
-  explain?: { failures?: unknown[]; matched_promotions?: string[] };
+  winner_promotion_id?: string | null;
+  range?: { id: string; label: string | null; min: number | null; max: number | null } | null;
+  explain?: {
+    failures?: unknown[];
+    matched_promotions?: string[];
+    rejected_promotions?: Array<{ promotion_id: string; reason: string }>;
+  };
 }> {
   return apiClient.post('/promo-engine/evaluate', body);
 }
@@ -106,8 +113,9 @@ export function draftToApiBody(draft: PromoEngineDraft): Record<string, unknown>
     status: draft.status,
     basics: draft.basics,
     conditionJson: draft.conditionJson,
-    benefitJson: draft.benefitJson,
+    benefitJson: nonZeroBenefits(draft.benefitJson),
     ruleType: draft.ruleType,
+    ranges: rangesToApi(draft.ranges),
     vcf,
     customerCopy: customerCopy ?? null,
     metadata: Object.keys(metadata).length ? metadata : undefined,
@@ -185,6 +193,7 @@ function mapApiPromotionToDraft(p: Record<string, unknown>): PromoEngineDraft {
     ruleType: (p.ruleType as PromoEngineDraft['ruleType']) || 'GENERIC',
     vcf: readVcf(p.vcf) || createEmptyDraft(String(p.id)).vcf,
     customerCopy: readCustomerCopy(p),
+    ranges: rangesFromApi(p.ranges),
     limits: mapLimits(p.limits),
     createdAt: String(p.created_at || p.createdAt || new Date().toISOString()),
     updatedAt: String(p.updated_at || p.updatedAt || new Date().toISOString()),

@@ -27,6 +27,12 @@ import {
   vcfOrEmpty,
 } from '@/lib/promo-engine/vcf';
 import { createEmptyDraft, type PromoEngineDraft } from '@/lib/promo-engine/types';
+import {
+  cashbackOf,
+  hasRanges,
+  syncPromoFromRanges,
+  validateRangesDraft,
+} from '@/lib/promo-engine/ranges';
 import { BasicsStep } from './steps/BasicsStep';
 import { AudienceStep } from './steps/AudienceStep';
 import { BenefitsStep } from './steps/BenefitsStep';
@@ -67,8 +73,10 @@ export function PromotionEngineWizard({
     onClose();
   };
 
+  const rangeMode = hasRanges(working);
+
   const prepared = () => {
-    const next = applyBasicsToDraft(working, working.basics);
+    const next = applyBasicsToDraft(syncPromoFromRanges(working), working.basics);
     return applyVcfToDraft(next, syncRedeemAfterAudience(vcfOrEmpty(next)));
   };
 
@@ -76,6 +84,7 @@ export function PromotionEngineWizard({
   const passesCommonChecks = (): boolean => {
     const checks: Array<[string[], number]> = [
       [validateBasicsDraft(working.basics), 0],
+      [validateRangesDraft(working.ranges), 2],
       [validateCustomerCopyDraft(working.customerCopy), 2],
       [validateLimitsDraft(working.limits), 3],
     ];
@@ -112,9 +121,21 @@ export function PromotionEngineWizard({
       return;
     }
     const vcf = syncRedeemAfterAudience(vcfOrEmpty(working));
-    const hasDiscount = working.benefitJson.some((b) => b.type === 'DISCOUNT' && Number(b.value) > 0);
-    const hasCashback = working.benefitJson.some((b) => b.type === 'CASHBACK' && Number(b.value) > 0);
-    const benefitErrors = validateVcfBenefits(vcf, hasDiscount, hasCashback);
+    let benefitErrors: string[];
+    if (rangeMode) {
+      const live = (working.ranges || []).filter((r) => r.active);
+      const rangeCashback = live.some((r) => Number(cashbackOf(r.benefitJson)?.value) > 0);
+      // Each range carries its own values and caps; only the shared cashback redeem rules apply here.
+      benefitErrors = !live.length
+        ? ['Switch on at least one bill range']
+        : rangeCashback
+          ? validateVcfBenefits({ ...vcf, benefitMode: 'cashback', expiryDays: vcf.expiryDays ?? 30 }, false, true)
+          : [];
+    } else {
+      const hasDiscount = working.benefitJson.some((b) => b.type === 'DISCOUNT' && Number(b.value) > 0);
+      const hasCashback = working.benefitJson.some((b) => b.type === 'CASHBACK' && Number(b.value) > 0);
+      benefitErrors = validateVcfBenefits(vcf, hasDiscount, hasCashback);
+    }
     if (benefitErrors.length) {
       toast.error(benefitErrors[0]);
       setStep(2);

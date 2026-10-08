@@ -1,6 +1,12 @@
 'use client';
 
-import type { PromoEngineDraft } from '@/lib/promo-engine/types';
+import type { PromoEngineDraft, PromoRangeLimits } from '@/lib/promo-engine/types';
+import {
+  describeRangeBenefits,
+  rangeBoundsLabel,
+  rangeTitle,
+  sortedRanges,
+} from '@/lib/promo-engine/ranges';
 import {
   describeBenefits,
   describeConditionGroup,
@@ -9,8 +15,22 @@ import {
 import { describeAudienceScope } from '@/lib/promo-engine/vcf';
 import { PromotionEngineStatusBadge } from '../PromotionEngineStatusBadge';
 
+function describeRangeLimits(limits: PromoRangeLimits): string {
+  return (
+    [
+      limits.budgetLimit != null ? `₹${limits.budgetLimit} budget` : null,
+      limits.dailyLimit != null ? `${limits.dailyLimit} / day` : null,
+      limits.campaignLimit != null ? `${limits.campaignLimit} total` : null,
+      limits.perUser != null ? `${limits.perUser} / customer` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'Promotion limits only'
+  );
+}
+
 export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
   const { basics } = draft;
+  const ranges = sortedRanges(draft.ranges);
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-2">
@@ -27,7 +47,14 @@ export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
               : describeConditionGroup(draft.conditionJson)
           }
         />
-        <ReviewBlock title="THEN" body={describeBenefits(draft.benefitJson)} />
+        <ReviewBlock
+          title="THEN"
+          body={
+            ranges.length
+              ? `${ranges.length} bill range${ranges.length === 1 ? '' : 's'} (see below)`
+              : describeBenefits(draft.benefitJson)
+          }
+        />
         <ReviewBlock title="REDEEM" body={describeRedeemScope(draft.benefitJson)} />
         <ReviewBlock
           title="STACK"
@@ -68,13 +95,48 @@ export function ReviewStep({ draft }: { draft: PromoEngineDraft }) {
         />
       </div>
 
+      {ranges.length ? (
+        <div className="overflow-x-auto rounded-xl border bg-white">
+          <table className="w-full min-w-[40rem] text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Range</th>
+                <th className="px-3 py-2 font-semibold">Bill</th>
+                <th className="px-3 py-2 font-semibold">Benefit</th>
+                <th className="px-3 py-2 font-semibold">Limits</th>
+                <th className="px-3 py-2 font-semibold">Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ranges.map((r, i) => (
+                <tr key={r.key} className={`border-t ${r.active ? '' : 'text-slate-400'}`}>
+                  <td className="px-3 py-2">
+                    {rangeTitle(r, i)}
+                    {r.active ? '' : ' (off)'}
+                  </td>
+                  <td className="px-3 py-2">{rangeBoundsLabel(r)}</td>
+                  <td className="px-3 py-2">{describeRangeBenefits(r.benefitJson)}</td>
+                  <td className="px-3 py-2">{describeRangeLimits(r.limits)}</td>
+                  <td className="px-3 py-2">
+                    {Object.values(r.customerCopy ?? {}).some((v) => v?.trim()) ? 'Custom' : 'Promotion wording'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
       <div className="rounded-xl border border-[#FF8C42]/30 bg-orange-50/50 p-4 text-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-[#FF8C42]">Engine model</p>
         <p className="mt-2">
           <strong>IF</strong> {describeConditionGroup(draft.conditionJson)}
         </p>
         <p className="mt-1">
-          <strong>THEN</strong> {describeBenefits(draft.benefitJson)}
+          <strong>THEN</strong>{' '}
+          {ranges.length
+            ? ranges.map((r) => `${rangeBoundsLabel(r)}: ${describeRangeBenefits(r.benefitJson)}`).join(' | ')
+            : describeBenefits(draft.benefitJson)}
         </p>
         <p className="mt-2 text-xs text-slate-500">
           {basics.name || 'Untitled'} · {basics.startAt || 'no start'} → {basics.endAt || 'no end'}

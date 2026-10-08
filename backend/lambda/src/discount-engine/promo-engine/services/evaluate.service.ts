@@ -75,6 +75,8 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
         benefits: body.benefits,
         summary: body.summary,
         winner_promotion_id: body.winner_promotion_id ?? null,
+        winner_rule_id: body.winner_rule_id ?? null,
+        range: body.range ?? null,
         customer_copy: body.customer_copy ?? null,
       },
       explain_json: body.explain,
@@ -86,6 +88,7 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
       payload: {
         eligible: body.eligible,
         matched: body.explain.matched_promotions,
+        rule_id: body.winner_rule_id ?? null,
         benefit_count: body.benefits.length,
       },
     });

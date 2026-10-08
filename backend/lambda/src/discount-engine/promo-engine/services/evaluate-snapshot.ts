@@ -7,6 +7,7 @@ import {
   dbGetLimitsForPromotions,
   dbListRulesForPromotions,
   dbCountUsageBatch,
+  dbCountRuleUsageBatch,
   type PromoUsageCounts,
 } from '../repos/promo-engine.repo';
 import type {
@@ -29,6 +30,8 @@ export type EvaluateSnapshot = {
   rulesByPromo: Map<string, PromoEngineRuleRow[]>;
   limitsByPromo: Map<string, PromoEngineLimitsRow>;
   usageByPromo: Map<string, PromoUsageCounts>;
+  /** Usage per bill-amount range (rule_id). Optional for callers that build snapshots by hand. */
+  usageByRule?: Map<string, PromoUsageCounts>;
   behaviour: CustomerBehaviourProfile;
 };
 
@@ -54,16 +57,30 @@ export async function loadEvaluateSnapshot(opts: {
     dbGetLimitsForPromotions(ids),
     dbCountUsageBatch({ promotionIds: ids, userId: opts.userId, since: dayStart }),
   ]);
-  return { candidates, rulesByPromo, limitsByPromo, usageByPromo, behaviour };
+  const limitedRuleIds = [...rulesByPromo.values()]
+    .flat()
+    .filter((r) => r.per_user_limit != null || r.daily_limit != null || r.campaign_limit != null)
+    .map((r) => r.id);
+  const usageByRule = await dbCountRuleUsageBatch({
+    ruleIds: limitedRuleIds,
+    userId: opts.userId,
+    since: dayStart,
+  });
+  return { candidates, rulesByPromo, limitsByPromo, usageByPromo, usageByRule, behaviour };
 }
 
 function customerCopyFor(
   snapshot: EvaluateSnapshot,
   promotionId: string | null | undefined,
+  rule?: PromoEngineRuleRow | null,
 ): PromoCustomerCopy | null {
   if (!promotionId) return null;
   const promo = snapshot.candidates.find((c) => c.id === promotionId);
-  return promo ? parseCustomerCopy(promo.metadata) : null;
+  if (!promo) return null;
+  const base = parseCustomerCopy(promo.metadata);
+  const override = rule?.customer_copy ? parseCustomerCopy({ customerCopy: rule.customer_copy }) : null;
+  if (!override) return base;
+  return { ...(base || {}), ...override };
 }
 
 function collectLineBenefits(opts: {
@@ -170,6 +187,7 @@ export function evaluateAgainstSnapshot(
     rulesByPromo: snapshot.rulesByPromo,
     limitsByPromo: snapshot.limitsByPromo,
     usageByPromo: snapshot.usageByPromo,
+    usageByRule: snapshot.usageByRule,
     behaviour: snapshot.behaviour,
     req,
   });
@@ -181,10 +199,20 @@ export function evaluateAgainstSnapshot(
     const cashback = vcfScore.winnerBenefits
       .filter((b) => b.benefit_type === 'CASHBACK')
       .reduce((s, b) => s + b.amount, 0);
+    const rule = vcfScore.winnerRule;
     return {
       eligible: Boolean(vcfScore.winnerId) && vcfScore.winnerBenefits.length > 0,
       winner_promotion_id: vcfScore.winnerId,
-      customer_copy: customerCopyFor(snapshot, vcfScore.winnerId),
+      winner_rule_id: rule?.id ?? null,
+      range: rule
+        ? {
+            id: rule.id,
+            label: rule.label ?? null,
+            min: rule.min_amount ?? null,
+            max: rule.max_amount ?? null,
+          }
+        : null,
+      customer_copy: customerCopyFor(snapshot, vcfScore.winnerId, rule),
       benefits: vcfScore.winnerBenefits,
       summary: {
         gross_amount: amount,

@@ -15,7 +15,12 @@ import {
   reversePromotion,
   recordBehaviourCompletion,
 } from '../discount-engine/promo-engine';
-import { dbUsageByPromotion, dbGetPromotion } from '../discount-engine/promo-engine/repos/promo-engine.repo';
+import {
+  dbUsageByPromotion,
+  dbGetPromotion,
+  dbListRules,
+} from '../discount-engine/promo-engine/repos/promo-engine.repo';
+import { isRangedRule } from '../discount-engine/promo-engine/vcf/amount-range';
 import type { PromoEngineStatus } from '../discount-engine/promo-engine/types';
 
 function errMsg(err: unknown): string {
@@ -108,15 +113,26 @@ export function registerPromoEngineEndpoints(app: Hono) {
     try {
       const promo = await dbGetPromotion(c.req.param('id'));
       if (!promo) return c.json({ success: false, error: 'Not found' }, 404);
+      const remaining = (limit: number | null | undefined, consumed: number) =>
+        limit != null ? Math.max(0, Number(limit) - Number(consumed)) : null;
+      const rules = await dbListRules(promo.id);
       return c.json({
         success: true,
         budget: {
           limit: promo.budget_limit,
           consumed: promo.budget_consumed,
-          remaining:
-            promo.budget_limit != null
-              ? Math.max(0, Number(promo.budget_limit) - Number(promo.budget_consumed))
-              : null,
+          remaining: remaining(promo.budget_limit, promo.budget_consumed),
+          ranges: rules.some(isRangedRule)
+            ? rules.map((r) => ({
+                id: r.id,
+                label: r.label ?? null,
+                minAmount: r.min_amount ?? null,
+                maxAmount: r.max_amount ?? null,
+                limit: r.budget_limit ?? null,
+                consumed: Number(r.budget_consumed || 0),
+                remaining: remaining(r.budget_limit, Number(r.budget_consumed || 0)),
+              }))
+            : [],
         },
       });
     } catch (err) {

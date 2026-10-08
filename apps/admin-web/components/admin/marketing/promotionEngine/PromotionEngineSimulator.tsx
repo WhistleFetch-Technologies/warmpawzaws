@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@warmpawz/ui';
 import { evaluatePromoEngine } from '@/lib/promo-engine/api-client';
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
+import { rangeBoundsLabel } from '@/lib/promo-engine/ranges';
 
 /**
  * Admin rule evaluation simulator — POST /promo-engine/evaluate only (never commit).
@@ -174,8 +175,23 @@ export function PromotionEngineSimulator() {
                 <li>Discount: ₹{result.summary.discount}</li>
                 <li>Cashback (pending): ₹{result.summary.cashback}</li>
                 <li>Payable: ₹{result.summary.payable}</li>
+                {result.range ? (
+                  <li>
+                    Bill range: {result.range.label ? `${result.range.label} · ` : ''}
+                    {rangeBoundsLabel({ minAmount: result.range.min, maxAmount: result.range.max })}
+                  </li>
+                ) : null}
                 <li className="text-xs text-slate-500">evaluation_id: {result.evaluation_id}</li>
               </ul>
+              {!result.eligible && result.explain?.rejected_promotions?.length ? (
+                <ul className="mt-3 space-y-0.5 text-xs text-slate-500">
+                  {result.explain.rejected_promotions.map((r) => (
+                    <li key={`${r.promotion_id}:${r.reason}`}>
+                      {r.promotion_id.slice(0, 8)} · {r.reason}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </>
           ) : (
             <p className="text-slate-500">Run evaluation to see PASS/FAIL and payable.</p>

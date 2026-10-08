@@ -18,6 +18,14 @@ import {
   validatePromoLimitsInput,
   type PromoLimitsInput,
 } from './promo-limits';
+import {
+  collapseToSingleRule,
+  loadRangeViews,
+  parseRangesInput,
+  syncPromotionRanges,
+  validateRangesInput,
+  type PromoRangeInput,
+} from './promo-ranges';
 import type {
   PromoEngineBenefit,
   PromoEngineConditionGroup,
@@ -43,6 +51,8 @@ export interface PromoDraftPayload {
   condition_json?: PromoEngineConditionGroup;
   benefit_json?: PromoEngineBenefit[];
   rule_type?: PromoRuleType;
+  /** Bill-amount ranges; undefined = request did not send ranges (single-rule path). */
+  ranges?: PromoRangeInput[];
   limits?: {
     per_user?: number | null;
     per_transaction?: number | null;
@@ -87,6 +97,9 @@ export function mapAdminDraftToPayload(body: Record<string, unknown>): PromoDraf
     body.customerCopy ?? (body.metadata as Record<string, unknown> | undefined)?.customerCopy;
   const copyErrors = validateCustomerCopy(rawCopy);
   if (copyErrors.length) throw new PromoValidationError(copyErrors.join('; '));
+  const ranges = parseRangesInput(body);
+  const rangeErrors = ranges ? validateRangesInput(ranges) : [];
+  if (rangeErrors.length) throw new PromoValidationError(rangeErrors.join('; '));
 
   const budgetLimit = resolveBudgetLimit(body);
   const limits = body.limits
@@ -123,6 +136,7 @@ export function mapAdminDraftToPayload(body: Record<string, unknown>): PromoDraf
     condition_json: (body.conditionJson || body.condition_json) as PromoEngineConditionGroup | undefined,
     benefit_json: (body.benefitJson || body.benefit_json) as PromoEngineBenefit[] | undefined,
     rule_type: (body.ruleType || body.rule_type || 'GENERIC') as PromoRuleType,
+    ranges,
     limits,
     metadata: mergeVcfMetadata(body, rawCopy),
     budget_limit: budgetLimit,
@@ -288,6 +302,34 @@ function fillRedeemIdsFromAudience(vcf: Record<string, unknown>): Record<string,
   };
 }
 
+/**
+ * Ranges sent → write them (an empty list collapses back to one open rule).
+ * No ranges key → legacy single-rule upsert, untouched for older clients.
+ */
+async function writePromotionRules(promotionId: string, payload: PromoDraftPayload): Promise<void> {
+  const target = {
+    promotionId,
+    condition_json: payload.condition_json || { operator: 'AND' as const, conditions: [] },
+    rule_type: payload.rule_type || 'GENERIC',
+  };
+  if (payload.ranges && payload.ranges.length) {
+    await syncPromotionRanges({ ...target, ranges: payload.ranges });
+    return;
+  }
+  if (payload.ranges) {
+    await collapseToSingleRule({ ...target, benefit_json: payload.benefit_json || [] });
+    return;
+  }
+  if (payload.condition_json || payload.benefit_json) {
+    await dbUpsertPrimaryRule({
+      promotionId,
+      condition_json: target.condition_json,
+      benefit_json: payload.benefit_json || [],
+      rule_type: payload.rule_type,
+    });
+  }
+}
+
 export async function createPromotionFromDraft(payload: PromoDraftPayload) {
   const promo = await dbCreatePromotion({
     name: payload.name,
@@ -305,14 +347,7 @@ export async function createPromotionFromDraft(payload: PromoDraftPayload) {
     metadata: payload.metadata,
   });
 
-  if (payload.condition_json || payload.benefit_json) {
-    await dbUpsertPrimaryRule({
-      promotionId: promo.id,
-      condition_json: payload.condition_json || { operator: 'AND', conditions: [] },
-      benefit_json: payload.benefit_json || [],
-      rule_type: payload.rule_type,
-    });
-  }
+  await writePromotionRules(promo.id, payload);
 
   if (payload.limits) {
     await dbUpsertLimits(promo.id, {
@@ -347,14 +382,7 @@ export async function updatePromotionFromDraft(id: string, payload: PromoDraftPa
   });
   if (!updated) return null;
 
-  if (payload.condition_json || payload.benefit_json) {
-    await dbUpsertPrimaryRule({
-      promotionId: id,
-      condition_json: payload.condition_json || { operator: 'AND', conditions: [] },
-      benefit_json: payload.benefit_json || [],
-      rule_type: payload.rule_type,
-    });
-  }
+  await writePromotionRules(id, payload);
   if (payload.limits) {
     await dbUpsertLimits(id, { promotion_id: id, ...payload.limits });
   }
@@ -425,9 +453,11 @@ export async function getPromotionDetail(id: string) {
   if (!promo) return null;
   const rules = await dbListRules(id);
   const limits = await dbGetLimits(id);
+  const ranges = await loadRangeViews(id, rules);
   return {
     ...promo,
     rules,
+    ranges,
     limits,
     basics: {
       name: promo.name,

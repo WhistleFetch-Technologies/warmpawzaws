@@ -17,10 +17,13 @@ import type {
 import type { PromoUsageCounts } from '../repos/promo-engine.repo';
 import type { PromoEngineLimitsRow } from '../types';
 import { checkPromoLimits } from './promo-limits';
+import { checkRangeLimits, isRangedRule, pickAmountRange } from '../vcf/amount-range';
 
 export type VcfScoreResult = {
   winnerBenefits: AppliedBenefit[];
   winnerId: string | null;
+  /** Bill-amount range (rule row) that produced the winner's benefits. */
+  winnerRule: PromoEngineRuleRow | null;
   matched: string[];
   rejected: Array<{ promotion_id: string; reason: string }>;
   hadVcfCandidates: boolean;
@@ -70,6 +73,8 @@ export function scoreVcfCandidates(opts: {
   rulesByPromo: Map<string, PromoEngineRuleRow[]>;
   limitsByPromo: Map<string, PromoEngineLimitsRow>;
   usageByPromo: Map<string, PromoUsageCounts>;
+  /** Usage counts per range (rule_id); missing = no range usage yet. */
+  usageByRule?: Map<string, PromoUsageCounts>;
   behaviour: CustomerBehaviourProfile;
   req: EvaluateRequest;
 }): VcfScoreResult {
@@ -80,6 +85,7 @@ export function scoreVcfCandidates(opts: {
   const rejected: Array<{ promotion_id: string; reason: string }> = [];
   const eligible: RankedPromo[] = [];
   const benefitsByPromo = new Map<string, AppliedBenefit[]>();
+  const ruleByPromo = new Map<string, PromoEngineRuleRow>();
   const vcfById = new Map<string, ReturnType<typeof parseVcfConfig>>();
   let hadVcfCandidates = false;
 
@@ -109,19 +115,32 @@ export function scoreVcfCandidates(opts: {
       continue;
     }
 
-    const rules = (opts.rulesByPromo.get(promo.id) || []).filter((r) => r.is_active);
-    let benefits: AppliedBenefit[] = [];
-    for (const rule of rules) {
-      benefits = benefits.concat(
-        calculateBenefits({
-          promotionId: promo.id,
-          ruleId: rule.id,
-          benefits: rule.benefit_json || [],
-          orderAmount: pay.amount,
-          benefitMode: vcf.benefitMode,
-        })
-      );
+    const activeRules = (opts.rulesByPromo.get(promo.id) || []).filter(
+      (r) => r.is_active && !r.archived_at
+    );
+    if (!activeRules.length) {
+      rejected.push({ promotion_id: promo.id, reason: 'VISIT_FAIL' });
+      continue;
     }
+    const rule = pickAmountRange(activeRules, pay.amount);
+    if (!rule) {
+      rejected.push({ promotion_id: promo.id, reason: 'AMOUNT_OUT_OF_RANGE' });
+      continue;
+    }
+    const rangeCheck = checkRangeLimits(rule, opts.usageByRule?.get(rule.id));
+    if (!rangeCheck.ok) {
+      rejected.push({ promotion_id: promo.id, reason: rangeCheck.reason || 'RANGE_LIMIT' });
+      continue;
+    }
+
+    const ranged = isRangedRule(rule);
+    const benefits = calculateBenefits({
+      promotionId: promo.id,
+      ruleId: rule.id,
+      benefits: rule.benefit_json || [],
+      orderAmount: pay.amount,
+      benefitMode: rule.benefit_mode || vcf.benefitMode,
+    });
     if (!benefits.length) {
       rejected.push({ promotion_id: promo.id, reason: 'VISIT_FAIL' });
       continue;
@@ -129,10 +148,14 @@ export function scoreVcfCandidates(opts: {
 
     const withRedeem = attachRedeem(benefits, vcf.redeem);
     const expiry = vcf.expiryDays;
-    const stamped = withRedeem.map((b) =>
-      b.benefit_type === 'CASHBACK' && expiry != null ? { ...b, expiry_days: expiry } : b
-    );
+    // A range's own cashback expiry wins; pre-range promos keep the promo-level expiry.
+    const stamped = withRedeem.map((b) => {
+      if (b.benefit_type !== 'CASHBACK') return b;
+      const days = ranged ? (b.expiry_days ?? expiry) : (expiry ?? b.expiry_days);
+      return days != null ? { ...b, expiry_days: days } : b;
+    });
     benefitsByPromo.set(promo.id, stamped);
+    ruleByPromo.set(promo.id, rule);
     eligible.push({
       promotionId: promo.id,
       publishLetter: vcf.publish.letter,
@@ -145,8 +168,15 @@ export function scoreVcfCandidates(opts: {
     });
   }
 
+  const empty = {
+    winnerBenefits: [],
+    winnerId: null,
+    winnerRule: null,
+    matched: [],
+    rejected,
+  };
   if (!hadVcfCandidates) {
-    return { winnerBenefits: [], winnerId: null, matched: [], rejected, hadVcfCandidates: false };
+    return { ...empty, hadVcfCandidates: false };
   }
 
   const ranked = rankEligible(eligible);
@@ -155,18 +185,21 @@ export function scoreVcfCandidates(opts: {
   }
 
   if (!ranked.winner) {
-    return { winnerBenefits: [], winnerId: null, matched: [], rejected, hadVcfCandidates: true };
+    return { ...empty, hadVcfCandidates: true };
   }
 
   const vcf = vcfById.get(ranked.winner.promotionId);
+  const winnerRule = ruleByPromo.get(ranked.winner.promotionId) || null;
   let winnerBenefits = benefitsByPromo.get(ranked.winner.promotionId) || [];
-  if (vcf?.benefitMode === 'both') {
+  // Ranges cap their discount via the range's own max; the promo-level cap is for pre-range promos.
+  if (vcf?.benefitMode === 'both' && !(winnerRule && isRangedRule(winnerRule))) {
     winnerBenefits = capWinnerDiscount(winnerBenefits, vcf.maxDiscount, pay.amount);
   }
 
   return {
     winnerBenefits,
     winnerId: ranked.winner.promotionId,
+    winnerRule,
     matched: [ranked.winner.promotionId],
     rejected,
     hadVcfCandidates: true,

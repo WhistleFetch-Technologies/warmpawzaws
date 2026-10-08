@@ -7,6 +7,7 @@ import type {
   PromoEngineStatus,
   PromoEngineBenefit,
   PromoEngineConditionGroup,
+  PromoBenefitMode,
   PromoRuleType,
   StackingPolicy,
   PromoFundingType,
@@ -69,6 +70,8 @@ function mapRule(row: Record<string, unknown>): PromoEngineRuleRow {
       ? (JSON.parse(conditionRaw) as PromoEngineConditionGroup)
       : (conditionRaw as PromoEngineConditionGroup);
 
+  const mode = row.benefit_mode != null ? String(row.benefit_mode) : null;
+  const copy = row.customer_copy != null ? parseJsonObject(row.customer_copy) : null;
   return {
     id: String(row.id),
     promotion_id: String(row.promotion_id),
@@ -77,8 +80,30 @@ function mapRule(row: Record<string, unknown>): PromoEngineRuleRow {
     benefit_json: benefits,
     rule_type: (row.rule_type as PromoRuleType) || 'GENERIC',
     is_active: row.is_active !== false,
+    label: row.label != null ? String(row.label) : null,
+    sort_order: numOrNull(row.sort_order),
+    min_amount: numOrNull(row.min_amount),
+    max_amount: numOrNull(row.max_amount),
+    benefit_mode:
+      mode === 'discount' || mode === 'cashback' || mode === 'both' ? mode : null,
+    customer_copy: copy && Object.keys(copy).length ? copy : null,
+    per_user_limit: numOrNull(row.per_user_limit),
+    daily_limit: numOrNull(row.daily_limit),
+    campaign_limit: numOrNull(row.campaign_limit),
+    budget_limit: numOrNull(row.budget_limit),
+    budget_consumed: Number(row.budget_consumed ?? 0),
+    archived_at: row.archived_at ? new Date(row.archived_at as string).toISOString() : null,
   };
 }
+
+function numOrNull(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Ranges in bill order; pre-range rows (no sort_order) keep their priority order. */
+const RULE_ORDER_SQL = 'sort_order ASC NULLS LAST, min_amount ASC NULLS FIRST, priority ASC';
 
 export async function dbListPromotions(filters?: {
   status?: string;
@@ -183,10 +208,18 @@ export async function dbUpdatePromotion(
 
 export async function dbListRules(promotionId: string): Promise<PromoEngineRuleRow[]> {
   const res = await query(
-    `SELECT * FROM promo_engine_rules WHERE promotion_id = $1 ORDER BY priority ASC`,
+    `SELECT * FROM promo_engine_rules
+     WHERE promotion_id = $1 AND archived_at IS NULL
+     ORDER BY ${RULE_ORDER_SQL}`,
     [promotionId]
   );
   return (res.rows || []).map((r) => mapRule(r as Record<string, unknown>));
+}
+
+export async function dbGetRule(ruleId: string): Promise<PromoEngineRuleRow | null> {
+  const res = await query(`SELECT * FROM promo_engine_rules WHERE id = $1::uuid LIMIT 1`, [ruleId]);
+  const row = res.rows?.[0];
+  return row ? mapRule(row as Record<string, unknown>) : null;
 }
 
 export async function dbUpsertPrimaryRule(opts: {
@@ -221,6 +254,130 @@ export async function dbUpsertPrimaryRule(opts: {
     is_active: true,
   });
   return mapRule(rows[0] as Record<string, unknown>);
+}
+
+export type RangeRuleWrite = {
+  label: string | null;
+  sort_order: number | null;
+  min_amount: number | null;
+  max_amount: number | null;
+  benefit_mode: PromoBenefitMode | null;
+  benefit_json: PromoEngineBenefit[];
+  customer_copy: Record<string, unknown> | null;
+  per_user_limit: number | null;
+  daily_limit: number | null;
+  campaign_limit: number | null;
+  budget_limit: number | null;
+  is_active: boolean;
+};
+
+const RANGE_WRITE_PARAMS = `label = $3, sort_order = $4, min_amount = $5, max_amount = $6,
+  benefit_mode = $7, benefit_json = $8::jsonb, customer_copy = $9::jsonb,
+  per_user_limit = $10, daily_limit = $11, campaign_limit = $12, budget_limit = $13,
+  is_active = $14`;
+
+function rangeParams(w: RangeRuleWrite): unknown[] {
+  return [
+    w.label,
+    w.sort_order,
+    w.min_amount,
+    w.max_amount,
+    w.benefit_mode,
+    JSON.stringify(w.benefit_json || []),
+    w.customer_copy ? JSON.stringify(w.customer_copy) : null,
+    w.per_user_limit,
+    w.daily_limit,
+    w.campaign_limit,
+    w.budget_limit,
+    w.is_active,
+  ];
+}
+
+export async function dbInsertRangeRule(opts: {
+  promotionId: string;
+  condition_json: PromoEngineConditionGroup;
+  rule_type: PromoRuleType;
+  range: RangeRuleWrite;
+}): Promise<PromoEngineRuleRow> {
+  const res = await query(
+    `INSERT INTO promo_engine_rules (
+       promotion_id, condition_json, label, sort_order, min_amount, max_amount, benefit_mode,
+       benefit_json, customer_copy, per_user_limit, daily_limit, campaign_limit, budget_limit,
+       is_active, rule_type, priority
+     ) VALUES (
+       $1::uuid, $2::jsonb, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14, $15, 100
+     ) RETURNING *`,
+    [
+      opts.promotionId,
+      JSON.stringify(opts.condition_json),
+      ...rangeParams(opts.range),
+      opts.rule_type,
+    ],
+  );
+  return mapRule(res.rows[0] as Record<string, unknown>);
+}
+
+/** Updates a live range of this promotion; returns null when the id is not one of its ranges. */
+export async function dbUpdateRangeRule(opts: {
+  ruleId: string;
+  promotionId: string;
+  condition_json: PromoEngineConditionGroup;
+  rule_type: PromoRuleType;
+  range: RangeRuleWrite;
+}): Promise<PromoEngineRuleRow | null> {
+  const res = await query(
+    `UPDATE promo_engine_rules
+     SET ${RANGE_WRITE_PARAMS}, condition_json = $15::jsonb, rule_type = $16, updated_at = NOW()
+     WHERE id = $1::uuid AND promotion_id = $2::uuid AND archived_at IS NULL
+     RETURNING *`,
+    [
+      opts.ruleId,
+      opts.promotionId,
+      ...rangeParams(opts.range),
+      JSON.stringify(opts.condition_json),
+      opts.rule_type,
+    ],
+  );
+  const row = res.rows?.[0];
+  return row ? mapRule(row as Record<string, unknown>) : null;
+}
+
+/** Removed ranges are archived, never deleted, so usage.rule_id keeps pointing at them. */
+export async function dbArchiveRules(promotionId: string, ruleIds: string[]): Promise<void> {
+  if (!ruleIds.length) return;
+  await query(
+    `UPDATE promo_engine_rules
+     SET archived_at = NOW(), is_active = false, updated_at = NOW()
+     WHERE promotion_id = $1::uuid AND id = ANY($2::uuid[]) AND archived_at IS NULL`,
+    [promotionId, ruleIds],
+  );
+}
+
+export type RuleUsageSummary = { uses: number; discount: number; cashback: number };
+
+/** Live (not reversed) usage per range of one promotion. */
+export async function dbRuleUsageSummary(
+  promotionId: string,
+): Promise<Map<string, RuleUsageSummary>> {
+  const res = await query(
+    `SELECT rule_id::text AS rule_id, COUNT(*)::int AS uses,
+            COALESCE(SUM(discount_amount), 0) AS discount,
+            COALESCE(SUM(cashback_amount), 0) AS cashback
+     FROM promo_engine_usage
+     WHERE promotion_id = $1::uuid AND reversed_at IS NULL AND rule_id IS NOT NULL
+     GROUP BY rule_id`,
+    [promotionId],
+  );
+  const map = new Map<string, RuleUsageSummary>();
+  for (const raw of res.rows || []) {
+    const r = raw as Record<string, unknown>;
+    map.set(String(r.rule_id), {
+      uses: Number(r.uses ?? 0),
+      discount: Number(r.discount ?? 0),
+      cashback: Number(r.cashback ?? 0),
+    });
+  }
+  return map;
 }
 
 export async function dbGetLimits(promotionId: string): Promise<PromoEngineLimitsRow | null> {
@@ -389,8 +546,8 @@ export async function dbListRulesForPromotions(
   if (!promotionIds.length) return map;
   const res = await query(
     `SELECT * FROM promo_engine_rules
-     WHERE promotion_id = ANY($1::uuid[])
-     ORDER BY priority ASC`,
+     WHERE promotion_id = ANY($1::uuid[]) AND archived_at IS NULL
+     ORDER BY ${RULE_ORDER_SQL}`,
     [promotionIds],
   );
   for (const raw of res.rows || []) {
@@ -466,6 +623,41 @@ export async function dbCountUsageBatch(opts: {
   return map;
 }
 
+/** Same counts as dbCountUsageBatch, keyed by range (rule_id). Pre-range usage rows are not counted. */
+export async function dbCountRuleUsageBatch(opts: {
+  ruleIds: string[];
+  userId: string;
+  since?: Date;
+}): Promise<Map<string, PromoUsageCounts>> {
+  const map = new Map<string, PromoUsageCounts>();
+  if (!opts.ruleIds.length) return map;
+  const params: unknown[] = [opts.ruleIds, opts.userId];
+  const dailyExpr = opts.since
+    ? (params.push(opts.since.toISOString()),
+      'COUNT(*) FILTER (WHERE created_at >= $3::timestamptz)::int')
+    : '0::int';
+  const res = await query(
+    `SELECT rule_id::text AS rule_id,
+            COUNT(*) FILTER (WHERE user_id = $2)::int AS user_count,
+            COUNT(*)::int AS campaign_count,
+            ${dailyExpr} AS daily_count
+     FROM promo_engine_usage
+     WHERE rule_id = ANY($1::uuid[])
+       AND reversed_at IS NULL
+     GROUP BY rule_id`,
+    params,
+  );
+  for (const raw of res.rows || []) {
+    const r = raw as Record<string, unknown>;
+    map.set(String(r.rule_id), {
+      user: Number(r.user_count ?? 0),
+      campaign: Number(r.campaign_count ?? 0),
+      daily: Number(r.daily_count ?? 0),
+    });
+  }
+  return map;
+}
+
 export async function dbCountUsage(opts: {
   promotionId: string;
   userId?: string;
@@ -488,6 +680,7 @@ export async function dbCountUsage(opts: {
 
 export async function dbInsertUsage(row: {
   promotion_id: string;
+  rule_id?: string | null;
   user_id: string;
   transaction_id: string;
   transaction_type: string;
@@ -551,10 +744,32 @@ export async function dbAdjustBudgetConsumed(
   };
 }
 
+/** Atomic range budget_consumed += delta (delta may be negative; never drops below 0). */
+export async function dbAdjustRuleBudgetConsumed(
+  ruleId: string,
+  delta: number,
+): Promise<{ budget_consumed: number; budget_limit: number | null } | null> {
+  const res = await query(
+    `UPDATE promo_engine_rules
+     SET budget_consumed = GREATEST(0, COALESCE(budget_consumed, 0) + $2::numeric),
+         updated_at = NOW()
+     WHERE id = $1::uuid
+     RETURNING budget_consumed, budget_limit`,
+    [ruleId, delta],
+  );
+  const r = res.rows?.[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    budget_consumed: Number(r.budget_consumed ?? 0),
+    budget_limit: r.budget_limit != null ? Number(r.budget_limit) : null,
+  };
+}
+
 /** Marks every live usage row for a transaction as reversed; returns only rows flipped now. */
 export async function dbMarkUsageReversed(transactionId: string): Promise<
   Array<{
     promotion_id: string;
+    rule_id: string | null;
     user_id: string;
     evaluation_id: string | null;
     discount_amount: number;
@@ -565,14 +780,15 @@ export async function dbMarkUsageReversed(transactionId: string): Promise<
     `UPDATE promo_engine_usage
      SET reversed_at = NOW()
      WHERE transaction_id = $1 AND reversed_at IS NULL
-     RETURNING promotion_id::text AS promotion_id, user_id, evaluation_id::text AS evaluation_id,
-               discount_amount, cashback_amount`,
+     RETURNING promotion_id::text AS promotion_id, rule_id::text AS rule_id, user_id,
+               evaluation_id::text AS evaluation_id, discount_amount, cashback_amount`,
     [transactionId],
   );
   return (res.rows || []).map((raw) => {
     const r = raw as Record<string, unknown>;
     return {
       promotion_id: String(r.promotion_id),
+      rule_id: r.rule_id ? String(r.rule_id) : null,
       user_id: String(r.user_id ?? ''),
       evaluation_id: r.evaluation_id ? String(r.evaluation_id) : null,
       discount_amount: Number(r.discount_amount ?? 0),
@@ -668,7 +884,12 @@ export async function dbAppendBehaviourEvent(opts: {
 
 export async function dbUsageByPromotion(promotionId: string, limit = 50) {
   const res = await query(
-    `SELECT * FROM promo_engine_usage WHERE promotion_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    `SELECT u.*, r.label AS range_label, r.min_amount AS range_min, r.max_amount AS range_max
+     FROM promo_engine_usage u
+     LEFT JOIN promo_engine_rules r ON r.id = u.rule_id
+     WHERE u.promotion_id = $1
+     ORDER BY u.created_at DESC
+     LIMIT $2`,
     [promotionId, limit]
   );
   return res.rows || [];

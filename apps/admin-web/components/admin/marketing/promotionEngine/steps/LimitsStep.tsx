@@ -2,6 +2,14 @@
 
 import { Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@warmpawz/ui';
 import { STACKING_POLICIES, type PromoEngineDraft, type StackingPolicy } from '@/lib/promo-engine/types';
+import {
+  rangeBoundsLabel,
+  rangeTitle,
+  sortedRanges,
+  updateRange,
+  validateRangeLimits,
+} from '@/lib/promo-engine/ranges';
+import { RANGE_LIMIT_FIELDS, RangeLimitInput, rangeUsageText } from './RangeCard';
 
 type LimitKey = keyof NonNullable<PromoEngineDraft['limits']>;
 
@@ -30,6 +38,11 @@ export function LimitsStep({
   onChange: (next: PromoEngineDraft) => void;
 }) {
   const limits = draft.limits || {};
+  const ranges = draft.ranges || [];
+  const sorted = sortedRanges(ranges);
+  const rangeLimitErrors = sorted.flatMap((r, i) =>
+    validateRangeLimits(r.limits).map((e) => `${rangeTitle(r, i)}: ${e}`)
+  );
 
   const setLimit = (key: LimitKey, value: number | null) => {
     onChange({
@@ -80,6 +93,62 @@ export function LimitsStep({
           </div>
         </div>
       </section>
+
+      {sorted.length ? (
+        <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">Limits per range</h3>
+            <p className="text-xs text-slate-500">
+              Same values as the Limits panel inside each range card on Benefits. Leave blank for no
+              range limit; the promotion limits above still apply.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[44rem] text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-500">
+                  <th className="py-2 pr-3 font-medium">Range</th>
+                  {RANGE_LIMIT_FIELDS.map((f) => (
+                    <th key={f.key} className="py-2 pr-3 font-medium">
+                      {f.label}
+                    </th>
+                  ))}
+                  <th className="py-2 font-medium">Used</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((r, i) => (
+                  <tr key={r.key} className="border-t border-slate-100 align-top">
+                    <td className="py-2 pr-3">
+                      <p className="font-medium text-slate-900">{rangeTitle(r, i)}</p>
+                      <p className="text-xs text-slate-500">{rangeBoundsLabel(r)}</p>
+                    </td>
+                    {RANGE_LIMIT_FIELDS.map((f) => (
+                      <td key={f.key} className="py-2 pr-3">
+                        <RangeLimitInput
+                          range={r}
+                          field={f.key}
+                          onChange={(next) =>
+                            onChange({ ...draft, ranges: updateRange(ranges, r.key, { limits: next }) })
+                          }
+                        />
+                      </td>
+                    ))}
+                    <td className="py-2 text-xs text-slate-500">{rangeUsageText(r) || 'New'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {rangeLimitErrors.length ? (
+            <ul className="space-y-1 text-xs text-red-700">
+              {rangeLimitErrors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
         <h3 className="text-base font-semibold text-slate-900">Stacking</h3>

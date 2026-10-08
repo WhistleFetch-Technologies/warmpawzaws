@@ -131,7 +131,10 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     let promoEngine: Record<string, unknown> | null = null;
     let engineDiscount = 0;
     try {
-      const stored = await loadOwnedWpayEvaluation(requestedEvaluationId, customerId);
+      const stored = await loadOwnedWpayEvaluation(requestedEvaluationId, customerId, {
+        amount: originalAmount,
+        vendorId,
+      });
       if (stored) {
         engineDiscount = stored.engineDiscount;
         promoEngine = {

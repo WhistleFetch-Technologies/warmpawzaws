@@ -9,6 +9,9 @@ const repo = {
   dbSetUsageCashback: jest.fn(),
   dbGetUsageByIdempotencyKey: jest.fn(),
   dbInsertAudit: jest.fn(),
+  dbGetRule: jest.fn(),
+  dbAdjustRuleBudgetConsumed: jest.fn(),
+  dbCountRuleUsageBatch: jest.fn(),
 };
 const mockCredit = jest.fn();
 const mockNotify = jest.fn();
@@ -22,6 +25,9 @@ jest.mock('../../repos/promo-engine.repo', () => ({
   dbSetUsageCashback: (...a: unknown[]) => repo.dbSetUsageCashback(...a),
   dbGetUsageByIdempotencyKey: (...a: unknown[]) => repo.dbGetUsageByIdempotencyKey(...a),
   dbInsertAudit: (...a: unknown[]) => repo.dbInsertAudit(...a),
+  dbGetRule: (...a: unknown[]) => repo.dbGetRule(...a),
+  dbAdjustRuleBudgetConsumed: (...a: unknown[]) => repo.dbAdjustRuleBudgetConsumed(...a),
+  dbCountRuleUsageBatch: (...a: unknown[]) => repo.dbCountRuleUsageBatch(...a),
 }));
 
 jest.mock('../wallet-cashback.service', () => ({
@@ -125,5 +131,69 @@ describe('commitPromotion limits re-check + notification', () => {
     expect(res.cashback_credited).toBe(150);
     expect(mockCredit).toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
+  });
+});
+
+describe('commitPromotion with a bill-amount range', () => {
+  const RULE = '33333333-3333-4333-8333-333333333333';
+  const rangedEvaluation = {
+    ...evaluation,
+    result_json: {
+      ...evaluation.result_json,
+      benefits: evaluation.result_json.benefits.map((b) => ({ ...b, rule_id: RULE })),
+    },
+  };
+  const ruleRow = (over: Record<string, unknown> = {}) => ({
+    id: RULE,
+    promotion_id: 'p1',
+    per_user_limit: null,
+    daily_limit: null,
+    campaign_limit: null,
+    budget_limit: null,
+    budget_consumed: 0,
+    ...over,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repo.dbGetEvaluation.mockResolvedValue(rangedEvaluation);
+    repo.dbInsertUsage.mockResolvedValue({ inserted: true });
+    repo.dbGetLimits.mockResolvedValue(limitsRow());
+    repo.dbCountUsageBatch.mockResolvedValue(new Map([['p1', { user: 1, campaign: 1, daily: 1 }]]));
+    repo.dbAdjustBudgetConsumed.mockResolvedValue({ budget_consumed: 250, budget_limit: null });
+    repo.dbGetRule.mockResolvedValue(ruleRow());
+    repo.dbAdjustRuleBudgetConsumed.mockResolvedValue({ budget_consumed: 250, budget_limit: null });
+    repo.dbCountRuleUsageBatch.mockResolvedValue(new Map());
+    mockCredit.mockResolvedValue({ walletTransactionId: 'wt-1', credited: true });
+  });
+
+  it('records the range on usage and adds spend to both promo and range budgets', async () => {
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-r1' });
+    expect(res.cashback_credited).toBe(150);
+    expect(repo.dbInsertUsage).toHaveBeenCalledWith(expect.objectContaining({ rule_id: RULE }));
+    expect(repo.dbAdjustBudgetConsumed).toHaveBeenCalledWith('p1', 250);
+    expect(repo.dbAdjustRuleBudgetConsumed).toHaveBeenCalledWith(RULE, 250);
+  });
+
+  it('trims cashback to the range budget when it is tighter than the promo budget', async () => {
+    repo.dbAdjustRuleBudgetConsumed.mockResolvedValueOnce({ budget_consumed: 1080, budget_limit: 1000 });
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-r2' });
+    expect(res.cashback_credited).toBe(70);
+    expect(repo.dbAdjustBudgetConsumed).toHaveBeenLastCalledWith('p1', -80);
+    expect(repo.dbAdjustRuleBudgetConsumed).toHaveBeenLastCalledWith(RULE, -80);
+    expect(repo.dbInsertAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'LIMIT_EXCEEDED_AT_COMMIT',
+        payload: expect.objectContaining({ reason: 'RANGE_BUDGET_EXHAUSTED', rule_id: RULE }),
+      }),
+    );
+  });
+
+  it('withholds cashback when a concurrent payment pushed the range per-user count past its limit', async () => {
+    repo.dbGetRule.mockResolvedValue(ruleRow({ per_user_limit: 1 }));
+    repo.dbCountRuleUsageBatch.mockResolvedValue(new Map([[RULE, { user: 2, campaign: 2, daily: 2 }]]));
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-r3' });
+    expect(res.cashback_credited).toBe(0);
+    expect(repo.dbAdjustRuleBudgetConsumed).toHaveBeenLastCalledWith(RULE, -150);
   });
 });

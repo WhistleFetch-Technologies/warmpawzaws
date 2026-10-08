@@ -78,6 +78,12 @@ export interface PromoEnginePromotionRow {
   updated_at: string;
 }
 
+export type PromoBenefitMode = 'discount' | 'cashback' | 'both';
+
+/**
+ * One rule row = one bill-amount range of its promotion. Range columns are null on
+ * pre-range rows; null falls back to the promotion-level setting.
+ */
 export interface PromoEngineRuleRow {
   id: string;
   promotion_id: string;
@@ -86,6 +92,18 @@ export interface PromoEngineRuleRow {
   benefit_json: PromoEngineBenefit[];
   rule_type: PromoRuleType;
   is_active: boolean;
+  label?: string | null;
+  sort_order?: number | null;
+  min_amount?: number | null;
+  max_amount?: number | null;
+  benefit_mode?: PromoBenefitMode | null;
+  customer_copy?: Record<string, unknown> | null;
+  per_user_limit?: number | null;
+  daily_limit?: number | null;
+  campaign_limit?: number | null;
+  budget_limit?: number | null;
+  budget_consumed?: number;
+  archived_at?: string | null;
 }
 
 export interface PromoEngineLimitsRow {
@@ -183,7 +201,10 @@ export interface EvaluateResult {
   eligible: boolean;
   evaluation_id: string;
   winner_promotion_id?: string | null;
-  /** Admin-configured wording for the winning promotion (metadata.customerCopy). */
+  /** Bill-amount range (rule row) of the winning promotion. */
+  winner_rule_id?: string | null;
+  range?: { id: string; label: string | null; min: number | null; max: number | null } | null;
+  /** Admin-configured wording for the winning promotion, range overrides merged on top. */
   customer_copy?: PromoCustomerCopy | null;
   benefits: AppliedBenefit[];
   summary: {
