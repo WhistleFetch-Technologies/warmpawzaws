@@ -19,6 +19,12 @@ describe('resolveWpayVendorCardRating', () => {
   it('returns normalized rating when valid', () => {
     expect(resolveWpayVendorCardRating('4.2', 8)).toEqual({ average: 4.2, reviewCount: 8 });
   });
+
+  it('rounds the average to one decimal', () => {
+    expect(resolveWpayVendorCardRating('4.8333333333333333', 6)).toEqual({ average: 4.8, reviewCount: 6 });
+    expect(resolveWpayVendorCardRating(4.86, 3)).toEqual({ average: 4.9, reviewCount: 3 });
+    expect(resolveWpayVendorCardRating(5, 1)).toEqual({ average: 5, reviewCount: 1 });
+  });
 });
 
 describe('normalizeWpayVendorCardAddress', () => {

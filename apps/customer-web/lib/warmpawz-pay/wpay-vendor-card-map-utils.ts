@@ -14,7 +14,7 @@ export function resolveWpayVendorCardRating(
   if (count <= 0 || !Number.isFinite(numericRating) || numericRating <= 0) {
     return null;
   }
-  return { average: numericRating, reviewCount: count };
+  return { average: Math.round(numericRating * 10) / 10, reviewCount: count };
 }
 
 /** Marketing copy for promo-engine listing % — not the exact applied quote line. */
