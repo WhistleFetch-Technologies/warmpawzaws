@@ -1,0 +1,82 @@
+{
+  "description": "Pay Bill visit ladder with bill ranges. Copy this file, set vendorId, then seed + run.",
+  "vendorId": "REPLACE-WITH-DEV-VENDOR-UUID",
+  "customerPhone": null,
+  "defaults": { "channels": ["paybill"], "expiryDays": 30 },
+  "promos": [
+    {
+      "code": "QA-PB-V1",
+      "name": "QA Pay Bill - Visit 1 (ranges)",
+      "visitLoop": { "kind": "visit_number", "n": 1 },
+      "priority": 70,
+      "limits": { "budgetLimit": 50000 },
+      "ranges": [
+        { "label": "Small", "min": 0, "max": 500,
+          "discount": { "mode": "FIXED", "value": 50 },
+          "cashback": { "mode": "FIXED", "value": 25 } },
+        { "label": "Mid", "min": 500, "max": 2000,
+          "discount": { "mode": "FIXED", "value": 150 },
+          "cashback": { "mode": "FIXED", "value": 75 },
+          "limits": { "perUser": 1 } },
+        { "label": "Large", "min": 2000, "max": null,
+          "discount": { "mode": "PERCENT", "value": 10, "max": 400 },
+          "cashback": { "mode": "PERCENT", "value": 5, "max": 200 },
+          "limits": { "budgetLimit": 5000 } }
+      ]
+    },
+    {
+      "code": "QA-PB-V2",
+      "name": "QA Pay Bill - Visit 2 (floor 100)",
+      "visitLoop": { "kind": "visit_number", "n": 2 },
+      "priority": 70,
+      "ranges": [
+        { "label": "Floor", "min": 100, "max": 1000, "discount": { "mode": "FIXED", "value": 100 } },
+        { "label": "Big", "min": 1000, "max": null,
+          "discount": { "mode": "FIXED", "value": 200 },
+          "cashback": { "mode": "FIXED", "value": 100 } }
+      ]
+    },
+    {
+      "code": "QA-PB-V3P",
+      "name": "QA Pay Bill - Visit 3 onward (single offer)",
+      "visitLoop": { "kind": "from_onward", "n": 3 },
+      "priority": 70,
+      "discount": { "mode": "FIXED", "value": 75 },
+      "cashback": { "mode": "FIXED", "value": 50 }
+    },
+    {
+      "code": "QA-PB-E5",
+      "name": "QA Pay Bill - Every 5th visit (cashback only)",
+      "visitLoop": { "kind": "every_nth", "n": 5 },
+      "priority": 80,
+      "ranges": [
+        { "label": "Under 1k", "min": 0, "max": 1000, "cashback": { "mode": "FIXED", "value": 100 } },
+        { "label": "1k plus", "min": 1000, "max": null, "cashback": { "mode": "FIXED", "value": 300 } }
+      ]
+    }
+  ],
+  "scenarios": [
+    { "name": "V1 small bill", "visit": 1, "amount": 300,
+      "expect": { "winner": "QA-PB-V1", "range": "Small", "discount": 50, "cashback": 25, "payable": 250 } },
+    { "name": "V1 exactly 500 stays in lower range", "visit": 1, "amount": 500,
+      "expect": { "winner": "QA-PB-V1", "range": "Small", "discount": 50 } },
+    { "name": "V1 500.01 moves to Mid", "visit": 1, "amount": 500.01,
+      "expect": { "winner": "QA-PB-V1", "range": "Mid", "discount": 150, "cashback": 75 } },
+    { "name": "V1 large percent", "visit": 1, "amount": 3000,
+      "expect": { "winner": "QA-PB-V1", "range": "Large", "discount": 300, "cashback": 150 } },
+    { "name": "V1 large hits caps", "visit": 1, "amount": 9000,
+      "expect": { "winner": "QA-PB-V1", "range": "Large", "discount": 400, "cashback": 200 } },
+    { "name": "V2 below floor", "visit": 2, "amount": 50,
+      "expect": { "winner": null, "rejected": { "code": "QA-PB-V2", "reason": "AMOUNT_OUT_OF_RANGE" } } },
+    { "name": "V2 big bill", "visit": 2, "amount": 1500,
+      "expect": { "winner": "QA-PB-V2", "range": "Big", "discount": 200, "cashback": 100 } },
+    { "name": "Visit 4 single offer", "visit": 4, "amount": 800,
+      "expect": { "winner": "QA-PB-V3P", "discount": 75, "cashback": 50 } },
+    { "name": "Visit 5: every-5th outranks visit-3-onward (priority 80)", "visit": 5, "amount": 1200,
+      "expect": { "winner": "QA-PB-E5", "range": "1k plus", "discount": 0, "cashback": 300 } },
+    { "name": "V1 Mid commit (uses the per-customer allowance)", "visit": 1, "amount": 1000, "commit": true,
+      "expect": { "winner": "QA-PB-V1", "range": "Mid", "discount": 150 } },
+    { "name": "V1 Mid again is blocked per customer", "visit": 1, "amount": 1000,
+      "expect": { "winner": null, "rejected": { "code": "QA-PB-V1", "reason": "RANGE_PER_USER_LIMIT" } } }
+  ]
+}

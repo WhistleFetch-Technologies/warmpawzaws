@@ -1,0 +1,67 @@
+---
+description: Promo engine QA on DEV — generate seed specs for visit-count promos with bill-amount ranges, seed them, run scenario checks against the dev API, clean up. Use when a tester asks to seed/test promos, visit ladders, ranges, discounts, cashback or promo limits.
+globs: scripts/promo-qa/**
+alwaysApply: false
+---
+
+# Promo engine QA on dev (seeds + scenario runs)
+
+Tools live in `scripts/promo-qa/`: `seed-dev.js` (writes promos), `run-dev.js` (evaluates scenarios), `specs/*.json` (one file per test plan). Start every new plan by copying `specs/example-paybill-visit-ranges.json`.
+
+## Hard rules
+
+- **DEV only.** Scripts refuse `ENVIRONMENT=prod` and the prod API. Never point them elsewhere, never write SQL by hand for promos.
+- Every promo code starts with `QA-`. Never edit, pause or archive a non-`QA-` promo; if one interferes, report it and ask.
+- Promos publish to **one dev vendor** (`vendorId` in the spec) so they only affect that vendor. Find one with `seed-dev.js --vendors <name>`; prefer vendors named TEST/TESTER.
+- Archive, never delete (`--archive` / `--replace`). After any run with `"commit": true`, run `run-dev.js --reverse-committed`.
+- Do not deploy, migrate, or commit/push anything unless the user asks. `scripts/promo-qa/.out/` is gitignored.
+
+## Prerequisites (check before running)
+
+1. AWS credentials with dev RDS Data API access (`AWS_PROFILE=cursor-agent` or the tester's profile), Node 18+.
+2. Dev customer phone for login (UAT OTP `123456` is automatic): `QA_PHONE=+91XXXXXXXXXX` or `customerPhone` in the spec.
+3. Ranges need the ranges backend on dev (`feature/abhi-promo-ranges`, migration 1125). If `run-dev.js` prints `WARN ... no "range" field`, stop: ranged results are not trustworthy until that Lambda is deployed to dev.
+
+## Workflow (PowerShell; bash: `export VAR=...`)
+
+```powershell
+$env:AWS_PROFILE='cursor-agent'; $env:ENVIRONMENT='dev'; $env:QA_PHONE='+91XXXXXXXXXX'
+node scripts/promo-qa/seed-dev.js --vendors tester                 # pick vendorId
+node scripts/promo-qa/seed-dev.js scripts/promo-qa/specs/<plan>.json --dry-run
+node scripts/promo-qa/seed-dev.js scripts/promo-qa/specs/<plan>.json          # create (existing codes skipped)
+node scripts/promo-qa/run-dev.js  scripts/promo-qa/specs/<plan>.json          # PASS/FAIL per scenario
+node scripts/promo-qa/run-dev.js  --reverse-committed                          # if any scenario committed
+node scripts/promo-qa/seed-dev.js scripts/promo-qa/specs/<plan>.json --replace # after editing promos in the spec
+node scripts/promo-qa/seed-dev.js scripts/promo-qa/specs/<plan>.json --archive # when done
+node scripts/promo-qa/seed-dev.js --list                                       # live QA- promos + ranges
+```
+
+Changing a promo in the spec has no effect until `--replace`. Promos can also be checked in admin (Promotion Engine list, filter `QA-`).
+
+## Spec format
+
+Top level: `vendorId` (required), `customerPhone`, `defaults { channels: ["paybill"], expiryDays: 30, endAt }`, `promos[]`, `scenarios[]`.
+
+Promo: `code` (`QA-…`), `name`, `visitLoop`, `priority` 1–100 (default 70), `status` ACTIVE|PAUSED, `channels`, `visitSource { letter: "F"|"V" }` (F = visits anywhere, V = visits at the spec vendor), `limits { perUser, perTransaction, dailyLimit, campaignLimit, budgetLimit }`, `customerCopy`, and **either** `ranges[]` **or** a single `discount` / `cashback`.
+
+Range: `label` (unique, scenarios match on it), `min`, `max` (null = open; only the last range may be open), `active`, `discount`, `cashback`, `limits { perUser, dailyLimit, campaignLimit, budgetLimit }`, `customerCopy`.
+Benefit: `{ "mode": "FIXED"|"PERCENT", "value": n, "max": cap }`; cashback also `expiryDays`. Copy keys: see `backend/lambda/src/discount-engine/promo-engine/customer-copy.ts`.
+
+Scenario: `name`, `visit` (the visit being paid for, 1 = first), `amount`, `channel`, `commit` (true = commit it, consumes limits/budget), `expect`:
+`winner` (QA code or `null` = no QA promo wins), `eligible` (a QA promo wins), `range` (label or `[min, max]`), `discount`, `cashback`, `payable`, `rejected { code, reason }`. Omitted keys are not checked. Scenarios run in file order, so put limit checks after the commits that use them up.
+
+## Engine behaviour to test against
+
+- Visit loops (on the visit being paid for): `visit_number n` (only n), `from_onward n` (n and later), `every_nth n` (n, 2n…), `between n m`, `every`. The runner simulates "visit N" as N−1 completed visits.
+- Range match: `min ≤ bill ≤ max`; a bill exactly on a shared boundary goes to the **lower** range (500 → "0–500", 500.01 → "500–2000"). Bill outside all ranges → `AMOUNT_OUT_OF_RANGE`.
+- PERCENT values are capped by `max`; a FIXED discount never exceeds the bill.
+- Several QA promos eligible for the same vendor → higher `priority` wins.
+- Rejection reasons: `VISIT_FAIL`, `LIMIT_FAIL` (promo limits), `AMOUNT_OUT_OF_RANGE`, `RANGE_PER_USER_LIMIT`, `RANGE_DAILY_LIMIT`, `RANGE_CAMPAIGN_LIMIT`, `RANGE_BUDGET_EXHAUSTED`.
+
+## When a tester asks for a plan
+
+1. Ask only for what is missing: vendor, phone, visit ladder, ranges and values per visit.
+2. Write `scripts/promo-qa/specs/<short-name>.json`; one promo per visit rule, ranges inside it.
+3. Generate scenarios automatically for every promo: each range at `min`, `max`, `max + 0.01`; below the first floor and above the last ceiling when not open; the visit before/at/after each loop boundary; one commit + repeat for every per-customer / total / budget limit.
+4. Dry-run, seed, run, report the PASS/FAIL table, then reverse commits. A FAIL is either a wrong expectation (fix the spec) or an engine bug (report with the `.out/run-*.json` details) — say which.
+5. `WARN a non-QA promo won`: another ACTIVE dev promo covers this vendor/visit; name it via `--list`/admin and ask before touching it.
