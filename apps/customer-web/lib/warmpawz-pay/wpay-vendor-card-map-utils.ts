@@ -17,19 +17,22 @@ export function resolveWpayVendorCardRating(
   return { average: Math.round(numericRating * 10) / 10, reviewCount: count };
 }
 
-/** Marketing copy for promo-engine listing % — not the exact applied quote line. */
+/** Listing pill before a bill is quoted. The rupee amount appears only after Get discount. */
 export function formatWpayCatalogueDiscountLabel(discountPercent: number): string | undefined {
   if (!(discountPercent > 0)) return undefined;
-  return `Upto ${discountPercent}%`;
+  return 'Instant Savings';
 }
 
-/** Pay Hub / WPay list discount pill — "Upto X%" from promo-engine publish winner. */
+/** Pay Hub pills: Instant Savings and Wallet Cashback, with no percent. */
 export function buildWpayDiscountBadges(
   discountPercent: number,
+  hasCashback = false,
 ): WarmpawzPayVendorCardBadge[] | undefined {
-  const label = formatWpayCatalogueDiscountLabel(discountPercent);
-  if (!label) return undefined;
-  return [{ label, tone: 'discount' }];
+  const badges: WarmpawzPayVendorCardBadge[] = [];
+  const savings = formatWpayCatalogueDiscountLabel(discountPercent);
+  if (savings) badges.push({ label: savings, tone: 'discount' });
+  if (hasCashback) badges.push({ label: 'Wallet Cashback', tone: 'success' });
+  return badges.length ? badges : undefined;
 }
 
 /** Discovery-style dual CTA wiring — labels and handlers from parent. */

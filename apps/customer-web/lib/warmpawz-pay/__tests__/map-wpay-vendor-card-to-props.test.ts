@@ -10,6 +10,7 @@ describe('mapWpayVendorCardToProps', () => {
       phone: '+91 98765 43210',
       address: '  Sector 12  ',
       discountPercent: 10,
+      hasCashback: true,
       category: 'vet',
     };
 
@@ -20,7 +21,10 @@ describe('mapWpayVendorCardToProps', () => {
       imageUrl: 'https://cdn.example/photo.png',
       subtitle: '+91 98765 43210',
       address: 'Sector 12',
-      badges: [{ label: 'Upto 10%', tone: 'discount' }],
+      badges: [
+        { label: 'Instant Savings', tone: 'discount' },
+        { label: 'Wallet Cashback', tone: 'success' },
+      ],
     });
     expect(props.primaryAction).toBeUndefined();
     expect(props.secondaryAction).toBeUndefined();

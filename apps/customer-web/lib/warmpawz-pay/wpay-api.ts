@@ -9,6 +9,7 @@ export type WpayVendorCard = {
   address: string;
   photoUrl: string | null;
   discountPercent: number;
+  hasCashback?: boolean;
   category: string | null;
 };
 

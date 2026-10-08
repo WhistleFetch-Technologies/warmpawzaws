@@ -12,6 +12,6 @@ export function mapWpayVendorCardToProps(vendor: WpayVendorCard): WarmpawzPayVen
     imageUrl: vendor.photoUrl,
     subtitle: vendor.phone ?? undefined,
     address: normalizeWpayVendorCardAddress(vendor.address),
-    badges: buildWpayDiscountBadges(vendor.discountPercent),
+    badges: buildWpayDiscountBadges(vendor.discountPercent, vendor.hasCashback === true),
   };
 }

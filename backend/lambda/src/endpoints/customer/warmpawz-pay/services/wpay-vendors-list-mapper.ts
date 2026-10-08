@@ -14,6 +14,7 @@ export type WpayVendorCardDto = {
   address: string;
   photoUrl: string | null;
   discountPercent: number;
+  hasCashback: boolean;
   category: string | null;
 };
 
@@ -62,7 +63,8 @@ export async function mapWpayVendorListRows(rows: WpayVendorListDbRow[]): Promis
       phone: row.phone,
       address: formatWpayVendorAddress(row.address, row.city),
       photoUrl: photos[index] ?? null,
-      discountPercent: discountByVendor.get(row.vendor_id) ?? 0,
+      discountPercent: discountByVendor.get(row.vendor_id)?.discountPercent ?? 0,
+      hasCashback: discountByVendor.get(row.vendor_id)?.hasCashback ?? false,
       category: categoryMeta.serviceCategoryId !== 'unknown' ? categoryMeta.serviceCategoryId : null,
     };
   });

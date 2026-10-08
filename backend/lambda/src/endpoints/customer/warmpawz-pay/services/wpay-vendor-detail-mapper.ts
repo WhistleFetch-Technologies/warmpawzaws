@@ -22,9 +22,11 @@ export type WpayVendorDetailDto = WpayVendorCardDto & {
   convenienceGstRate: number;
 };
 
-function buildOfferLabel(discountPercent: number): string {
-  if (discountPercent <= 0) return 'Pay with Warmpawz Pay';
-  return `Upto ${discountPercent}% off on your bill`;
+function buildOfferLabel(discountPercent: number, hasCashback: boolean): string {
+  if (discountPercent > 0 && hasCashback) return 'Instant Savings and Wallet Cashback';
+  if (hasCashback) return 'Wallet Cashback';
+  if (discountPercent > 0) return 'Instant Savings';
+  return 'Pay with Warmpawz Pay';
 }
 
 export async function mapWpayVendorDetailRow(
@@ -50,7 +52,7 @@ export async function mapWpayVendorDetailRow(
     rating: reviews.rating,
     reviewCount: reviews.reviewCount,
     maxDiscountAmount: null,
-    offerLabel: buildOfferLabel(card.discountPercent),
+    offerLabel: buildOfferLabel(card.discountPercent, card.hasCashback),
     commercialModel: commercial.commercialModel,
     platformFee: convenience.platformFee,
     platformFeeMode: convenience.platformFeeMode,

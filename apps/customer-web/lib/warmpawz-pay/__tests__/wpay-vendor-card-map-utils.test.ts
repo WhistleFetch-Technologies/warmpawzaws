@@ -39,18 +39,25 @@ describe('normalizeWpayVendorCardAddress', () => {
 });
 
 describe('formatWpayCatalogueDiscountLabel', () => {
-  it('formats Upto X% when discount percent is positive', () => {
+  it('names Instant Savings when a discount exists, with no percent', () => {
     expect(formatWpayCatalogueDiscountLabel(0)).toBeUndefined();
-    expect(formatWpayCatalogueDiscountLabel(10)).toBe('Upto 10%');
-    expect(formatWpayCatalogueDiscountLabel(40)).toBe('Upto 40%');
+    expect(formatWpayCatalogueDiscountLabel(10)).toBe('Instant Savings');
+    expect(formatWpayCatalogueDiscountLabel(40)).toBe('Instant Savings');
   });
 });
 
 describe('buildWpayDiscountBadges', () => {
-  it('attaches a Pay Bill discount badge when percent is positive', () => {
+  it('shows Instant Savings without a percent, and Wallet Cashback when the offer earns it', () => {
     expect(buildWpayDiscountBadges(0)).toBeUndefined();
-    expect(buildWpayDiscountBadges(8)).toEqual([{ label: 'Upto 8%', tone: 'discount' }]);
-    expect(buildWpayDiscountBadges(20)).toEqual([{ label: 'Upto 20%', tone: 'discount' }]);
+    expect(buildWpayDiscountBadges(8)).toEqual([{ label: 'Instant Savings', tone: 'discount' }]);
+    expect(buildWpayDiscountBadges(20, true)).toEqual([
+      { label: 'Instant Savings', tone: 'discount' },
+      { label: 'Wallet Cashback', tone: 'success' },
+    ]);
+  });
+
+  it('shows Wallet Cashback alone when the offer has no instant discount', () => {
+    expect(buildWpayDiscountBadges(0, true)).toEqual([{ label: 'Wallet Cashback', tone: 'success' }]);
   });
 });
 

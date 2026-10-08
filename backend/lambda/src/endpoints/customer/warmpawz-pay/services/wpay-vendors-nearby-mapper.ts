@@ -57,9 +57,11 @@ function mapDistanceKm(raw: unknown): number | null {
   return Math.round(km * 100) / 100;
 }
 
-function buildPayViaWarmpawzLabel(discountPercent: number): string {
-  if (discountPercent <= 0) return 'Pay with Warmpawz Pay';
-  return `Upto ${discountPercent}% off with Warmpawz Pay`;
+function buildPayViaWarmpawzLabel(discountPercent: number, hasCashback: boolean): string {
+  if (discountPercent > 0 && hasCashback) return 'Instant Savings and Wallet Cashback';
+  if (hasCashback) return 'Wallet Cashback';
+  if (discountPercent > 0) return 'Instant Savings';
+  return 'Pay with Warmpawz Pay';
 }
 
 export async function mapWpayVendorsNearbyRows(
@@ -94,9 +96,9 @@ export async function mapWpayVendorsNearbyRows(
       categoryMeta.serviceCategoryId !== 'unknown' ? categoryMeta.serviceCategoryId : 'unknown';
     const warmpawzPayEligible = Boolean(row.warmpawz_pay_eligible);
     const appointmentEligible = Boolean(row.appointment_eligible);
-    const discountPercent = warmpawzPayEligible
-      ? discountByVendor.get(row.vendor_id) ?? 0
-      : 0;
+    const offer = warmpawzPayEligible ? discountByVendor.get(row.vendor_id) : undefined;
+    const discountPercent = offer?.discountPercent ?? 0;
+    const hasCashback = offer?.hasCashback ?? false;
     const distanceKm = mapDistanceKm(row.distance_km);
     const distanceText =
       distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
@@ -123,7 +125,7 @@ export async function mapWpayVendorsNearbyRows(
       radiusSource: mapRadiusSource(row.radius_source),
       discountPercent,
       payViaWarmpawzLabel: warmpawzPayEligible
-        ? buildPayViaWarmpawzLabel(discountPercent)
+        ? buildPayViaWarmpawzLabel(discountPercent, hasCashback)
         : undefined,
       profilePath: {
         vertical: category,
