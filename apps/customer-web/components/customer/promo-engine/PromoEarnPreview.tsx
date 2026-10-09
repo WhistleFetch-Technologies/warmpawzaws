@@ -28,7 +28,55 @@ export type PromoEngineEarnPreviewData = {
   redeemLabel?: string | null;
   expiryDays?: number | null;
   customerCopy?: PromoCustomerCopy | null;
+  /** Set when the customer is over the global benefit payment cap for this window. */
+  benefitCap?: PromoBenefitCapNotice | null;
 };
+
+export type PromoBenefitCapNotice = {
+  code: string;
+  cap: number;
+  used: number;
+  blocked: { discount: boolean; cashback: boolean; wallet: boolean };
+  platformFeeWaived: boolean;
+  resumeAt: string | null;
+  message: string;
+};
+
+export function readBenefitCapNotice(raw: unknown): PromoBenefitCapNotice | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const message = typeof r.message === 'string' ? r.message.trim() : '';
+  if (!message) return null;
+  const b = (r.blocked && typeof r.blocked === 'object' ? r.blocked : {}) as Record<string, unknown>;
+  return {
+    code: String(r.code || 'BENEFIT_CAP_REACHED'),
+    cap: Number(r.cap) || 0,
+    used: Number(r.used) || 0,
+    blocked: { discount: b.discount === true, cashback: b.cashback === true, wallet: b.wallet === true },
+    platformFeeWaived: r.platformFeeWaived === true,
+    resumeAt: typeof r.resumeAt === 'string' ? r.resumeAt : null,
+    message,
+  };
+}
+
+export function BenefitCapNotice({
+  notice,
+  className = '',
+}: {
+  notice: PromoBenefitCapNotice | null | undefined;
+  className?: string;
+}) {
+  if (!notice?.message) return null;
+  return (
+    <div
+      role="status"
+      className={`rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 ${className}`}
+      data-testid="benefit-cap-notice"
+    >
+      {notice.message}
+    </div>
+  );
+}
 
 export const DEFAULT_PROMO_COPY = {
   earnLine: 'Earn ₹{amount} cashback after payment',
@@ -83,12 +131,15 @@ export function PromoEarnPreview({
   /** Adds a highlighted "You save ₹X" line when an instant discount applies. */
   showSavingsLine?: boolean;
 }) {
+  const capNotice = data?.benefitCap ? (
+    <BenefitCapNotice notice={data.benefitCap} className={className} />
+  ) : null;
   if (!data?.eligible && !(Number(data?.pendingCashback) > 0) && !(Number(data?.engineDiscount) > 0)) {
-    return null;
+    return capNotice;
   }
   const cashback = Math.max(0, Number(data?.pendingCashback) || 0);
   const discount = Math.max(0, Number(data?.engineDiscount) || 0);
-  if (cashback <= 0 && discount <= 0) return null;
+  if (cashback <= 0 && discount <= 0) return capNotice;
 
   const copy = data?.customerCopy ?? null;
   const expiryDays = data?.expiryDays != null && data.expiryDays > 0 ? data.expiryDays : null;
@@ -103,9 +154,9 @@ export function PromoEarnPreview({
     pick(copy, 'redeemLine') ??
     (expiryDays ? DEFAULT_PROMO_COPY.redeemLine : DEFAULT_PROMO_COPY.redeemLineNoExpiry);
 
-  return (
+  const card = (
     <div
-      className={`rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-sm text-emerald-900 ${className}`}
+      className={`rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-sm text-emerald-900 ${capNotice ? 'mt-2 ' : ''}${className}`}
       data-testid="promo-earn-preview"
     >
       {discount > 0 && showSavingsLine ? (
@@ -139,6 +190,14 @@ export function PromoEarnPreview({
       ) : null}
     </div>
   );
+  return capNotice ? (
+    <>
+      {capNotice}
+      {card}
+    </>
+  ) : (
+    card
+  );
 }
 
 export function readPromoCustomerCopy(raw: unknown): PromoCustomerCopy | null {
@@ -171,5 +230,6 @@ export function readPromoEngineFromQuote(raw: unknown): PromoEngineEarnPreviewDa
           ? Number(pe.expiry_days)
           : null,
     customerCopy: readPromoCustomerCopy(pe.customerCopy ?? pe.customer_copy),
+    benefitCap: readBenefitCapNotice(pe.benefitCap ?? pe.benefit_cap),
   };
 }

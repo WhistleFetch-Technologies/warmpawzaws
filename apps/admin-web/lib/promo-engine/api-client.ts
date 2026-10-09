@@ -76,12 +76,18 @@ export async function evaluatePromoEngine(body: {
   user_id: string;
   transaction: Record<string, unknown>;
   behaviour_override?: Record<string, unknown>;
+  skip_benefit_cap?: boolean;
 }): Promise<{
   eligible: boolean;
   evaluation_id: string;
   benefits: Array<{ benefit_type: string; amount: number; promotion_id: string }>;
   summary: { gross_amount: number; discount: number; payable: number; cashback: number };
-  explain?: { failures?: unknown[]; matched_promotions?: string[] };
+  explain?: {
+    failures?: unknown[];
+    matched_promotions?: string[];
+    rejected_promotions?: Array<{ promotion_id: string; reason: string }>;
+  };
+  benefit_cap?: { cap: number; used: number; resumeAt: string | null; message: string } | null;
 }> {
   return apiClient.post('/promo-engine/evaluate', body);
 }

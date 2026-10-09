@@ -17,6 +17,8 @@ import {
   type PromoLimitReason,
 } from './promo-limits';
 import { parseCustomerCopy } from '../customer-copy';
+import { dbTransactionHasUsage } from '../repos/benefit-cap.repo';
+import { resolveBenefitCapNotice } from './benefit-cap.service';
 import type { AppliedBenefit, CommitRequest } from '../types';
 
 function parseJson(v: unknown): Record<string, unknown> {
@@ -76,6 +78,43 @@ async function resolveAllowedCashbackAfterInsert(opts: {
 }
 
 /**
+ * Backstop for payments that slipped past the evaluate-time cap (two checkouts at once, or a
+ * quote stored before the cap was reached). Discount is already inside the captured payment,
+ * so only cashback can be withheld. Retries keep whatever the first commit decided.
+ */
+async function withholdCashbackOverBenefitCap(opts: {
+  benefits: AppliedBenefit[];
+  userId: string;
+  transactionId: string;
+  evaluationId: string;
+}): Promise<AppliedBenefit[]> {
+  const cashback = opts.benefits.filter((b) => b.benefit_type === 'CASHBACK');
+  if (!cashback.length) return opts.benefits;
+  const notice = await resolveBenefitCapNotice({
+    userId: opts.userId,
+    excludeTransactionId: opts.transactionId,
+  });
+  if (!notice?.blocked.cashback) return opts.benefits;
+  if (await dbTransactionHasUsage(opts.transactionId).catch(() => true)) return opts.benefits;
+  try {
+    await dbInsertAudit({
+      promotion_id: cashback[0].promotion_id,
+      evaluation_id: opts.evaluationId,
+      event_type: 'BENEFIT_CAP_AT_COMMIT',
+      payload: {
+        transaction_id: opts.transactionId,
+        cashback_withheld: round2(cashback.reduce((s, b) => s + b.amount, 0)),
+        used: notice.used,
+        cap: notice.cap,
+      },
+    });
+  } catch {
+    // audit is best-effort
+  }
+  return opts.benefits.filter((b) => b.benefit_type !== 'CASHBACK');
+}
+
+/**
  * Commit after payment. Idempotent per promotion_id + transaction_id.
  * Credits cashback only here — never on evaluate.
  */
@@ -93,7 +132,12 @@ export async function commitPromotion(req: CommitRequest): Promise<{
 
   const userId = req.user_id || String(evalRow.user_id);
   const result = parseJson(evalRow.result_json);
-  const benefits = (Array.isArray(result.benefits) ? result.benefits : []) as AppliedBenefit[];
+  const benefits = await withholdCashbackOverBenefitCap({
+    benefits: (Array.isArray(result.benefits) ? result.benefits : []) as AppliedBenefit[],
+    userId,
+    transactionId: req.transaction_id,
+    evaluationId: req.evaluation_id,
+  });
   const customerCopy = parseCustomerCopy({ customerCopy: result.customer_copy });
 
   if (!benefits.length) {

@@ -23,6 +23,7 @@ describe('loadOwnedWpayEvaluation', () => {
       evaluationId: '11111111-1111-4111-8111-111111111111',
       engineDiscount: 150,
       pendingCashback: 30,
+      benefitCap: null,
     });
   });
 

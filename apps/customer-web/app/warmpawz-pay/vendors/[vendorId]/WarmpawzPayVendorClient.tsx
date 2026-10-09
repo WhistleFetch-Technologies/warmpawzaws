@@ -28,6 +28,7 @@ import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryP
 import { StarRating } from '@/components/customer/shared/StarRating';
 import {
   PromoEarnPreview,
+  readBenefitCapNotice,
   readPromoCustomerCopy,
   type PromoEngineEarnPreviewData,
 } from '@/components/customer/promo-engine/PromoEarnPreview';
@@ -157,6 +158,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   }, [amountInput]);
 
   const engineDiscount = Math.max(0, Number(promoEnginePreview?.engineDiscount) || 0);
+  const platformFeeWaived = promoEnginePreview?.benefitCap?.platformFeeWaived === true;
   const quote = useMemo(() => {
     if (!vendor || billAmount <= 0) return null;
     const credit = linkedBookingId && appointmentFeeCredit > 0 ? appointmentFeeCredit : 0;
@@ -166,7 +168,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         engineDiscount,
         appointmentFeeCredit: credit,
         maxDiscountAmount: vendor.maxDiscountAmount,
-        platformFee: vendor.platformFee ?? 0,
+        platformFee: platformFeeWaived ? 0 : vendor.platformFee ?? 0,
         platformFeeMode: vendor.platformFeeMode ?? 'fixed',
         platformFeeGstRate: vendor.platformFeeGstRate ?? 18,
         convenienceFee: 0,
@@ -180,7 +182,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
       appointmentFeeCredit: credit,
       maxDiscountAmount: vendor.maxDiscountAmount,
     });
-  }, [billAmount, vendor, engineDiscount, linkedBookingId, appointmentFeeCredit]);
+  }, [billAmount, vendor, engineDiscount, platformFeeWaived, linkedBookingId, appointmentFeeCredit]);
 
   const isTierQuote = quote != null && 'commercialModel' in quote && quote.commercialModel === 'tier_commission';
   const displayPayable = quote != null ? quote.payableAmount : 0;
@@ -220,9 +222,11 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
             eligible?: boolean;
             summary?: { cashback?: number; discount?: number };
             customer_copy?: unknown;
+            benefit_cap?: unknown;
             data?: {
               evaluation_id?: string;
               customer_copy?: unknown;
+              benefit_cap?: unknown;
               eligible?: boolean;
               summary?: { cashback?: number; discount?: number };
               benefits?: Array<{
@@ -269,6 +273,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
             redeemLabel,
             expiryDays: cb?.expiry_days ?? null,
             customerCopy: readPromoCustomerCopy(payload?.customer_copy ?? ev?.customer_copy),
+            benefitCap: readBenefitCapNotice(payload?.benefit_cap ?? ev?.benefit_cap),
           });
           setPreviewStatus('ready');
         } catch {
