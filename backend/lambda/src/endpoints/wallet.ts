@@ -296,8 +296,9 @@ class GetWalletByPhoneHandler extends BaseHandler {
     const serviceCategory = qs.serviceCategory || qs.service_category || null;
     let spendable = parseFloat(wallet.balance);
     let lockedPromoCashback = 0;
+    let benefitCap: unknown = null;
     try {
-      const { computeSpendableWalletBalance, parseWalletRedeemQuery } = await import(
+      const { computeCheckoutSpendableWallet, parseWalletRedeemQuery } = await import(
         '../discount-engine/promo-engine'
       );
       const payment = parseWalletRedeemQuery({
@@ -307,9 +308,10 @@ class GetWalletByPhoneHandler extends BaseHandler {
         categoryId: qs.categoryId || qs.category_id,
         ecommerceCategoryId: qs.ecommerceCategoryId || qs.ecommerce_category_id,
       });
-      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, payment);
+      const scoped = await computeCheckoutSpendableWallet(customerId, serviceCategory, payment);
       spendable = scoped.spendable;
       lockedPromoCashback = scoped.lockedPromoCashback;
+      benefitCap = scoped.benefitCap;
     } catch {
       // columns may not exist yet — fall back to full balance
     }
@@ -320,6 +322,7 @@ class GetWalletByPhoneHandler extends BaseHandler {
         balance: parseFloat(wallet.balance),
         spendableBalance: spendable,
         lockedPromoCashback,
+        ...(benefitCap ? { benefitCap } : {}),
         currency: wallet.currency || 'INR',
         lastUpdated: wallet.updated_at,
         recentTransactions: transactions,

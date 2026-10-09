@@ -33,6 +33,8 @@ export async function resolveWpayPayQuote(params: {
   engineDiscount?: number | null;
   /** At-home WAPPT fee credited after Q−D. */
   appointmentFeeCredit?: number;
+  /** Global benefit cap reached: platform fee (and its GST) is not charged. */
+  waivePlatformFee?: boolean;
 }): Promise<WpayResolvedPayQuote> {
   const config = resolveWpayVendorCommercialConfig(params.vendorRow);
   const engineDiscount = Math.max(0, Number(params.engineDiscount) || 0);
@@ -45,7 +47,7 @@ export async function resolveWpayPayQuote(params: {
       commissionPercent: config.commissionPercent,
       engineDiscount,
       appointmentFeeCredit,
-      platformFee: settings.platformFee,
+      platformFee: params.waivePlatformFee ? 0 : settings.platformFee,
       platformFeeMode: settings.platformFeeMode,
       platformFeeGstRate: settings.platformFeeGstRate,
       // Convenience fee is retired on Pay Bill — only platform fee + GST is charged.
@@ -56,14 +58,17 @@ export async function resolveWpayPayQuote(params: {
       burnMode: settings.burnMode,
     });
 
+    const snapshot = buildWpayCommercialSnapshot(quote, {
+      tierId: config.tierId,
+      tierName: config.tierName,
+    });
     return {
       commercialModel: 'tier_commission',
       quote,
       payableAmount: quote.payNowAmount,
-      metadata: buildWpayCommercialSnapshot(quote, {
-        tierId: config.tierId,
-        tierName: config.tierName,
-      }),
+      metadata: params.waivePlatformFee
+        ? { ...snapshot, platformFeeWaivedByBenefitCap: true }
+        : snapshot,
     };
   }
 

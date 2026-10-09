@@ -23,6 +23,7 @@ import { resolveWpayPromoCategory } from '../shared/resolve-wpay-promo-category'
 import { loadOwnedWpayEvaluation } from '../shared/load-wpay-stored-evaluation';
 import { normalizePromoCategory } from '../../../../discount-engine/promo-engine/dsl/category-aliases';
 import { capWpayWalletAmount } from '../shared/wpay-wallet';
+import type { BenefitCapNotice } from '../../../../discount-engine/promo-engine/benefit-cap/gate';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -130,6 +131,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
 
     let promoEngine: Record<string, unknown> | null = null;
     let engineDiscount = 0;
+    let benefitCap: BenefitCapNotice | null = null;
     try {
       const stored = await loadOwnedWpayEvaluation(requestedEvaluationId, customerId, {
         amount: originalAmount,
@@ -137,6 +139,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       });
       if (stored) {
         engineDiscount = stored.engineDiscount;
+        benefitCap = stored.benefitCap;
         promoEngine = {
           evaluationId: stored.evaluationId,
           pendingCashback: stored.pendingCashback,
@@ -165,6 +168,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
             amount: originalAmount,
           },
         });
+        benefitCap = ev?.benefit_cap ?? null;
         if (ev?.evaluation_id) {
           engineDiscount = Math.max(0, Number(ev.summary.discount) || 0);
           const cashbackBenefit = (ev.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
@@ -194,6 +198,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       quotedAmount: originalAmount,
       engineDiscount,
       appointmentFeeCredit,
+      waivePlatformFee: benefitCap?.platformFeeWaived === true,
     });
     const payableAmount = resolved.payableAmount;
     const discountAmount =
@@ -205,15 +210,16 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     let razorpayCharge = payableAmount;
     let walletOnly = false;
     if (Number.isFinite(requestedWallet) && requestedWallet > 0.009) {
-      const { computeSpendableWalletBalance } = await import(
+      const { computeCheckoutSpendableWallet } = await import(
         '../../../../discount-engine/promo-engine'
       );
-      const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, {
+      const scoped = await computeCheckoutSpendableWallet(customerId, serviceCategory, {
         serviceCategory,
         vendorId,
         categoryId: payCtx.categoryId,
         channel: 'paybill',
       });
+      if (scoped.benefitCap && !benefitCap) benefitCap = scoped.benefitCap;
       const capped = capWpayWalletAmount({
         payable: payableAmount,
         requested: requestedWallet,
@@ -248,7 +254,19 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       ...(promoEngine?.evaluationId
         ? { evaluationId: String(promoEngine.evaluationId), promoEngine }
         : {}),
+      ...(benefitCap
+        ? {
+            benefitCap: {
+              code: benefitCap.code,
+              cap: benefitCap.cap,
+              used: benefitCap.used,
+              blocked: benefitCap.blocked,
+              platformFeeWaived: benefitCap.platformFeeWaived,
+            },
+          }
+        : {}),
     };
+    const capResponse = benefitCap ? { benefitCap } : {};
 
     if (walletOnly) {
       const walletPay = await createWpayWalletOnlyPayment({
@@ -325,6 +343,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         razorpayAmount: 0,
         bookingId: appointmentFeeBookingId ?? bookingId,
         promoEngine,
+        ...capResponse,
       });
     }
 
@@ -364,6 +383,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         razorpayAmount: order.amount,
         bookingId: appointmentFeeBookingId ?? bookingId,
         promoEngine,
+        ...capResponse,
       });
     }
 
@@ -386,6 +406,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       razorpayAmount: order.amount,
       bookingId: appointmentFeeBookingId ?? bookingId,
       promoEngine,
+      ...capResponse,
     });
   } catch (error: unknown) {
     if (error instanceof WpayCommercialValidationError) {

@@ -4,6 +4,7 @@
  */
 
 import type { PromoCustomerCopy } from './customer-copy';
+import type { BenefitCapNotice } from './benefit-cap/gate';
 
 export type PromoEngineStatus =
   | 'DRAFT'
@@ -165,6 +166,8 @@ export interface EvaluateRequest {
   behaviour_override?: Partial<CustomerBehaviourProfile>;
   /** Persist evaluation row for commit. Default true. Display quotes should pass false. */
   persist?: boolean;
+  /** Admin simulator only — the HTTP route strips it for everyone else. */
+  skip_benefit_cap?: boolean;
 }
 
 export interface ConditionExplainFailure {
@@ -218,6 +221,8 @@ export interface EvaluateResult {
     matched_promotions: string[];
     rejected_promotions: Array<{ promotion_id: string; reason: string }>;
   };
+  /** Present only when the customer is at the global benefit cap for the current window. */
+  benefit_cap?: BenefitCapNotice | null;
 }
 
 export interface CommitRequest {

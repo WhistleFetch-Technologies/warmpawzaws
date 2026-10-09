@@ -1830,6 +1830,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         const financialMetaRaw = body.financialMeta ?? body.financial_meta;
+        if (financialMetaRaw && typeof financialMetaRaw === 'object' && bookingData.customer_id) {
+          const fmCap = financialMetaRaw as Record<string, unknown>;
+          const requestedWallet = parseFloat(String(fmCap.walletAmount ?? fmCap.wallet_amount ?? 0)) || 0;
+          if (requestedWallet > 0.009) {
+            const { resolveWalletBenefitCap } = await import('../../../discount-engine/promo-engine');
+            const capNotice = await resolveWalletBenefitCap({ userId: String(bookingData.customer_id) });
+            if (capNotice) {
+              return this.error(capNotice.message, 409, capNotice.code, undefined, requestId);
+            }
+          }
+        }
         if (wapptAppointmentFee != null) {
           const locked = applyWapptCatalogueFeeAmounts(wapptAppointmentFee);
           bookingData.base_price = locked.basePrice;

@@ -56,7 +56,8 @@ Scenario: `name`, `visit` (the visit being paid for, 1 = first), `amount`, `chan
 - Range match: `min ≤ bill ≤ max`; a bill exactly on a shared boundary goes to the **lower** range (500 → "0–500", 500.01 → "500–2000"). Bill outside all ranges → `AMOUNT_OUT_OF_RANGE`.
 - PERCENT values are capped by `max`; a FIXED discount never exceeds the bill.
 - Several QA promos eligible for the same vendor → higher `priority` wins.
-- Rejection reasons: `VISIT_FAIL`, `LIMIT_FAIL` (promo limits), `AMOUNT_OUT_OF_RANGE`, `RANGE_PER_USER_LIMIT`, `RANGE_DAILY_LIMIT`, `RANGE_CAMPAIGN_LIMIT`, `RANGE_BUDGET_EXHAUSTED`.
+- Rejection reasons: `VISIT_FAIL`, `LIMIT_FAIL` (promo limits), `AMOUNT_OUT_OF_RANGE`, `RANGE_PER_USER_LIMIT`, `RANGE_DAILY_LIMIT`, `RANGE_CAMPAIGN_LIMIT`, `RANGE_BUDGET_EXHAUSTED`, `BENEFIT_CAP_REACHED`.
+- Global benefit payment cap (Admin → Promotion Engine → "Benefit payment cap"; `promo_engine_settings.benefit_cap`): when on, a customer with `max_benefit_payments` discount/cashback/wallet payments in the window gets the blocked benefits stripped, `benefit_cap` on the evaluate result and `BENEFIT_CAP_REACHED` in `rejected_promotions`. Committed scenarios count toward it, so before a QA run either check the cap is off on dev (`GET /admin/promo-engine/settings/benefit-cap`) or expect it from the (cap + 1)th committed payment of the same customer in the window. Do not change the dev setting without telling the user.
 
 ## When a tester asks for a plan
 

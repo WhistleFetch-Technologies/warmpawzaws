@@ -417,6 +417,14 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
 
       const lockedGross = lockedGrossEarly ?? resolveLockedBookingGrossFromNotes(booking.notes);
       const walletIntent = useWallet ? Math.max(0, Number(walletAmount) || 0) : 0;
+      // Wallet locked in at booking create was already checked there; only new wallet use is gated.
+      if (walletIntent > 0.009 && effectiveCustomerId && (lockedGross?.walletAmount ?? 0) <= 0.009) {
+        const { resolveWalletBenefitCap } = await import('../discount-engine/promo-engine');
+        const capNotice = await resolveWalletBenefitCap({ userId: String(effectiveCustomerId) });
+        if (capNotice) {
+          return this.error(capNotice.message, 409, capNotice.code, undefined, requestId);
+        }
+      }
       // Client sends amount=0 when wallet covers all cash; amount>0 is the Razorpay remainder after wallet.
       const walletOnlyPayment = amount <= 0.009 && walletIntent > 0;
       // Prefer locked all-in snapshot whenever present (wallet or not) so GST/fees match create-time.
