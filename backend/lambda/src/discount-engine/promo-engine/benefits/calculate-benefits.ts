@@ -22,6 +22,16 @@ function redeemScope(b: PromoEngineBenefit): ServiceCategory[] | undefined {
   return undefined;
 }
 
+/** A configured 0 is a real offer of nothing. A missing value is not. */
+function configuredValue(raw: unknown): number | null {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    const v = Number(raw);
+    return Number.isFinite(v) ? v : null;
+  }
+  return null;
+}
+
 export function calculateBenefits(opts: {
   promotionId: string;
   ruleId: string;
@@ -39,7 +49,8 @@ export function calculateBenefits(opts: {
     if (!b?.type) return;
     if (mode === 'cashback' && b.type === 'DISCOUNT') return;
     if (mode === 'discount' && b.type === 'CASHBACK') return;
-    const v = Number(b.value) || 0;
+    const v = configuredValue(b.value);
+    if (v == null) return;
     if (b.type === 'DISCOUNT') {
       let discount = valueType(b) === 'PERCENT' ? (amount * v) / 100 : v;
       const cap = maxCap(b);
@@ -53,7 +64,7 @@ export function calculateBenefits(opts: {
         discount = Math.min(discount, Number(opts.maxDiscount));
       }
       discount = Math.min(Math.max(0, discount), amount);
-      if (discount > 0) {
+      if (discount > 0 || v === 0) {
         out.push({
           promotion_id: opts.promotionId,
           rule_id: opts.ruleId,
@@ -69,7 +80,7 @@ export function calculateBenefits(opts: {
       const cap = maxCap(b);
       if (cap != null) cb = Math.min(cb, cap);
       cb = Math.max(0, cb);
-      if (cb > 0) {
+      if (cb > 0 || v === 0) {
         out.push({
           promotion_id: opts.promotionId,
           rule_id: opts.ruleId,

@@ -79,6 +79,52 @@ describe('scoreVcfCandidates', () => {
     [platform.id, [rule(platform.id, 200)]],
   ]);
 
+  it('lets an explicit zero vendor promo beat a paying platform promo', () => {
+    const zeroVendor = promo({
+      ...vendor,
+      id: 'vendor-zero',
+      metadata: {
+        vcf: {
+          visitSource: { letter: 'V', vendorId: 'v1', width: 'general' },
+          visitLoop: { kind: 'every' },
+          benefitMode: 'both',
+          publish: { letter: 'V', vendorId: 'v1' },
+        },
+      },
+    });
+    const result = scoreVcfCandidates({
+      candidates: [zeroVendor, platform],
+      rulesByPromo: new Map([
+        [
+          zeroVendor.id,
+          [
+            {
+              ...rule(zeroVendor.id, 0),
+              benefit_json: [
+                { type: 'DISCOUNT', mode: 'PERCENT', value: 0 },
+                { type: 'CASHBACK', mode: 'PERCENT', value: 0 },
+              ],
+            },
+          ],
+        ],
+        [platform.id, [rule(platform.id, 200)]],
+      ]),
+      limitsByPromo: new Map(),
+      usageByPromo: new Map(),
+      behaviour: { user_id: 'u1', overall: {}, services: { vcf: visitProfile } as never },
+      req: {
+        user_id: 'u1',
+        transaction: { amount: 500, vendorId: 'v1', categoryId: 'c1', channel: 'paybill' },
+      },
+    });
+    expect(result.winnerId).toBe('vendor-zero');
+    expect(result.winnerBenefits.every((b) => b.amount === 0)).toBe(true);
+    expect(result.rejected).toContainEqual({
+      promotion_id: 'platform-promo',
+      reason: 'LOST_TO_MORE_SPECIFIC',
+    });
+  });
+
   it('lets a qualifying vendor beat a platform promo and lists LOST_TO_MORE_SPECIFIC', () => {
     const result = scoreVcfCandidates({
       candidates: [vendor, platform],

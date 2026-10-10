@@ -85,6 +85,83 @@ describe('evaluateAgainstSnapshot VCF vs legacy', () => {
     expect(body.explain.rejected_promotions.some((r) => r.reason === 'VISIT_FAIL')).toBe(true);
   });
 
+  it('hides an explicit zero vendor promo and does not pay a platform discount', () => {
+    const zeroVendor = promo({
+      id: 'vendor-zero',
+      metadata: {
+        vcf: {
+          visitSource: { letter: 'V', vendorId: 'v1', width: 'general' },
+          visitLoop: { kind: 'every' },
+          benefitMode: 'both',
+          publish: { letter: 'V', vendorId: 'v1' },
+        },
+        customerCopy: { savingsLine: 'You save ₹{discount}' },
+      },
+    });
+    const platform = promo({
+      id: 'platform-promo',
+      priority: 99,
+      metadata: {
+        vcf: {
+          visitSource: { letter: 'F', width: 'general' },
+          visitLoop: { kind: 'every' },
+          benefitMode: 'discount',
+          publish: { letter: 'F' },
+        },
+      },
+    });
+    const body = evaluateAgainstSnapshot(
+      {
+        candidates: [zeroVendor, platform],
+        rulesByPromo: new Map([
+          [
+            zeroVendor.id,
+            [
+              {
+                ...legacyRule,
+                id: 'r-zero',
+                promotion_id: zeroVendor.id,
+                benefit_json: [
+                  { type: 'DISCOUNT', mode: 'PERCENT', value: 0 },
+                  { type: 'CASHBACK', mode: 'PERCENT', value: 0 },
+                ],
+              },
+            ],
+          ],
+          [
+            platform.id,
+            [
+              {
+                ...legacyRule,
+                id: 'r-platform',
+                promotion_id: platform.id,
+                benefit_json: [{ type: 'DISCOUNT', mode: 'PERCENT', value: 15 }],
+              },
+            ],
+          ],
+        ]),
+        limitsByPromo: new Map(),
+        usageByPromo: new Map(),
+        behaviour: { user_id: 'u1', overall: {}, services: {} },
+      },
+      {
+        user_id: 'u1',
+        transaction: { amount: 1000, vendorId: 'v1', channel: 'paybill' },
+      },
+    );
+    expect(body.winner_promotion_id).toBe('vendor-zero');
+    expect(body.eligible).toBe(false);
+    expect(body.benefits).toEqual([]);
+    expect(body.customer_copy).toBeNull();
+    expect(body.summary.discount).toBe(0);
+    expect(body.summary.cashback).toBe(0);
+    expect(body.summary.payable).toBe(1000);
+    expect(body.explain.rejected_promotions).toContainEqual({
+      promotion_id: 'platform-promo',
+      reason: 'LOST_TO_MORE_SPECIFIC',
+    });
+  });
+
   it('still scores legacy rows when no VCF config is present', () => {
     const body = evaluateAgainstSnapshot(
       {
