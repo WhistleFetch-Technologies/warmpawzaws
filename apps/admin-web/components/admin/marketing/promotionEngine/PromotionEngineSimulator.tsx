@@ -2,7 +2,17 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@warmpawz/ui';
+import {
+  Button,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch,
+} from '@warmpawz/ui';
 import { evaluatePromoEngine } from '@/lib/promo-engine/api-client';
 import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
 import { rangeBoundsLabel } from '@/lib/promo-engine/ranges';
@@ -19,6 +29,7 @@ export function PromotionEngineSimulator() {
   const [daysSince, setDaysSince] = useState(45);
   const [vetVisits, setVetVisits] = useState(0);
   const [totalSpend, setTotalSpend] = useState(8000);
+  const [ignoreCap, setIgnoreCap] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Awaited<ReturnType<typeof evaluatePromoEngine>> | null>(
     null
@@ -52,6 +63,7 @@ export function PromotionEngineSimulator() {
             vet: { completed_count: vetVisits, total_spend: 0 },
           },
         },
+        skip_benefit_cap: ignoreCap,
       });
       setResult(res);
       toast.success(res.eligible ? 'ELIGIBLE' : 'Not eligible');
@@ -84,9 +96,13 @@ export function PromotionEngineSimulator() {
             <Input
               className="min-h-11"
               value={userId}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserId(e.target.value)}
-            />
-          </div>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserId(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch id="sim-ignore-cap" checked={ignoreCap} onCheckedChange={(on: boolean) => setIgnoreCap(on)} />
+              <Label htmlFor="sim-ignore-cap">Ignore benefit payment cap</Label>
+            </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label>Grooming visits</Label>
@@ -183,6 +199,11 @@ export function PromotionEngineSimulator() {
                 ) : null}
                 <li className="text-xs text-slate-500">evaluation_id: {result.evaluation_id}</li>
               </ul>
+              {result.benefit_cap ? (
+                <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                  Cap reached ({result.benefit_cap.used}/{result.benefit_cap.cap}): {result.benefit_cap.message}
+                </p>
+              ) : null}
               {!result.eligible && result.explain?.rejected_promotions?.length ? (
                 <ul className="mt-3 space-y-0.5 text-xs text-slate-500">
                   {result.explain.rejected_promotions.map((r) => (

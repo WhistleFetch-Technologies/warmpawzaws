@@ -1,7 +1,7 @@
 /**
  * Promotion Engine HTTP API (HLD §39 / master plan §5.2)
  */
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import {
   createPromotionFromDraft,
   updatePromotionFromDraft,
@@ -14,6 +14,8 @@ import {
   commitPromotion,
   reversePromotion,
   recordBehaviourCompletion,
+  getBenefitCapSettings,
+  saveBenefitCapSettings,
 } from '../discount-engine/promo-engine';
 import {
   dbUsageByPromotion,
@@ -25,6 +27,11 @@ import type { PromoEngineStatus } from '../discount-engine/promo-engine/types';
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : 'Unexpected error';
+}
+
+/** Auth middleware context values (userId / userRole / isAdmin). */
+function authVar(c: Context, key: string): unknown {
+  return c.get(key);
 }
 
 export function registerPromoEngineEndpoints(app: Hono) {
@@ -140,6 +147,33 @@ export function registerPromoEngineEndpoints(app: Hono) {
     }
   });
 
+  // ── Global settings: per-customer benefit cap ───────────────
+  app.get('/admin/promo-engine/settings/benefit-cap', async (c) => {
+    try {
+      const settings = await getBenefitCapSettings();
+      return c.json({ success: true, ...settings });
+    } catch (err) {
+      return c.json({ success: false, error: errMsg(err) }, 500);
+    }
+  });
+
+  app.put('/admin/promo-engine/settings/benefit-cap', async (c) => {
+    try {
+      const body = (await c.req.json().catch(() => null)) as { benefitCap?: unknown } | null;
+      const userId = authVar(c, 'userId');
+      const result = await saveBenefitCapSettings(
+        body?.benefitCap ?? body,
+        userId != null ? String(userId) : null,
+      );
+      if (!result.ok) {
+        return c.json({ success: false, error: result.errors.join('; '), errors: result.errors }, 400);
+      }
+      return c.json({ success: true, benefitCap: result.benefitCap });
+    } catch (err) {
+      return c.json({ success: false, error: errMsg(err) }, 500);
+    }
+  });
+
   // ── Runtime ─────────────────────────────────────────────────
   app.post('/promo-engine/evaluate', async (c) => {
     try {
@@ -147,6 +181,10 @@ export function registerPromoEngineEndpoints(app: Hono) {
       if (!body?.user_id || !body?.transaction) {
         return c.json({ success: false, error: 'user_id and transaction required' }, 400);
       }
+      const isAdmin =
+        authVar(c, 'isAdmin') === true ||
+        String(authVar(c, 'userRole') || '').toLowerCase() === 'admin';
+      body.skip_benefit_cap = isAdmin && body.skip_benefit_cap === true;
       const result = await evaluatePromotions(body);
       return c.json({ success: true, ...result });
     } catch (err) {

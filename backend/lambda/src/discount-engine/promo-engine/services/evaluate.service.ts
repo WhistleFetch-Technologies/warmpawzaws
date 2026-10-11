@@ -3,6 +3,8 @@ import { dbInsertEvaluation, dbInsertAudit, dbGetBehaviour } from '../repos/prom
 import type { CustomerBehaviourProfile, EvaluateRequest, EvaluateResult } from '../types';
 import { evaluateAgainstSnapshot, loadEvaluateSnapshot } from './evaluate-snapshot';
 import { hydrateEvaluateRequest } from './payment-context-load.service';
+import { resolveBenefitCapNotice } from './benefit-cap.service';
+import { applyBenefitCapToResult } from '../benefit-cap/gate';
 
 function parseJsonField(v: unknown): Record<string, unknown> {
   if (v == null) return {};
@@ -54,15 +56,25 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
       ? normalizePromoCategory(tx.service_category) || undefined
       : undefined;
   const behaviour = await loadBehaviourProfile(hydrated.user_id, hydrated.behaviour_override);
-  const snapshot = await loadEvaluateSnapshot({
-    userId: hydrated.user_id,
-    now,
-    serviceCategory,
-    vendorId,
-    categoryId,
-    behaviour,
-  });
-  const body = evaluateAgainstSnapshot(snapshot, hydrated, now);
+  const [snapshot, capNotice] = await Promise.all([
+    loadEvaluateSnapshot({
+      userId: hydrated.user_id,
+      now,
+      serviceCategory,
+      vendorId,
+      categoryId,
+      behaviour,
+    }),
+    hydrated.skip_benefit_cap
+      ? Promise.resolve(null)
+      : resolveBenefitCapNotice({
+          userId: hydrated.user_id,
+          channel: tx.channel ? String(tx.channel) : null,
+          now,
+        }),
+  ]);
+  const evaluated = evaluateAgainstSnapshot(snapshot, hydrated, now);
+  const body = capNotice ? applyBenefitCapToResult(evaluated, capNotice) : evaluated;
 
   let evaluation_id = '';
   if (hydrated.persist !== false) {
@@ -78,6 +90,7 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
         winner_rule_id: body.winner_rule_id ?? null,
         range: body.range ?? null,
         customer_copy: body.customer_copy ?? null,
+        benefit_cap: body.benefit_cap ?? null,
       },
       explain_json: body.explain,
       expires_at: expires.toISOString(),
@@ -90,6 +103,7 @@ export async function evaluatePromotions(req: EvaluateRequest): Promise<Evaluate
         matched: body.explain.matched_promotions,
         rule_id: body.winner_rule_id ?? null,
         benefit_count: body.benefits.length,
+        ...(body.benefit_cap ? { benefit_cap: body.benefit_cap.code, cap_used: body.benefit_cap.used } : {}),
       },
     });
   }

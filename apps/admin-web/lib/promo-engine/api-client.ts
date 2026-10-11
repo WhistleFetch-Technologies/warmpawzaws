@@ -77,6 +77,7 @@ export async function evaluatePromoEngine(body: {
   user_id: string;
   transaction: Record<string, unknown>;
   behaviour_override?: Record<string, unknown>;
+  skip_benefit_cap?: boolean;
 }): Promise<{
   eligible: boolean;
   evaluation_id: string;
@@ -89,6 +90,7 @@ export async function evaluatePromoEngine(body: {
     matched_promotions?: string[];
     rejected_promotions?: Array<{ promotion_id: string; reason: string }>;
   };
+  benefit_cap?: { cap: number; used: number; resumeAt: string | null; message: string } | null;
 }> {
   return apiClient.post('/promo-engine/evaluate', body);
 }

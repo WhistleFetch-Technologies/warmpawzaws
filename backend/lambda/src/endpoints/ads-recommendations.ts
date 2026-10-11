@@ -574,6 +574,7 @@ app.post('/promotions/calculate-cart', async (c) => {
           eligible: engineResult.eligible,
           redeemScope: cashbackBenefit?.redeem_scope || [],
           expiryDays: cashbackBenefit?.expiry_days ?? null,
+          ...(engineResult.benefit_cap ? { benefitCap: engineResult.benefit_cap } : {}),
         };
       } catch (engineErr) {
         console.warn(

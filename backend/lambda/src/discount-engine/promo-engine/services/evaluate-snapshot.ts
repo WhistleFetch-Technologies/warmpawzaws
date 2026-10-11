@@ -193,15 +193,17 @@ export function evaluateAgainstSnapshot(
   });
 
   if (vcfScore.hadVcfCandidates) {
-    const discount = vcfScore.winnerBenefits
+    const payableBenefits = vcfScore.winnerBenefits.filter((b) => b.amount > 0);
+    const discount = payableBenefits
       .filter((b) => b.benefit_type === 'DISCOUNT')
       .reduce((s, b) => s + b.amount, 0);
-    const cashback = vcfScore.winnerBenefits
+    const cashback = payableBenefits
       .filter((b) => b.benefit_type === 'CASHBACK')
       .reduce((s, b) => s + b.amount, 0);
     const rule = vcfScore.winnerRule;
+    const showsOffer = discount > 0 || cashback > 0;
     return {
-      eligible: Boolean(vcfScore.winnerId) && vcfScore.winnerBenefits.length > 0,
+      eligible: showsOffer,
       winner_promotion_id: vcfScore.winnerId,
       winner_rule_id: rule?.id ?? null,
       range: rule
@@ -212,8 +214,8 @@ export function evaluateAgainstSnapshot(
             max: rule.max_amount ?? null,
           }
         : null,
-      customer_copy: customerCopyFor(snapshot, vcfScore.winnerId, rule),
-      benefits: vcfScore.winnerBenefits,
+      customer_copy: showsOffer ? customerCopyFor(snapshot, vcfScore.winnerId, rule) : null,
+      benefits: payableBenefits,
       summary: {
         gross_amount: amount,
         discount: Math.round(discount * 100) / 100,

@@ -95,8 +95,9 @@ export async function executecustomerWalletGet(c: Context) {
       const serviceCategory = c.req.query('serviceCategory') || c.req.query('service_category') || null;
       let spendable = parseFloat(wallet.balance || '0') || 0;
       let lockedPromoCashback = 0;
+      let benefitCap: unknown = null;
       try {
-        const { computeSpendableWalletBalance, parseWalletRedeemQuery } = await import(
+        const { computeCheckoutSpendableWallet, parseWalletRedeemQuery } = await import(
           '../../../../discount-engine/promo-engine'
         );
         const payment = parseWalletRedeemQuery({
@@ -107,9 +108,10 @@ export async function executecustomerWalletGet(c: Context) {
           ecommerceCategoryId:
             c.req.query('ecommerceCategoryId') || c.req.query('ecommerce_category_id'),
         });
-        const scoped = await computeSpendableWalletBalance(customerId, serviceCategory, payment);
+        const scoped = await computeCheckoutSpendableWallet(customerId, serviceCategory, payment);
         spendable = scoped.spendable;
         lockedPromoCashback = scoped.lockedPromoCashback;
+        benefitCap = scoped.benefitCap;
       } catch {
         // columns may not exist yet
       }
@@ -124,6 +126,7 @@ export async function executecustomerWalletGet(c: Context) {
           pending_credits: parseFloat(wallet.pending_credits || '0') || 0,
           total_earned: totalEarned,
           total_spent: totalSpent,
+          ...(benefitCap ? { benefitCap } : {}),
         },
       });
     } catch (error: any) {

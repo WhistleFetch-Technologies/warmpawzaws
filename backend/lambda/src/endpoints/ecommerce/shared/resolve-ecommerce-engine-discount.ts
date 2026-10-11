@@ -1,4 +1,5 @@
 import { loadOwnedEvaluationDiscount } from '../../../discount-engine/promo-engine/services/owned-evaluation';
+import type { BenefitCapNotice } from '../../../discount-engine/promo-engine/benefit-cap/gate';
 
 export async function resolveEcommerceEngineDiscount(opts: {
   customerId?: string | null;
@@ -10,6 +11,7 @@ export async function resolveEcommerceEngineDiscount(opts: {
   evaluationId: string | null;
   discount: number;
   cashback: number;
+  benefitCap?: BenefitCapNotice | null;
 }> {
   const customerId = String(opts.customerId || '').trim();
   if (!customerId || !(opts.amount > 0)) {
@@ -22,6 +24,7 @@ export async function resolveEcommerceEngineDiscount(opts: {
       evaluationId: stored.evaluationId,
       discount: stored.discount,
       cashback: stored.cashback,
+      benefitCap: stored.benefitCap,
     };
   }
 
@@ -46,5 +49,6 @@ export async function resolveEcommerceEngineDiscount(opts: {
     evaluationId: String(ev.evaluation_id),
     discount: Math.max(0, Number(ev.summary.discount) || 0),
     cashback: Math.max(0, Number(ev.summary.cashback) || 0),
+    benefitCap: ev.benefit_cap ?? null,
   };
 }

@@ -84,7 +84,8 @@ function bestRangeQuote(
     const cashback = applied
       .filter((b) => b.benefit_type === 'CASHBACK')
       .reduce((s, b) => s + b.amount, 0);
-    if (discount <= 0 && cashback <= 0) continue;
+    // An explicit 0 still ranks, so it can hide another offer. It is not shown as a percent.
+    if (applied.length === 0) continue;
     const stated = benefitDiscountPercent(rule.benefit_json || []);
     const displayPct =
       stated != null && stated > 0 ? stated : percentFromDiscountAmount(discount, bill);
