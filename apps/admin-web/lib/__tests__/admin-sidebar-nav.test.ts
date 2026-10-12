@@ -12,6 +12,12 @@ describe('admin sidebar Warmpawz Pay and Appointments landing', () => {
     );
   });
 
+  it('maps Warmpawz Insurance sidebar view to its dashboard', () => {
+    expect(hrefForAdminSidebarView('warmpawz-insurance')).toBe('/warmpawz-insurance');
+    const insurance = getAdminPortalNavItems().find((item) => item.id === 'warmpawz-insurance');
+    expect(insurance?.permissionsAny).toContain('admin.warmpawz_insurance.view');
+  });
+
   it('does not store a catalogue routeHint for either sidebar item', () => {
     const pay = getAdminPortalNavItems().find((item) => item.id === 'warmpawz-pay-catalogue');
     const appointments = getAdminPortalNavItems().find(

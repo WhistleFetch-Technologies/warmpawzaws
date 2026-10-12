@@ -26,6 +26,16 @@ export function canAccessRbacPage(): boolean {
   return hasAdminPortalPermission(['admin.roles', 'admin.full_access']);
 }
 
+/** Add / edit insurance companies, vendor links and commission terms. */
+export function canManageInsuranceCompanies(): boolean {
+  return hasAdminPortalPermission(['admin.warmpawz_insurance', 'admin.warmpawz_insurance.companies.write']);
+}
+
+/** Change payout schedules, send payout reminders and record receipts. */
+export function canManageInsurancePayouts(): boolean {
+  return hasAdminPortalPermission(['admin.warmpawz_insurance', 'admin.warmpawz_insurance.payouts.write']);
+}
+
 /** Mark Warmpawz Pay vendor payouts settled (offline transfer). */
 export function canSettleWarmpawzPayPayouts(): boolean {
   return hasAdminPortalPermission([

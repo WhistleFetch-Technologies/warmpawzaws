@@ -29,6 +29,7 @@ import {
   RefreshCw,
   Tag,
   Scale,
+  Shield,
   type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
@@ -68,6 +69,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   ecommerce: ShoppingCart,
   'warmpawz-pay-catalogue': CreditCard,
   'warmpawz-appointments-catalogue': Calendar,
+  'warmpawz-insurance': Shield,
   regions: Globe,
   loyalty: Gift,
   support: Headphones,
@@ -136,7 +138,11 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
       window.location.href = '/marketing/campaigns';
     };
   }
-  if (item.id === 'warmpawz-pay-catalogue' || item.id === 'warmpawz-appointments-catalogue') {
+  if (
+    item.id === 'warmpawz-pay-catalogue' ||
+    item.id === 'warmpawz-appointments-catalogue' ||
+    item.id === 'warmpawz-insurance'
+  ) {
     return () => {
       window.location.href = hrefForAdminSidebarView(item.id);
     };

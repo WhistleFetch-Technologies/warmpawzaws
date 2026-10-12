@@ -262,6 +262,17 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     routeHint: '/warmpawz-pay',
   },
   {
+    id: 'warmpawz-insurance',
+    label: 'Warmpawz Insurance',
+    permissionId: 'admin.warmpawz_insurance',
+    permissionsAny: ['admin.warmpawz_insurance', 'admin.warmpawz_insurance.view'],
+    pathPrefixes: ['/warmpawz-insurance'],
+    section: 'main',
+    sortOrder: 76,
+    description: 'Insurance companies, vendor links, customer outreach and premium payouts',
+    routeHint: '/warmpawz-insurance',
+  },
+  {
     id: 'shop-refunds',
     label: 'Shop Refunds',
     permissionId: 'admin.ecommerce',
