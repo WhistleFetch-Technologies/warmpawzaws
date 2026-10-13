@@ -115,7 +115,7 @@ export async function listApplicationsHandler(c: Context) {
 
 async function transitionCard(
   c: Context,
-  toStatus: 'quote_shared' | 'form_sent' | 'changes_requested' | 'form_confirmed',
+  toStatus: 'quote_shared' | 'form_sent' | 'changes_requested' | 'form_confirmed' | 'consulted' | 'dropped' | 'cancelled',
   card: unknown,
   message: string,
 ) {
@@ -194,18 +194,26 @@ export async function changeRequestHandler(c: Context) {
 
 export async function confirmFormHandler(c: Context) {
   try {
+    const body = z.object({ to: z.string().optional() }).parse(await c.req.json().catch(() => ({})));
     const applicationId = c.req.param('id');
+    const application = await dbGetVendorApplication(c.req.param('vendorId'), applicationId);
+    if (!application) throw new InsuranceAdminError(404, 'NOT_FOUND', 'Application not found');
+    const from = normalizeInsuranceStatus(application.status);
+    const to = body.to || 'form_confirmed';
+    if (to !== 'form_confirmed' && to !== 'consulted' && to !== 'dropped' && to !== 'cancelled') {
+      throw new InsuranceAdminError(422, 'INVALID_TRANSITION', 'This transition is not available here');
+    }
     return await transitionCard(
       c,
-      'form_confirmed',
+      to as 'consulted' | 'form_confirmed' | 'dropped' | 'cancelled',
       {
         card: 'status_update',
         applicationId,
         version: 1,
-        fromStatus: 'form_submitted',
-        toStatus: 'form_confirmed',
+        fromStatus: from,
+        toStatus: to,
       },
-      'Details confirmed',
+      to === 'consulted' ? 'Consultation complete' : 'Details confirmed',
     );
   } catch (error) {
     return insuranceAdminError(c, error);
