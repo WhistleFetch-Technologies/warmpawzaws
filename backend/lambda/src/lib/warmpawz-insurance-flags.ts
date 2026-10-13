@@ -23,9 +23,14 @@ export function isWarmpawzInsuranceAdminEnabled(
   return readFlag(env, 'WARMPAWZ_INSURANCE_ADMIN_ENABLED');
 }
 
-/** Published form templates are required for vendor readiness only after P4. */
+/**
+ * Published form templates are part of vendor readiness from P4.
+ * Unset means required. Set the env to false to turn the check off.
+ */
 export function isInsuranceFormTemplateRequired(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
+  const raw = env.WARMPAWZ_INSURANCE_REQUIRE_FORM_TEMPLATE;
+  if (raw === undefined || raw.trim() === '') return true;
   return readFlag(env, 'WARMPAWZ_INSURANCE_REQUIRE_FORM_TEMPLATE');
 }

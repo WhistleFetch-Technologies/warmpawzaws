@@ -19,6 +19,7 @@ import { useVisualViewport } from '@/hooks/useVisualViewport';
 import { X, Send, Loader2, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { InsuranceChatCard } from './insurance/InsuranceChatCard';
 import { toast } from 'sonner';
 
 interface ChatInterfaceFromNotificationProps {
@@ -34,6 +35,7 @@ interface Message {
   sender: 'customer' | 'vendor';
   message: string;
   timestamp: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export function ChatInterfaceFromNotification({
@@ -100,6 +102,7 @@ export function ChatInterfaceFromNotification({
           sender: m.sender_type === 'vendor' || m.sender_type === 'staff' ? 'vendor' : 'customer',
           message: m.message || m.content,
           timestamp: m.created_at || m.timestamp,
+          metadata: m.metadata || null,
         })));
         const hasUnread = response.messages.some(
           (m: any) => (m.sender_type === 'vendor' || m.sender_type === 'staff') && !m.is_read
@@ -213,7 +216,7 @@ export function ChatInterfaceFromNotification({
                       : 'bg-gray-100 text-gray-900'
                   }`}
                 >
-                  <div className="text-sm">{message.message}</div>
+                  {message.metadata ? <InsuranceChatCard metadata={message.metadata} /> : <div className="text-sm">{message.message}</div>}
                   <div
                     className={`text-xs mt-1 ${
                       message.sender === 'customer' ? 'text-white/70' : 'text-gray-500'

@@ -66,6 +66,7 @@ export type WarmpawzAppointmentsVendorProfileProps = {
   vendorName?: string;
   category: string;
   serviceStyle: string;
+  insurancePlanId?: string;
   profileBackScreen?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: Record<string, unknown>) => void;
@@ -80,6 +81,7 @@ export function WarmpawzAppointmentsVendorProfile({
   vendorName,
   category,
   serviceStyle,
+  insurancePlanId,
   onBack,
   onNavigate,
 }: WarmpawzAppointmentsVendorProfileProps) {
@@ -323,6 +325,7 @@ export function WarmpawzAppointmentsVendorProfile({
       appointmentsMode: false,
       category,
       returnScreen: 'wappt-vendor-profile',
+      ...(insurancePlanId ? { insurancePlanId, category: 'insurance' } : {}),
     };
     if (
       requestGuestAuthForProfileContinue({

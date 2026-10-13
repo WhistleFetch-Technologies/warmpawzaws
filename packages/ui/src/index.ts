@@ -13,6 +13,7 @@ export * from './table';
 export * from './tabs';
 export * from './textarea';
 export * from './accordion';
+export * from './components/DynamicFormRenderer';
 
 // Export 2D Sketch-style Icons
 export * from './icons/SketchIcons';

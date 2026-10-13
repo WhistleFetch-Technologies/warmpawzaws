@@ -30,12 +30,15 @@ This folder is the working plan for the Warmpawz Insurance feature: admin catalo
 
 ## Current state (13 Oct 2026)
 
-**P0, P1, and P2 are done by Bindu.**
+**P0 through P5 are done by Bindu.**
 
 - Shared contracts in `packages/shared-types/src/insurance/`.
 - Migrations `1127_warmpawz_insurance_core.sql`, `1128_warmpawz_insurance_rbac.sql`, `1129_insurance_onboarding_form.sql`, `1130_insurance_company_plans.sql`. Applied on **dev RDS** only.
 - Admin Catalogue and Dashboard (two tabs), plans, readiness, required GST, audit, and `WARMPAWZ_INSURANCE_ENABLED` / `WARMPAWZ_INSURANCE_ADMIN_ENABLED` (default off).
-- Insurance onboarding form, KYC config, `pet_insurance → insurance` alias, and the vendor Insurance Workspace stub.
+- Insurance onboarding form, KYC config, `pet_insurance → insurance` alias, and the vendor Insurance Workspace.
+- Customer plan grid hands off to the existing tele booking. Insurance consults are excluded from the promo engine.
+- Vendor Form Library, slug autopopulate, chat cards, and the customer data-form loop.
+- Migrations `1131_insurance_form_templates.sql` and `1132_insurance_chat_cards_submissions.sql`. Applied on **dev RDS** only.
 
 Nothing is deployed. Flags stay off until G8.
 
@@ -63,9 +66,9 @@ Vendor nav: Overview, Applications, Chat, Form Library, Availability, Reports. A
 | [P0 Foundations and contracts](phases/P0-foundations.md) | Bindu (done 13 Oct 2026) | 2d | G0 |
 | [P1 Role and onboarding](phases/P1-role-onboarding.md) | Bindu (done 13 Oct 2026) | 3d | G1 |
 | [P2 Admin Catalogue and Dashboard](phases/P2-admin-catalogue-dashboard.md) | Bindu (done 13 Oct 2026) | 4d | G2 |
-| [P3 Customer plan grid and consultation booking](phases/P3-customer-discovery-booking.md) | Bindu | 4d | G3 |
-| [P4 Form Library and autopopulate](phases/P4-form-library-autopopulate.md) | Abhi | 5d | G4 |
-| [P5 Chat cards and data-form loop](phases/P5-chat-cards-form-loop.md) | Bindu | 6d | G5 |
+| [P3 Customer plan grid and consultation booking](phases/P3-customer-discovery-booking.md) | Bindu (done 13 Oct 2026) | 4d | G3 |
+| [P4 Form Library and autopopulate](phases/P4-form-library-autopopulate.md) | Bindu (done 13 Oct 2026) | 5d | G4 |
+| [P5 Chat cards and data-form loop](phases/P5-chat-cards-form-loop.md) | Bindu (done 13 Oct 2026) | 6d | G5 |
 | [P6a Status machine and Kanban](phases/P6a-status-machine-kanban.md) | Abhi | 4d | G6 |
 | [P6b Payment link, documents, My Insurance](phases/P6b-payment-link-documents-my-insurance.md) | Bindu | 5d | G6 |
 | [P7 Payout windows and reconciliation](phases/P7-payout-windows-reconciliation.md) | Abhi (Bindu reviews) | 4d | G7 |

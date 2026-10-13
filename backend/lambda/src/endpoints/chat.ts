@@ -24,7 +24,8 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { resolveChatBookingId } from '../utils/chat-booking-resolve';
-import { notifyVendorChatMessage } from '../utils/chat-notifications';
+import { notifyCustomerChatMessage, notifyVendorChatMessage } from '../utils/chat-notifications';
+import { insuranceApplicationKeepsChatOpen } from './warmpawz-insurance/shared/chat-open';
 
 export function registerChatEndpoints(app: Hono) {
   /**
@@ -558,6 +559,19 @@ export function registerChatEndpoints(app: Hono) {
           console.warn('Failed to create vendor notification for chat message:', notifErr);
         }
       }
+      if (effectiveSenderType !== 'customer' && booking.customer_id) {
+        try {
+          await notifyCustomerChatMessage({
+            customerId: String(booking.customer_id),
+            bookingId: chatBookingId,
+            senderLabel: senderName || 'Your insurer',
+            messagePreview: message || '',
+            messageId: newMessage[0]?.id,
+          });
+        } catch (notifErr) {
+          console.warn('Failed to push customer chat message:', notifErr);
+        }
+      }
 
       return c.json({
         success: true,
@@ -623,6 +637,19 @@ export function registerChatEndpoints(app: Hono) {
           console.warn('Failed to create vendor notification for chat message:', notifErr);
         }
       }
+      if (effectiveSenderType !== 'customer' && booking.customer_id) {
+        try {
+          await notifyCustomerChatMessage({
+            customerId: String(booking.customer_id),
+            bookingId: chatBookingId,
+            senderLabel: senderName || 'Your insurer',
+            messagePreview: message || '',
+            messageId: newMessage[0]?.id,
+          });
+        } catch (notifErr) {
+          console.warn('Failed to push customer chat message:', notifErr);
+        }
+      }
 
       return c.json({ success: true, message: newMessage[0], chatBookingId });
     } catch (error: any) {
@@ -676,6 +703,9 @@ export function registerChatEndpoints(app: Hono) {
         const completedDate = new Date(booking.updated_at);
         const daysSinceCompletion = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
         isChatAvailable = daysSinceCompletion <= chatDays;
+      }
+      if (booking.status !== 'cancelled' && (await insuranceApplicationKeepsChatOpen(String(booking.id)))) {
+        isChatAvailable = true;
       }
 
       // Get messages (assuming chat_messages table exists)
@@ -802,6 +832,19 @@ export function registerChatEndpoints(app: Hono) {
           });
         } catch (notifErr) {
           console.warn('Failed to create vendor notification for chat message:', notifErr);
+        }
+      }
+      if (effectiveSenderType !== 'customer' && booking.customer_id) {
+        try {
+          await notifyCustomerChatMessage({
+            customerId: String(booking.customer_id),
+            bookingId: String(booking.id),
+            senderLabel: senderName || 'Your insurer',
+            messagePreview: message || '',
+            messageId: newMessage[0]?.id,
+          });
+        } catch (notifErr) {
+          console.warn('Failed to push customer chat message:', notifErr);
         }
       }
 

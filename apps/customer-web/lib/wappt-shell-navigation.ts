@@ -23,6 +23,7 @@ export type WapptProfileShellState = {
   category: string;
   serviceStyle: string;
   profileBackScreen: string;
+  insurancePlanId?: string;
   fromBanner?: boolean;
   returnScreen?: string;
 };
@@ -43,6 +44,9 @@ export function toWapptProfileShellState(
     profileBackScreen: String(
       payload.profileBackScreen || payload.clinicProfileBackScreen || 'wappt-discovery',
     ),
+    ...(typeof payload.insurancePlanId === 'string' && payload.insurancePlanId
+      ? { insurancePlanId: payload.insurancePlanId }
+      : {}),
     ...(fromBanner ? { fromBanner: true as const } : {}),
     ...(fromBanner && returnScreen ? { returnScreen } : {}),
   };

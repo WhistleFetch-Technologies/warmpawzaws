@@ -1,35 +1,224 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { DynamicFormRenderer } from '@warmpawz/ui';
+import { INSURANCE_SLUGS, FORM_FIELD_TYPES, type FormSchema } from '@warmpawz/shared-types';
+import { apiClient } from '@/lib/api-client';
+import { InsuranceChatCard } from './InsuranceChatCard';
+
 const TABS = ['Overview', 'Applications', 'Chat', 'Form Library', 'Availability', 'Reports'] as const;
+type Tab = (typeof TABS)[number];
+
+const EMPTY_SCHEMA: FormSchema = {
+  sections: [{ key: 'details', title: 'Details', fields: [{ key: 'pet_name', label: 'Pet name', type: 'text', required: true, slug: 'pet.name' }] }],
+};
 
 export function InsuranceWorkspace({ vendorId }: { vendorId: string }) {
+  const [tab, setTab] = useState<Tab>('Overview');
+  const [forms, setForms] = useState<Array<Record<string, unknown>>>([]);
+  const [applications, setApplications] = useState<Array<Record<string, unknown>>>([]);
+  const [plans, setPlans] = useState<Array<Record<string, unknown>>>([]);
+  const [draft, setDraft] = useState<FormSchema>(EMPTY_SCHEMA);
+  const [name, setName] = useState('Proposal form');
+  const [companyId, setCompanyId] = useState('');
+  const [message, setMessage] = useState('');
+
+  async function reload() {
+    const [formRes, appRes, workspace] = await Promise.all([
+      apiClient.get<{ data?: { forms?: Array<Record<string, unknown>> } }>(`/vendor/${vendorId}/insurance/forms`).catch(() => ({ data: { forms: [] } })),
+      apiClient.get<{ data?: { applications?: Array<Record<string, unknown>> } }>(`/vendor/${vendorId}/insurance/applications`).catch(() => ({ data: { applications: [] } })),
+      apiClient.get<{ data?: { plans?: Array<Record<string, unknown>>; links?: Array<{ companyId?: string }> } }>(`/vendor/${vendorId}/insurance/workspace`).catch(() => ({ data: { plans: [], links: [] } })),
+    ]);
+    setForms(formRes.data?.forms || []);
+    setApplications(appRes.data?.applications || []);
+    setPlans(workspace.data?.plans || []);
+    const linkCompany = workspace.data?.links?.[0]?.companyId;
+    if (linkCompany) setCompanyId(String(linkCompany));
+  }
+
+  useEffect(() => {
+    void reload();
+  }, [vendorId]);
+
+  async function saveDraft() {
+    const saved = await apiClient.post<{ data?: { form?: { id?: string } } }>(`/vendor/${vendorId}/insurance/forms`, {
+      companyId,
+      name,
+      schema: draft,
+    });
+    setMessage(`Draft saved ${saved.data?.form?.id || ''}`);
+    await reload();
+  }
+
+  async function publish(id: string) {
+    await apiClient.post(`/vendor/${vendorId}/insurance/forms/${id}/publish`, {});
+    setMessage('Published');
+    await reload();
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white px-4 py-4">
         <h1 className="text-xl font-bold text-gray-900">Insurance</h1>
-        <p className="mt-1 text-sm text-gray-600">Applications, chat, forms, and payout reports.</p>
       </header>
       <nav className="flex gap-1 overflow-x-auto border-b border-gray-200 bg-white px-4">
-        {TABS.map((tab) => (
-          <span
-            key={tab}
-            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
-              tab === 'Overview' ? 'border-[#FF8C42] text-[#FF8C42]' : 'border-transparent text-gray-500'
-            }`}
+        {TABS.map((item) => (
+          <button
+            key={item}
+            type="button"
+            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${tab === item ? 'border-[#FF8C42] text-[#FF8C42]' : 'border-transparent text-gray-500'}`}
+            onClick={() => setTab(item)}
           >
-            {tab}
-          </span>
+            {item}
+          </button>
         ))}
       </nav>
-      <main className="mx-auto max-w-3xl px-4 py-6">
-        <section className="rounded-xl border border-gray-200 bg-white p-4">
-          <h2 className="text-base font-semibold text-gray-900">Overview</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Your catalogue links, plans, and readiness load from the insurance workspace once the feature is turned on.
-          </p>
-          <p className="mt-2 text-xs text-gray-400">Vendor {vendorId}</p>
-        </section>
+      <main className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+        {tab === 'Overview' ? <p className="text-sm text-gray-600">{forms.length} forms · {applications.length} applications</p> : null}
+        {tab === 'Applications' ? (
+          <ul className="space-y-2">
+            {applications.map((row) => (
+              <li key={String(row.id)} className="rounded-xl border bg-white p-3 text-sm">
+                {String(row.plan_name || 'Plan')} · {String(row.status)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {tab === 'Chat' ? (
+          <ChatTab vendorId={vendorId} applications={applications} plans={plans} onSent={() => void reload()} />
+        ) : null}
+        {tab === 'Form Library' ? (
+          <section className="space-y-3 rounded-xl border bg-white p-4">
+            <input className="w-full rounded border px-3 py-2" value={name} onChange={(e) => setName(e.target.value)} />
+            <FieldEditor schema={draft} onChange={setDraft} />
+            <button type="button" className="rounded bg-[#FF8C42] px-3 py-2 text-sm font-semibold text-white" onClick={() => void saveDraft()} disabled={!companyId}>
+              Save draft
+            </button>
+            <ul className="space-y-2 text-sm">
+              {forms.map((form) => (
+                <li key={String(form.id)} className="flex items-center justify-between">
+                  <span>{String(form.name)} · {String(form.status)} · v{String(form.published_version || 'draft')}</span>
+                  <button type="button" className="text-[#FF8C42]" onClick={() => void publish(String(form.id))}>Publish</button>
+                </li>
+              ))}
+            </ul>
+            <h3 className="font-semibold">Preview</h3>
+            <DynamicFormRenderer schema={draft} values={{ pet_name: 'Sample pet' }} prefilled={{ pet_name: true }} readOnly />
+          </section>
+        ) : null}
+        {tab === 'Availability' ? <p className="text-sm text-gray-600">Use your existing tele availability. Insurance bookings use the same tele slots.</p> : null}
+        {tab === 'Reports' ? <p className="text-sm text-gray-600">Payout reports arrive with the completion windows.</p> : null}
+        {message ? <p className="text-sm text-gray-700">{message}</p> : null}
       </main>
     </div>
+  );
+}
+
+function FieldEditor({ schema, onChange }: { schema: FormSchema; onChange: (schema: FormSchema) => void }) {
+  const field = schema.sections[0]?.fields[0];
+  if (!field) return null;
+  return (
+    <div className="grid gap-2 text-sm">
+      <label>
+        Label
+        <input className="mt-1 w-full rounded border px-2 py-1" value={field.label} onChange={(e) => {
+          const next = structuredClone(schema);
+          next.sections[0].fields[0].label = e.target.value;
+          onChange(next);
+        }} />
+      </label>
+      <label>
+        Type
+        <select className="mt-1 w-full rounded border px-2 py-1" value={field.type} onChange={(e) => {
+          const next = structuredClone(schema);
+          next.sections[0].fields[0].type = e.target.value as FormSchema['sections'][0]['fields'][0]['type'];
+          onChange(next);
+        }}>
+          {FORM_FIELD_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+        </select>
+      </label>
+      <label>
+        Slug
+        <select className="mt-1 w-full rounded border px-2 py-1" value={field.slug || ''} onChange={(e) => {
+          const next = structuredClone(schema);
+          next.sections[0].fields[0].slug = e.target.value || undefined;
+          onChange(next);
+        }}>
+          <option value="">None</option>
+          {INSURANCE_SLUGS.map((slug) => <option key={slug.slug} value={slug.slug}>{slug.label}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function ChatTab({
+  vendorId,
+  applications,
+  plans,
+  onSent,
+}: {
+  vendorId: string;
+  applications: Array<Record<string, unknown>>;
+  plans: Array<Record<string, unknown>>;
+  onSent: () => void;
+}) {
+  const [applicationId, setApplicationId] = useState(String(applications[0]?.id || ''));
+  const [planId, setPlanId] = useState(String(plans[0]?.id || ''));
+  const plan = plans.find((row) => String(row.id) === planId);
+  const covers = Array.isArray(plan?.coverOptions) ? plan.coverOptions as Array<{ key: string; label: string }> : [];
+  const sums = Array.isArray(plan?.sumInsuredOptions) ? plan.sumInsuredOptions as string[] : [];
+  const [coverType, setCoverType] = useState('');
+  const [sumInsured, setSumInsured] = useState('');
+
+  useEffect(() => {
+    if (!applicationId && applications[0]?.id) setApplicationId(String(applications[0].id));
+  }, [applications, applicationId]);
+
+  async function sendQuote() {
+    const selected = plans.find((row) => String(row.id) === planId);
+    await apiClient.post(`/vendor/${vendorId}/insurance/applications/${applicationId}/quote`, {
+      card: 'plan_quote',
+      applicationId,
+      version: 1,
+      companyId: String(selected?.companyId || ''),
+      planId,
+      coverType: coverType || covers[0]?.key || 'standard',
+      sumInsured: sumInsured || String(sums[0] || '0'),
+      copay: '0',
+      optionalCovers: [],
+      indicativePremium: Number(selected?.premiumFrom || 0),
+      premiumUnit: selected?.premiumUnit === 'year' ? 'year' : 'month',
+    });
+    onSent();
+  }
+
+  return (
+    <section className="space-y-3 rounded-xl border bg-white p-4 text-sm">
+      <label className="block">
+        Conversation
+        <select className="mt-1 w-full rounded border px-2 py-1" value={applicationId} onChange={(e) => setApplicationId(e.target.value)}>
+          {applications.map((row) => <option key={String(row.id)} value={String(row.id)}>{String(row.plan_name || row.id)}</option>)}
+        </select>
+      </label>
+      <div className="rounded-lg border p-3">
+        <p className="font-semibold">Quick plan builder</p>
+        <select className="mt-2 w-full rounded border px-2 py-1" value={planId} onChange={(e) => setPlanId(e.target.value)}>
+          {plans.map((row) => <option key={String(row.id)} value={String(row.id)}>{String(row.name)}</option>)}
+        </select>
+        <select className="mt-2 w-full rounded border px-2 py-1" value={coverType} onChange={(e) => setCoverType(e.target.value)}>
+          <option value="">Cover</option>
+          {covers.map((cover) => <option key={cover.key} value={cover.key}>{cover.label}</option>)}
+        </select>
+        <select className="mt-2 w-full rounded border px-2 py-1" value={sumInsured} onChange={(e) => setSumInsured(e.target.value)}>
+          <option value="">Sum insured</option>
+          {sums.map((sum) => <option key={String(sum)} value={String(sum)}>{String(sum)}</option>)}
+        </select>
+        <button type="button" className="mt-3 rounded bg-[#FF8C42] px-3 py-2 font-semibold text-white" onClick={() => void sendQuote()}>
+          Send quote
+        </button>
+      </div>
+      <InsuranceChatCard metadata={{ card: 'plan_quote', coverType: coverType || 'Cover', sumInsured: sumInsured || 'Sum insured', indicativePremium: plan?.premiumFrom || 0, premiumUnit: plan?.premiumUnit || 'year' }} />
+    </section>
   );
 }

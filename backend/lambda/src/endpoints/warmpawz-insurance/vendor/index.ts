@@ -4,6 +4,19 @@ import { listVendorLinks } from '../admin/services/insurance-vendor-links.servic
 import { getPlanReadiness, listCompanyPlans } from '../admin/services/insurance-plans.service';
 import { requireWarmpawzInsuranceEnabled } from '../admin/middleware/require-insurance-flag.middleware';
 import { insuranceAdminError, insuranceAdminOk } from '../admin/shared/insurance-admin-response';
+import {
+  changeRequestHandler,
+  confirmFormHandler,
+  createFormHandler,
+  formRequestHandler,
+  listApplicationsHandler,
+  listFormsHandler,
+  listSlugsHandler,
+  listVersionsHandler,
+  publishFormHandler,
+  quoteHandler,
+  updateFormHandler,
+} from './library.handlers';
 
 const vendorIdParam = z.string().uuid();
 
@@ -23,5 +36,17 @@ export async function vendorWorkspaceHandler(c: Context): Promise<Response> {
 }
 
 export function registerWarmpawzInsuranceVendorRoutes(app: Hono): void {
-  app.get('/vendor/:vendorId/insurance/workspace', requireWarmpawzInsuranceEnabled(), vendorWorkspaceHandler);
+  const gate = requireWarmpawzInsuranceEnabled();
+  app.get('/vendor/:vendorId/insurance/workspace', gate, vendorWorkspaceHandler);
+  app.get('/vendor/:vendorId/insurance/forms', gate, listFormsHandler);
+  app.post('/vendor/:vendorId/insurance/forms', gate, createFormHandler);
+  app.put('/vendor/:vendorId/insurance/forms/:id', gate, updateFormHandler);
+  app.post('/vendor/:vendorId/insurance/forms/:id/publish', gate, publishFormHandler);
+  app.get('/vendor/:vendorId/insurance/forms/:id/versions', gate, listVersionsHandler);
+  app.get('/vendor/:vendorId/insurance/slugs', gate, listSlugsHandler);
+  app.get('/vendor/:vendorId/insurance/applications', gate, listApplicationsHandler);
+  app.post('/vendor/:vendorId/insurance/applications/:id/quote', gate, quoteHandler);
+  app.post('/vendor/:vendorId/insurance/applications/:id/form-request', gate, formRequestHandler);
+  app.post('/vendor/:vendorId/insurance/applications/:id/change-request', gate, changeRequestHandler);
+  app.post('/vendor/:vendorId/insurance/applications/:id/transition', gate, confirmFormHandler);
 }

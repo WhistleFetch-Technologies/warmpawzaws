@@ -4,8 +4,19 @@ import Link from 'next/link';
 import { ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { isWarmpawzInsuranceCustomerEnabled } from '@/lib/warmpawz-insurance-flag';
+import { PlanGrid } from '@/components/customer/insurance/PlanGrid';
 
 export default function InsurancePage() {
+  if (isWarmpawzInsuranceCustomerEnabled()) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Link href="/" className="inline-block px-4 py-3 text-sm font-semibold">Back</Link>
+        <h1 className="px-4 text-xl font-bold">Pet Insurance</h1>
+        <PlanGrid onOpen={() => { window.location.href = '/'; }} />
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
       <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-30">

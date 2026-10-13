@@ -248,6 +248,8 @@ const CustomerProfileView = dynamic(() => import('../CustomerProfileView').then(
 const PetProfile = dynamic(() => import('../PetProfile').then((m) => ({ default: m.PetProfile })), { loading: LoadingSpinner });
 const PetProfileDashboard = dynamic(() => import('../PetProfileDashboard').then((m) => ({ default: m.PetProfileDashboard })), { loading: LoadingSpinner });
 const InsuranceServicesLanding = dynamic(() => import('../InsuranceServicesLanding').then((m) => ({ default: m.InsuranceServicesLanding })), { loading: LoadingSpinner });
+const InsurancePlanDetail = dynamic(() => import('../insurance/PlanDetail').then((m) => ({ default: m.PlanDetail })), { loading: LoadingSpinner });
+const InsuranceFormScreen = dynamic(() => import('../insurance/InsuranceFormScreen').then((m) => ({ default: m.InsuranceFormScreen })), { loading: LoadingSpinner });
 const InsuranceProvider = dynamic(() => import('../insurance/InsuranceProvider').then((m) => ({ default: m.InsuranceProvider })), { loading: LoadingSpinner });
 const PetCafeServicesLanding = dynamic(() => import('../PetCafeServicesLanding').then((m) => ({ default: m.PetCafeServicesLanding })), { loading: LoadingSpinner });
 const PharmacyServicesLanding = dynamic(() => import('../PharmacyServicesLanding').then((m) => ({ default: m.PharmacyServicesLanding })), { loading: LoadingSpinner });
@@ -367,6 +369,8 @@ type ScreenType =
   | 'sunset'
   | 'insurance'
   | 'insurance_provider'
+  | 'insurance_plan'
+  | 'insurance_form'
   | 'cafes'
   | 'cafe_detail'
   | 'cafe_reservation'
@@ -3582,7 +3586,7 @@ export function CustomerHomeWrapper({
       { title: 'Veterinary Services', subtitle: 'Professional pet healthcare', showBackButton: true, skipHeader: true }
     );
   }
-  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} bookingDate={vetServiceData?.bookingDate} bookingTime={vetServiceData?.bookingTime} appointmentsMode={vetServiceData?.appointmentsMode === true} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
+  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} bookingDate={vetServiceData?.bookingDate} bookingTime={vetServiceData?.bookingTime} appointmentsMode={vetServiceData?.appointmentsMode === true} insurancePlanId={vetServiceData?.insurancePlanId} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'vet-doctor-details')
     return (
       <VetDoctorDetails
@@ -3629,6 +3633,7 @@ export function CustomerHomeWrapper({
         vendorName={wapptProfileData.vendorName}
         category={wapptProfileData.category}
         serviceStyle={wapptProfileData.serviceStyle}
+        insurancePlanId={wapptProfileData.insurancePlanId}
         profileBackScreen={wapptProfileData.profileBackScreen || 'wappt-discovery'}
         onBack={() => backFromBannerOr(handleBack, wapptProfileData as Record<string, unknown>)}
         onNavigate={(screen, navData) => {
@@ -4755,6 +4760,8 @@ export function CustomerHomeWrapper({
           } else {
             navigateToScreen('insurance_provider');
           }
+        } else if (screen === 'insurance_plan' && data?.planId) {
+          navigateToScreen('insurance_plan', routeKey.insurancePlan(String(data.planId)));
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           navigateToScreen('create-booking');
@@ -4766,6 +4773,31 @@ export function CustomerHomeWrapper({
       }} />,
       { title: 'Pet Insurance', subtitle: 'Protect your furry friend', showBackButton: true }
     );
+  }
+
+  if (currentScreen === 'insurance_plan') {
+    const planId = String(history[history.length - 1]?.key || '').replace('insurance-plan:', '');
+    return (
+      <InsurancePlanDetail
+        planId={planId}
+        onBack={handleBack}
+        onBookTele={(vendor) => {
+          handleVetNavigate('wappt-vendor-profile', {
+            vendorId: vendor.vendorId,
+            vendorName: vendor.name,
+            category: 'insurance',
+            serviceStyle: 'tele',
+            insurancePlanId: planId,
+            profileBackScreen: 'insurance_plan',
+          });
+        }}
+      />
+    );
+  }
+
+  if (currentScreen === 'insurance_form') {
+    const applicationId = String(history[history.length - 1]?.key || '').replace('insurance-application:', '');
+    return <InsuranceFormScreen applicationId={applicationId} onBack={handleBack} />;
   }
 
   if (currentScreen === 'insurance_provider') {

@@ -108,6 +108,8 @@ const ENTITY_SCREENS: Record<string, ShellRoutePolicyDef> = {
   'universal-home-booking': { forward: 'push' },
   'cafe_detail': { forward: 'push', requiresKey: true },
   'insurance_provider': { forward: 'push', requiresKey: true },
+  'insurance_plan': { forward: 'push', requiresKey: true },
+  'insurance_form': { forward: 'push', requiresKey: true },
   'resort_booking': { forward: 'push' },
   'services_by_problem': { forward: 'push' },
   'customer-profile': { forward: 'push' },

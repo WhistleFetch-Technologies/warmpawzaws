@@ -1,5 +1,34 @@
 import { dispatchNotification } from './notification-dispatch';
 
+export async function notifyCustomerChatMessage(params: {
+  customerId: string;
+  bookingId: string;
+  senderLabel: string;
+  messagePreview: string;
+  messageId?: string;
+}): Promise<void> {
+  const preview =
+    params.messagePreview.length > 80
+      ? `${params.messagePreview.substring(0, 80)}…`
+      : params.messagePreview;
+
+  await dispatchNotification({
+    recipientId: params.customerId,
+    recipientType: 'customer',
+    notificationType: 'chat_message',
+    title: 'New chat message',
+    message: `${params.senderLabel}: ${preview}`,
+    channels: { inApp: true, push: true },
+    priority: 'high',
+    data: {
+      bookingId: params.bookingId,
+      dedupeKey: params.messageId
+        ? `chat-customer-${params.bookingId}-${params.messageId}`
+        : `chat-customer-${params.bookingId}-${Date.now()}`,
+    },
+  });
+}
+
 export async function notifyVendorChatMessage(params: {
   vendorId: string;
   bookingId: string;

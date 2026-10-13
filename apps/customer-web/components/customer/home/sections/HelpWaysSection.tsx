@@ -17,6 +17,7 @@ import {
   getHelpWayTheme,
   HELP_WAY_SOON_IDS,
 } from '../constants/help-ways-theme';
+import { isWarmpawzInsuranceCustomerEnabled } from '@/lib/warmpawz-insurance-flag';
 import { COMING_SOON_HOME_SERVICE_SCREENS, type QuickServiceTile } from '../types';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -101,6 +102,12 @@ function HelpWaysSectionComponent({
       const screenKey = screen.toLowerCase();
       const categoryKey = categoryId.toLowerCase();
       if (screenKey === 'shop' && !customerCommerceEnabled) return true;
+      if (
+        isWarmpawzInsuranceCustomerEnabled() &&
+        (screenKey === 'insurance' || categoryKey === 'insurance')
+      ) {
+        return false;
+      }
       if (
         POLICY_COMING_SOON_SCREENS.has(screenKey) ||
         POLICY_COMING_SOON_SCREENS.has(categoryKey)

@@ -2556,6 +2556,23 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       const summaryDescription = (service?.custom_description as string | null | undefined) ?? null;
       const summaryCatalogServiceId = (service?.service_id as string | undefined) || lookupServiceId;
 
+      try {
+        const { attachInsuranceApplicationOnBooking } = await import(
+          '../../customer/insurance/services/customer_insurance_applications_post.service'
+        );
+        const bookingBody = body as Record<string, unknown>;
+        await attachInsuranceApplicationOnBooking({
+          bookingId: String(booking.id),
+          customerId: String(customerId),
+          vendorId: String(booking.vendor_id || ''),
+          planId: String(bookingBody.planId || bookingBody.insurancePlanId || ''),
+          petId: bookingBody.petId || booking.pet_id ? String(bookingBody.petId || booking.pet_id) : null,
+          category: String(bookingBody.category || bookingBody.serviceCategory || ''),
+        });
+      } catch (insuranceErr) {
+        console.warn('[BOOKING-CREATE] insurance application attach failed:', insuranceErr);
+      }
+
       const response = {
         bookingId: booking.id,
         customerId,

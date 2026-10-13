@@ -8,6 +8,7 @@ import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { ChatAttachmentActions } from '@/components/shared/ChatAttachmentActions';
+import { InsuranceChatCard } from './insurance/InsuranceChatCard';
 
 // ============================================================================
 // TYPES
@@ -20,7 +21,8 @@ interface ChatMessage {
   sender_name: string;
   sender_type: 'customer' | 'vendor' | 'system';
   message: string;
-  message_type: 'text' | 'image' | 'file' | 'system';
+  message_type: 'text' | 'image' | 'file' | 'system' | 'card';
+  metadata?: Record<string, unknown> | null;
   file_id?: string;
   file_name?: string;
   file_url?: string;
@@ -725,10 +727,12 @@ export function VendorChatModal({
                             )}
                             
                             {/* Message text - hide generic "Sent a document/photo" if we have a file */}
-                            {!(message.message_type !== 'text' && (message.file_url || message.file_id) && 
-                              /^Sent a (document|photo|video)$/i.test(message.message || '')) && (
+                            {message.message_type === 'card' ? (
+                              <InsuranceChatCard metadata={message.metadata} />
+                            ) : !(message.message_type !== 'text' && (message.file_url || message.file_id) && 
+                              /^Sent a (document|photo|video)$/i.test(message.message || '')) ? (
                               <p className="whitespace-pre-wrap break-words">{message.message}</p>
-                            )}
+                            ) : null}
                           </div>
                           
                           {/* Time and read status */}

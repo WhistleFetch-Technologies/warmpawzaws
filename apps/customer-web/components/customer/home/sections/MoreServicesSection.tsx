@@ -4,6 +4,7 @@ import React, { memo, useMemo } from 'react';
 import { Users, Shield, Dog, Coffee, ChevronRight, PawPrint, Heart, MapPin, Sparkles } from 'lucide-react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import { isAppReviewDemoAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
+import { isWarmpawzInsuranceCustomerEnabled } from '@/lib/warmpawz-insurance-flag';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
 const MORE_SERVICES_IMAGES = {
@@ -92,7 +93,9 @@ function MoreServiceCard({
   card: (typeof MORE_SERVICES_CARDS)[number];
   onNavigate: HomeNavigateFn;
 }) {
-  const ctaLabel = 'ctaLabel' in card ? card.ctaLabel : 'Coming soon';
+  const insuranceLive = card.id === 'insurance' && isWarmpawzInsuranceCustomerEnabled();
+  const comingSoon = card.comingSoon && !insuranceLive;
+  const ctaLabel = 'ctaLabel' in card ? card.ctaLabel : insuranceLive ? 'View plans' : 'Coming soon';
 
   const content = (
     <>
@@ -107,7 +110,7 @@ function MoreServiceCard({
         aria-hidden
       />
 
-      {card.comingSoon ? (
+      {comingSoon ? (
         <span className="absolute right-3 top-3 rounded-full bg-[#FF8C00] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
           Soon
         </span>
@@ -148,7 +151,7 @@ function MoreServiceCard({
 
   const cardClassName = `relative flex min-h-[9.5rem] overflow-hidden rounded-2xl border bg-gradient-to-br text-left shadow-[0_4px_20px_rgba(15,23,42,0.06)] ${card.cardClass}`;
 
-  if (card.comingSoon) {
+  if (comingSoon) {
     return (
       <div
         className={`${cardClassName} pointer-events-none select-none`}

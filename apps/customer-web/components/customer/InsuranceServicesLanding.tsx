@@ -3,6 +3,8 @@
 import { ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { isWarmpawzInsuranceCustomerEnabled } from '@/lib/warmpawz-insurance-flag';
+import { PlanGrid } from './insurance/PlanGrid';
 
 interface InsuranceServicesLandingProps {
   phone: string;
@@ -11,7 +13,16 @@ interface InsuranceServicesLandingProps {
 }
 
 /** Pet insurance is not live yet — same treatment as emergency ambulance (non-actionable coming soon). */
-export function InsuranceServicesLanding({ phone: _phone, onBack }: InsuranceServicesLandingProps) {
+export function InsuranceServicesLanding({ phone: _phone, onBack, onNavigate }: InsuranceServicesLandingProps) {
+  if (isWarmpawzInsuranceCustomerEnabled()) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <button type="button" className="px-4 py-3 text-sm font-semibold" onClick={onBack}>Back</button>
+        <h1 className="px-4 text-xl font-bold">Pet Insurance</h1>
+        <PlanGrid onOpen={(planId) => onNavigate?.('insurance_plan', { planId })} />
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-white max-w-md mx-auto">
       <div className="relative bg-gradient-to-br from-orange-500 to-orange-600 pb-16 pl-[max(1.5rem,env(safe-area-inset-left,0px))] pr-[max(1.5rem,env(safe-area-inset-right,0px))] text-white cw-header-safe-top">

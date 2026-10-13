@@ -1,4 +1,4 @@
-import { isWarmpawzInsuranceAdminEnabled, isWarmpawzInsuranceEnabled } from '../warmpawz-insurance-flags';
+import { isInsuranceFormTemplateRequired, isWarmpawzInsuranceAdminEnabled, isWarmpawzInsuranceEnabled } from '../warmpawz-insurance-flags';
 
 describe('Warmpawz Insurance flags', () => {
   it('stays off unless the env value is explicitly true', () => {
@@ -6,5 +6,7 @@ describe('Warmpawz Insurance flags', () => {
     expect(isWarmpawzInsuranceAdminEnabled({ WARMPAWZ_INSURANCE_ADMIN_ENABLED: 'false' })).toBe(false);
     expect(isWarmpawzInsuranceEnabled({ WARMPAWZ_INSURANCE_ENABLED: 'true' })).toBe(true);
     expect(isWarmpawzInsuranceAdminEnabled({ WARMPAWZ_INSURANCE_ADMIN_ENABLED: '1' })).toBe(true);
+    expect(isInsuranceFormTemplateRequired({})).toBe(true);
+    expect(isInsuranceFormTemplateRequired({ WARMPAWZ_INSURANCE_REQUIRE_FORM_TEMPLATE: 'false' })).toBe(false);
   });
 });

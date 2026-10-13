@@ -33,6 +33,8 @@ const CANONICAL_BY_TOKEN: Record<string, string> = {
   products: 'ecommerce',
   retail: 'ecommerce',
   marketplace: 'ecommerce',
+  insurance: 'insurance',
+  pet_insurance: 'insurance',
 };
 
 function tokenKey(raw: string): string {

@@ -6,6 +6,7 @@ export { registerCustomerDeliveryFeePolicyEndpoints } from './delivery-fee';
 export { registerServiceDiscoveryEndpoints, getCoordinates } from './discovery';
 export { registerCustomerPasswordEndpoints } from './password';
 export { registerCustomerContentEndpoints } from './content';
+export { registerCustomerInsuranceEndpoints } from './insurance';
 export { registerCustomerPhoneConvenienceEndpoints } from './convenience';
 export { registerCustomerProfileEndpoints } from './profile';
 export { registerCustomerBookingHistoryEndpoints } from './bookings';

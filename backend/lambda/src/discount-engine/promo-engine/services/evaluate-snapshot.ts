@@ -132,6 +132,39 @@ export function evaluateAgainstSnapshot(
   now = new Date(),
 ): Omit<EvaluateResult, 'evaluation_id'> {
   const amount = Number(req.transaction?.amount ?? 0) || 0;
+  const categories = [
+    req.transaction?.service_category,
+    ...(Array.isArray(req.transaction?.lines)
+      ? req.transaction.lines.map((line) => (line as { service_category?: string }).service_category)
+      : []),
+  ];
+  if (categories.some((category) => normalizePromoCategory(category) === 'insurance')) {
+    return {
+      eligible: false,
+      winner_promotion_id: null,
+      customer_copy: null,
+      benefits: [],
+      summary: {
+        gross_amount: amount,
+        discount: 0,
+        payable: amount,
+        cashback: 0,
+      },
+      explain: {
+        failures: [
+          {
+            field: 'service_category',
+            operator: 'neq',
+            required: 'not insurance',
+            actual: 'insurance',
+            reason: 'INSURANCE_CONSULT_EXCLUDED',
+          },
+        ],
+        matched_promotions: [],
+        rejected_promotions: [],
+      },
+    };
+  }
   const stackInput: StackCandidate[] = [];
   const failures: EvaluateResult['explain']['failures'] = [];
   const matched: string[] = [];

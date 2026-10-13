@@ -2,6 +2,7 @@
 
 import React, { memo, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
+import { isWarmpawzInsuranceCustomerEnabled } from '@/lib/warmpawz-insurance-flag';
 import { COMING_SOON_HOME_SERVICE_SCREENS, type QuickServiceTile } from '../types';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -96,7 +97,8 @@ function HelpGridSectionComponent({
             SECONDARY_DESCRIPTIONS[screen] ||
             'Explore this service';
 
-          const policyComingSoon = POLICY_COMING_SOON_SCREENS.has(screen) || POLICY_COMING_SOON_SCREENS.has(key);
+          const insuranceLive = isWarmpawzInsuranceCustomerEnabled() && (screen === 'insurance' || key === 'insurance');
+          const policyComingSoon = !insuranceLive && (POLICY_COMING_SOON_SCREENS.has(screen) || POLICY_COMING_SOON_SCREENS.has(key));
           const catalogComingSoon =
             COMING_SOON_HOME_SERVICE_SCREENS.has(screen) || COMING_SOON_HOME_SERVICE_SCREENS.has(key);
           const launchComingSoon = Boolean(service.isComingSoon);

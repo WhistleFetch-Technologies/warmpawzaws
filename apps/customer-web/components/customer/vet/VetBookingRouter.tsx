@@ -75,6 +75,7 @@ interface VetBookingRouterProps {
   selectedServices?: any[]; // ✅ NEW: Multiple selected services (from VetServicesByStyle, etc.)
   vendorName?: string; // ✅ NEW: Clinic/center/vendor name for display
   appointmentsMode?: boolean;
+  insurancePlanId?: string;
   bookingDate?: string;
   bookingTime?: string;
   onBack: () => void;
@@ -114,6 +115,7 @@ export function VetBookingRouter({
   selectedServices,
   vendorName: vendorNameProp,
   appointmentsMode = false,
+  insurancePlanId,
   bookingDate: preFilledDate,
   bookingTime: preFilledTime,
   onBack, 
@@ -1130,6 +1132,9 @@ export function VetBookingRouter({
           serviceName: selectedServiceOption?.name,
           customerPhone: phone,
           ...(addressPayload && { address: addressPayload }),
+          ...(insurancePlanId
+            ? { planId: insurancePlanId, insurancePlanId, category: 'insurance' }
+            : {}),
         };
 
         try {
