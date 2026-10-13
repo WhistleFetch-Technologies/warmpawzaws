@@ -278,6 +278,12 @@ STATIC_CACHE_CONTROL="public, max-age=31536000, immutable"
 # App shell + JS (exclude long-lived static images — synced separately with immutable headers)
 aws s3 sync "apps/${APP_NAME}/dist/" "s3://${S3_BUCKET}/" --delete --exclude "*.map" --exclude "images/*" --exclude "logo.webp"
 
+# runtime-config.js must revalidate. A cached copy without the insurance flag keeps the coming-soon UI.
+aws s3 cp "apps/${APP_NAME}/dist/runtime-config.js" "s3://${S3_BUCKET}/runtime-config.js" \
+  --cache-control "no-cache, no-store, must-revalidate" \
+  --content-type "application/javascript; charset=utf-8" \
+  --metadata-directive REPLACE
+
 if [ -d "apps/${APP_NAME}/dist/images" ]; then
   echo -e "${BLUE}📷 Uploading static images with long cache headers...${NC}"
   # cp --recursive + REPLACE ensures Cache-Control is applied even when bytes are unchanged

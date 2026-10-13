@@ -35,7 +35,7 @@
       guestBrowsingEnabled: true,
       guestLocationEnabled: true,
       guestBookingEnabled: false,
-      warmpawzInsuranceEnabled: false,
+      warmpawzInsuranceEnabled: true,
       warmpawzInsuranceAdminEnabled: false
     });
     console.log('🔧 Runtime config loaded (localhost - using env var for API URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
@@ -58,7 +58,8 @@
       customerEcommerceEnabled: true,
       guestBrowsingEnabled: true,
       guestLocationEnabled: true,
-      guestBookingEnabled: false
+      guestBookingEnabled: false,
+      warmpawzInsuranceEnabled: true
     },
   };
 

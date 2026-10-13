@@ -62,6 +62,20 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                var h = location.hostname;
+                var dev = h === 'localhost' || h === '127.0.0.1' || h === 'dev.customer.warmpawz.com' || h === 'customer.dev.warmpawz.com' || h === 'd2aoyjj8ine0wk.cloudfront.net';
+                if (!dev) return;
+                var c = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
+                c.warmpawzInsuranceEnabled = true;
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = c;
+              })();
+            `,
+          }}
+        />
         {/* Baloo 2 font via stylesheet to avoid build-time fetches */}
         <link
           rel="stylesheet"
@@ -160,7 +174,8 @@ fbq('track', 'PageView');
                   customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)},
                   guestBrowsingEnabled: ${JSON.stringify(guestBrowsingEnabled)},
                   guestLocationEnabled: ${JSON.stringify(guestLocationEnabled)},
-                  guestBookingEnabled: ${JSON.stringify(guestBookingEnabled)}
+                  guestBookingEnabled: ${JSON.stringify(guestBookingEnabled)},
+                  warmpawzInsuranceEnabled: ${JSON.stringify(!isProd)}
                 };
               `,
           }}
