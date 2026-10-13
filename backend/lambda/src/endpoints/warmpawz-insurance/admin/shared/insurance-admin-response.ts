@@ -53,7 +53,7 @@ export function insuranceAdminError(c: Context, error: unknown): Response {
     );
   }
   if (code === '42P01') {
-    console.error(`${INSURANCE_ADMIN_LOG_PREFIX} tables missing — run migration 1127_warmpawz_insurance_admin.sql`);
+    console.error(`${INSURANCE_ADMIN_LOG_PREFIX} tables missing — run migrations 1127–1130`);
   }
   console.error(`${INSURANCE_ADMIN_LOG_PREFIX} unexpected error`, error);
   return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }, 500);

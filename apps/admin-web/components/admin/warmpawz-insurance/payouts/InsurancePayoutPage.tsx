@@ -38,7 +38,7 @@ function matchesView(p: PayoutPeriod, view: View): boolean {
 
 const periodKey = (p: PayoutPeriod) => `${p.vendorCompanyId}|${p.periodStart}|${p.periodEnd}`;
 
-export function InsurancePayoutPage() {
+export function InsurancePayoutPage({ embedded = false }: { embedded?: boolean }) {
   const { data, isLoading, isError, error } = usePayoutOverview();
   const remind = useSendPayoutReminder();
   const [view, setView] = useState<View>('action');
@@ -73,11 +73,8 @@ export function InsurancePayoutPage() {
     }
   };
 
-  return (
-    <WarmpawzInsuranceShell
-      title="Premium payout"
-      subtitle="Warmpawz commission expected from insurance vendors on the policies they issue"
-    >
+  const body = (
+    <>
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : isError || !data ? (
@@ -253,6 +250,24 @@ export function InsurancePayoutPage() {
         </div>
       )}
       <RecordReceiptDialog period={receiptFor} onClose={() => setReceiptFor(null)} />
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <section className="mt-8">
+        <h2 className="mb-3 text-lg font-semibold text-gray-900">Payout windows</h2>
+        {body}
+      </section>
+    );
+  }
+
+  return (
+    <WarmpawzInsuranceShell
+      title="Premium payout"
+      subtitle="Warmpawz commission expected from insurance vendors on the policies they issue"
+    >
+      {body}
     </WarmpawzInsuranceShell>
   );
 }

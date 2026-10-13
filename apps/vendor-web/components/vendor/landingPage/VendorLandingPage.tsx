@@ -41,7 +41,7 @@ import { ProfileManager } from '../vendorProfileManager/ProfileManagerCenter'; /
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager'; // ✅ NEW: Advanced Availability System
 import { CafeVendorDashboard } from '../cafe/CafeVendorDashboard';
 import { SunsetServicesVendorDashboard } from '../sunset/SunsetServicesVendorDashboard';
-import { InsuranceVendorContainer } from '../insurance/InsuranceVendorContainer';
+import { InsuranceWorkspace } from '../insurance/InsuranceWorkspace';
 import { PhotographyVendorDashboard } from '../photography/PhotographyVendorDashboard';
 import { AmbulanceVendorDashboard } from '../ambulance/AmbulanceVendorDashboard';
 import { RelocationVendorDashboard } from '../relocation/RelocationVendorDashboard';
@@ -1556,14 +1556,8 @@ export function VendorLandingPage({
         );
       }
 
-      // 6. Pet / general insurance provider (plan creation + links to issued policies & claims)
       if (vendorData?.roleId === 'insurance' || vendorData?.roleId === 'pet_insurance') {
-        console.log('🛡️ Rendering InsuranceVendorContainer');
-        return (
-          <InsuranceVendorContainer
-            vendorId={vendorId}
-          />
-        );
+        return <InsuranceWorkspace vendorId={vendorId} />;
       }
 
       // 7. Photography Services

@@ -8,7 +8,7 @@ const COMPANY_SELECT = `
     (SELECT COUNT(*)::int FROM insurance_vendor_companies l
       WHERE l.company_id = ic.id AND l.status = 'active') AS active_vendor_count,
     (SELECT COUNT(*)::int FROM insurance_applications a
-      WHERE a.company_id = ic.id AND a.status = 'policy_issued') AS issued_policy_count
+      WHERE a.company_id = ic.id AND a.status IN ('policy_confirmed', 'policy_issued')) AS issued_policy_count
   FROM insurance_companies ic`;
 
 function mapCompany(r: Row): InsuranceCompanyDTO {
@@ -26,6 +26,7 @@ function mapCompany(r: Row): InsuranceCompanyDTO {
     integrationMode: (str(r.integration_mode) ?? 'manual') as InsuranceCompanyDTO['integrationMode'],
     status: (str(r.status) ?? 'active') as InsuranceCompanyDTO['status'],
     notes: str(r.notes),
+    paymentLinkDomains: textArray(r.payment_link_domains),
     activeVendorCount: num(r.active_vendor_count),
     issuedPolicyCount: num(r.issued_policy_count),
     createdAt: isoTs(r.created_at) ?? '',
@@ -58,6 +59,7 @@ function companyParams(input: CompanyInput): unknown[] {
     input.integrationMode,
     input.status,
     input.notes,
+    input.paymentLinkDomains,
   ];
 }
 
@@ -65,8 +67,8 @@ export async function dbInsertInsuranceCompany(input: CompanyInput, actorId: str
   const res = await query(
     `INSERT INTO insurance_companies (
        name, legal_name, provider_code, logo_url, contact_name, contact_email, contact_phone,
-       escalation_contact, products, integration_mode, status, notes, created_by, updated_by
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10, $11, $12, $13, $13)
+       escalation_contact, products, integration_mode, status, notes, payment_link_domains, created_by, updated_by
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10, $11, $12, $13::text[], $14, $14)
      RETURNING id`,
     [...companyParams(input), actorId],
   );
@@ -82,8 +84,9 @@ export async function dbUpdateInsuranceCompany(
     `UPDATE insurance_companies SET
        name = $1, legal_name = $2, provider_code = $3, logo_url = $4, contact_name = $5,
        contact_email = $6, contact_phone = $7, escalation_contact = $8, products = $9::text[],
-       integration_mode = $10, status = $11, notes = $12, updated_by = $13, updated_at = NOW()
-     WHERE id = $14::uuid`,
+       integration_mode = $10, status = $11, notes = $12, payment_link_domains = $13::text[],
+       updated_by = $14, updated_at = NOW()
+     WHERE id = $15::uuid`,
     [...companyParams(input), actorId, id],
   );
   return (res.rowCount ?? 0) > 0;

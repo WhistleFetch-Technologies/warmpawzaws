@@ -20,7 +20,7 @@ export async function dbListIssuedPolicies(): Promise<IssuedPolicyRow[]> {
             a.vendor_commission_amount, a.policy_issued_at, c.full_name AS customer_name
      FROM insurance_applications a
      JOIN customers c ON c.id = a.customer_id
-     WHERE a.status = 'policy_issued'
+     WHERE a.status IN ('policy_confirmed', 'policy_issued')
      ORDER BY a.policy_issued_at ASC`,
   );
   return (res.rows as Row[]).map((r) => ({

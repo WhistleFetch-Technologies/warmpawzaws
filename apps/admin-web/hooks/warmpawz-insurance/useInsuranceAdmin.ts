@@ -16,9 +16,16 @@ import {
   sendPayoutReminder,
   setVendorLinkSchedule,
   updateInsuranceCompany,
+  updateCompanyPlan,
+  publishCompanyPlan,
+  unpublishCompanyPlan,
+  createCompanyPlan,
+  fetchCompanyPlans,
+  fetchPlanReadiness,
   updateVendorLink,
   type CommissionTermsInput,
   type InsuranceCompanyInput,
+  type InsurancePlanInput,
   type OutreachFilters,
   type PayoutScheduleInput,
   type VendorLinkUpdateInput,
@@ -34,6 +41,8 @@ export const winsQueryKeys = {
   linkTerms: (linkId: string) => [...winsQueryKeys.all, 'terms', linkId] as const,
   candidates: (search: string) => [...winsQueryKeys.all, 'candidates', search] as const,
   payouts: () => [...winsQueryKeys.all, 'payouts'] as const,
+  plans: (companyId: string) => [...winsQueryKeys.all, 'plans', companyId] as const,
+  readiness: (companyId: string) => [...winsQueryKeys.all, 'readiness', companyId] as const,
 };
 
 export function useInsuranceDashboard(from?: string, to?: string) {
@@ -148,4 +157,38 @@ export function useSendPayoutReminder() {
 export function useRecordPayoutReceipt() {
   const invalidate = useInvalidateAll();
   return useMutation({ mutationFn: recordPayoutReceipt, onSuccess: invalidate });
+}
+
+export function useCompanyPlans(companyId: string | null) {
+  return useQuery({
+    queryKey: winsQueryKeys.plans(companyId ?? ''),
+    queryFn: () => fetchCompanyPlans(companyId as string),
+    enabled: Boolean(companyId),
+  });
+}
+
+export function usePlanReadiness(companyId: string | null) {
+  return useQuery({
+    queryKey: winsQueryKeys.readiness(companyId ?? ''),
+    queryFn: () => fetchPlanReadiness(companyId as string),
+    enabled: Boolean(companyId),
+  });
+}
+
+export function useSaveCompanyPlan() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ companyId, planId, input }: { companyId: string; planId?: string; input: InsurancePlanInput }) =>
+      planId ? updateCompanyPlan(companyId, planId, input) : createCompanyPlan(companyId, input),
+    onSuccess: invalidate,
+  });
+}
+
+export function usePublishCompanyPlan() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ planId, publish }: { planId: string; publish: boolean }) =>
+      publish ? publishCompanyPlan(planId) : unpublishCompanyPlan(planId),
+    onSuccess: invalidate,
+  });
 }

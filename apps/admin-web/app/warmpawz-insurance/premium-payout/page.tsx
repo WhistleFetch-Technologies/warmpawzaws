@@ -1,12 +1,12 @@
 'use client';
 
-import { AdminLayout } from '@/components/admin/layout/AdminLayout';
-import { InsurancePayoutPage } from '@/components/admin/warmpawz-insurance/payouts/InsurancePayoutPage';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
-export default function WarmpawzInsurancePremiumPayoutRoutePage() {
-  return (
-    <AdminLayout>
-      <InsurancePayoutPage />
-    </AdminLayout>
-  );
+export default function WarmpawzInsurancePayoutRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace('/warmpawz-insurance/dashboard');
+  }, [router]);
+  return null;
 }

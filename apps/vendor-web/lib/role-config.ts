@@ -494,6 +494,20 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     primaryActions: ['view_bookings', 'upload_results', 'manage_tests'],
     quickStats: ['pending_tests', 'completed_tests', 'monthly_revenue', 'rating'],
   },
+  insurance: {
+    displayName: 'Insurance',
+    icon: '🛡️',
+    color: 'indigo',
+    category: 'specialist',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({
+        ...s,
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined
+      })),
+    ],
+    primaryActions: ['view_applications', 'open_chat', 'manage_forms'],
+    quickStats: ['open_applications', 'consults_today', 'policies_confirmed', 'rating'],
+  },
   pet_insurance: {
     displayName: 'Pet Insurance Provider',
     icon: '🛡️',

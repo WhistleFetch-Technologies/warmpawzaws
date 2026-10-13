@@ -131,7 +131,9 @@
     apiBaseUrl: apiBaseUrl,
     uatMode: uatMode,
     environment: environment,
-    ...(vendorWebUrl ? { vendorWebUrl: vendorWebUrl } : {})
+    ...(vendorWebUrl ? { vendorWebUrl: vendorWebUrl } : {}),
+    warmpawzInsuranceEnabled: false,
+    warmpawzInsuranceAdminEnabled: false
   };
 
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);

@@ -20,7 +20,7 @@ export interface TermsDraft {
 }
 
 export function emptyTermsDraft(effectiveFrom: string): TermsDraft {
-  return { basis: 'percent_of_premium', rate: '', vendorCommissionRate: '', gstRate: '18', effectiveFrom, notes: '' };
+  return { basis: 'percent_of_premium', rate: '', vendorCommissionRate: '', gstRate: '', effectiveFrom, notes: '' };
 }
 
 export function termsDraftError(d: TermsDraft): string | null {
@@ -31,7 +31,8 @@ export function termsDraftError(d: TermsDraft): string | null {
     const v = Number(d.vendorCommissionRate);
     if (!Number.isFinite(v) || v < 0 || v > 100) return "Vendor's commission rate must be 0–100%";
   }
-  const gst = Number(d.gstRate || 0);
+  if (d.gstRate.trim() === '') return 'Enter the GST rate. Use 0 when GST is not charged';
+  const gst = Number(d.gstRate);
   if (!Number.isFinite(gst) || gst < 0 || gst > 100) return 'GST must be 0–100%';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.effectiveFrom)) return 'Choose the date these terms start';
   return null;
@@ -45,7 +46,7 @@ export function termsDraftToInput(d: TermsDraft): CommissionTermsInput {
       d.basis === 'percent_of_vendor_commission' && d.vendorCommissionRate.trim() !== ''
         ? Number(d.vendorCommissionRate)
         : null,
-    gstRate: Number(d.gstRate || 0),
+    gstRate: Number(d.gstRate),
     effectiveFrom: d.effectiveFrom,
     notes: d.notes.trim() || null,
   };
@@ -103,7 +104,7 @@ export function CommissionTermsFields({
           />
         </Field>
       ) : null}
-      <Field label="GST on commission (%)" hint="Set 0 if GST is not charged on this commission">
+      <Field label="GST on commission (%)" hint="Required. Enter 0 if GST is not charged on this commission">
         <input
           type="number"
           min={0}

@@ -93,7 +93,7 @@ Keep: commission terms, schedules, ledger maths, RBAC, API shape. Reshape: tabs,
 
 | Area | Finding |
 |---|---|
-| `chat_messages` | No `metadata` JSONB; CHECK allows text / image / file / location while code inserts prescription / video / system. Probe the real constraint on dev and prod (read-only) before adding card types |
+| `chat_messages` | Dev probe 13 Oct 2026 (RDS Data API, read-only): no `metadata` column. CHECK allows only `text`, `image`, `file`, `location`. Rows in data: text 43, file 10, image 5. P5 must add `metadata` and widen the CHECK before `card` messages. Prod was not queried in this pass |
 | Customer push | Vendor chat message → SMS only; no customer push |
 | Onboarding | No `insurance` row in `onboarding_forms`; migration 050 fields sit in `roles.config.onboardingFields` (unread); no `ROLE_KYC_CONFIGS` entry; no alias in `ROLE_NAME_ALIASES`; vendor-web role config keyed only on `pet_insurance` |
 | Field types | Admin designer lacks date / number / multiselect; renderer drops dropdown / radio to text |
@@ -103,6 +103,8 @@ Keep: commission terms, schedules, ledger maths, RBAC, API shape. Reshape: tabs,
 | Migration 1127 | RBAC uses a `DO $$` block; Data API path prefers `INSERT … SELECT` (1093 pattern). Split before first run |
 | 4-layer rule | New customer insurance endpoints under `endpoints/customer/` in route → handler → service → repo |
 | Payment links | No Razorpay payment links; chat URLs not clickable; Capacitor Browser not installed |
+
+Dev discovery probe (13 Oct 2026): role `insurance` has 3 vendors, 1 active. Role `pet_insurance` has none. `vendor_availability_v2` on dev uses `service_styles text[]` (not `service_style`). None of those insurance vendors have `tele` in `service_styles`, so a tele consultation search does not return a bookable insurance vendor until availability is saved.
 
 ### 4.3 UI (mockups vs our app)
 

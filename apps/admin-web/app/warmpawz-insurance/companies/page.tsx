@@ -1,12 +1,12 @@
 'use client';
 
-import { AdminLayout } from '@/components/admin/layout/AdminLayout';
-import { InsuranceCompaniesPage } from '@/components/admin/warmpawz-insurance/companies/InsuranceCompaniesPage';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
-export default function WarmpawzInsuranceCompaniesRoutePage() {
-  return (
-    <AdminLayout>
-      <InsuranceCompaniesPage />
-    </AdminLayout>
-  );
+export default function WarmpawzInsuranceCompaniesRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace('/warmpawz-insurance');
+  }, [router]);
+  return null;
 }

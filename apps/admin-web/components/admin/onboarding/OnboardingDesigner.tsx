@@ -8,7 +8,9 @@ import { Button, Card, CardContent, Input, Label, Textarea, Switch, Badge } from
 interface FormField {
   id: string;
   label: string;
-  type: 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'checkbox' | 'file' | 'aadhaar-otp' | 'pan-verify' | 'gst-verify' | 'declaration';
+  type: 'text' | 'email' | 'tel' | 'number' | 'date' | 'textarea' | 'select' | 'multiselect' | 'radio' | 'checkbox' | 'file' | 'aadhaar-otp' | 'pan-verify' | 'gst-verify' | 'declaration';
+  min?: number;
+  max?: number;
   placeholder?: string;
   helpText?: string;
   required: boolean;
@@ -564,8 +566,12 @@ function FieldEditModal({
               <option value="text">Text</option>
               <option value="email">Email</option>
               <option value="tel">Phone</option>
+              <option value="number">Number</option>
+              <option value="date">Date</option>
               <option value="textarea">Textarea</option>
               <option value="select">Select</option>
+              <option value="multiselect">Multi-select</option>
+              <option value="radio">Radio</option>
               <option value="checkbox">Checkbox</option>
               <option value="file">File Upload</option>
               <optgroup label="KYC Verification">
@@ -587,7 +593,7 @@ function FieldEditModal({
             />
           </div>
 
-          {formData.type === 'select' && (
+          {(formData.type === 'select' || formData.type === 'multiselect' || formData.type === 'radio') && (
             <div>
               <Label>Options (comma-separated)</Label>
               <Textarea
@@ -599,6 +605,31 @@ function FieldEditModal({
                 placeholder="Option 1, Option 2, Option 3"
                 rows={3}
               />
+            </div>
+          )}
+
+          {formData.type === 'number' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Minimum</Label>
+                <Input
+                  type="number"
+                  value={formData.min ?? ''}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setFormData({ ...formData, min: e.target.value === '' ? undefined : Number(e.target.value) })
+                  }
+                />
+              </div>
+              <div>
+                <Label>Maximum</Label>
+                <Input
+                  type="number"
+                  value={formData.max ?? ''}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setFormData({ ...formData, max: e.target.value === '' ? undefined : Number(e.target.value) })
+                  }
+                />
+              </div>
             </div>
           )}
 

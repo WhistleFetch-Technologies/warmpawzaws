@@ -43,6 +43,7 @@ import { registerWarmpawzAppointmentsCatalogueAdminRoutes } from '../endpoints/w
 import { registerWarmpawzAppointmentsPoliciesAdminRoutes } from '../endpoints/warmpawz-appointments/admin/policies';
 import { registerWarmpawzAppointmentsDashboardAdmin } from '../endpoints/warmpawz-appointments/admin/dashboard';
 import { registerWarmpawzInsuranceAdminRoutes } from '../endpoints/warmpawz-insurance/admin';
+import { registerWarmpawzInsuranceVendorRoutes } from '../endpoints/warmpawz-insurance/vendor';
 import { registerAdminAiCopilotEndpoints } from '../endpoints/admin/endpoints/admin-ai-copilot';
 import { registerCommercialAiCopilotEndpoints } from '../endpoints/admin/endpoints/commercial-ai-copilot.endpoints';
 import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
@@ -702,6 +703,7 @@ registerWarmpawzAppointmentsDashboardAdmin(app);
 registerWarmpawzAppointmentsCatalogueAdminRoutes(app);
 registerWarmpawzAppointmentsPoliciesAdminRoutes(app);
 registerWarmpawzInsuranceAdminRoutes(app);
+registerWarmpawzInsuranceVendorRoutes(app);
 registerAdminAiCopilotEndpoints(app);
 registerCommercialAiCopilotEndpoints(app);
 registerAdminCustomerEndpoints(app);

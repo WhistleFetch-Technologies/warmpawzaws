@@ -19,7 +19,7 @@ export interface KYCFormField {
   id: string;
   fieldName: string;
   label: string;
-  type: 'text' | 'email' | 'tel' | 'number' | 'textarea' | 'select' | 'multiselect' | 'file' | 'date' | 'checkbox' | 'aadhaar-otp' | 'pan-verify' | 'gst-verify' | 'declaration';
+  type: 'text' | 'email' | 'tel' | 'phone' | 'number' | 'textarea' | 'select' | 'multiselect' | 'radio' | 'file' | 'date' | 'checkbox' | 'aadhaar-otp' | 'pan-verify' | 'gst-verify' | 'declaration';
   section: string;
   required: boolean;
   isMandatory: boolean;
@@ -1124,6 +1124,42 @@ export const ROLE_KYC_CONFIGS: Record<string, RoleKYCConfig> = {
     hardBlockFields: ['aadhaarNumber', 'panNumber', 'profilePhoto', 'drivingLicense', 'vehicleRegistration'],
     softBlockFields: ['addressProof'],
   },
+
+  insurance: {
+    roleName: 'insurance',
+    displayName: 'Insurance',
+    vendorTypes: ['business'],
+    fields: [
+      { id: 'legalName', fieldName: 'legalName', label: 'Legal name', type: 'text', section: 'business', required: true, isMandatory: true, displayOrder: 1 },
+      { id: 'tradeName', fieldName: 'tradeName', label: 'Trade name', type: 'text', section: 'business', required: true, isMandatory: true, displayOrder: 2 },
+      { id: 'entityType', fieldName: 'entityType', label: 'Entity type', type: 'select', section: 'business', required: true, isMandatory: true, options: ['Individual', 'Partnership', 'Private limited', 'LLP'], displayOrder: 3 },
+      { id: 'pan', fieldName: 'pan', label: 'PAN', type: 'text', section: 'business', required: true, isMandatory: true, displayOrder: 4 },
+      { id: 'gst', fieldName: 'gst', label: 'GST', type: 'text', section: 'business', required: false, isMandatory: false, helpText: 'Optional', displayOrder: 5 },
+      { id: 'address', fieldName: 'address', label: 'Address', type: 'textarea', section: 'business', required: true, isMandatory: true, displayOrder: 6 },
+      { id: 'irdaiLicenceNumber', fieldName: 'irdaiLicenceNumber', label: 'IRDAI licence / registration number', type: 'text', section: 'licence', required: true, isMandatory: true, displayOrder: 7 },
+      { id: 'licenceType', fieldName: 'licenceType', label: 'Licence type', type: 'radio', section: 'licence', required: true, isMandatory: true, options: ['POSP', 'Corporate agent', 'Broker', 'Web aggregator'], displayOrder: 8 },
+      { id: 'licenceExpiry', fieldName: 'licenceExpiry', label: 'Licence expiry', type: 'date', section: 'licence', required: true, isMandatory: true, displayOrder: 9 },
+      { id: 'authorisedInsurers', fieldName: 'authorisedInsurers', label: 'Authorised insurers', type: 'multiselect', section: 'licence', required: true, isMandatory: true, options: ['Bajaj Allianz', 'HDFC ERGO', 'ICICI Lombard', 'New India', 'Other'], displayOrder: 10 },
+      { id: 'licenceDocument', fieldName: 'licenceDocument', label: 'Licence document', type: 'file', section: 'licence', required: true, isMandatory: true, displayOrder: 11 },
+      { id: 'principalOfficerName', fieldName: 'principalOfficerName', label: 'Principal officer name', type: 'text', section: 'team', required: true, isMandatory: true, displayOrder: 12 },
+      { id: 'principalOfficerPhone', fieldName: 'principalOfficerPhone', label: 'Principal officer phone', type: 'phone', section: 'team', required: true, isMandatory: true, displayOrder: 13 },
+      { id: 'principalOfficerEmail', fieldName: 'principalOfficerEmail', label: 'Principal officer email', type: 'email', section: 'team', required: true, isMandatory: true, displayOrder: 14 },
+      { id: 'advisorCount', fieldName: 'advisorCount', label: 'Number of advisors', type: 'number', section: 'team', required: true, isMandatory: true, validation: { min: 0, max: 10000 }, displayOrder: 15 },
+      { id: 'accountHolder', fieldName: 'accountHolder', label: 'Account holder', type: 'text', section: 'bank', required: true, isMandatory: true, displayOrder: 16 },
+      { id: 'accountNumber', fieldName: 'accountNumber', label: 'Account number', type: 'text', section: 'bank', required: true, isMandatory: true, displayOrder: 17 },
+      { id: 'ifsc', fieldName: 'ifsc', label: 'IFSC', type: 'text', section: 'bank', required: true, isMandatory: true, displayOrder: 18 },
+      { id: 'cancelledCheque', fieldName: 'cancelledCheque', label: 'Cancelled cheque', type: 'file', section: 'bank', required: true, isMandatory: true, displayOrder: 19 },
+    ],
+    sections: [
+      { id: 'business', name: 'Business', order: 1, description: 'Business details' },
+      { id: 'licence', name: 'Licence', order: 2, description: 'IRDAI licence' },
+      { id: 'team', name: 'Team', order: 3, description: 'Principal officer' },
+      { id: 'bank', name: 'Bank', order: 4, description: 'Settlement account' },
+    ],
+    hardBlockFields: ['legalName', 'pan', 'irdaiLicenceNumber', 'licenceDocument', 'accountNumber', 'ifsc'],
+    softBlockFields: ['gst'],
+    requiresManualReview: true,
+  },
 };
 
 // ============================================================================
@@ -1157,6 +1193,7 @@ export function getRoleKYCConfig(roleName: string, vendorType?: 'solo' | 'busine
     'boarding': 'pet_boarding',
     'shelter': 'pet_shelter',
     'breeder': 'pet_breeder',
+    'pet_insurance': 'insurance',
   };
   
   const aliasedRole = aliases[roleName];

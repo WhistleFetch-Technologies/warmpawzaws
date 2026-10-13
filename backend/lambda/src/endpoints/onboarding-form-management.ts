@@ -67,6 +67,8 @@ const ROLE_NAME_ALIASES: Record<string, string[]> = {
   'pet_walker': ['pet_walker', 'walker', 'Pet Walker'],
   'pet_groomer': ['pet_groomer', 'groomer', 'Pet Grooming Salon'],
   'diagnostics_center': ['diagnostics_center', 'diagnostic_center', 'diagnostics'],
+  'insurance': ['insurance', 'pet_insurance'],
+  'pet_insurance': ['pet_insurance', 'insurance'],
 };
 
 /**
@@ -1662,7 +1664,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
    */
   app.post('/admin/forms', async (c) => {
     try {
-      const { id, name, roleId, fields } = await c.req.json();
+      const { id, roleId, fields } = await c.req.json();
 
       if (!roleId && !id) {
         return c.json({ error: 'roleId or id is required' }, 400);
@@ -1676,16 +1678,16 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       if (existingForms.length > 0) {
         // Update existing form
         await update('onboarding_forms', { role_id: targetRoleId }, {
-          name: name || existingForms[0].name,
           fields: JSON.stringify(fields),
           updated_at: new Date().toISOString(),
         });
       } else {
-        // Create new form
+        // Create new form. onboarding_forms has no name column.
         await insert('onboarding_forms', {
           role_id: targetRoleId,
-          name: name || `${targetRoleId} Onboarding Form`,
           fields: JSON.stringify(fields),
+          status: 'active',
+          version: 1,
         });
       }
 

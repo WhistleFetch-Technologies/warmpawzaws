@@ -34,7 +34,9 @@
       // Phase 1 guest foundation — local/dev defaults on; prod remains off unless deploy sets flags
       guestBrowsingEnabled: true,
       guestLocationEnabled: true,
-      guestBookingEnabled: false
+      guestBookingEnabled: false,
+      warmpawzInsuranceEnabled: false,
+      warmpawzInsuranceAdminEnabled: false
     });
     console.log('🔧 Runtime config loaded (localhost - using env var for API URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     return;

@@ -15,6 +15,7 @@ import {
   dbRecordPayoutReminder,
 } from '../repos/payouts.repo';
 import { dbGetVendorLink, dbListVendorLinks } from '../repos/vendor-links.repo';
+import { auditInsuranceChange } from '../repos/insurance-audit';
 import { InsuranceAdminError, insuranceNotFound } from '../shared/insurance-admin-response';
 import { toPayoutScheduleDTO } from './schedule-dto';
 
@@ -27,6 +28,13 @@ export async function saveDefaultPayoutSchedule(
   actorId: string | null,
 ): Promise<PayoutScheduleDTO> {
   await dbSaveDefaultPayoutSchedule(input, actorId);
+  await auditInsuranceChange({
+    entityType: 'insurance_payout_schedule',
+    entityId: '00000000-0000-0000-0000-000000000000',
+    action: 'save_default',
+    actorId,
+    newValues: { ...input },
+  });
   return getDefaultPayoutSchedule();
 }
 

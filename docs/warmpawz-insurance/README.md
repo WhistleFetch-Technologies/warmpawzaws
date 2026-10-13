@@ -28,36 +28,41 @@ This folder is the working plan for the Warmpawz Insurance feature: admin catalo
 8. After payment, the vendor uploads the policy documents. The customer reviews and confirms; the policy lives under **My Profile → My Insurance**.
 9. The vendor generates the payout report for each frequency window from completed policies; it appears on the admin Dashboard for reconciliation.
 
-## Current state (12 Oct 2026)
+## Current state (13 Oct 2026)
 
-Already on this branch (uncommitted work committed with this plan):
+**P0, P1, and P2 are done by Bindu.**
 
-- Migration `db/migrations/1127_warmpawz_insurance_admin.sql` — **not run on any environment**. To be split and revised in P0 (see [phases/P0-foundations.md](phases/P0-foundations.md)).
-- Backend admin module `backend/lambda/src/endpoints/warmpawz-insurance/admin/` (companies, vendor links, commission terms, payout schedules, outreach, payout ledger, reminders, receipts) with 25 unit tests.
-- Admin-web pages under `apps/admin-web/app/warmpawz-insurance/` and components under `apps/admin-web/components/admin/warmpawz-insurance/`, sidebar entry, permissions.
+- Shared contracts in `packages/shared-types/src/insurance/`.
+- Migrations `1127_warmpawz_insurance_core.sql`, `1128_warmpawz_insurance_rbac.sql`, `1129_insurance_onboarding_form.sql`, `1130_insurance_company_plans.sql`. Applied on **dev RDS** only.
+- Admin Catalogue and Dashboard (two tabs), plans, readiness, required GST, audit, and `WARMPAWZ_INSURANCE_ENABLED` / `WARMPAWZ_INSURANCE_ADMIN_ENABLED` (default off).
+- Insurance onboarding form, KYC config, `pet_insurance → insurance` alias, and the vendor Insurance Workspace stub.
 
-Nothing is deployed. Phase P2 reshapes the admin UI from three tabs to the two specified tabs.
+Nothing is deployed. Flags stay off until G8.
 
 ## Decisions to confirm before P1
 
-| # | Decision | Recommendation |
+Recorded by **Bindu** on 13 Oct 2026, using the plan recommendations so P1 and P2 could proceed.
+
+| # | Decision | Outcome |
 |---|---|---|
-| D1 | Commercial wording: share of the intermediary's commission vs referral / platform fee (IRDAI) | Confirm with compliance; data model is the same either way |
+| D1 | Commercial wording: share of the intermediary's commission vs referral / platform fee (IRDAI) | Data model unchanged. Compliance wording still to confirm; it does not block the catalogue |
 | D2 | Vendor routing for a plan with several vendors | Customer picks from ready vendors; auto-assign later |
-| D3 | Consultation fee | Free at launch, excluded from promo engine |
+| D3 | Consultation fee | Free at launch, excluded from the promo engine. Paid consult fee work is not in P2 |
 | D4 | Who defines plans and cover options | Admin defines; vendor uses them in the Quick Builder |
-| D5 | Completion trigger | Customer confirms documents; auto-confirm after 7 days |
-| D6 | Payment link domains | Admin-managed allowlist per company |
+| D5 | Completion trigger | Customer confirms documents; auto-confirm after 7 days (`insurance_auto_confirm_days`) |
+| D6 | Payment link domains | Admin-managed allowlist per company (`payment_link_domains`) |
 | D7 | Payout source of truth | System-computed expected amount is authoritative; vendor report attests and flags variance |
 | D8 | Kanban interaction in v1 | Guarded "Move to" actions; drag-and-drop later |
+
+Vendor nav: Overview, Applications, Chat, Form Library, Availability, Reports. Admin tabs: Catalogue and Dashboard.
 
 ## Phase summary
 
 | Phase | Owner | Est. | Gate |
 |---|---|---|---|
-| [P0 Foundations and contracts](phases/P0-foundations.md) | Both | 2d | G0 |
-| [P1 Role and onboarding](phases/P1-role-onboarding.md) | Abhi | 3d | G1 |
-| [P2 Admin Catalogue and Dashboard](phases/P2-admin-catalogue-dashboard.md) | Abhi | 4d | G2 |
+| [P0 Foundations and contracts](phases/P0-foundations.md) | Bindu (done 13 Oct 2026) | 2d | G0 |
+| [P1 Role and onboarding](phases/P1-role-onboarding.md) | Bindu (done 13 Oct 2026) | 3d | G1 |
+| [P2 Admin Catalogue and Dashboard](phases/P2-admin-catalogue-dashboard.md) | Bindu (done 13 Oct 2026) | 4d | G2 |
 | [P3 Customer plan grid and consultation booking](phases/P3-customer-discovery-booking.md) | Bindu | 4d | G3 |
 | [P4 Form Library and autopopulate](phases/P4-form-library-autopopulate.md) | Abhi | 5d | G4 |
 | [P5 Chat cards and data-form loop](phases/P5-chat-cards-form-loop.md) | Bindu | 6d | G5 |

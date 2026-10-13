@@ -39,7 +39,9 @@
       firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
       firebaseMessagingSenderId: "771876271254",
       firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
-      firebaseMeasurementId:     "G-PYF54Y34BP"
+      firebaseMeasurementId:     "G-PYF54Y34BP",
+      warmpawzInsuranceEnabled: false,
+      warmpawzInsuranceAdminEnabled: false
     };
     console.log('🔧 Runtime config loaded (localhost - using env var for API URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     return;
@@ -91,7 +93,9 @@
       firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
       firebaseMessagingSenderId: "771876271254",
       firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
-      firebaseMeasurementId:     "G-PYF54Y34BP"
+      firebaseMeasurementId:     "G-PYF54Y34BP",
+      warmpawzInsuranceEnabled: false,
+      warmpawzInsuranceAdminEnabled: false
     };
   }
   console.log('🔧 Runtime config loaded (deployed):', window.__WARMPAWZ_RUNTIME_CONFIG__);

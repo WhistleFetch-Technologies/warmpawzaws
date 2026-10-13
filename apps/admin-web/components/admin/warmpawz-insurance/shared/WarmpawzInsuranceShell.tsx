@@ -13,9 +13,8 @@ export interface WarmpawzInsuranceShellProps {
 }
 
 const NAV_ITEMS = [
-  { href: '/warmpawz-insurance', label: 'Dashboard' },
-  { href: '/warmpawz-insurance/companies', label: 'Companies & vendors' },
-  { href: '/warmpawz-insurance/premium-payout', label: 'Premium payout' },
+  { href: '/warmpawz-insurance', label: 'Catalogue', exact: true },
+  { href: '/warmpawz-insurance/dashboard', label: 'Dashboard', exact: false },
 ] as const;
 
 export function WarmpawzInsuranceShell({ title, subtitle, actions, children }: WarmpawzInsuranceShellProps) {
@@ -41,10 +40,7 @@ export function WarmpawzInsuranceShell({ title, subtitle, actions, children }: W
           </div>
           <div className="mt-4 flex gap-1 overflow-x-auto border-b border-gray-200 -mb-px">
             {NAV_ITEMS.map((item) => {
-              const isActive =
-                item.href === '/warmpawz-insurance'
-                  ? pathname === '/warmpawz-insurance'
-                  : pathname.startsWith(item.href);
+              const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href);
               return (
                 <Link
                   key={item.href}

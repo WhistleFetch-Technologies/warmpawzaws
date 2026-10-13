@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { INSURANCE_APPLICATION_STATUSES } from '../domain/application-status';
+import { INSURANCE_APPLICATION_STATUSES, normalizeInsuranceStatus } from '../domain/application-status';
 import { COMMISSION_BASES } from '../domain/commission';
 import { PAYOUT_FREQUENCIES } from '../domain/payout-periods';
 
@@ -34,17 +34,45 @@ export const companyInputSchema = z
     integrationMode: z.enum(['manual', 'link', 'api']).default('manual'),
     status: z.enum(['active', 'inactive']).default('active'),
     notes: optionalText(1000),
+    paymentLinkDomains: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
   })
   .strict();
 
 export type CompanyInput = z.infer<typeof companyInputSchema>;
+
+const coverOptionSchema = z
+  .object({
+    key: z.string().trim().min(1).max(60),
+    label: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(200).optional(),
+  })
+  .strict();
+
+export const planInputSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120),
+    productType: z.string().trim().min(1).max(60),
+    highlights: z.array(z.string().trim().min(1).max(80)).max(3),
+    premiumFrom: z.coerce.number().min(0),
+    premiumUnit: z.enum(['month', 'year']),
+    coverOptions: z.array(coverOptionSchema).max(30).default([]),
+    sumInsuredOptions: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    copayOptions: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    sortOrder: z.coerce.number().int().min(0).max(1000).default(0),
+  })
+  .strict();
+
+export type PlanInput = z.infer<typeof planInputSchema>;
 
 export const commissionTermsInputSchema = z
   .object({
     basis: z.enum(COMMISSION_BASES),
     rate: z.coerce.number().min(0).max(1_000_000),
     vendorCommissionRate: z.coerce.number().min(0).max(100).optional().nullable(),
-    gstRate: z.coerce.number().min(0).max(100).default(0),
+    gstRate: z.preprocess(
+      (value) => (value === '' || value === null || value === undefined ? undefined : value),
+      z.coerce.number({ required_error: 'GST rate is required', invalid_type_error: 'GST rate is required' }).min(0).max(100),
+    ),
     effectiveFrom: isoDate,
     notes: optionalText(500),
   })
@@ -104,7 +132,10 @@ export const linkScheduleInputSchema = z.union([
 export const outreachQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  status: z.enum(INSURANCE_APPLICATION_STATUSES).optional(),
+  status: z.preprocess(
+    (value) => (typeof value === 'string' ? normalizeInsuranceStatus(value) ?? value : value),
+    z.enum(INSURANCE_APPLICATION_STATUSES).optional(),
+  ),
   vendorId: z.string().uuid().optional(),
   companyId: z.string().uuid().optional(),
   search: z.string().trim().max(80).optional(),

@@ -26,6 +26,7 @@ const EMPTY: InsuranceCompanyInput = {
   integrationMode: 'manual',
   status: 'active',
   notes: null,
+  paymentLinkDomains: [],
 };
 
 type TextKey = 'name' | 'legalName' | 'providerCode' | 'logoUrl' | 'contactName' | 'contactEmail' | 'contactPhone' | 'escalationContact' | 'notes';
@@ -41,6 +42,7 @@ export function CompanyDialog({
 }) {
   const [form, setForm] = useState<InsuranceCompanyInput>(EMPTY);
   const [products, setProducts] = useState('');
+  const [domains, setDomains] = useState('');
   const save = useSaveInsuranceCompany();
 
   useEffect(() => {
@@ -59,10 +61,12 @@ export function CompanyDialog({
           integrationMode: company.integrationMode,
           status: company.status,
           notes: company.notes,
+          paymentLinkDomains: company.paymentLinkDomains ?? [],
         }
       : EMPTY;
     setForm(next);
     setProducts(next.products.join(', '));
+    setDomains((company?.paymentLinkDomains ?? []).join(', '));
   }, [open, company]);
 
   const text = (key: TextKey) => ({
@@ -80,6 +84,10 @@ export function CompanyDialog({
       ...form,
       name: form.name.trim(),
       products: products
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean),
+      paymentLinkDomains: domains
         .split(',')
         .map((p) => p.trim())
         .filter(Boolean),
@@ -152,6 +160,11 @@ export function CompanyDialog({
               <option value="inactive">Inactive</option>
             </select>
           </Field>
+          <div className="sm:col-span-2">
+            <Field label="Payment link domains" hint="Comma-separated hosts allowed on insurer payment links">
+              <input className={inputClass} value={domains} onChange={(e) => setDomains(e.target.value)} placeholder="pay.example.com" />
+            </Field>
+          </div>
           <div className="sm:col-span-2">
             <Field label="Notes">
               <textarea rows={3} className={inputClass} {...text('notes')} />

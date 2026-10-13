@@ -2,6 +2,7 @@
 
 import { Fragment, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { InsurancePayoutPage } from '@/components/admin/warmpawz-insurance/payouts/InsurancePayoutPage';
 import { WarmpawzInsuranceShell } from '@/components/admin/warmpawz-insurance/shared/WarmpawzInsuranceShell';
 import {
   formatDate,
@@ -219,6 +220,7 @@ export function InsuranceDashboardPage() {
           </div>
         ) : null}
       </div>
+      <InsurancePayoutPage embedded />
     </WarmpawzInsuranceShell>
   );
 }

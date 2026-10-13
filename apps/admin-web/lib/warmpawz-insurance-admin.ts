@@ -1,35 +1,17 @@
+import {
+  INSURANCE_APPLICATION_STATUSES,
+  INSURANCE_STATUS_LABELS,
+  type InsuranceApplicationStatus,
+  type InsuranceStatusStage,
+} from '@warmpawz/shared-types';
 import { apiClient } from '@/lib/api-client';
+
+export type { InsuranceApplicationStatus, InsuranceStatusStage };
 
 export const WINS_API_BASE = '/admin/warmpawz-insurance';
 
-export type InsuranceApplicationStatus =
-  | 'consultation_booked'
-  | 'form_required'
-  | 'form_submitted'
-  | 'vendor_processing'
-  | 'vendor_review'
-  | 'payment_link_shared'
-  | 'awaiting_payment'
-  | 'payment_reported'
-  | 'documents_uploaded'
-  | 'policy_issued'
-  | 'cancelled';
-
-export type InsuranceStatusStage = 'new' | 'in_progress' | 'awaiting_external' | 'completed' | 'cancelled';
-
-export const INSURANCE_STATUS_OPTIONS: ReadonlyArray<{ value: InsuranceApplicationStatus; label: string }> = [
-  { value: 'consultation_booked', label: 'Consultation booked' },
-  { value: 'form_required', label: 'Information needed' },
-  { value: 'form_submitted', label: 'Information submitted' },
-  { value: 'vendor_processing', label: 'Policy being prepared' },
-  { value: 'vendor_review', label: 'Under review' },
-  { value: 'payment_link_shared', label: 'Payment required' },
-  { value: 'awaiting_payment', label: 'Awaiting payment' },
-  { value: 'payment_reported', label: 'Payment update received' },
-  { value: 'documents_uploaded', label: 'Documents received' },
-  { value: 'policy_issued', label: 'Policy issued' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
+export const INSURANCE_STATUS_OPTIONS: ReadonlyArray<{ value: InsuranceApplicationStatus; label: string }> =
+  INSURANCE_APPLICATION_STATUSES.map((value) => ({ value, label: INSURANCE_STATUS_LABELS[value] }));
 
 export type CommissionBasis = 'percent_of_premium' | 'percent_of_vendor_commission' | 'fixed_per_policy';
 export type PayoutFrequency = 'weekly' | 'fortnightly' | 'twice_monthly' | 'monthly' | 'every_two_months';
@@ -63,6 +45,7 @@ export interface InsuranceCompany {
   readonly integrationMode: 'manual' | 'link' | 'api';
   readonly status: 'active' | 'inactive';
   readonly notes: string | null;
+  readonly paymentLinkDomains: string[];
   readonly activeVendorCount: number;
   readonly issuedPolicyCount: number;
   readonly createdAt: string;
@@ -346,6 +329,50 @@ export const createInsuranceCompany = (input: InsuranceCompanyInput) =>
   post<InsuranceCompany>('/companies', input);
 export const updateInsuranceCompany = (id: string, input: InsuranceCompanyInput) =>
   put<InsuranceCompany>(`/companies/${id}`, input);
+
+export interface InsurancePlan {
+  readonly id: string;
+  readonly companyId: string;
+  readonly name: string;
+  readonly productType: string;
+  readonly highlights: string[];
+  readonly premiumFrom: number;
+  readonly premiumUnit: 'month' | 'year';
+  readonly coverOptions: ReadonlyArray<{ key: string; label: string; description?: string }>;
+  readonly sumInsuredOptions: string[];
+  readonly copayOptions: string[];
+  readonly status: 'draft' | 'published' | 'archived';
+  readonly sortOrder: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export type InsurancePlanInput = Omit<InsurancePlan, 'id' | 'companyId' | 'status' | 'createdAt' | 'updatedAt'>;
+
+export interface PlanReadiness {
+  readonly companyId: string;
+  readonly planId: string | null;
+  readonly publishable: boolean;
+  readonly blockers: string[];
+  readonly readyVendorCount: number;
+  readonly vendors: ReadonlyArray<{
+    linkId: string;
+    vendorId: string;
+    vendorName: string;
+    ready: boolean;
+    blockers: string[];
+  }>;
+}
+
+export const fetchCompanyPlans = (companyId: string) => get<InsurancePlan[]>(`/companies/${companyId}/plans`);
+export const createCompanyPlan = (companyId: string, input: InsurancePlanInput) =>
+  post<InsurancePlan>(`/companies/${companyId}/plans`, input);
+export const updateCompanyPlan = (companyId: string, planId: string, input: InsurancePlanInput) =>
+  put<InsurancePlan>(`/companies/${companyId}/plans/${planId}`, input);
+export const publishCompanyPlan = (planId: string) => post<InsurancePlan>(`/plans/${planId}/publish`, {});
+export const unpublishCompanyPlan = (planId: string) => post<InsurancePlan>(`/plans/${planId}/unpublish`, {});
+export const fetchPlanReadiness = (companyId: string, planId?: string) =>
+  get<PlanReadiness>(`/readiness${queryString({ companyId, planId })}`);
 
 export const fetchInsuranceVendorCandidates = (search?: string) =>
   get<InsuranceVendorCandidate[]>(`/vendor-candidates${queryString({ search })}`);

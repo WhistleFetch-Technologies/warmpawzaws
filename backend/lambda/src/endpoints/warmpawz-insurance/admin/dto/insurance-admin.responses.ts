@@ -16,10 +16,43 @@ export interface InsuranceCompanyDTO {
   readonly integrationMode: 'manual' | 'link' | 'api';
   readonly status: 'active' | 'inactive';
   readonly notes: string | null;
+  readonly paymentLinkDomains: string[];
   readonly activeVendorCount: number;
   readonly issuedPolicyCount: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface InsurancePlanDTO {
+  readonly id: string;
+  readonly companyId: string;
+  readonly name: string;
+  readonly productType: string;
+  readonly highlights: string[];
+  readonly premiumFrom: number;
+  readonly premiumUnit: 'month' | 'year';
+  readonly coverOptions: ReadonlyArray<{ key: string; label: string; description?: string }>;
+  readonly sumInsuredOptions: string[];
+  readonly copayOptions: string[];
+  readonly status: 'draft' | 'published' | 'archived';
+  readonly sortOrder: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PlanReadinessDTO {
+  readonly companyId: string;
+  readonly planId: string | null;
+  readonly publishable: boolean;
+  readonly blockers: string[];
+  readonly readyVendorCount: number;
+  readonly vendors: ReadonlyArray<{
+    linkId: string;
+    vendorId: string;
+    vendorName: string;
+    ready: boolean;
+    blockers: string[];
+  }>;
 }
 
 export interface CommissionTermsDTO {

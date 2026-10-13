@@ -2,7 +2,7 @@ import {
   INSURANCE_STATUS_LABELS,
   INSURANCE_STATUS_STAGE,
   insuranceStatusLabel,
-  isInsuranceApplicationStatus,
+  normalizeInsuranceStatus,
 } from '../domain/application-status';
 import type { OutreachQuery } from '../dto/insurance-admin.requests';
 import type {
@@ -23,7 +23,7 @@ import { dbCountActiveVendorLinks } from '../repos/vendor-links.repo';
 import { insuranceNotFound } from '../shared/insurance-admin-response';
 
 function mapOutreachRow(r: Row): OutreachRowDTO {
-  const status = isInsuranceApplicationStatus(r.status) ? r.status : 'consultation_booked';
+  const status = normalizeInsuranceStatus(r.status) ?? 'consultation_booked';
   const bookingId = str(r.booking_id);
   const applicationId = str(r.application_id);
   const petId = str(r.pet_id);

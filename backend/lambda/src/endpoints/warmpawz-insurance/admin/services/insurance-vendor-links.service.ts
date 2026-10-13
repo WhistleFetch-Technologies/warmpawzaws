@@ -31,6 +31,7 @@ import {
   dbUpdateVendorLink,
   type VendorLinkRow,
 } from '../repos/vendor-links.repo';
+import { auditInsuranceChange } from '../repos/insurance-audit';
 import { InsuranceAdminError, insuranceNotFound } from '../shared/insurance-admin-response';
 import { toPayoutScheduleDTO } from './schedule-dto';
 
@@ -88,6 +89,13 @@ export async function createVendorLink(
     throw new InsuranceAdminError(400, 'INVALID_DATES', 'End date must be on or after the start date');
   }
   const id = await dbCreateVendorLinkWithTerms(input, actorId);
+  await auditInsuranceChange({
+    entityType: 'insurance_vendor_link',
+    entityId: id,
+    action: 'create',
+    actorId,
+    newValues: { vendorId: input.vendorId, companyId: input.companyId, terms: input.terms },
+  });
   return getVendorLinkDTO(id);
 }
 
@@ -103,6 +111,13 @@ export async function updateVendorLink(
     throw new InsuranceAdminError(400, 'INVALID_DATES', 'End date must be on or after the start date');
   }
   await dbUpdateVendorLink(id, patch, actorId);
+  await auditInsuranceChange({
+    entityType: 'insurance_vendor_link',
+    entityId: id,
+    action: 'update',
+    actorId,
+    newValues: { ...patch },
+  });
   return getVendorLinkDTO(id);
 }
 
@@ -119,6 +134,13 @@ export async function addVendorLinkTerms(
 ): Promise<CommissionTermsDTO[]> {
   await requireLink(id);
   await dbInsertCommissionTerms(id, terms, actorId);
+  await auditInsuranceChange({
+    entityType: 'insurance_commission_terms',
+    entityId: id,
+    action: 'add_terms',
+    actorId,
+    newValues: { ...terms },
+  });
   return dbListCommissionTerms(id);
 }
 
@@ -130,5 +152,12 @@ export async function setVendorLinkPayoutSchedule(
   await requireLink(id);
   if ('useDefault' in input) await dbClearLinkPayoutSchedule(id);
   else await dbSaveLinkPayoutSchedule(id, input, actorId);
+  await auditInsuranceChange({
+    entityType: 'insurance_payout_schedule',
+    entityId: id,
+    action: 'useDefault' in input ? 'use_default_schedule' : 'set_schedule',
+    actorId,
+    newValues: { ...input },
+  });
   return getVendorLinkDTO(id);
 }

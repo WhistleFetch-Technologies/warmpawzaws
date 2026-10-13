@@ -16,7 +16,7 @@ const OUTREACH_CTE = `
       COALESCE(a.status, 'consultation_booked') AS status, (a.id IS NULL) AS status_derived,
       b.booking_date, b.booking_time, b.status AS booking_status, b.payment_status AS booking_payment_status,
       COALESCE(b.total_amount, b.base_price, 0) AS consultation_fee,
-      a.policy_number, a.premium_amount, a.policy_issued_at, a.policy_document_url,
+      a.policy_number, a.premium_amount, a.issued_premium, a.policy_issued_at, a.policy_document_url,
       b.created_at AS reached_out_at, COALESCE(a.updated_at, b.created_at) AS last_activity_at
     FROM bookings b
     JOIN vendors bv ON bv.id = b.vendor_id
@@ -26,7 +26,7 @@ const OUTREACH_CTE = `
     SELECT
       NULL, a.id, a.customer_id, a.vendor_id, a.pet_id, a.company_id, a.status, false,
       NULL, NULL, NULL, NULL, 0,
-      a.policy_number, a.premium_amount, a.policy_issued_at, a.policy_document_url,
+      a.policy_number, a.premium_amount, a.issued_premium, a.policy_issued_at, a.policy_document_url,
       a.created_at, a.updated_at
     FROM insurance_applications a
     WHERE a.booking_id IS NULL
@@ -105,11 +105,11 @@ export async function dbOutreachMetrics(range: { from?: string; to?: string }): 
          WHERE o.booking_date >= (NOW() AT TIME ZONE 'Asia/Kolkata')::date
            AND LOWER(COALESCE(o.booking_status, '')) NOT IN ('cancelled', 'completed', 'no_show', 'rejected')
        )::int AS upcoming,
-       COUNT(*) FILTER (WHERE o.status IN ('form_required', 'form_submitted', 'vendor_processing', 'vendor_review'))::int AS in_progress,
-       COUNT(*) FILTER (WHERE o.status IN ('payment_link_shared', 'awaiting_payment', 'payment_reported', 'documents_uploaded'))::int AS awaiting_external,
-       COUNT(*) FILTER (WHERE o.status = 'policy_issued')::int AS issued,
-       COALESCE(SUM(o.premium_amount) FILTER (WHERE o.status = 'policy_issued'), 0)::float AS premium_issued,
-       COUNT(*) FILTER (WHERE o.status = 'cancelled')::int AS cancelled
+       COUNT(*) FILTER (WHERE o.status IN ('quote_shared', 'form_sent', 'form_submitted', 'changes_requested', 'form_confirmed', 'form_required', 'vendor_processing', 'vendor_review'))::int AS in_progress,
+       COUNT(*) FILTER (WHERE o.status IN ('payment_link_sent', 'payment_link_expired', 'payment_reported', 'payment_link_shared', 'awaiting_payment', 'documents_uploaded'))::int AS awaiting_external,
+       COUNT(*) FILTER (WHERE o.status IN ('policy_uploaded', 'policy_confirmed', 'policy_issued'))::int AS issued,
+       COALESCE(SUM(COALESCE(o.issued_premium, o.premium_amount)) FILTER (WHERE o.status IN ('policy_uploaded', 'policy_confirmed', 'policy_issued')), 0)::float AS premium_issued,
+       COUNT(*) FILTER (WHERE o.status IN ('cancelled', 'dropped', 'free_look_cancelled'))::int AS cancelled
      ${OUTREACH_FROM} ${where}`,
     params,
   );

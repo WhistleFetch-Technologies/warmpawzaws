@@ -30,14 +30,35 @@ import {
   setVendorLinkScheduleHandler,
   updateVendorLinkHandler,
 } from '../handlers/vendor-links.handlers';
+import {
+  createPlanHandler,
+  listPlansHandler,
+  publishPlanHandler,
+  readinessHandler,
+  unpublishPlanHandler,
+  updatePlanHandler,
+} from '../handlers/plans.handlers';
 import { requireInsuranceAdminPermission as can } from '../middleware/require-insurance-admin-permission.middleware';
+import { requireWarmpawzInsuranceAdminEnabled } from '../middleware/require-insurance-flag.middleware';
+import { isWarmpawzInsuranceAdminEnabled, isWarmpawzInsuranceEnabled } from '../../../../lib/warmpawz-insurance-flags';
 
 const BASE = '/admin/warmpawz-insurance';
 
 export function registerInsuranceAdminRoutes(app: Hono): void {
+  app.get('/public/config/warmpawz-insurance', (c) =>
+    c.json({
+      warmpawzInsuranceEnabled: isWarmpawzInsuranceEnabled(),
+      warmpawzInsuranceAdminEnabled: isWarmpawzInsuranceAdminEnabled(),
+    }),
+  );
+
   const view = can(INSURANCE_ADMIN_VIEW);
   const companiesWrite = can(INSURANCE_ADMIN_COMPANIES_WRITE);
   const payoutsWrite = can(INSURANCE_ADMIN_PAYOUTS_WRITE);
+  const enabled = requireWarmpawzInsuranceAdminEnabled();
+
+  app.use('/admin/warmpawz-insurance', enabled);
+  app.use('/admin/warmpawz-insurance/*', enabled);
 
   app.get(`${BASE}/dashboard`, view, dashboardHandler);
   app.get(`${BASE}/outreach`, view, listOutreachHandler);
@@ -46,6 +67,12 @@ export function registerInsuranceAdminRoutes(app: Hono): void {
   app.get(`${BASE}/companies`, view, listCompaniesHandler);
   app.post(`${BASE}/companies`, companiesWrite, createCompanyHandler);
   app.put(`${BASE}/companies/:id`, companiesWrite, updateCompanyHandler);
+  app.get(`${BASE}/companies/:id/plans`, view, listPlansHandler);
+  app.post(`${BASE}/companies/:id/plans`, companiesWrite, createPlanHandler);
+  app.put(`${BASE}/companies/:id/plans/:planId`, companiesWrite, updatePlanHandler);
+  app.post(`${BASE}/plans/:id/publish`, companiesWrite, publishPlanHandler);
+  app.post(`${BASE}/plans/:id/unpublish`, companiesWrite, unpublishPlanHandler);
+  app.get(`${BASE}/readiness`, view, readinessHandler);
 
   app.get(`${BASE}/vendor-candidates`, view, listVendorCandidatesHandler);
   app.get(`${BASE}/vendor-links`, view, listVendorLinksHandler);

@@ -16,12 +16,13 @@ import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 // KYC verification components
 import { AadhaarOTPVerification, PANVerification, GSTVerification, DeclarationField } from '../kyc';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { normalizeOnboardingFieldType } from '@/lib/onboarding-field-types';
 
 interface FormField {
   id: string;
   name: string;
   label: string;
-  type: 'text' | 'number' | 'email' | 'tel' | 'textarea' | 'select' | 'multiselect' | 'checkbox' | 'radio' | 'date' | 'file' | 'map_pin' | 'aadhaar-otp' | 'pan-verify' | 'gst-verify' | 'declaration';
+  type: 'text' | 'number' | 'email' | 'tel' | 'textarea' | 'select' | 'multiselect' | 'checkbox' | 'radio' | 'date' | 'file' | 'section_note' | 'map_pin' | 'aadhaar-otp' | 'pan-verify' | 'gst-verify' | 'declaration';
   section: string;
   placeholder?: string;
   helpText?: string;
@@ -505,13 +506,11 @@ export function DynamicVendorOnboardingForm({
       if (data && (data.schema || data.fields || data.sections)) {
         // ✅ FIX: Transform fields to use 'name' instead of 'fieldName' (backend uses fieldName)
         const normalizeFieldType = (raw: unknown): string => {
-          const t = String(raw || 'text').trim().toLowerCase().replace(/_/g, '-');
-          if (t === 'phone') return 'tel';
+          const t = normalizeOnboardingFieldType(raw);
           if (t === 'aadhaarotp' || t === 'aadhar-otp') return 'aadhaar-otp';
           if (t === 'panverify') return 'pan-verify';
           if (t === 'gstverify') return 'gst-verify';
-          if (t === 'multi-select') return 'multiselect';
-          return t || 'text';
+          return t;
         };
 
         const transformField = (f: any) => {
@@ -1471,6 +1470,28 @@ export function DynamicVendorOnboardingForm({
             className={`${commonClasses} min-h-[100px] resize-none`}
             rows={3}
           />
+        );
+
+      case 'section_note':
+        return <p className="text-sm text-gray-600">{field.helpText || field.label}</p>;
+
+      case 'radio':
+        return (
+          <div className="space-y-2">
+            {field.options?.map((opt, index) => (
+              <label key={`${field.name}-${opt.value}-${index}`} className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3">
+                <input
+                  type="radio"
+                  name={field.name}
+                  value={opt.value}
+                  checked={value === opt.value}
+                  onChange={() => handleFieldChange(field.name, opt.value)}
+                  className="accent-[#FF8C42]"
+                />
+                <span className="text-sm text-gray-900">{opt.label}</span>
+              </label>
+            ))}
+          </div>
         );
 
       case 'select':
