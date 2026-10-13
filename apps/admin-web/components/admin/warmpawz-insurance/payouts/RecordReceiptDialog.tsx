@@ -18,6 +18,7 @@ import type { PayoutPeriod } from '@/lib/warmpawz-insurance-admin';
 
 export function RecordReceiptDialog({ period, onClose }: { period: PayoutPeriod | null; onClose: () => void }) {
   const [amount, setAmount] = useState('');
+  const [tdsAmount, setTdsAmount] = useState('0');
   const [reference, setReference] = useState('');
   const [receivedOn, setReceivedOn] = useState(todayIso());
   const [notes, setNotes] = useState('');
@@ -26,6 +27,7 @@ export function RecordReceiptDialog({ period, onClose }: { period: PayoutPeriod 
   useEffect(() => {
     if (!period) return;
     setAmount(String(period.received > 0 ? period.received : period.expected));
+    setTdsAmount('0');
     setReference(period.receivedReference ?? '');
     setReceivedOn(todayIso());
     setNotes('');
@@ -41,6 +43,7 @@ export function RecordReceiptDialog({ period, onClose }: { period: PayoutPeriod 
         periodStart: period.periodStart,
         periodEnd: period.periodEnd,
         amount: value,
+        tdsAmount: Number(tdsAmount) || 0,
         reference: reference.trim() || null,
         receivedOn,
         notes: notes.trim() || null,
@@ -81,6 +84,16 @@ export function RecordReceiptDialog({ period, onClose }: { period: PayoutPeriod 
                 className={inputClass}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
+              />
+            </Field>
+            <Field label="TDS (₹)" hint="Window is paid when amount received plus TDS covers the expected total">
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                className={inputClass}
+                value={tdsAmount}
+                onChange={(e) => setTdsAmount(e.target.value)}
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">

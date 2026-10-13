@@ -281,6 +281,7 @@ export interface PayoutPeriodRef {
 
 export interface PayoutReceiptInput extends PayoutPeriodRef {
   readonly amount: number;
+  readonly tdsAmount?: number;
   readonly reference: string | null;
   readonly receivedOn?: string;
   readonly notes: string | null;

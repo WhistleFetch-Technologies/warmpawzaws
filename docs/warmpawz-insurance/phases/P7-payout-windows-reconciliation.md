@@ -1,6 +1,6 @@
 # P7 — Payout windows, completion reports and reconciliation
 
-- **Owner:** Abhi (Bindu reviews)
+- **Owner:** Bindu — done 13 Oct 2026
 - **Estimate:** 4 days
 - **Depends on:** P6a (commission snapshots)
 - **Gate:** G7

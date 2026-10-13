@@ -28,6 +28,8 @@ export async function saveDefaultPayoutSchedule(
   actorId: string | null,
 ): Promise<PayoutScheduleDTO> {
   await dbSaveDefaultPayoutSchedule(input, actorId);
+  const { dbCloseOpenPayoutWindows } = await import('../repos/payouts.repo');
+  await dbCloseOpenPayoutWindows(null);
   await auditInsuranceChange({
     entityType: 'insurance_payout_schedule',
     entityId: '00000000-0000-0000-0000-000000000000',
@@ -147,6 +149,7 @@ export async function recordPayoutReceipt(
       dueDate: period.dueDate,
     },
     amount: input.amount,
+    tdsAmount: input.tdsAmount ?? 0,
     reference: input.reference,
     receivedOn: input.receivedOn ?? null,
     notes: input.notes,

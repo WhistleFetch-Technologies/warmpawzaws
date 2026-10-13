@@ -31,10 +31,18 @@ export interface LedgerPolicy {
   readonly premium: number;
   readonly vendorCommissionAmount: number | null;
   readonly issuedAt: string;
+  /** Frozen at confirmation. When set, later term edits do not reprice the line. */
+  readonly snapshot?: {
+    readonly commission: number;
+    readonly gst: number;
+    readonly total: number;
+    readonly termsDescription: string | null;
+  } | null;
 }
 
 export interface LedgerPeriodState {
   readonly receivedAmount: number;
+  readonly tdsAmount?: number;
   readonly receivedAt: string | null;
   readonly receivedReference: string | null;
   readonly lastRemindedAt: string | null;
@@ -70,6 +78,25 @@ export function ledgerStateKey(linkId: string, start: string, end: string): stri
 
 function pricePolicy(terms: readonly CommissionTerms[], policy: LedgerPolicy): PayoutPolicyDTO {
   const issuedOn = istDateOf(policy.issuedAt);
+  if (policy.snapshot) {
+    return {
+      applicationId: policy.applicationId,
+      customerName: policy.customerName,
+      policyNumber: policy.policyNumber,
+      premium: policy.premium,
+      vendorCommissionAmount: policy.vendorCommissionAmount,
+      issuedOn,
+      termsDescription: policy.snapshot.termsDescription,
+      estimate: {
+        base: policy.premium,
+        commission: policy.snapshot.commission,
+        gst: policy.snapshot.gst,
+        total: policy.snapshot.total,
+        isEstimate: false,
+        missingBase: false,
+      },
+    };
+  }
   const inForce = termsInForce(terms, issuedOn);
   return {
     applicationId: policy.applicationId,
@@ -103,7 +130,8 @@ function linkPeriods(input: PayoutLedgerInput, link: LedgerLink): PayoutPeriodDT
     const gst = round2(policies.reduce((s, p) => s + p.estimate.gst, 0));
     const expected = round2(commission + gst);
     const received = state?.receivedAmount ?? 0;
-    const status = payoutPeriodStatus({ period, today: input.today, expected, received });
+    const covered = received + (state?.tdsAmount ?? 0);
+    const status = payoutPeriodStatus({ period, today: input.today, expected, received: covered });
     const isCurrent = period.start === current.start;
     const unpricedPolicies = policies.filter((p) => p.estimate.missingBase).length;
 
@@ -133,7 +161,7 @@ function linkPeriods(input: PayoutLedgerInput, link: LedgerLink): PayoutPeriodDT
       gst,
       expected,
       received,
-      outstanding: round2(Math.max(0, expected - received)),
+      outstanding: round2(Math.max(0, expected - covered)),
       hasEstimates: policies.some((p) => p.estimate.isEstimate),
       unpricedPolicies,
       reminderCount: state?.reminderCount ?? 0,

@@ -76,13 +76,7 @@ export function InsuranceWorkspace({ vendorId }: { vendorId: string }) {
       <main className="mx-auto max-w-3xl space-y-4 px-4 py-6">
         {tab === 'Overview' ? <p className="text-sm text-gray-600">{forms.length} forms · {applications.length} applications</p> : null}
         {tab === 'Applications' ? (
-          <ul className="space-y-2">
-            {applications.map((row) => (
-              <li key={String(row.id)} className="rounded-xl border bg-white p-3 text-sm">
-                {String(row.plan_name || 'Plan')} · {String(row.status)}
-              </li>
-            ))}
-          </ul>
+          <ApplicationsBoard vendorId={vendorId} applications={applications} onChanged={() => void reload()} />
         ) : null}
         {tab === 'Chat' ? (
           <ChatTab vendorId={vendorId} applications={applications} plans={plans} onSent={() => void reload()} />
@@ -107,7 +101,7 @@ export function InsuranceWorkspace({ vendorId }: { vendorId: string }) {
           </section>
         ) : null}
         {tab === 'Availability' ? <p className="text-sm text-gray-600">Use your existing tele availability. Insurance bookings use the same tele slots.</p> : null}
-        {tab === 'Reports' ? <p className="text-sm text-gray-600">Payout reports arrive with the completion windows.</p> : null}
+        {tab === 'Reports' ? <ReportsTab vendorId={vendorId} /> : null}
         {message ? <p className="text-sm text-gray-700">{message}</p> : null}
       </main>
     </div>
@@ -219,6 +213,118 @@ function ChatTab({
         </button>
       </div>
       <InsuranceChatCard metadata={{ card: 'plan_quote', coverType: coverType || 'Cover', sumInsured: sumInsured || 'Sum insured', indicativePremium: plan?.premiumFrom || 0, premiumUnit: plan?.premiumUnit || 'year' }} />
+    </section>
+  );
+}
+
+const COLUMNS = ['new', 'in_progress', 'awaiting_payment', 'policy_issued', 'closed'] as const;
+
+function ApplicationsBoard({
+  vendorId,
+  applications,
+  onChanged,
+}: {
+  vendorId: string;
+  applications: Array<Record<string, unknown>>;
+  onChanged: () => void;
+}) {
+  const [paymentUrl, setPaymentUrl] = useState('https://');
+  const [amount, setAmount] = useState('1000');
+  const [policyNumber, setPolicyNumber] = useState('');
+  const [notice, setNotice] = useState('');
+
+  async function post(id: string, path: string, body: unknown) {
+    await apiClient.post(`/vendor/${vendorId}/insurance/applications/${id}/${path}`, body);
+    setNotice('Saved');
+    onChanged();
+  }
+
+  return (
+    <div className="space-y-4">
+      {COLUMNS.map((column) => (
+        <section key={column}>
+          <h3 className="mb-2 text-sm font-semibold capitalize">{column.replaceAll('_', ' ')}</h3>
+          <ul className="space-y-2">
+            {applications.filter((row) => String(row.column || '') === column).map((row) => {
+              const id = String(row.id);
+              const status = String(row.status);
+              return (
+                <li key={id} className="rounded-xl border bg-white p-3 text-sm">
+                  <p>{String(row.plan_name || 'Plan')} · {status.replaceAll('_', ' ')}</p>
+                  {status === 'form_confirmed' || status === 'payment_link_expired' || status === 'payment_link_sent' ? (
+                    <div className="mt-2 space-y-2">
+                      <input className="w-full rounded border px-2 py-1" value={paymentUrl} onChange={(e) => setPaymentUrl(e.target.value)} placeholder="https://pay.insurer.example/link" />
+                      <input className="w-full rounded border px-2 py-1" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                      <button type="button" className="rounded bg-[#FF8C42] px-3 py-1 font-semibold text-white" onClick={() => void post(id, 'payment-link', { url: paymentUrl, amount: Number(amount) })}>
+                        Send payment link
+                      </button>
+                    </div>
+                  ) : null}
+                  {status === 'payment_reported' || status === 'policy_uploaded' ? (
+                    <div className="mt-2 space-y-2">
+                      <input className="w-full rounded border px-2 py-1" value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} placeholder="Policy number" />
+                      <button
+                        type="button"
+                        className="rounded bg-[#FF8C42] px-3 py-1 font-semibold text-white"
+                        onClick={() => void post(id, 'policy', {
+                          policyNumber,
+                          issuedPremium: Number(amount),
+                          startDate: new Date().toISOString().slice(0, 10),
+                          endDate: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
+                          documents: [{ s3Key: `insurance/${id}.pdf`, name: 'policy.pdf', mime: 'application/pdf', size: 1024 }],
+                        })}
+                      >
+                        Upload policy
+                      </button>
+                    </div>
+                  ) : null}
+                  {status === 'policy_confirmed' ? (
+                    <button type="button" className="mt-2 text-[#FF8C42]" onClick={() => void post(id, 'free-look', {})}>
+                      Cancel in free look
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+      {notice ? <p className="text-sm">{notice}</p> : null}
+    </div>
+  );
+}
+
+function ReportsTab({ vendorId }: { vendorId: string }) {
+  const [vendorCompanyId, setVendorCompanyId] = useState('');
+  const [reportedAmount, setReportedAmount] = useState('0');
+  const [notice, setNotice] = useState('');
+  const start = new Date();
+  start.setDate(1);
+  const periodStart = start.toISOString().slice(0, 10);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0).toISOString().slice(0, 10);
+
+  return (
+    <section className="space-y-2 rounded-xl border bg-white p-4 text-sm">
+      <p>Window {periodStart} to {end}</p>
+      <input className="w-full rounded border px-2 py-1" value={vendorCompanyId} onChange={(e) => setVendorCompanyId(e.target.value)} placeholder="Vendor company link id" />
+      <input className="w-full rounded border px-2 py-1" value={reportedAmount} onChange={(e) => setReportedAmount(e.target.value)} />
+      <button
+        type="button"
+        className="rounded bg-[#FF8C42] px-3 py-2 font-semibold text-white"
+        onClick={() => {
+          void apiClient.post(`/vendor/${vendorId}/insurance/payout-windows/report`, {
+            vendorCompanyId,
+            periodStart,
+            periodEnd: end,
+            lines: [],
+            reportedAmount: Number(reportedAmount),
+            submit: true,
+          }).then(() => setNotice('Report submitted')).catch(() => setNotice('Report could not be submitted'));
+        }}
+      >
+        Submit completion report
+      </button>
+      {notice ? <p>{notice}</p> : null}
     </section>
   );
 }

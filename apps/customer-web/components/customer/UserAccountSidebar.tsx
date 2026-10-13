@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { requestGuestAuth } from '@/lib/guest-auth-gate';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { isWarmpawzInsuranceCustomerEnabled } from '@/lib/warmpawz-insurance-flag';
 import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
 import { isWarmpawzPayModuleCapable } from '@/lib/commerce-switch-routing';
 import { filterAccountMenuForReviewAccount } from '@/lib/app-review-demo-account';
@@ -1354,6 +1355,17 @@ export function UserAccountSidebar({
       view: 'bookings' as const,
       badge: activeBookings.length,
     },
+    ...(isWarmpawzInsuranceCustomerEnabled()
+      ? [{
+          icon: Shield,
+          label: 'My Insurance',
+          subtitle: 'Policies and documents',
+          iconBg: 'bg-orange-100',
+          iconColor: 'text-orange-600',
+          action: 'my-insurance' as const,
+          isExternal: true,
+        }]
+      : []),
     {
       icon: ShoppingCart,
       label: 'My Cart',

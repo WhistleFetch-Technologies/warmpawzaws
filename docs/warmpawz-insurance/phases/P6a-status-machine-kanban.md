@@ -1,6 +1,6 @@
 # P6a — Status machine, Kanban and commission snapshot
 
-- **Owner:** Abhi (Bindu reviews)
+- **Owner:** Bindu — done 13 Oct 2026
 - **Estimate:** 4 days
 - **Depends on:** P0 (status contract), P5 card endpoints (can overlap)
 - **Gate:** G6 (with P6b)

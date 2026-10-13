@@ -1,6 +1,6 @@
 # P6b — Payment link, policy documents and My Insurance
 
-- **Owner:** Bindu (Abhi reviews)
+- **Owner:** Bindu — done 13 Oct 2026
 - **Estimate:** 5 days
 - **Depends on:** P5 (cards), P6a (transition service)
 - **Gate:** G6 (with P6a)

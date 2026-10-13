@@ -214,7 +214,8 @@ if [ "$PROD" = true ]; then
       customerMealPlansEnabled: ${CMP_JS},
       guestBrowsingEnabled: ${GB_JS},
       guestLocationEnabled: ${GL_JS},
-      guestBookingEnabled: ${GBOOK_JS}
+      guestBookingEnabled: ${GBOOK_JS},
+      warmpawzInsuranceEnabled: false
     }
   );
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
@@ -243,7 +244,8 @@ else
       customerMealPlansEnabled: ${CMP_JS},
       guestBrowsingEnabled: ${GB_JS},
       guestLocationEnabled: ${GL_JS},
-      guestBookingEnabled: ${GBOOK_JS}
+      guestBookingEnabled: ${GBOOK_JS},
+      warmpawzInsuranceEnabled: true
     }
   );
   if (existing.customerMealPlansEnabled !== undefined) {

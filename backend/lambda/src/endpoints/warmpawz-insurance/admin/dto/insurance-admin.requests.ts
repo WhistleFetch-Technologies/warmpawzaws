@@ -163,6 +163,7 @@ export const payoutReceiptSchema = z
   .object({
     ...periodRef,
     amount: z.coerce.number().min(0).max(100_000_000),
+    tdsAmount: z.coerce.number().min(0).max(100_000_000).optional(),
     reference: optionalText(120),
     receivedOn: isoDate.optional(),
     notes: optionalText(500),

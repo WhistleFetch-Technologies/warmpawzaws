@@ -134,6 +134,50 @@ describe('buildPayoutLedger', () => {
     expect(periods[0]).toMatchObject({ dueDate: '2026-09-22', status: 'overdue' });
   });
 
+  it('prices confirmed policies from the frozen snapshot and clawbacks as negative lines', () => {
+    const frozen = policy('snap', '2026-09-02T00:00:00.000Z', 10_000);
+    const periods = buildPayoutLedger(
+      input({
+        policies: [
+          {
+            ...frozen,
+            snapshot: { commission: 100, gst: 18, total: 118, termsDescription: '5% of premium + 18% GST' },
+          },
+          {
+            ...policy('claw', '2026-09-20T00:00:00.000Z', 0),
+            snapshot: { commission: -100, gst: -18, total: -118, termsDescription: 'clawback' },
+          },
+        ],
+        termsByLink: new Map([
+          ['link-1', [{ basis: 'percent_of_premium' as const, rate: 99, vendorCommissionRate: null, gstRate: 18, effectiveFrom: '2026-09-20' }]],
+        ]),
+      }),
+    );
+    expect(periods.find((p) => p.periodStart === '2026-09-01')).toMatchObject({
+      commission: 0,
+      gst: 0,
+      expected: 0,
+    });
+  });
+
+  it('marks a window paid when the receipt plus TDS covers the expected amount', () => {
+    const states = new Map<string, LedgerPeriodState>([
+      [
+        ledgerStateKey('link-1', '2026-09-01', '2026-09-30'),
+        {
+          receivedAmount: 1_400,
+          tdsAmount: 100,
+          receivedAt: '2026-10-08T05:00:00.000Z',
+          receivedReference: 'UTR-TDS',
+          lastRemindedAt: null,
+          reminderCount: 0,
+        },
+      ],
+    ]);
+    const sept = buildPayoutLedger(input({ states })).find((p) => p.periodStart === '2026-09-01');
+    expect(sept).toMatchObject({ status: 'paid', outstanding: 0 });
+  });
+
   it('keeps periods whose policies the terms cannot price so they can be fixed', () => {
     const periods = buildPayoutLedger(input({ termsByLink: new Map() }));
     expect(periods.find((p) => p.periodStart === '2026-09-01')).toMatchObject({

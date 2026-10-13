@@ -128,7 +128,9 @@ if [ "$PROD" = true ]; then
     warmpawzAppointmentsAdminEnabled: true,
     // Discount Engine V2 — prod cutover (authoritative modes live on Lambda env)
     discountEngineV2Enabled: true,
-    discountEngineV2AnalyticsMode: "AUTHORITATIVE"
+    discountEngineV2AnalyticsMode: "AUTHORITATIVE",
+    warmpawzInsuranceEnabled: false,
+    warmpawzInsuranceAdminEnabled: false
   };
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
@@ -140,7 +142,9 @@ else
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: true,
-    warmpawzAppointmentsAdminEnabled: true
+    warmpawzAppointmentsAdminEnabled: true,
+    warmpawzInsuranceEnabled: true,
+    warmpawzInsuranceAdminEnabled: true
   };
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();

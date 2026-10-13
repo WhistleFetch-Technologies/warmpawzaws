@@ -17,6 +17,7 @@ export const routeKey = {
   pet: (id: string) => `pet:${String(id).trim()}`,
   insurancePlan: (id: string) => `insurance-plan:${String(id).trim()}`,
   insuranceApplication: (id: string) => `insurance-application:${String(id).trim()}`,
+  insurancePolicy: (id: string) => `insurance-policy:${String(id).trim()}`,
   packagePurchase: (vendorServiceId: string) =>
     `package:${String(vendorServiceId).trim()}`,
   problemFlow: (problemId: string) => `problem-flow:${String(problemId).trim()}`,

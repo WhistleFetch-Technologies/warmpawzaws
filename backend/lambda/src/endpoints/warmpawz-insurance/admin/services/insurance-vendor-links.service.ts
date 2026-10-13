@@ -152,6 +152,8 @@ export async function setVendorLinkPayoutSchedule(
   await requireLink(id);
   if ('useDefault' in input) await dbClearLinkPayoutSchedule(id);
   else await dbSaveLinkPayoutSchedule(id, input, actorId);
+  const { dbCloseOpenPayoutWindows } = await import('../repos/payouts.repo');
+  await dbCloseOpenPayoutWindows(id);
   await auditInsuranceChange({
     entityType: 'insurance_payout_schedule',
     entityId: id,

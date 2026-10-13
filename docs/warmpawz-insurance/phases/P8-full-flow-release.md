@@ -1,6 +1,6 @@
 # P8 — Full-flow testing and release readiness
 
-- **Owner:** Abhi + Bindu
+- **Owner:** Bindu — done 13 Oct 2026
 - **Estimate:** 3 days
 - **Depends on:** G0 – G7
 - **Gate:** G8

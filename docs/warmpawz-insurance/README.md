@@ -69,10 +69,10 @@ Vendor nav: Overview, Applications, Chat, Form Library, Availability, Reports. A
 | [P3 Customer plan grid and consultation booking](phases/P3-customer-discovery-booking.md) | Bindu (done 13 Oct 2026) | 4d | G3 |
 | [P4 Form Library and autopopulate](phases/P4-form-library-autopopulate.md) | Bindu (done 13 Oct 2026) | 5d | G4 |
 | [P5 Chat cards and data-form loop](phases/P5-chat-cards-form-loop.md) | Bindu (done 13 Oct 2026) | 6d | G5 |
-| [P6a Status machine and Kanban](phases/P6a-status-machine-kanban.md) | Abhi | 4d | G6 |
-| [P6b Payment link, documents, My Insurance](phases/P6b-payment-link-documents-my-insurance.md) | Bindu | 5d | G6 |
-| [P7 Payout windows and reconciliation](phases/P7-payout-windows-reconciliation.md) | Abhi (Bindu reviews) | 4d | G7 |
-| [P8 Full flow and release readiness](phases/P8-full-flow-release.md) | Both | 3d | G8 |
+| [P6a Status machine and Kanban](phases/P6a-status-machine-kanban.md) | Bindu — done 13 Oct 2026 | 4d | G6 |
+| [P6b Payment link, documents, My Insurance](phases/P6b-payment-link-documents-my-insurance.md) | Bindu — done 13 Oct 2026 | 5d | G6 |
+| [P7 Payout windows and reconciliation](phases/P7-payout-windows-reconciliation.md) | Bindu — done 13 Oct 2026 | 4d | G7 |
+| [P8 Full flow and release readiness](phases/P8-full-flow-release.md) | Bindu — done 13 Oct 2026 | 3d | G8 |
 
 Roughly 25 days for Abhi and 22 for Bindu; 6–7 calendar weeks with overlap.
 

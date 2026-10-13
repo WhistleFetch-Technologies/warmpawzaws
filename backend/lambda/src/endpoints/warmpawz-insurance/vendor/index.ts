@@ -9,7 +9,6 @@ import {
   confirmFormHandler,
   createFormHandler,
   formRequestHandler,
-  listApplicationsHandler,
   listFormsHandler,
   listSlugsHandler,
   listVersionsHandler,
@@ -17,6 +16,14 @@ import {
   quoteHandler,
   updateFormHandler,
 } from './library.handlers';
+import {
+  applicationDetailHandler,
+  freeLookHandler,
+  listApplicationsBoardHandler,
+  paymentLinkHandler,
+  policyUploadHandler,
+  submitReportHandler,
+} from './lifecycle.handlers';
 
 const vendorIdParam = z.string().uuid();
 
@@ -44,9 +51,14 @@ export function registerWarmpawzInsuranceVendorRoutes(app: Hono): void {
   app.post('/vendor/:vendorId/insurance/forms/:id/publish', gate, publishFormHandler);
   app.get('/vendor/:vendorId/insurance/forms/:id/versions', gate, listVersionsHandler);
   app.get('/vendor/:vendorId/insurance/slugs', gate, listSlugsHandler);
-  app.get('/vendor/:vendorId/insurance/applications', gate, listApplicationsHandler);
+  app.get('/vendor/:vendorId/insurance/applications', gate, listApplicationsBoardHandler);
+  app.get('/vendor/:vendorId/insurance/applications/:id', gate, applicationDetailHandler);
   app.post('/vendor/:vendorId/insurance/applications/:id/quote', gate, quoteHandler);
   app.post('/vendor/:vendorId/insurance/applications/:id/form-request', gate, formRequestHandler);
   app.post('/vendor/:vendorId/insurance/applications/:id/change-request', gate, changeRequestHandler);
   app.post('/vendor/:vendorId/insurance/applications/:id/transition', gate, confirmFormHandler);
+  app.post('/vendor/:vendorId/insurance/applications/:id/payment-link', gate, paymentLinkHandler);
+  app.post('/vendor/:vendorId/insurance/applications/:id/policy', gate, policyUploadHandler);
+  app.post('/vendor/:vendorId/insurance/applications/:id/free-look', gate, freeLookHandler);
+  app.post('/vendor/:vendorId/insurance/payout-windows/report', gate, submitReportHandler);
 }

@@ -38,6 +38,7 @@ import {
   unpublishPlanHandler,
   updatePlanHandler,
 } from '../handlers/plans.handlers';
+import { listReportsHandler, reviewReportHandler, runInsuranceJobs } from '../../vendor/lifecycle.handlers';
 import { requireInsuranceAdminPermission as can } from '../middleware/require-insurance-admin-permission.middleware';
 import { requireWarmpawzInsuranceAdminEnabled } from '../middleware/require-insurance-flag.middleware';
 import { isWarmpawzInsuranceAdminEnabled, isWarmpawzInsuranceEnabled } from '../../../../lib/warmpawz-insurance-flags';
@@ -87,4 +88,14 @@ export function registerInsuranceAdminRoutes(app: Hono): void {
   app.get(`${BASE}/payouts`, view, payoutOverviewHandler);
   app.post(`${BASE}/payouts/remind`, payoutsWrite, payoutRemindHandler);
   app.post(`${BASE}/payouts/receipt`, payoutsWrite, payoutReceiptHandler);
+  app.get(`${BASE}/completion-reports`, view, listReportsHandler);
+  app.post(`${BASE}/completion-reports/:id/review`, payoutsWrite, reviewReportHandler);
+  app.post(`${BASE}/jobs/run`, payoutsWrite, async (c) => {
+    try {
+      return c.json({ success: true, data: await runInsuranceJobs() });
+    } catch (error) {
+      const { insuranceAdminError } = await import('../shared/insurance-admin-response');
+      return insuranceAdminError(c, error);
+    }
+  });
 }

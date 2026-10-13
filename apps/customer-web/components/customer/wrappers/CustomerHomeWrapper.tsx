@@ -250,6 +250,7 @@ const PetProfileDashboard = dynamic(() => import('../PetProfileDashboard').then(
 const InsuranceServicesLanding = dynamic(() => import('../InsuranceServicesLanding').then((m) => ({ default: m.InsuranceServicesLanding })), { loading: LoadingSpinner });
 const InsurancePlanDetail = dynamic(() => import('../insurance/PlanDetail').then((m) => ({ default: m.PlanDetail })), { loading: LoadingSpinner });
 const InsuranceFormScreen = dynamic(() => import('../insurance/InsuranceFormScreen').then((m) => ({ default: m.InsuranceFormScreen })), { loading: LoadingSpinner });
+const MyInsuranceList = dynamic(() => import('../insurance/MyInsuranceList').then((m) => ({ default: m.MyInsuranceList })), { loading: LoadingSpinner });
 const InsuranceProvider = dynamic(() => import('../insurance/InsuranceProvider').then((m) => ({ default: m.InsuranceProvider })), { loading: LoadingSpinner });
 const PetCafeServicesLanding = dynamic(() => import('../PetCafeServicesLanding').then((m) => ({ default: m.PetCafeServicesLanding })), { loading: LoadingSpinner });
 const PharmacyServicesLanding = dynamic(() => import('../PharmacyServicesLanding').then((m) => ({ default: m.PharmacyServicesLanding })), { loading: LoadingSpinner });
@@ -371,6 +372,8 @@ type ScreenType =
   | 'insurance_provider'
   | 'insurance_plan'
   | 'insurance_form'
+  | 'my_insurance'
+  | 'insurance_policy'
   | 'cafes'
   | 'cafe_detail'
   | 'cafe_reservation'
@@ -2514,6 +2517,8 @@ export function CustomerHomeWrapper({
       } else {
         openAccountHubFromMenu('referral-system');
       }
+    } else if (path === 'my-insurance') {
+      openAccountHubFromMenu('my_insurance');
     } else if (path === 'appointments') {
       openAccountHubFromMenu('appointments');
     } else if (path === 'warmpawz-pay') {
@@ -4798,6 +4803,13 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'insurance_form') {
     const applicationId = String(history[history.length - 1]?.key || '').replace('insurance-application:', '');
     return <InsuranceFormScreen applicationId={applicationId} onBack={handleBack} />;
+  }
+
+  if (currentScreen === 'my_insurance' || currentScreen === 'insurance_policy') {
+    const applicationId = currentScreen === 'insurance_policy'
+      ? String(history[history.length - 1]?.key || '').replace('insurance-policy:', '')
+      : undefined;
+    return <MyInsuranceList onBack={handleBack} focusApplicationId={applicationId} />;
   }
 
   if (currentScreen === 'insurance_provider') {
