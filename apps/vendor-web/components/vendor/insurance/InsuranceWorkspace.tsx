@@ -251,6 +251,11 @@ function ApplicationsBoard({
               return (
                 <li key={id} className="rounded-xl border bg-white p-3 text-sm">
                   <p>{String(row.plan_name || 'Plan')} · {status.replaceAll('_', ' ')}</p>
+                  {status === 'consultation_booked' ? (
+                    <button type="button" className="mt-2 rounded bg-[#FF8C42] px-3 py-1 font-semibold text-white" onClick={() => void post(id, 'transition', { to: 'consulted' })}>
+                      Mark consulted
+                    </button>
+                  ) : null}
                   {status === 'form_confirmed' || status === 'payment_link_expired' || status === 'payment_link_sent' ? (
                     <div className="mt-2 space-y-2">
                       <input className="w-full rounded border px-2 py-1" value={paymentUrl} onChange={(e) => setPaymentUrl(e.target.value)} placeholder="https://pay.insurer.example/link" />
