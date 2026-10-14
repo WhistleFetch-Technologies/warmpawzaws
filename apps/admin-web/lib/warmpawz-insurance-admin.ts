@@ -18,8 +18,8 @@ export type PayoutFrequency = 'weekly' | 'fortnightly' | 'twice_monthly' | 'mont
 export type PayoutPeriodStatus = 'open' | 'due' | 'grace' | 'overdue' | 'paid' | 'nothing_due';
 
 export const COMMISSION_BASIS_OPTIONS: ReadonlyArray<{ value: CommissionBasis; label: string }> = [
-  { value: 'percent_of_premium', label: '% of premium' },
-  { value: 'percent_of_vendor_commission', label: "% of vendor's insurer commission" },
+  { value: 'percent_of_premium', label: 'Percentage of premium' },
+  { value: 'percent_of_vendor_commission', label: "Percentage of vendor's commission" },
   { value: 'fixed_per_policy', label: 'Fixed ₹ per policy' },
 ];
 
@@ -31,9 +31,25 @@ export const PAYOUT_FREQUENCY_OPTIONS: ReadonlyArray<{ value: PayoutFrequency; l
   { value: 'every_two_months', label: 'Every two months' },
 ];
 
+/** Short labels for table cells; PAYOUT_FREQUENCY_OPTIONS carries the longer explanations. */
+export const PAYOUT_FREQUENCY_SHORT_LABELS: Readonly<Record<PayoutFrequency, string>> = {
+  weekly: 'Weekly',
+  fortnightly: 'Fortnightly',
+  twice_monthly: 'Twice monthly',
+  monthly: 'Monthly',
+  every_two_months: 'Every 2 months',
+};
+
+export const COMMISSION_BASIS_SHORT_LABELS: Readonly<Record<CommissionBasis, string>> = {
+  percent_of_premium: 'Percentage of premium',
+  percent_of_vendor_commission: "Percentage of vendor's commission",
+  fixed_per_policy: 'Fixed amount per policy',
+};
+
 export interface InsuranceCompany {
   readonly id: string;
   readonly name: string;
+  readonly description: string | null;
   readonly legalName: string | null;
   readonly providerCode: string | null;
   readonly logoUrl: string | null;
@@ -135,7 +151,18 @@ export interface InsuranceVendorCandidate {
   readonly email: string | null;
   readonly status: string | null;
   readonly isActive: boolean;
+  readonly isApproved: boolean;
   readonly linkedCompanyCount: number;
+}
+
+export interface VendorLinkConfigInput {
+  readonly frequency: PayoutFrequency | 'default';
+  readonly terms: CommissionTermsInput;
+}
+
+export interface VendorLinkConfigResult {
+  readonly link: VendorLink;
+  readonly changed: { readonly terms: boolean; readonly schedule: boolean };
 }
 
 export interface OutreachRow {
@@ -273,6 +300,69 @@ export interface PayoutOverview {
   readonly periods: PayoutPeriod[];
 }
 
+export type ReconciliationStatus = 'pending' | 'overdue' | 'settled' | 'nothing_due' | 'cancelled';
+
+export interface ReconciliationPolicy {
+  readonly applicationId: string;
+  readonly policyNumber: string;
+  readonly policyDate: string;
+  readonly addedAt: string | null;
+  readonly customer: { readonly name: string | null; readonly phone: string | null };
+  readonly pet: { readonly name: string | null; readonly species: string | null } | null;
+  readonly company: { readonly id: string; readonly name: string; readonly logoUrl: string | null };
+  readonly vendor: { readonly id: string; readonly name: string };
+  readonly premium: number;
+  readonly commission: number;
+  readonly gst: number;
+  readonly total: number;
+  readonly isEstimate: boolean;
+  readonly unpriced: boolean;
+  readonly status: ReconciliationStatus;
+  readonly period: { readonly start: string; readonly end: string; readonly dueDate: string } | null;
+}
+
+export interface ReconciliationSummary {
+  readonly completedPolicies: number;
+  readonly cancelledPolicies: number;
+  readonly totalPremium: number;
+  readonly commission: number;
+  readonly gst: number;
+  readonly commissionDue: number;
+  readonly outstanding: number;
+  readonly received: number;
+}
+
+export interface Reconciliation {
+  readonly range: { readonly from: string; readonly to: string };
+  readonly summary: ReconciliationSummary;
+  readonly items: ReconciliationPolicy[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+}
+
+export interface ReconciliationFilters {
+  readonly from: string;
+  readonly to: string;
+  readonly companyId?: string;
+  readonly vendorId?: string;
+  readonly search?: string;
+}
+
+export interface ReconciliationExport {
+  readonly filename: string;
+  readonly csv: string;
+  readonly rowCount: number;
+}
+
+export interface PolicyDocuments {
+  readonly applicationId: string;
+  readonly policyNumber: string | null;
+  readonly startDate: string | null;
+  readonly endDate: string | null;
+  readonly documents: ReadonlyArray<{ readonly name: string; readonly mime: string | null; readonly url: string | null }>;
+}
+
 export interface PayoutPeriodRef {
   readonly vendorCompanyId: string;
   readonly periodStart: string;
@@ -324,6 +414,13 @@ export const fetchInsuranceOutreach = (filters: OutreachFilters) =>
 
 export const fetchApplicationEvents = (applicationId: string) =>
   get<ApplicationEvent[]>(`/applications/${applicationId}/events`);
+
+export const fetchReconciliation = (filters: ReconciliationFilters & { page: number; pageSize: number }) =>
+  get<Reconciliation>(`/reconciliation${queryString({ ...filters })}`);
+export const exportReconciliation = (filters: ReconciliationFilters) =>
+  get<ReconciliationExport>(`/reconciliation/export${queryString({ ...filters })}`);
+export const fetchPolicyDocuments = (applicationId: string) =>
+  get<PolicyDocuments>(`/reconciliation/policies/${applicationId}/documents`);
 
 export const fetchInsuranceCompanies = () => get<InsuranceCompany[]>('/companies');
 export const createInsuranceCompany = (input: InsuranceCompanyInput) =>
@@ -388,6 +485,8 @@ export const addVendorLinkTerms = (id: string, input: CommissionTermsInput) =>
   post<CommissionTerms[]>(`/vendor-links/${id}/terms`, input);
 export const setVendorLinkSchedule = (id: string, input: PayoutScheduleInput | { useDefault: true }) =>
   put<VendorLink>(`/vendor-links/${id}/payout-schedule`, input);
+export const saveVendorLinkConfig = (id: string, input: VendorLinkConfigInput) =>
+  put<VendorLinkConfigResult>(`/vendor-links/${id}/config`, input);
 
 export const fetchDefaultPayoutSchedule = () => get<PayoutSchedule>('/payout-schedule');
 export const saveDefaultPayoutSchedule = (input: PayoutScheduleInput) =>

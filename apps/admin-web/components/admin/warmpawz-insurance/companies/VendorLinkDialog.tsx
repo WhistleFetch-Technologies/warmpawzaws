@@ -22,7 +22,15 @@ import {
   useCreateVendorLink,
   useInsuranceVendorCandidates,
 } from '@/hooks/warmpawz-insurance/useInsuranceAdmin';
-import type { InsuranceCompany } from '@/lib/warmpawz-insurance-admin';
+import type { InsuranceCompany, InsuranceVendorCandidate } from '@/lib/warmpawz-insurance-admin';
+
+const isAssignable = (v: InsuranceVendorCandidate) => v.isActive && v.isApproved;
+
+function unassignableReason(v: InsuranceVendorCandidate): string {
+  if (!v.isActive) return ' (inactive)';
+  if (!v.isApproved) return ' (not approved)';
+  return '';
+}
 
 export function VendorLinkDialog({
   open,
@@ -48,6 +56,7 @@ export function VendorLinkDialog({
   const create = useCreateVendorLink();
   const candidates = useInsuranceVendorCandidates(debounced, open);
   const activeCompanies = companies.filter((c) => c.status === 'active');
+  const defaultCompanyName = companies.find((c) => c.id === defaultCompanyId)?.name;
 
   useEffect(() => {
     if (!open) return;
@@ -86,7 +95,7 @@ export function VendorLinkDialog({
         notes: notes.trim() || null,
         terms: termsDraftToInput(terms),
       });
-      toast.success('Vendor linked');
+      toast.success('Vendor assigned');
       onClose();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -97,13 +106,18 @@ export function VendorLinkDialog({
     <Dialog open={open} onOpenChange={(v: boolean) => !v && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Link an insurance vendor to a company</DialogTitle>
+          <DialogTitle>
+            {defaultCompanyName ? `Assign vendor to ${defaultCompanyName}` : 'Assign an insurance vendor to a company'}
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-5">
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-gray-900">Vendor and company</h3>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Find insurance vendor" hint="Only vendors registered with the insurance role are listed">
+              <Field
+                label="Find insurance vendor"
+                hint="Insurance-role vendors are listed; only active, approved vendors can be assigned"
+              >
                 <input
                   className={inputClass}
                   placeholder="Business, owner, phone or email"
@@ -117,10 +131,10 @@ export function VendorLinkDialog({
                     {candidates.isLoading ? 'Loading…' : `Select vendor (${candidates.data?.length ?? 0} found)`}
                   </option>
                   {(candidates.data ?? []).map((v) => (
-                    <option key={v.vendorId} value={v.vendorId}>
+                    <option key={v.vendorId} value={v.vendorId} disabled={!isAssignable(v)}>
                       {v.name}
                       {v.phone ? ` · ${v.phone}` : ''}
-                      {v.isActive ? '' : ' (inactive)'}
+                      {unassignableReason(v)}
                       {v.linkedCompanyCount ? ` · ${v.linkedCompanyCount} linked` : ''}
                     </option>
                   ))}
@@ -186,7 +200,7 @@ export function VendorLinkDialog({
             Cancel
           </button>
           <button type="button" className={primaryButtonClass} disabled={create.isPending} onClick={submit}>
-            {create.isPending ? 'Linking…' : 'Link vendor'}
+            {create.isPending ? 'Assigning…' : 'Assign vendor'}
           </button>
         </DialogFooter>
       </DialogContent>

@@ -15,6 +15,7 @@ import type { InsuranceCompany, InsuranceCompanyInput } from '@/lib/warmpawz-ins
 
 const EMPTY: InsuranceCompanyInput = {
   name: '',
+  description: null,
   legalName: null,
   providerCode: null,
   logoUrl: null,
@@ -29,7 +30,7 @@ const EMPTY: InsuranceCompanyInput = {
   paymentLinkDomains: [],
 };
 
-type TextKey = 'name' | 'legalName' | 'providerCode' | 'logoUrl' | 'contactName' | 'contactEmail' | 'contactPhone' | 'escalationContact' | 'notes';
+type TextKey = 'name' | 'description' | 'legalName' | 'providerCode' | 'logoUrl' | 'contactName' | 'contactEmail' | 'contactPhone' | 'escalationContact' | 'notes';
 
 export function CompanyDialog({
   open,
@@ -50,6 +51,7 @@ export function CompanyDialog({
     const next: InsuranceCompanyInput = company
       ? {
           name: company.name,
+          description: company.description,
           legalName: company.legalName,
           providerCode: company.providerCode,
           logoUrl: company.logoUrl,
@@ -105,11 +107,19 @@ export function CompanyDialog({
     <Dialog open={open} onOpenChange={(v: boolean) => !v && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{company ? `Edit ${company.name}` : 'Add insurance company'}</DialogTitle>
+          <DialogTitle>{company ? `Manage ${company.name}` : 'Add insurance company'}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Display name *">
             <input className={inputClass} {...text('name')} placeholder="e.g. HDFC ERGO" />
+          </Field>
+          <Field label="Short description" hint="Shown under the name, max 200 characters">
+            <input
+              className={inputClass}
+              maxLength={200}
+              {...text('description')}
+              placeholder="e.g. Comprehensive pet insurance"
+            />
           </Field>
           <Field label="Legal name">
             <input className={inputClass} {...text('legalName')} />

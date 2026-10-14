@@ -253,14 +253,7 @@ export function InsurancePayoutPage({ embedded = false }: { embedded?: boolean }
     </>
   );
 
-  if (embedded) {
-    return (
-      <section className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold text-gray-900">Payout windows</h2>
-        {body}
-      </section>
-    );
-  }
+  if (embedded) return body;
 
   return (
     <WarmpawzInsuranceShell

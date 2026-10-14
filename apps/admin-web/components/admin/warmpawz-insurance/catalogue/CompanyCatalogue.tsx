@@ -2,308 +2,194 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { WarmpawzInsuranceShell } from '@/components/admin/warmpawz-insurance/shared/WarmpawzInsuranceShell';
-import {
-  CommissionTermsFields,
-  emptyTermsDraft,
-  termsDraftError,
-  termsDraftToInput,
-  type ScheduleDraft,
-  type TermsDraft,
-} from '@/components/admin/warmpawz-insurance/shared/insurance-forms';
-import {
-  errorMessage,
-  inputClass,
-  primaryButtonClass,
-  secondaryButtonClass,
-  todayIso,
-} from '@/components/admin/warmpawz-insurance/shared/insurance-ui';
+import { errorMessage, primaryButtonClass, todayIso } from '@/components/admin/warmpawz-insurance/shared/insurance-ui';
 import { CompanyDialog } from '@/components/admin/warmpawz-insurance/companies/CompanyDialog';
 import { ManageVendorLinkDialog } from '@/components/admin/warmpawz-insurance/companies/ManageVendorLinkDialog';
 import { VendorLinkDialog } from '@/components/admin/warmpawz-insurance/companies/VendorLinkDialog';
-import { PlanDialog } from './PlanDialog';
+import { ConfirmDialog } from '@/components/admin/warmpawz-pay/catalogue/ConfirmDialog';
 import {
-  useAddVendorLinkTerms,
-  useCompanyPlans,
+  useDefaultPayoutSchedule,
   useInsuranceCompanies,
-  usePlanReadiness,
-  usePublishCompanyPlan,
-  useSetVendorLinkSchedule,
+  useUpdateVendorLink,
   useVendorLinks,
 } from '@/hooks/warmpawz-insurance/useInsuranceAdmin';
-import { canManageInsuranceCompanies } from '@/lib/admin-permissions';
-import {
-  PAYOUT_FREQUENCY_OPTIONS,
-  type InsuranceCompany,
-  type InsurancePlan,
-  type PayoutFrequency,
-  type VendorLink,
-} from '@/lib/warmpawz-insurance-admin';
+import { canManageInsuranceCompanies, canManageInsurancePayouts } from '@/lib/admin-permissions';
+import type { InsuranceCompany, VendorLink } from '@/lib/warmpawz-insurance-admin';
+import { CatalogueFilters, EMPTY_CATALOGUE_FILTERS, type CatalogueFilterState } from './CatalogueFilters';
+import { CompanyCard } from './CompanyCard';
 
-function ReadinessBadge({ ready, blockers }: { ready: boolean; blockers: string[] }) {
-  return (
-    <span
-      title={blockers.join('\n')}
-      className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${
-        ready ? 'border-green-200 bg-green-50 text-green-700' : 'border-amber-200 bg-amber-50 text-amber-800'
-      }`}
-    >
-      {ready ? 'Ready' : blockers[0] || 'Not ready'}
-    </span>
-  );
-}
-
-function VendorConfigRow({ link, canWrite }: { link: VendorLink; canWrite: boolean }) {
-  const saveTerms = useAddVendorLinkTerms();
-  const saveSchedule = useSetVendorLinkSchedule();
-  const [terms, setTerms] = useState<TermsDraft>(() =>
-    emptyTermsDraft(link.currentTerms?.effectiveFrom || todayIso()),
-  );
-  const [schedule, setSchedule] = useState<ScheduleDraft>({
-    frequency: link.scheduleOverride?.frequency || 'monthly',
-    anchorDate: link.scheduleOverride?.anchorDate || '2026-01-01',
-    dueDaysAfterPeriodEnd: String(link.scheduleOverride?.dueDaysAfterPeriodEnd ?? 7),
-    graceDays: String(link.scheduleOverride?.graceDays ?? 3),
-    reminderDaysBefore: (link.scheduleOverride?.reminderDaysBefore ?? [3, 1]).join(', '),
-  });
-
-  useEffect(() => {
-    const current = link.currentTerms;
-    setTerms(
-      current
-        ? {
-            basis: current.basis,
-            rate: String(current.rate),
-            vendorCommissionRate: current.vendorCommissionRate == null ? '' : String(current.vendorCommissionRate),
-            gstRate: String(current.gstRate),
-            effectiveFrom: current.effectiveFrom,
-            notes: current.notes ?? '',
-          }
-        : emptyTermsDraft(todayIso()),
-    );
-  }, [link]);
-
-  const save = async () => {
-    const termsError = termsDraftError(terms);
-    if (termsError) return toast.error(termsError);
-    const reminderDaysBefore = schedule.reminderDaysBefore
-      .split(',')
-      .map((n) => Number(n.trim()))
-      .filter((n) => Number.isFinite(n));
-    try {
-      await saveTerms.mutateAsync({ id: link.id, input: termsDraftToInput(terms) });
-      await saveSchedule.mutateAsync({
-        id: link.id,
-        input: {
-          frequency: schedule.frequency,
-          anchorDate: schedule.anchorDate,
-          dueDaysAfterPeriodEnd: Number(schedule.dueDaysAfterPeriodEnd) || 0,
-          graceDays: Number(schedule.graceDays) || 0,
-          reminderDaysBefore,
-        },
-      });
-      toast.success(`Saved ${link.vendorName}`);
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
-  };
-
-  return (
-    <div className="space-y-3 border-t border-gray-100 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="font-medium text-gray-900">{link.vendorName}</div>
-          <div className="text-xs text-gray-500">{link.status}</div>
-        </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="text-sm text-gray-700">
-          Payout frequency
-          <select
-            className={`${inputClass} mt-1`}
-            value={schedule.frequency}
-            disabled={!canWrite}
-            onChange={(e) => setSchedule({ ...schedule, frequency: e.target.value as PayoutFrequency })}
-          >
-            {PAYOUT_FREQUENCY_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <CommissionTermsFields value={terms} onChange={setTerms} />
-      {canWrite ? (
-        <button type="button" className={primaryButtonClass} onClick={save} disabled={saveTerms.isPending || saveSchedule.isPending}>
-          Save vendor
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function CompanyCard({
-  company,
-  links,
-  canWrite,
-  onEdit,
-  onAssign,
-  onHistory,
-}: {
+interface CompanyRow {
   company: InsuranceCompany;
   links: VendorLink[];
-  canWrite: boolean;
-  onEdit: () => void;
-  onAssign: () => void;
-  onHistory: (linkId: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [planDialog, setPlanDialog] = useState<InsurancePlan | null | undefined>(undefined);
-  const plans = useCompanyPlans(open ? company.id : null);
-  const readiness = usePlanReadiness(open ? company.id : null);
-  const publish = usePublishCompanyPlan();
-  const companyLinks = links.filter((link) => link.companyId === company.id);
+}
 
-  const togglePublish = async (plan: InsurancePlan) => {
-    try {
-      await publish.mutateAsync({ planId: plan.id, publish: plan.status !== 'published' });
-      toast.success(plan.status === 'published' ? 'Plan unpublished' : 'Plan published');
-    } catch (err) {
-      toast.error(errorMessage(err));
+function filterRows(companies: InsuranceCompany[], links: VendorLink[], f: CatalogueFilterState): CompanyRow[] {
+  const q = f.search.trim().toLowerCase();
+  const rows: CompanyRow[] = [];
+  for (const company of companies) {
+    if (f.companyId !== 'all' && company.id !== f.companyId) continue;
+    if (f.status !== 'all' && company.status !== f.status) continue;
+    let companyLinks = links.filter((l) => l.companyId === company.id);
+    if (f.vendorId !== 'all') {
+      companyLinks = companyLinks.filter((l) => l.vendorId === f.vendorId);
+      if (companyLinks.length === 0) continue;
     }
-  };
-
-  return (
-    <article className="rounded-xl border border-gray-200 bg-white">
-      <button type="button" className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left" onClick={() => setOpen((v) => !v)}>
-        <span className="flex items-center gap-2">
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          <span>
-            <span className="block font-semibold text-gray-900">{company.name}</span>
-            <span className="text-xs text-gray-500">{company.status} · {company.activeVendorCount} vendors</span>
-          </span>
-        </span>
-        {readiness.data ? (
-          <ReadinessBadge ready={readiness.data.publishable} blockers={readiness.data.blockers} />
-        ) : null}
-      </button>
-      {open ? (
-        <div className="space-y-4 border-t border-gray-100 px-4 py-4">
-          <div className="flex flex-wrap gap-2">
-            {canWrite ? <button type="button" className={secondaryButtonClass} onClick={onEdit}>Edit company</button> : null}
-            {canWrite ? <button type="button" className={secondaryButtonClass} onClick={onAssign}>Assign vendor</button> : null}
-          </div>
-          <section>
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">Plans</h3>
-              {canWrite ? (
-                <button type="button" className={primaryButtonClass} onClick={() => setPlanDialog(null)}>
-                  <Plus className="h-4 w-4" /> Add plan
-                </button>
-              ) : null}
-            </div>
-            {plans.isLoading ? <p className="text-sm text-gray-500">Loading plans…</p> : null}
-            <ul className="divide-y divide-gray-100">
-              {(plans.data ?? []).map((plan) => (
-                <li key={plan.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <div>
-                    <div className="font-medium text-gray-900">{plan.name}</div>
-                    <div className="text-xs text-gray-500">
-                      {plan.productType} · from ₹{plan.premiumFrom} / {plan.premiumUnit} · {plan.status}
-                      {plan.highlights.length ? ` · ${plan.highlights.join(' · ')}` : ''}
-                    </div>
-                  </div>
-                  {canWrite ? (
-                    <div className="flex gap-2">
-                      <button type="button" className={secondaryButtonClass} onClick={() => setPlanDialog(plan)}>Edit</button>
-                      <button type="button" className={secondaryButtonClass} onClick={() => togglePublish(plan)}>
-                        {plan.status === 'published' ? 'Unpublish' : 'Publish'}
-                      </button>
-                    </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section>
-            <h3 className="mb-2 text-sm font-semibold text-gray-900">Assigned vendors</h3>
-            {companyLinks.length === 0 ? <p className="text-sm text-gray-500">No vendors assigned.</p> : null}
-            {companyLinks.map((link) => {
-              const vendorReady = readiness.data?.vendors.find((row) => row.linkId === link.id);
-              return (
-                <div key={link.id}>
-                  <div className="mb-2 flex items-center justify-between">
-                    {vendorReady ? <ReadinessBadge ready={vendorReady.ready} blockers={vendorReady.blockers} /> : <span />}
-                    <button type="button" className="text-sm text-[#FF8C42]" onClick={() => onHistory(link.id)}>View history</button>
-                  </div>
-                  <VendorConfigRow link={link} canWrite={canWrite} />
-                </div>
-              );
-            })}
-          </section>
-          {planDialog !== undefined ? (
-            <PlanDialog open companyId={company.id} plan={planDialog} onClose={() => setPlanDialog(undefined)} />
-          ) : null}
-        </div>
-      ) : null}
-    </article>
-  );
+    if (q) {
+      const companyMatch = `${company.name} ${company.description ?? ''}`.toLowerCase().includes(q);
+      if (!companyMatch) {
+        companyLinks = companyLinks.filter((l) => `${l.vendorName} ${l.vendorPhone ?? ''}`.toLowerCase().includes(q));
+        if (companyLinks.length === 0) continue;
+      }
+    }
+    rows.push({ company, links: companyLinks });
+  }
+  return rows;
 }
 
 export function CompanyCatalogue() {
   const companies = useInsuranceCompanies();
   const links = useVendorLinks();
+  const platformDefault = useDefaultPayoutSchedule();
+  const endLink = useUpdateVendorLink();
   const [canWrite, setCanWrite] = useState(false);
+  const [canConfigure, setCanConfigure] = useState(false);
+  const [filters, setFilters] = useState<CatalogueFilterState>(EMPTY_CATALOGUE_FILTERS);
+  const [toggled, setToggled] = useState<Set<string> | null>(null);
   const [editing, setEditing] = useState<InsuranceCompany | null>(null);
   const [companyOpen, setCompanyOpen] = useState(false);
   const [assignCompanyId, setAssignCompanyId] = useState<string | undefined>();
   const [assignOpen, setAssignOpen] = useState(false);
   const [historyId, setHistoryId] = useState<string | null>(null);
+  const [ending, setEnding] = useState<VendorLink | null>(null);
 
   useEffect(() => {
-    setCanWrite(canManageInsuranceCompanies());
+    const companiesWrite = canManageInsuranceCompanies();
+    setCanWrite(companiesWrite);
+    setCanConfigure(companiesWrite && canManageInsurancePayouts());
   }, []);
+
+  const allCompanies = useMemo(() => companies.data ?? [], [companies.data]);
+  const liveLinks = useMemo(() => (links.data ?? []).filter((l) => l.status !== 'ended'), [links.data]);
+
+  useEffect(() => {
+    if (toggled === null && allCompanies.length > 0) setToggled(new Set([allCompanies[0].id]));
+  }, [allCompanies, toggled]);
+
+  const rows = useMemo(() => filterRows(allCompanies, liveLinks, filters), [allCompanies, liveLinks, filters]);
+  const companyOptions = useMemo(() => allCompanies.map((c) => ({ value: c.id, label: c.name })), [allCompanies]);
+  const vendorOptions = useMemo(() => {
+    const byId = new Map(liveLinks.map((l) => [l.vendorId, l.vendorName]));
+    return [...byId].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [liveLinks]);
+
+  const autoExpand = filters.search.trim() !== '' || filters.vendorId !== 'all';
+  const isExpanded = (id: string) => autoExpand !== Boolean(toggled?.has(id));
+  const toggle = (id: string) =>
+    setToggled((prev) => {
+      const next = new Set(prev ?? []);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const historyLink = useMemo(
     () => (links.data ?? []).find((link) => link.id === historyId) ?? null,
     [links.data, historyId],
   );
 
+  const confirmEnd = async () => {
+    if (!ending) return;
+    const today = todayIso();
+    try {
+      await endLink.mutateAsync({
+        id: ending.id,
+        input: { status: 'ended', effectiveTo: ending.effectiveFrom > today ? ending.effectiveFrom : today },
+      });
+      toast.success(`${ending.vendorName} removed from ${ending.companyName}`);
+      setEnding(null);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+
+  const loading = companies.isLoading || links.isLoading;
+  const error = companies.error ?? links.error;
+
   return (
     <WarmpawzInsuranceShell
       title="Catalogue"
-      subtitle="Insurance companies, their plans, and the vendors who can sell them"
+      subtitle="Insurance companies and the vendors assigned to sell them"
       actions={
         canWrite ? (
-          <button type="button" className={primaryButtonClass} onClick={() => { setEditing(null); setCompanyOpen(true); }}>
-            <Plus className="h-4 w-4" /> Add company
+          <button
+            type="button"
+            className={primaryButtonClass}
+            onClick={() => {
+              setEditing(null);
+              setCompanyOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4" /> Add Insurance Company
           </button>
         ) : null
       }
     >
-      {companies.isLoading ? <p className="text-sm text-gray-500">Loading companies…</p> : null}
-      {companies.isError ? <p className="text-sm text-red-600">{errorMessage(companies.error)}</p> : null}
-      <div className="space-y-3">
-        {(companies.data ?? []).map((company) => (
+      <div className="space-y-4">
+        <CatalogueFilters value={filters} companies={companyOptions} vendors={vendorOptions} onChange={setFilters} />
+        {loading ? <p className="text-sm text-gray-500">Loading companies…</p> : null}
+        {error ? <p className="text-sm text-red-600">{errorMessage(error)}</p> : null}
+        {!loading && !error && rows.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+            {allCompanies.length === 0 ? 'No insurance companies yet.' : 'No companies match these filters.'}
+          </p>
+        ) : null}
+        {rows.map(({ company, links: companyLinks }) => (
           <CompanyCard
             key={company.id}
             company={company}
-            links={links.data ?? []}
+            links={companyLinks}
+            platformDefault={platformDefault.data}
             canWrite={canWrite}
-            onEdit={() => { setEditing(company); setCompanyOpen(true); }}
-            onAssign={() => { setAssignCompanyId(company.id); setAssignOpen(true); }}
-            onHistory={setHistoryId}
+            canConfigure={canConfigure}
+            expanded={isExpanded(company.id)}
+            onToggle={() => toggle(company.id)}
+            onManage={() => {
+              setEditing(company);
+              setCompanyOpen(true);
+            }}
+            onAssign={() => {
+              setAssignCompanyId(company.id);
+              setAssignOpen(true);
+            }}
+            onEndLink={setEnding}
+            onShowHistory={setHistoryId}
           />
         ))}
       </div>
       <CompanyDialog open={companyOpen} company={editing} onClose={() => setCompanyOpen(false)} />
       <VendorLinkDialog
         open={assignOpen}
-        companies={companies.data ?? []}
+        companies={allCompanies}
         defaultCompanyId={assignCompanyId}
         onClose={() => setAssignOpen(false)}
       />
       <ManageVendorLinkDialog link={historyLink} onClose={() => setHistoryId(null)} />
+      <ConfirmDialog
+        open={ending !== null}
+        title="Remove vendor from company?"
+        description={
+          ending
+            ? `${ending.vendorName} will stop selling ${ending.companyName} policies. Policies already issued keep their commission terms, and you can assign the vendor again later.`
+            : ''
+        }
+        confirmLabel="Remove vendor"
+        destructive
+        loading={endLink.isPending}
+        onConfirm={confirmEnd}
+        onOpenChange={(open) => !open && setEnding(null)}
+      />
     </WarmpawzInsuranceShell>
   );
 }

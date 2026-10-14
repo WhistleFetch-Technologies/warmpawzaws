@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addVendorLinkTerms,
   createInsuranceCompany,
@@ -9,10 +9,14 @@ import {
   fetchInsuranceOutreach,
   fetchInsuranceVendorCandidates,
   fetchPayoutOverview,
+  fetchPolicyDocuments,
+  fetchReconciliation,
   fetchVendorLinks,
   fetchVendorLinkTerms,
   recordPayoutReceipt,
   saveDefaultPayoutSchedule,
+  saveVendorLinkConfig,
+  fetchDefaultPayoutSchedule,
   sendPayoutReminder,
   setVendorLinkSchedule,
   updateInsuranceCompany,
@@ -28,6 +32,8 @@ import {
   type InsurancePlanInput,
   type OutreachFilters,
   type PayoutScheduleInput,
+  type ReconciliationFilters,
+  type VendorLinkConfigInput,
   type VendorLinkUpdateInput,
 } from '@/lib/warmpawz-insurance-admin';
 
@@ -41,6 +47,10 @@ export const winsQueryKeys = {
   linkTerms: (linkId: string) => [...winsQueryKeys.all, 'terms', linkId] as const,
   candidates: (search: string) => [...winsQueryKeys.all, 'candidates', search] as const,
   payouts: () => [...winsQueryKeys.all, 'payouts'] as const,
+  defaultSchedule: () => [...winsQueryKeys.all, 'default-schedule'] as const,
+  reconciliation: (filters: ReconciliationFilters, page: number, pageSize: number) =>
+    [...winsQueryKeys.all, 'reconciliation', filters, page, pageSize] as const,
+  policyDocuments: (applicationId: string) => [...winsQueryKeys.all, 'policy-documents', applicationId] as const,
   plans: (companyId: string) => [...winsQueryKeys.all, 'plans', companyId] as const,
   readiness: (companyId: string) => [...winsQueryKeys.all, 'readiness', companyId] as const,
 };
@@ -77,6 +87,24 @@ export function useInsuranceCompanies() {
 
 export function useVendorLinks() {
   return useQuery({ queryKey: winsQueryKeys.vendorLinks(), queryFn: () => fetchVendorLinks(), staleTime: 30_000 });
+}
+
+export function useReconciliation(filters: ReconciliationFilters, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: winsQueryKeys.reconciliation(filters, page, pageSize),
+    queryFn: () => fetchReconciliation({ ...filters, page, pageSize }),
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
+}
+
+export function usePolicyDocuments(applicationId: string | null) {
+  return useQuery({
+    queryKey: winsQueryKeys.policyDocuments(applicationId ?? ''),
+    queryFn: () => fetchPolicyDocuments(applicationId as string),
+    enabled: Boolean(applicationId),
+    staleTime: 5 * 60_000,
+  });
 }
 
 export function useVendorLinkTerms(linkId: string | null) {
@@ -142,6 +170,18 @@ export function useSetVendorLinkSchedule() {
       setVendorLinkSchedule(id, input),
     onSuccess: invalidate,
   });
+}
+
+export function useSaveVendorLinkConfig() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: VendorLinkConfigInput }) => saveVendorLinkConfig(id, input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDefaultPayoutSchedule() {
+  return useQuery({ queryKey: winsQueryKeys.defaultSchedule(), queryFn: fetchDefaultPayoutSchedule, staleTime: 60_000 });
 }
 
 export function useSaveDefaultPayoutSchedule() {
