@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Home, MessageCircle, ShoppingBag, PawPrint, Video, Package } from 'lucide-react';
+import { Home, MessageCircle, PawPrint, Video, ShieldCheck } from 'lucide-react';
 
 export interface PremiumServiceCardTheme {
   gradientFrom: string;
@@ -37,6 +37,8 @@ export interface PremiumServiceCardEntry {
   launchServiceStyle?: string;
   /** When true, card requires ecommerce to be enabled. */
   requiresCommerce?: boolean;
+  /** Image already carries the title, subtitle and CTA — render it as the whole card face. */
+  artworkOnly?: boolean;
   theme: PremiumServiceCardTheme;
 }
 
@@ -104,33 +106,31 @@ export const PREMIUM_SERVICE_CARDS: PremiumServiceCardEntry[] = [
     },
   },
   {
-    id: 'shop-pet-product',
-    titleLines: ['SHOP PET', 'PRODUCT'],
-    subtitle: 'Food, toys & more',
-    imageUrl: '/images/home/3cards/Picsart_26-07-13_11-54-32-921.webp',
-    imageAlt: 'Puppy and kitten with pet products',
-    imageNudgeX: 0,
-    imageNudgeY: 0,
-    screen: 'shop',
-    requiresCommerce: true,
+    id: 'pet-insurance',
+    titleLines: ['FIND BEST', 'INSURANCE'],
+    subtitle: 'Compare plans & book a consultation',
+    imageUrl: '/images/home/3cards/pet-insurance.webp',
+    imageAlt: 'Dog and cat with a paw shield — find the best pet insurance',
+    screen: 'insurance',
+    artworkOnly: true,
     theme: {
-      gradientFrom: 'from-violet-100',
-      gradientTo: 'to-purple-200/90',
-      hoverGradientFrom: 'group-hover:from-violet-200',
-      hoverGradientTo: 'group-hover:to-purple-300/95',
-      borderClass: 'border-violet-300/55',
-      titleClass: 'text-violet-900',
-      subtitleClass: 'text-violet-900/65',
-      badgeBorderClass: 'border-violet-300/90',
-      badgeIconClass: 'text-violet-700',
-      ctaBgClass: 'bg-violet-600',
-      ctaHoverClass: 'group-hover:bg-violet-700',
-      shadowClass: 'shadow-[0_4px_20px_rgba(124,58,237,0.22)]',
-      hoverShadowClass: 'hover:shadow-[0_10px_32px_rgba(124,58,237,0.32)]',
-      glowClass: 'bg-violet-400/0 group-hover:bg-violet-400/10',
-      watermarkIcon: Package,
-      watermarkClass: 'text-violet-600',
-      badgeIcon: ShoppingBag,
+      gradientFrom: 'from-[#d1fadf]',
+      gradientTo: 'to-[#c4f2d3]',
+      hoverGradientFrom: 'group-hover:from-[#c8f7d8]',
+      hoverGradientTo: 'group-hover:to-[#b9edca]',
+      borderClass: 'border-emerald-300/55',
+      titleClass: 'text-emerald-900',
+      subtitleClass: 'text-emerald-900/65',
+      badgeBorderClass: 'border-emerald-300/90',
+      badgeIconClass: 'text-emerald-700',
+      ctaBgClass: 'bg-emerald-700',
+      ctaHoverClass: 'group-hover:bg-emerald-800',
+      shadowClass: 'shadow-[0_4px_20px_rgba(5,150,105,0.22)]',
+      hoverShadowClass: 'hover:shadow-[0_10px_32px_rgba(5,150,105,0.32)]',
+      glowClass: 'bg-emerald-400/0 group-hover:bg-emerald-400/10',
+      watermarkIcon: ShieldCheck,
+      watermarkClass: 'text-emerald-600',
+      badgeIcon: ShieldCheck,
     },
   },
 ];

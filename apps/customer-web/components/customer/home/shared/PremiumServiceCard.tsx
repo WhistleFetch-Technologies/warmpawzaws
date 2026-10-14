@@ -25,6 +25,28 @@ function PremiumServiceCardComponent({ entry, index, onPress }: PremiumServiceCa
   const { theme } = entry;
   const BadgeIcon = theme.badgeIcon;
   const WatermarkIcon = theme.watermarkIcon;
+  const ariaLabel = `${entry.titleLines.join(' ')} — ${entry.subtitle}`;
+
+  if (entry.artworkOnly) {
+    return (
+      <button
+        type="button"
+        onClick={onPress}
+        className={`premium-service-card-enter group relative block min-h-[10.25rem] min-w-0 overflow-hidden rounded-[26px] border bg-gradient-to-br text-left transition-[transform,box-shadow] duration-300 ease-out active:scale-[0.97] hover:-translate-y-1 hover:scale-[1.02] ${theme.gradientFrom} ${theme.gradientTo} ${theme.hoverGradientFrom} ${theme.hoverGradientTo} ${theme.borderClass} ${theme.shadowClass} ${theme.hoverShadowClass}`}
+        style={{ animationDelay: `${index * 70}ms` }}
+        aria-label={ariaLabel}
+      >
+        {/* Absolutely filled so the square artwork never stretches the grid row. */}
+        <CachedImage
+          src={entry.imageUrl}
+          alt={entry.imageAlt}
+          fill
+          className="object-contain transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+          loading={index === 0 ? 'eager' : 'lazy'}
+        />
+      </button>
+    );
+  }
 
   return (
     <button
@@ -32,7 +54,7 @@ function PremiumServiceCardComponent({ entry, index, onPress }: PremiumServiceCa
       onClick={onPress}
       className={`premium-service-card-enter group relative flex min-h-[10.25rem] min-w-0 items-stretch overflow-hidden rounded-[26px] border bg-gradient-to-br text-left transition-[transform,box-shadow] duration-300 ease-out active:scale-[0.97] hover:-translate-y-1 hover:scale-[1.02] ${theme.gradientFrom} ${theme.gradientTo} ${theme.hoverGradientFrom} ${theme.hoverGradientTo} ${theme.borderClass} ${theme.shadowClass} ${theme.hoverShadowClass}`}
       style={{ animationDelay: `${index * 70}ms` }}
-      aria-label={`${entry.titleLines.join(' ')} — ${entry.subtitle}`}
+      aria-label={ariaLabel}
     >
       <div
         className={`pointer-events-none absolute inset-0 transition-colors duration-500 ease-out ${theme.glowClass}`}

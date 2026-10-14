@@ -6,7 +6,7 @@ import {
 const PREMIUM_CARD_PATHS = [
   '/images/home/3cards/Picsart_26-07-13_11-55-03-999.png',
   '/images/home/3cards/Picsart_26-07-13_11-54-49-722.png',
-  '/images/home/3cards/Picsart_26-07-13_11-54-32-921.webp',
+  '/images/home/3cards/pet-insurance.webp',
 ] as const;
 
 const SHOP_CATEGORY_PATHS = [
