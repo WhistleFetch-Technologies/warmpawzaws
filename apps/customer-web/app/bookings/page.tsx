@@ -1,6 +1,7 @@
 'use client';
 
 import { MyBookings } from '@/components/customer/booking/MyBookings';
+import { CustomerBookingMessagesModalProvider } from '@/components/customer/messaging/CustomerBookingMessagesModalProvider';
 import { goBackFromBookingsPage } from '@/lib/go-back-or-replace';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { AuthGateLoadingShell } from '@/components/AuthGateLoadingShell';
@@ -46,12 +47,14 @@ function BookingsPageInner() {
   const backToPrevious = () => goBackFromBookingsPage(router);
 
   return (
-    <MyBookings
-      phone={phone}
-      onBack={backToPrevious}
-      onCloseToHome={() => nav.goToHome()}
-      reviewBookingIdFromUrl={reviewBookingId}
-    />
+    <CustomerBookingMessagesModalProvider phone={phone}>
+      <MyBookings
+        phone={phone}
+        onBack={backToPrevious}
+        onCloseToHome={() => nav.goToHome()}
+        reviewBookingIdFromUrl={reviewBookingId}
+      />
+    </CustomerBookingMessagesModalProvider>
   );
 }
 
