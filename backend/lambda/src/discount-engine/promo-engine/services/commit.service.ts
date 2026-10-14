@@ -21,7 +21,6 @@ import {
 } from './promo-limits';
 import { rangeCountLimitExceededAfterInsert, type RangeLimitReason } from '../vcf/amount-range';
 import { parseCustomerCopy } from '../customer-copy';
-import { cashbackAfterWalletSpend } from '../benefits/cashback-after-wallet';
 import { dbTransactionHasUsage } from '../repos/benefit-cap.repo';
 import { resolveBenefitCapNotice } from './benefit-cap.service';
 import type { AppliedBenefit, CommitRequest } from '../types';
@@ -105,19 +104,6 @@ async function resolveAllowedCashbackAfterInsert(opts: {
   return { allowed: round2(allowed), reason };
 }
 
-/** Quoted cashback was on the full invoice. Wallet spent on this payment does not earn again. */
-function scaleCashbackForWalletSpend(
-  benefits: AppliedBenefit[],
-  invoice: number | undefined,
-  walletUsed: number | undefined,
-): AppliedBenefit[] {
-  if (invoice == null || walletUsed == null) return benefits;
-  return benefits.map((b) => {
-    if (b.benefit_type !== 'CASHBACK') return b;
-    return { ...b, amount: cashbackAfterWalletSpend(b.amount, invoice, walletUsed) };
-  });
-}
-
 function ruleIdOf(benefits: AppliedBenefit[]): string | null {
   const id = benefits.find((b) => b.rule_id)?.rule_id;
   return id && /^[0-9a-f-]{36}$/i.test(id) ? id : null;
@@ -179,11 +165,7 @@ export async function commitPromotion(req: CommitRequest): Promise<{
   const userId = req.user_id || String(evalRow.user_id);
   const result = parseJson(evalRow.result_json);
   const benefits = await withholdCashbackOverBenefitCap({
-    benefits: scaleCashbackForWalletSpend(
-      (Array.isArray(result.benefits) ? result.benefits : []) as AppliedBenefit[],
-      req.invoice_amount,
-      req.wallet_used,
-    ),
+    benefits: (Array.isArray(result.benefits) ? result.benefits : []) as AppliedBenefit[],
     userId,
     transactionId: req.transaction_id,
     evaluationId: req.evaluation_id,

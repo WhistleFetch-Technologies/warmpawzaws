@@ -230,9 +230,9 @@ export interface CommitRequest {
   transaction_id: string;
   payment_id?: string;
   user_id?: string;
-  /** Invoice the cashback percent was quoted on. With wallet_used, cashback is scaled down. */
+  /** Quoted bill. Kept for callers; it does not change the configured cashback. */
   invoice_amount?: number;
-  /** Wallet balance spent on this same payment. Does not change the instant discount. */
+  /** Wallet balance spent on this same payment. Does not change the configured cashback or discount. */
   wallet_used?: number;
 }
 

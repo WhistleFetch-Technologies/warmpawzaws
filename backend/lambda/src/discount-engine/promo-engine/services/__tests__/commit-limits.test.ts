@@ -101,17 +101,17 @@ describe('commitPromotion limits re-check + notification', () => {
     );
   });
 
-  it('earns cashback on the invoice minus wallet spent on this payment', async () => {
+  it('credits the configured cashback when wallet is spent on this payment', async () => {
     const res = await commitPromotion({
       evaluation_id: 'e1',
       transaction_id: 'pay-wallet',
       invoice_amount: 1000,
       wallet_used: 200,
     });
-    expect(res.cashback_credited).toBe(120);
-    expect(mockCredit).toHaveBeenCalledWith(expect.objectContaining({ amount: 120 }));
+    expect(res.cashback_credited).toBe(150);
+    expect(mockCredit).toHaveBeenCalledWith(expect.objectContaining({ amount: 150 }));
     expect(repo.dbInsertUsage).toHaveBeenCalledWith(
-      expect.objectContaining({ discount_amount: 100, cashback_amount: 120 }),
+      expect.objectContaining({ discount_amount: 100, cashback_amount: 150 }),
     );
   });
 

@@ -11,7 +11,6 @@ import {
   type WpayAppointmentContext,
   type WpayVendorDetail,
 } from '@/lib/warmpawz-pay/wpay-api';
-import { cashbackAfterWalletSpend } from '@/lib/warmpawz-pay/cashback-after-wallet';
 import { previewWpayCommercialQuote, previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
 import { buildWpaySuccessPath } from '@/lib/warmpawz-pay/wpay-success-href';
@@ -193,13 +192,6 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
       ? Math.min(spendableWallet, displayPayable)
       : 0;
   const displayAfterWallet = Math.max(0, Math.round((displayPayable - walletAmountApplied) * 100) / 100);
-  const quotedCashback = Math.max(0, Number(promoEnginePreview?.pendingCashback) || 0);
-  const promoPreviewForCard = promoEnginePreview
-    ? {
-        ...promoEnginePreview,
-        pendingCashback: cashbackAfterWalletSpend(quotedCashback, billAmount, walletAmountApplied),
-      }
-    : null;
 
   const onGetDiscount = useCallback(() => {
     if (billAmount <= 0) return;
@@ -557,9 +549,9 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
                   <span>You pay</span>
                   <span>{formatInr(displayAfterWallet)}</span>
                 </div>
-                {promoPreviewForCard ? (
+                {promoEnginePreview ? (
                   <div className="mt-2">
-                    <PromoEarnPreview data={promoPreviewForCard} showSavingsLine />
+                    <PromoEarnPreview data={promoEnginePreview} showSavingsLine />
                   </div>
                 ) : engineDiscount > 0 ? (
                   <p className="mt-2 rounded-lg bg-green-50 p-2 text-center text-xs text-green-800">
