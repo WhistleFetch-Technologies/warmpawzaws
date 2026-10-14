@@ -3,6 +3,7 @@ import { todayIst } from '../domain/payout-periods';
 import type {
   CommissionTermsInput,
   PayoutScheduleInput,
+  VendorLinkConfigInput,
   VendorLinkCreateInput,
   VendorLinkUpdateInput,
 } from '../dto/insurance-admin.requests';
@@ -19,15 +20,19 @@ import {
 import { dbGetInsuranceCompany } from '../repos/companies.repo';
 import {
   dbClearLinkPayoutSchedule,
+  dbGetDefaultPayoutSchedule,
   dbListPayoutScheduleOverrides,
   dbSaveLinkPayoutSchedule,
 } from '../repos/payout-schedules.repo';
 import {
+  dbApplyVendorLinkConfig,
   dbCreateVendorLinkWithTerms,
+  dbFindVendorLinkByPair,
+  dbGetInsuranceVendorState,
   dbGetVendorLink,
-  dbIsInsuranceVendor,
   dbListInsuranceVendorCandidates,
   dbListVendorLinks,
+  dbReactivateVendorLinkWithTerms,
   dbUpdateVendorLink,
   type VendorLinkRow,
 } from '../repos/vendor-links.repo';
@@ -77,8 +82,17 @@ export async function createVendorLink(
   input: VendorLinkCreateInput,
   actorId: string | null,
 ): Promise<VendorLinkDTO> {
-  if (!(await dbIsInsuranceVendor(input.vendorId))) {
+  const vendor = await dbGetInsuranceVendorState(input.vendorId);
+  if (!vendor) throw insuranceNotFound('Vendor');
+  if (!vendor.isInsuranceVendor) {
     throw new InsuranceAdminError(422, 'NOT_INSURANCE_VENDOR', 'Only insurance vendors can be linked to a company');
+  }
+  if (!vendor.isActive || !vendor.isApproved) {
+    throw new InsuranceAdminError(
+      422,
+      'VENDOR_NOT_ACTIVE',
+      `${vendor.name} is not an active, approved vendor — approve and activate them first`,
+    );
   }
   const company = await dbGetInsuranceCompany(input.companyId);
   if (!company) throw insuranceNotFound('Insurance company');
@@ -87,6 +101,22 @@ export async function createVendorLink(
   }
   if (input.effectiveTo && input.effectiveTo < input.effectiveFrom) {
     throw new InsuranceAdminError(400, 'INVALID_DATES', 'End date must be on or after the start date');
+  }
+  const existing = await dbFindVendorLinkByPair(input.vendorId, input.companyId);
+  if (existing && existing.status !== 'ended') {
+    throw new InsuranceAdminError(409, 'LINK_EXISTS', `${vendor.name} is already assigned to ${company.name}`);
+  }
+  if (existing) {
+    await dbReactivateVendorLinkWithTerms(existing.id, input, actorId);
+    await auditInsuranceChange({
+      entityType: 'insurance_vendor_link',
+      entityId: existing.id,
+      action: 'reactivate',
+      actorId,
+      oldValues: { status: existing.status },
+      newValues: { status: 'active', terms: input.terms },
+    });
+    return getVendorLinkDTO(existing.id);
   }
   const id = await dbCreateVendorLinkWithTerms(input, actorId);
   await auditInsuranceChange({
@@ -142,6 +172,68 @@ export async function addVendorLinkTerms(
     newValues: { ...terms },
   });
   return dbListCommissionTerms(id);
+}
+
+function sameTerms(current: CommissionTermsDTO | null, next: CommissionTermsInput): boolean {
+  if (!current) return false;
+  const vendorRate = (basis: string, rate: number | null | undefined) =>
+    basis === 'percent_of_vendor_commission' ? rate ?? null : null;
+  return (
+    current.basis === next.basis &&
+    current.rate === next.rate &&
+    current.gstRate === next.gstRate &&
+    vendorRate(current.basis, current.vendorCommissionRate) === vendorRate(next.basis, next.vendorCommissionRate)
+  );
+}
+
+/**
+ * Catalogue inline edit. Saves frequency and commission in one transaction and only writes what
+ * changed, so commission history gets a row per real change rather than per click.
+ */
+export async function saveVendorLinkConfig(
+  id: string,
+  input: VendorLinkConfigInput,
+  actorId: string | null,
+): Promise<{ link: VendorLinkDTO; changed: { terms: boolean; schedule: boolean } }> {
+  const link = await getVendorLinkDTO(id);
+  if (link.status === 'ended') {
+    throw new InsuranceAdminError(422, 'LINK_ENDED', `${link.vendorName} is no longer assigned — assign them again first`);
+  }
+
+  const terms = sameTerms(link.currentTerms, input.terms) ? null : input.terms;
+
+  const override = link.scheduleOverride;
+  let schedule: PayoutScheduleInput | 'default' | null = null;
+  if (input.frequency === 'default') {
+    schedule = override ? 'default' : null;
+  } else if ((override?.frequency ?? null) !== input.frequency) {
+    const base = override ?? (await dbGetDefaultPayoutSchedule());
+    if (override || base.frequency !== input.frequency) {
+      schedule = {
+        frequency: input.frequency,
+        anchorDate: base.anchorDate,
+        dueDaysAfterPeriodEnd: base.dueDaysAfterPeriodEnd,
+        graceDays: base.graceDays,
+        reminderDaysBefore: [...base.reminderDaysBefore],
+      };
+    }
+  }
+
+  if (terms || schedule) {
+    await dbApplyVendorLinkConfig(id, { terms, schedule }, actorId);
+    await auditInsuranceChange({
+      entityType: 'insurance_vendor_link',
+      entityId: id,
+      action: 'save_config',
+      actorId,
+      oldValues: { terms: link.currentTerms, schedule: override },
+      newValues: { terms, schedule },
+    });
+  }
+  return {
+    link: terms || schedule ? await getVendorLinkDTO(id) : link,
+    changed: { terms: Boolean(terms), schedule: Boolean(schedule) },
+  };
 }
 
 export async function setVendorLinkPayoutSchedule(

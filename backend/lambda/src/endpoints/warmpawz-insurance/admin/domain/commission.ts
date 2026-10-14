@@ -82,10 +82,21 @@ export function estimateCommission(
 }
 
 /** Terms in force on a date: latest effectiveFrom on or before it. */
-export function termsInForce<T extends CommissionTerms>(terms: readonly T[], date: string): T | null {
+/** Same-day edits: the most recently created row wins, whatever order `terms` arrive in. */
+export function termsInForce<T extends CommissionTerms & { readonly createdAt?: string }>(
+  terms: readonly T[],
+  date: string,
+): T | null {
   let best: T | null = null;
   for (const t of terms) {
-    if (t.effectiveFrom <= date && (!best || t.effectiveFrom > best.effectiveFrom)) best = t;
+    if (t.effectiveFrom > date) continue;
+    if (
+      !best ||
+      t.effectiveFrom > best.effectiveFrom ||
+      (t.effectiveFrom === best.effectiveFrom && (t.createdAt ?? '') > (best.createdAt ?? ''))
+    ) {
+      best = t;
+    }
   }
   return best;
 }

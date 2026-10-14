@@ -27,6 +27,7 @@ import {
   listVendorCandidatesHandler,
   listVendorLinksHandler,
   listVendorLinkTermsHandler,
+  saveVendorLinkConfigHandler,
   setVendorLinkScheduleHandler,
   updateVendorLinkHandler,
 } from '../handlers/vendor-links.handlers';
@@ -38,6 +39,11 @@ import {
   unpublishPlanHandler,
   updatePlanHandler,
 } from '../handlers/plans.handlers';
+import {
+  policyDocumentsHandler,
+  reconciliationExportHandler,
+  reconciliationHandler,
+} from '../handlers/reconciliation.handlers';
 import { listReportsHandler, reviewReportHandler, runInsuranceJobs } from '../../vendor/lifecycle.handlers';
 import { requireInsuranceAdminPermission as can } from '../middleware/require-insurance-admin-permission.middleware';
 import { requireWarmpawzInsuranceAdminEnabled } from '../middleware/require-insurance-flag.middleware';
@@ -64,6 +70,9 @@ export function registerInsuranceAdminRoutes(app: Hono): void {
   app.get(`${BASE}/dashboard`, view, dashboardHandler);
   app.get(`${BASE}/outreach`, view, listOutreachHandler);
   app.get(`${BASE}/applications/:id/events`, view, listApplicationEventsHandler);
+  app.get(`${BASE}/reconciliation`, view, reconciliationHandler);
+  app.get(`${BASE}/reconciliation/export`, view, reconciliationExportHandler);
+  app.get(`${BASE}/reconciliation/policies/:id/documents`, view, policyDocumentsHandler);
 
   app.get(`${BASE}/companies`, view, listCompaniesHandler);
   app.post(`${BASE}/companies`, companiesWrite, createCompanyHandler);
@@ -82,6 +91,7 @@ export function registerInsuranceAdminRoutes(app: Hono): void {
   app.get(`${BASE}/vendor-links/:id/terms`, view, listVendorLinkTermsHandler);
   app.post(`${BASE}/vendor-links/:id/terms`, companiesWrite, addVendorLinkTermsHandler);
   app.put(`${BASE}/vendor-links/:id/payout-schedule`, payoutsWrite, setVendorLinkScheduleHandler);
+  app.put(`${BASE}/vendor-links/:id/config`, companiesWrite, payoutsWrite, saveVendorLinkConfigHandler);
 
   app.get(`${BASE}/payout-schedule`, view, getPayoutScheduleHandler);
   app.put(`${BASE}/payout-schedule`, payoutsWrite, savePayoutScheduleHandler);

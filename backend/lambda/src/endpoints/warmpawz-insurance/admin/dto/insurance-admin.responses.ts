@@ -5,6 +5,7 @@ import type { PayoutFrequency, PayoutPeriodStatus } from '../domain/payout-perio
 export interface InsuranceCompanyDTO {
   readonly id: string;
   readonly name: string;
+  readonly description: string | null;
   readonly legalName: string | null;
   readonly providerCode: string | null;
   readonly logoUrl: string | null;
@@ -102,6 +103,7 @@ export interface InsuranceVendorCandidateDTO {
   readonly email: string | null;
   readonly status: string | null;
   readonly isActive: boolean;
+  readonly isApproved: boolean;
   readonly linkedCompanyCount: number;
 }
 
@@ -206,6 +208,68 @@ export interface PayoutPeriodDTO {
   readonly reminderDueToday: boolean;
   readonly receivedReference: string | null;
   readonly policies: PayoutPolicyDTO[];
+}
+
+/** Settlement of the vendor's commission, derived from the payout period the policy falls in. */
+export type ReconciliationStatus = 'pending' | 'overdue' | 'settled' | 'nothing_due' | 'cancelled';
+
+export interface ReconciliationPolicyDTO {
+  readonly applicationId: string;
+  readonly policyNumber: string;
+  /** IST date the policy was confirmed; decides its payout period. */
+  readonly policyDate: string;
+  /** When the vendor uploaded the policy. */
+  readonly addedAt: string | null;
+  readonly customer: { readonly name: string | null; readonly phone: string | null };
+  readonly pet: { readonly name: string | null; readonly species: string | null } | null;
+  readonly company: { readonly id: string; readonly name: string; readonly logoUrl: string | null };
+  readonly vendor: { readonly id: string; readonly name: string };
+  readonly premium: number;
+  readonly commission: number;
+  readonly gst: number;
+  readonly total: number;
+  readonly isEstimate: boolean;
+  /** No commission terms could price this policy. */
+  readonly unpriced: boolean;
+  readonly status: ReconciliationStatus;
+  readonly period: { readonly start: string; readonly end: string; readonly dueDate: string } | null;
+}
+
+export interface ReconciliationSummaryDTO {
+  readonly completedPolicies: number;
+  readonly cancelledPolicies: number;
+  readonly totalPremium: number;
+  readonly commission: number;
+  readonly gst: number;
+  /** Commission + GST owed by vendors for the range. */
+  readonly commissionDue: number;
+  /** Owed on policies whose payout period is not fully paid. */
+  readonly outstanding: number;
+  /** Owed on policies whose payout period is fully paid. */
+  readonly received: number;
+}
+
+export interface ReconciliationDTO {
+  readonly range: { readonly from: string; readonly to: string };
+  readonly summary: ReconciliationSummaryDTO;
+  readonly items: ReconciliationPolicyDTO[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+}
+
+export interface ReconciliationExportDTO {
+  readonly filename: string;
+  readonly csv: string;
+  readonly rowCount: number;
+}
+
+export interface PolicyDocumentsDTO {
+  readonly applicationId: string;
+  readonly policyNumber: string | null;
+  readonly startDate: string | null;
+  readonly endDate: string | null;
+  readonly documents: ReadonlyArray<{ readonly name: string; readonly mime: string | null; readonly url: string | null }>;
 }
 
 export interface PayoutOverviewDTO {

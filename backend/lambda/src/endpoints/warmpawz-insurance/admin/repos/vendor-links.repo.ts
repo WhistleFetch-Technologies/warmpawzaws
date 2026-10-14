@@ -1,7 +1,15 @@
 import { query, withTransaction } from '../../../../database/rds-connection';
-import type { CommissionTermsInput, VendorLinkCreateInput, VendorLinkUpdateInput } from '../dto/insurance-admin.requests';
+import type {
+  CommissionTermsInput,
+  PayoutScheduleInput,
+  VendorLinkCreateInput,
+  VendorLinkUpdateInput,
+} from '../dto/insurance-admin.requests';
 import type { InsuranceVendorCandidateDTO } from '../dto/insurance-admin.responses';
 import { dbInsertCommissionTerms } from './commission-terms.repo';
+import { dbClearLinkPayoutSchedule, dbSaveLinkPayoutSchedule } from './payout-schedules.repo';
+import { dbCloseOpenPayoutWindows } from './payouts.repo';
+import { isApprovedVendorStatus } from './readiness.repo';
 import { isoDate, isoTs, num, str, vendorDisplayName, type Row } from './row-mappers';
 
 export const INSURANCE_ROLE_NAMES = ['insurance', 'pet_insurance'] as const;
@@ -77,13 +85,79 @@ export async function dbGetVendorLink(id: string): Promise<VendorLinkRow | null>
   return row ? mapLink(row) : null;
 }
 
-export async function dbIsInsuranceVendor(vendorId: string): Promise<boolean> {
+export interface InsuranceVendorState {
+  readonly isInsuranceVendor: boolean;
+  readonly isActive: boolean;
+  readonly isApproved: boolean;
+  readonly name: string;
+}
+
+export async function dbGetInsuranceVendorState(vendorId: string): Promise<InsuranceVendorState | null> {
   const res = await query(
-    `SELECT 1 FROM vendors v JOIN roles r ON r.id = v.role_id
-     WHERE v.id = $1::uuid AND r.name = ANY($2::text[]) LIMIT 1`,
+    `SELECT v.business_name, v.owner_name, v.status, v.is_active,
+            (r.name = ANY($2::text[])) AS is_insurance
+     FROM vendors v LEFT JOIN roles r ON r.id = v.role_id
+     WHERE v.id = $1::uuid LIMIT 1`,
     [vendorId, [...INSURANCE_ROLE_NAMES]],
   );
-  return res.rows.length > 0;
+  const row = res.rows[0] as Row | undefined;
+  if (!row) return null;
+  return {
+    isInsuranceVendor: row.is_insurance === true,
+    isActive: row.is_active === true,
+    isApproved: isApprovedVendorStatus(row.status),
+    name: vendorDisplayName(row),
+  };
+}
+
+export async function dbFindVendorLinkByPair(vendorId: string, companyId: string): Promise<VendorLinkRow | null> {
+  const res = await query(`${LINK_SELECT} WHERE l.vendor_id = $1::uuid AND l.company_id = $2::uuid`, [
+    vendorId,
+    companyId,
+  ]);
+  const row = res.rows[0] as Row | undefined;
+  return row ? mapLink(row) : null;
+}
+
+/** Re-assigning a vendor whose link was ended reuses the row (one link per vendor-company pair). */
+export async function dbReactivateVendorLinkWithTerms(
+  linkId: string,
+  input: VendorLinkCreateInput,
+  actorId: string | null,
+): Promise<void> {
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE insurance_vendor_companies SET
+         status = 'active', authorisation_ref = $2, agency_code = $3, effective_from = $4::date,
+         effective_to = $5::date, notes = $6, updated_by = $7, updated_at = NOW()
+       WHERE id = $1::uuid`,
+      [
+        linkId,
+        input.authorisationRef,
+        input.agencyCode,
+        input.effectiveFrom,
+        input.effectiveTo ?? null,
+        input.notes,
+        actorId,
+      ],
+    );
+    await dbInsertCommissionTerms(linkId, { ...input.terms }, actorId, client);
+  });
+}
+
+export async function dbApplyVendorLinkConfig(
+  linkId: string,
+  change: { terms: CommissionTermsInput | null; schedule: PayoutScheduleInput | 'default' | null },
+  actorId: string | null,
+): Promise<void> {
+  await withTransaction(async (client) => {
+    if (change.terms) await dbInsertCommissionTerms(linkId, change.terms, actorId, client);
+    if (change.schedule) {
+      if (change.schedule === 'default') await dbClearLinkPayoutSchedule(linkId, client);
+      else await dbSaveLinkPayoutSchedule(linkId, change.schedule, actorId, client);
+      await dbCloseOpenPayoutWindows(linkId, client);
+    }
+  });
 }
 
 export async function dbCreateVendorLinkWithTerms(
@@ -174,6 +248,7 @@ export async function dbListInsuranceVendorCandidates(
     email: str(r.email),
     status: str(r.status),
     isActive: r.is_active === true,
+    isApproved: isApprovedVendorStatus(r.status),
     linkedCompanyCount: num(r.linked),
   }));
 }

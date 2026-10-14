@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { query } from '../../../../database/rds-connection';
 import type { PayoutFrequency, PayoutScheduleConfig } from '../domain/payout-periods';
 import type { PayoutScheduleInput } from '../dto/insurance-admin.requests';
@@ -77,8 +78,9 @@ export async function dbSaveLinkPayoutSchedule(
   vendorCompanyId: string,
   input: PayoutScheduleInput,
   actorId: string | null,
+  client?: PoolClient,
 ): Promise<void> {
-  await query(
+  await (client ?? { query }).query(
     `INSERT INTO insurance_payout_schedules (
        frequency, anchor_date, due_days_after_period_end, grace_days, reminder_days_before, updated_by,
        vendor_company_id
@@ -92,8 +94,9 @@ export async function dbSaveLinkPayoutSchedule(
   );
 }
 
-export async function dbClearLinkPayoutSchedule(vendorCompanyId: string): Promise<void> {
-  await query(`DELETE FROM insurance_payout_schedules WHERE vendor_company_id = $1::uuid`, [
-    vendorCompanyId,
-  ]);
+export async function dbClearLinkPayoutSchedule(vendorCompanyId: string, client?: PoolClient): Promise<void> {
+  await (client ?? { query }).query(
+    `DELETE FROM insurance_payout_schedules WHERE vendor_company_id = $1::uuid`,
+    [vendorCompanyId],
+  );
 }

@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../../../database/rds-connection';
 import { ledgerStateKey } from '../domain/payout-ledger';
 import { isoDate, isoTs, num, numOrNull, str, type Row } from './row-mappers';
@@ -153,8 +154,11 @@ export async function dbRecordPayoutReminder(opts: {
   });
 }
 
-export async function dbCloseOpenPayoutWindows(vendorCompanyId: string | null): Promise<void> {
-  await query(
+export async function dbCloseOpenPayoutWindows(
+  vendorCompanyId: string | null,
+  client?: PoolClient,
+): Promise<void> {
+  await (client ?? { query }).query(
     `UPDATE insurance_payout_periods
      SET period_end = ((NOW() AT TIME ZONE 'Asia/Kolkata')::date - 1), updated_at = NOW()
      WHERE ($1::uuid IS NULL OR vendor_company_id = $1::uuid)

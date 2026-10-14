@@ -15,6 +15,10 @@ export interface VendorReadinessFacts {
 
 const APPROVED = new Set(['approved', 'active', 'live']);
 
+export function isApprovedVendorStatus(status: unknown): boolean {
+  return APPROVED.has(String(status ?? '').toLowerCase());
+}
+
 export async function dbVendorReadinessFacts(
   companyId: string,
   requirePublishedForm: boolean,
@@ -45,7 +49,7 @@ export async function dbVendorReadinessFacts(
     vendorId: String(r.vendor_id),
     vendorName: vendorDisplayName(r),
     companyId: String(r.company_id),
-    onboardingApproved: APPROVED.has(String(r.vendor_status ?? '').toLowerCase()),
+    onboardingApproved: isApprovedVendorStatus(r.vendor_status),
     vendorActive: r.is_active === true,
     linkActive: String(r.link_status) === 'active',
     teleAvailability: r.tele_availability === true,

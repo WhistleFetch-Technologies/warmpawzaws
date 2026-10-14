@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   commissionTermsInputSchema,
   linkScheduleInputSchema,
+  vendorLinkConfigSchema,
   vendorLinkCreateSchema,
   vendorLinkUpdateSchema,
 } from '../dto/insurance-admin.requests';
@@ -13,6 +14,7 @@ import {
   listInsuranceVendorCandidates,
   listVendorLinks,
   listVendorLinkTerms,
+  saveVendorLinkConfig,
   setVendorLinkPayoutSchedule,
   updateVendorLink,
 } from '../services/insurance-vendor-links.service';
@@ -60,6 +62,15 @@ export const addVendorLinkTermsHandler = (c: Context) =>
         insuranceAdminActorId(c),
       ),
     201,
+  );
+
+export const saveVendorLinkConfigHandler = (c: Context) =>
+  respond(c, async () =>
+    saveVendorLinkConfig(
+      idParam.parse(c.req.param('id')),
+      vendorLinkConfigSchema.parse(await jsonBody(c)),
+      insuranceAdminActorId(c),
+    ),
   );
 
 export const setVendorLinkScheduleHandler = (c: Context) =>

@@ -40,7 +40,8 @@ export async function saveDefaultPayoutSchedule(
   return getDefaultPayoutSchedule();
 }
 
-export async function getPayoutOverview(today: string = todayIst()): Promise<PayoutOverviewDTO> {
+/** Builds the payout ledger from the database. `historyDays` widens how far back settled periods are kept. */
+export async function loadPayoutLedger(today: string, historyDays?: number) {
   const [links, defaultSchedule, overrides, termsByLink, policies, states] = await Promise.all([
     dbListVendorLinks({}),
     dbGetDefaultPayoutSchedule(),
@@ -66,7 +67,13 @@ export async function getPayoutOverview(today: string = todayIst()): Promise<Pay
     termsByLink,
     policies,
     states,
+    historyDays,
   });
+  return { periods, defaultSchedule, states };
+}
+
+export async function getPayoutOverview(today: string = todayIst()): Promise<PayoutOverviewDTO> {
+  const { periods, defaultSchedule, states } = await loadPayoutLedger(today);
   return {
     today,
     defaultSchedule: toPayoutScheduleDTO(defaultSchedule),

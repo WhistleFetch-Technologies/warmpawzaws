@@ -16,6 +16,7 @@ const optionalText = (max: number) =>
 export const companyInputSchema = z
   .object({
     name: z.string().trim().min(2).max(120),
+    description: optionalText(200),
     legalName: optionalText(200),
     providerCode: optionalText(40),
     logoUrl: optionalText(500),
@@ -124,6 +125,16 @@ export const payoutScheduleInputSchema = z
 
 export type PayoutScheduleInput = z.infer<typeof payoutScheduleInputSchema>;
 
+/** Inline Catalogue edit: payout frequency + commission terms saved together. */
+export const vendorLinkConfigSchema = z
+  .object({
+    frequency: z.union([z.enum(PAYOUT_FREQUENCIES), z.literal('default')]),
+    terms: commissionTermsInputSchema,
+  })
+  .strict();
+
+export type VendorLinkConfigInput = z.infer<typeof vendorLinkConfigSchema>;
+
 export const linkScheduleInputSchema = z.union([
   z.object({ useDefault: z.literal(true) }).strict(),
   payoutScheduleInputSchema,
@@ -149,6 +160,32 @@ export const dateRangeQuerySchema = z.object({
   from: isoDate.optional(),
   to: isoDate.optional(),
 });
+
+const MAX_RECONCILIATION_DAYS = 366;
+
+const reconciliationFilters = {
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  companyId: z.string().uuid().optional(),
+  vendorId: z.string().uuid().optional(),
+  search: z.string().trim().max(80).optional(),
+};
+
+const validRange = (q: { from?: string; to?: string }) =>
+  !q.from || !q.to || (q.from <= q.to && Date.parse(q.to) - Date.parse(q.from) <= MAX_RECONCILIATION_DAYS * 86_400_000);
+const rangeMessage = { message: `Choose a range of up to ${MAX_RECONCILIATION_DAYS} days, start before end` };
+
+export const reconciliationExportQuerySchema = z.object(reconciliationFilters).refine(validRange, rangeMessage);
+export type ReconciliationExportQuery = z.infer<typeof reconciliationExportQuerySchema>;
+
+export const reconciliationQuerySchema = z
+  .object({
+    ...reconciliationFilters,
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(10),
+  })
+  .refine(validRange, rangeMessage);
+export type ReconciliationQuery = z.infer<typeof reconciliationQuerySchema>;
 
 const periodRef = {
   vendorCompanyId: z.string().uuid(),
