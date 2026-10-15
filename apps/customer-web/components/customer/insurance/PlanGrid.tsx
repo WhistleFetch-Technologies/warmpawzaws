@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ArrowLeft, FileText, Heart, PawPrint, Shield } from 'lucide-react';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { apiClient } from '@/lib/api-client';
 
 export interface InsurancePlanCard {
   id: string;
   companyName: string;
+  logoUrl?: string | null;
   name: string;
   highlights: string[];
   premiumFrom: number;
@@ -13,44 +16,126 @@ export interface InsurancePlanCard {
   disclaimer: string;
 }
 
-export function PlanGrid({ onOpen }: { onOpen: (planId: string) => void }) {
+const CARD_TONES = [
+  { wash: 'bg-sky-50', icon: 'bg-sky-100 text-sky-600' },
+  { wash: 'bg-amber-50', icon: 'bg-amber-100 text-amber-700' },
+  { wash: 'bg-violet-50', icon: 'bg-violet-100 text-violet-600' },
+  { wash: 'bg-emerald-50', icon: 'bg-emerald-100 text-emerald-600' },
+  { wash: 'bg-orange-50', icon: 'bg-orange-100 text-orange-600' },
+  { wash: 'bg-indigo-50', icon: 'bg-indigo-100 text-indigo-600' },
+] as const;
+
+const COVER_ICONS = [Shield, FileText, PawPrint, Heart] as const;
+const COVER_COLORS = ['text-emerald-600', 'text-sky-600', 'text-orange-500', 'text-rose-500'] as const;
+
+function formatInr(amount: number) {
+  return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(amount);
+}
+
+export function PlanGrid({
+  onOpen,
+  onBack,
+}: {
+  onOpen: (planId: string) => void;
+  onBack?: () => void;
+}) {
   const [plans, setPlans] = useState<InsurancePlanCard[]>([]);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState('');
 
   useEffect(() => {
     apiClient
       .get<{ data?: { plans?: InsurancePlanCard[] } }>('/customer/insurance/plans')
-      .then((res) => setPlans(res.data?.plans || []))
-      .catch(() => setError('Plans are not available right now.'));
+      .then((res) => {
+        const next = res.data?.plans || [];
+        setPlans(next);
+        setSelectedId(next[0]?.id || '');
+      })
+      .catch(() => setError('Plans are not available right now.'))
+      .finally(() => setLoading(false));
   }, []);
 
-  if (error) return <p className="px-4 py-6 text-sm text-gray-600">{error}</p>;
-  if (plans.length === 0) return <p className="px-4 py-6 text-sm text-gray-600">No published plans yet.</p>;
-
   return (
-    <div className="space-y-3 px-4 py-4">
-      {plans.map((plan) => (
-        <article key={plan.id} className="rounded-2xl border border-gray-200 bg-white p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">{plan.companyName}</p>
-          <h2 className="mt-1 text-lg font-bold text-gray-900">{plan.name}</h2>
-          <ul className="mt-2 list-disc pl-4 text-sm text-gray-700">
-            {(plan.highlights || []).slice(0, 3).map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-          <p className="mt-3 text-sm font-semibold text-gray-900">
-            Premium starts at ₹{plan.premiumFrom} / {plan.premiumUnit}
-          </p>
-          <p className="mt-1 text-xs text-gray-500">{plan.disclaimer}</p>
-          <button
-            type="button"
-            className="mt-3 w-full rounded-xl bg-[#FF8C42] py-3 text-sm font-bold text-white"
-            onClick={() => onOpen(plan.id)}
-          >
-            Continue to consultation
-          </button>
-        </article>
-      ))}
+    <div className="flex min-h-[100dvh] flex-col bg-[#FFF8F3]">
+      <header className="bg-gradient-to-br from-[#FF8C42] to-[#FF7A2F] px-4 pb-5 text-white cw-header-safe-top">
+        <button
+          type="button"
+          onClick={onBack}
+          className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/15"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <h1 className="text-xl font-bold">Pet Insurance Plans</h1>
+        <p className="mt-0.5 text-sm text-white/90">Compare top plans for your pet</p>
+      </header>
+
+      <div className="flex-1 px-4 py-4">
+        {loading ? <p className="py-8 text-center text-sm text-gray-500">Loading plans…</p> : null}
+        {error ? <p className="py-8 text-center text-sm text-gray-600">{error}</p> : null}
+        {!loading && !error && plans.length === 0 ? (
+          <p className="py-8 text-center text-sm text-gray-600">No published plans yet.</p>
+        ) : null}
+
+        <div className="grid grid-cols-2 gap-3">
+          {plans.map((plan, index) => {
+            const tone = CARD_TONES[index % CARD_TONES.length];
+            const selected = plan.id === selectedId;
+            return (
+              <button
+                key={plan.id}
+                type="button"
+                onClick={() => setSelectedId(plan.id)}
+                aria-pressed={selected}
+                className={`flex flex-col rounded-2xl border p-3 text-left shadow-sm ${tone.wash} ${
+                  selected ? 'border-[#FF8C42] ring-2 ring-[#FF8C42]/30' : 'border-orange-100'
+                }`}
+              >
+                <span className={`relative mb-2 flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl ${tone.icon}`}>
+                  {plan.logoUrl ? (
+                    <CachedImage src={plan.logoUrl} alt="" fill className="object-cover" />
+                  ) : (
+                    <Shield className="h-4 w-4" />
+                  )}
+                </span>
+                <span className="text-[13px] font-bold leading-tight text-[#1E2A4A]">{plan.companyName}</span>
+                <span className="mt-0.5 text-[11px] text-gray-500">{plan.name}</span>
+                <ul className="mt-2 space-y-1">
+                  {(plan.highlights || []).slice(0, 3).map((item, highlightIndex) => {
+                    const Icon = COVER_ICONS[highlightIndex % COVER_ICONS.length];
+                    return (
+                      <li key={item} className="flex items-start gap-1.5 text-[10px] leading-snug text-gray-600">
+                        <Icon className={`mt-0.5 h-3 w-3 shrink-0 ${COVER_COLORS[highlightIndex % COVER_COLORS.length]}`} />
+                        <span>{item}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <span className="mt-auto pt-3 text-[10px] text-gray-500">Premium starts at</span>
+                <span className="text-sm font-extrabold text-[#1E2A4A]">
+                  ₹{formatInr(plan.premiumFrom)}
+                  <span className="text-[11px] font-semibold">/{plan.premiumUnit}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="sticky bottom-[var(--customer-tabbed-nav-offset,0px)] bg-[#FFF8F3] px-4 pb-3 pt-2">
+        <button
+          type="button"
+          disabled={!selectedId}
+          onClick={() => selectedId && onOpen(selectedId)}
+          className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#FF8C42] text-sm font-bold text-white disabled:bg-slate-300"
+        >
+          Continue to Consultation
+        </button>
+        <p className="mt-2 text-center text-[11px] text-gray-500">
+          Coverage and pricing are confirmed by the insurer/vendor.
+        </p>
+      </div>
     </div>
   );
 }

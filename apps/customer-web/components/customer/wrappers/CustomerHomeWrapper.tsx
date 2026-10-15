@@ -4776,7 +4776,7 @@ export function CustomerHomeWrapper({
           handleBack();
         }
       }} />,
-      { title: 'Pet Insurance', subtitle: 'Protect your furry friend', showBackButton: true }
+      { title: 'Pet Insurance Plans', subtitle: 'Compare top plans for your pet', showBackButton: true, skipHeader: true }
     );
   }
 

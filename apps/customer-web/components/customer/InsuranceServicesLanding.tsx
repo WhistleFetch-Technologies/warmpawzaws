@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import { ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,13 +15,15 @@ interface InsuranceServicesLandingProps {
 
 /** Pet insurance is not live yet — same treatment as emergency ambulance (non-actionable coming soon). */
 export function InsuranceServicesLanding({ phone: _phone, onBack, onNavigate }: InsuranceServicesLandingProps) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  if (!ready) return <div className="min-h-screen bg-[#FFF8F3]" />;
   if (isWarmpawzInsuranceCustomerEnabled()) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <button type="button" className="px-4 py-3 text-sm font-semibold" onClick={onBack}>Back</button>
-        <h1 className="px-4 text-xl font-bold">Pet Insurance</h1>
-        <PlanGrid onOpen={(planId) => onNavigate?.('insurance_plan', { planId })} />
-      </div>
+      <PlanGrid
+        onBack={onBack}
+        onOpen={(planId) => onNavigate?.('insurance_plan', { planId })}
+      />
     );
   }
   return (
