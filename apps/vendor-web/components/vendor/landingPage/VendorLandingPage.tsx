@@ -1557,7 +1557,7 @@ export function VendorLandingPage({
       }
 
       if (vendorData?.roleId === 'insurance' || vendorData?.roleId === 'pet_insurance') {
-        return <InsuranceWorkspace vendorId={vendorId} />;
+        return <InsuranceWorkspace vendorId={vendorId} vendorPhone={vendorData?.phone} vendorName={vendorData?.businessName || vendorData?.ownerName} />;
       }
 
       // 7. Photography Services

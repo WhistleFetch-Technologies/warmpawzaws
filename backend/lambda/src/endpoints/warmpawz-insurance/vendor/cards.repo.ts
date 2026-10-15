@@ -15,9 +15,18 @@ export async function dbGetVendorApplication(vendorId: string, applicationId: st
 export async function dbListVendorApplications(vendorId: string): Promise<Row[]> {
   const res = await query(
     `SELECT a.id, a.booking_id, a.status, a.plan_id, a.pet_id, a.customer_id, a.company_id, a.updated_at,
-            p.name AS plan_name
+            a.payment_link_expires_at,
+            p.name AS plan_name,
+            co.name AS company_name,
+            cu.full_name AS customer_name,
+            pet.name AS pet_name,
+            pet.species AS pet_species,
+            pet.breed AS pet_breed
      FROM insurance_applications a
      LEFT JOIN insurance_company_plans p ON p.id = a.plan_id
+     LEFT JOIN insurance_companies co ON co.id = a.company_id
+     LEFT JOIN customers cu ON cu.id = a.customer_id
+     LEFT JOIN pets pet ON pet.id = a.pet_id
      WHERE a.vendor_id = $1::uuid
      ORDER BY a.updated_at DESC`,
     [vendorId],
