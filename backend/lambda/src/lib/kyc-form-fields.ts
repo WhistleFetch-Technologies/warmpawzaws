@@ -823,14 +823,13 @@ function buildVeterinaryClinicKYC(roleName: 'veterinary_clinic' | 'vet_clinic'):
     displayName: 'Veterinary Clinic',
     vendorTypes: ['business'],
     fields: [
-      ...OWNER_AADHAAR_FIELDS,
       ...UNIVERSAL_KYC_FIELDS.filter(f => f.id === 'panNumber' || f.id === 'panCard'),
       ...HEALTHCARE_VET_FIELDS,
       ...BUSINESS_REGISTRATION_FIELDS,
       { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true },
     ],
     sections: KYC_SECTIONS,
-    hardBlockFields: ['ownerAadhaarNumber', 'panNumber', 'vciRegistrationNumber', 'stateCouncilRegistration', 'degreeDoc', 'shopActLicenseNumber', 'addressProof'],
+    hardBlockFields: ['panNumber', 'vciRegistrationNumber', 'stateCouncilRegistration', 'degreeDoc', 'shopActLicenseNumber', 'addressProof'],
     softBlockFields: ['municipalPermission', 'indemnityInsuranceDoc'],
   };
 }
