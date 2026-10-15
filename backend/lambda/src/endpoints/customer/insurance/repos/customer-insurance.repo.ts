@@ -59,12 +59,19 @@ export async function dbGetCustomerPlan(planId: string, requireForm: boolean): P
   if (!plan) return null;
   const vendors = await query(
     `SELECT v.id AS vendor_id,
-            COALESCE(NULLIF(v.business_name, ''), NULLIF(v.owner_name, ''), 'Insurance advisor') AS vendor_name
+            COALESCE(NULLIF(v.business_name, ''), NULLIF(v.owner_name, ''), 'Insurance advisor') AS vendor_name,
+            va.day_of_week,
+            to_char(COALESCE(va.time_window_start, va.start_time), 'HH24:MI') AS start_time
      FROM insurance_vendor_companies l
      JOIN vendors v ON v.id = l.vendor_id
      JOIN insurance_company_plans p ON p.company_id = l.company_id AND p.id = $1::uuid
+     LEFT JOIN vendor_availability_v2 va
+       ON va.vendor_id = v.id
+      AND COALESCE(va.is_available, true) = true
+      AND COALESCE(va.is_deleted, false) = false
+      AND 'tele' = ANY (COALESCE(va.service_styles, ARRAY[]::text[]))
      WHERE ${readySql(requireForm)}
-     ORDER BY vendor_name ASC`,
+     ORDER BY vendor_name ASC, va.day_of_week ASC, start_time ASC`,
     [planId],
   );
   return { ...plan, vendors: vendors.rows };

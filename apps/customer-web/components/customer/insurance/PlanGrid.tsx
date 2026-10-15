@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, FileText, Heart, PawPrint, Shield } from 'lucide-react';
+import { ArrowLeft, ChevronRight, FileText, Heart, PawPrint, Shield } from 'lucide-react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import { apiClient } from '@/lib/api-client';
+import { PolicyDetailPanel, type PolicyDetailData } from './PolicyDetailPanel';
 
 export interface InsurancePlanCard {
   id: string;
@@ -43,6 +44,8 @@ export function PlanGrid({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState('');
+  const [detail, setDetail] = useState<PolicyDetailData | null>(null);
+  const [detailError, setDetailError] = useState('');
 
   useEffect(() => {
     apiClient
@@ -55,6 +58,46 @@ export function PlanGrid({
       .catch(() => setError('Plans are not available right now.'))
       .finally(() => setLoading(false));
   }, []);
+
+  const openDetails = async (planId: string) => {
+    setDetailError('');
+    try {
+      const res = await apiClient.get<{
+        data?: {
+          plan?: InsurancePlanCard;
+          coverOptions?: PolicyDetailData['coverOptions'];
+          sumInsuredOptions?: string[];
+          copayOptions?: string[];
+        };
+      }>(`/customer/insurance/plans/${planId}`);
+      const plan = res.data?.plan;
+      if (!plan) {
+        setDetailError('This policy is not available.');
+        return;
+      }
+      setDetail({
+        plan,
+        coverOptions: res.data?.coverOptions || [],
+        sumInsuredOptions: (res.data?.sumInsuredOptions || []).map(String),
+        copayOptions: (res.data?.copayOptions || []).map(String),
+      });
+    } catch {
+      setDetailError('This policy is not available.');
+    }
+  };
+
+  if (detail) {
+    return (
+      <PolicyDetailPanel
+        detail={detail}
+        onBack={() => setDetail(null)}
+        onSelect={() => {
+          setSelectedId(detail.plan.id);
+          setDetail(null);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-[#FFF8F3]">
@@ -73,7 +116,7 @@ export function PlanGrid({
 
       <div className="flex-1 px-4 py-4">
         {loading ? <p className="py-8 text-center text-sm text-gray-500">Loading plans…</p> : null}
-        {error ? <p className="py-8 text-center text-sm text-gray-600">{error}</p> : null}
+        {error || detailError ? <p className="py-8 text-center text-sm text-gray-600">{error || detailError}</p> : null}
         {!loading && !error && plans.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-600">No published plans yet.</p>
         ) : null}
@@ -83,21 +126,41 @@ export function PlanGrid({
             const tone = CARD_TONES[index % CARD_TONES.length];
             const selected = plan.id === selectedId;
             return (
-              <button
+              <div
                 key={plan.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedId(plan.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setSelectedId(plan.id);
+                  }
+                }}
                 aria-pressed={selected}
                 className={`flex flex-col rounded-2xl border p-3 text-left shadow-sm ${tone.wash} ${
                   selected ? 'border-[#FF8C42] ring-2 ring-[#FF8C42]/30' : 'border-orange-100'
                 }`}
               >
-                <span className={`relative mb-2 flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl ${tone.icon}`}>
-                  {plan.logoUrl ? (
-                    <CachedImage src={plan.logoUrl} alt="" fill className="object-cover" />
-                  ) : (
-                    <Shield className="h-4 w-4" />
-                  )}
+                <span className="mb-2 flex items-start justify-between gap-2">
+                  <span className={`relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl ${tone.icon}`}>
+                    {plan.logoUrl ? (
+                      <CachedImage src={plan.logoUrl} alt="" fill className="object-cover" />
+                    ) : (
+                      <Shield className="h-4 w-4" />
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`View ${plan.companyName} ${plan.name} details`}
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void openDetails(plan.id);
+                    }}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
                 </span>
                 <span className="text-[13px] font-bold leading-tight text-[#1E2A4A]">{plan.companyName}</span>
                 <span className="mt-0.5 text-[11px] text-gray-500">{plan.name}</span>
@@ -117,7 +180,7 @@ export function PlanGrid({
                   ₹{formatInr(plan.premiumFrom)}
                   <span className="text-[11px] font-semibold">/{plan.premiumUnit}</span>
                 </span>
-              </button>
+              </div>
             );
           })}
         </div>

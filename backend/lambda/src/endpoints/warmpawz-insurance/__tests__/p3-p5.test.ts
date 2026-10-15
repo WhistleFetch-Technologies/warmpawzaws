@@ -4,6 +4,7 @@ import { validateDynamicForm, validateDynamicFormField } from '@warmpawz/shared-
 import { FORM_FIELD_TYPES, type FormFieldType, type FormSchema } from '@warmpawz/shared-types';
 import { INSURANCE_SLUGS } from '@warmpawz/shared-types';
 import { isCustomerVisiblePlan, openApplicationBlocksAnother } from '../shared/customer-plans';
+import { consultStep, nextTeleSlotLabel } from '../shared/next-tele-slot';
 import { formSchemaIssues, nextSubmissionRevision, nextTemplateVersion, parseFormSchema } from '../shared/form-library';
 import { resolveSlugValues } from '../shared/slug-resolver';
 import { evaluateAgainstSnapshot, type EvaluateSnapshot } from '../../../discount-engine/promo-engine/services/evaluate-snapshot';
@@ -23,6 +24,24 @@ describe('P3 customer plans and applications', () => {
     expect(isCustomerVisiblePlan({ id: '1', status: 'published', companyActive: false, readyVendorCount: 1 })).toBe(false);
     expect(isCustomerVisiblePlan({ id: '1', status: 'published', companyActive: true, readyVendorCount: 0 })).toBe(false);
     expect(isCustomerVisiblePlan({ id: '1', status: 'published', companyActive: true, readyVendorCount: 2 })).toBe(true);
+  });
+
+  it('names the next tele window in India time and sends one vendor straight to tele', () => {
+    const thursdayMorning = new Date('2026-10-15T04:00:00.000Z');
+    expect(
+      nextTeleSlotLabel(
+        [
+          { dayOfWeek: 4, startTime: '09:00' },
+          { dayOfWeek: 5, startTime: '09:00' },
+        ],
+        thursdayMorning,
+      ),
+    ).toBe('Tomorrow 09:00');
+    expect(nextTeleSlotLabel([{ dayOfWeek: 4, startTime: '10:00' }], thursdayMorning)).toBe('Today 10:00');
+    expect(nextTeleSlotLabel([], thursdayMorning)).toBeNull();
+    expect(consultStep(0)).toBe('unavailable');
+    expect(consultStep(1)).toBe('direct');
+    expect(consultStep(3)).toBe('choose-advisor');
   });
 
   it('blocks a second open application and allows a new one after a terminal status', () => {
