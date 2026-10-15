@@ -6,14 +6,13 @@ import { CachedImage } from '@/components/shared/CachedImage';
 import type { PremiumServiceCardEntry } from '../constants/premium-service-cards-catalog';
 
 /**
- * Every card image renders at this exact height (base / sm breakpoint), sized
- * to fill most of the card's vertical space so the pet cutout reads as the
- * primary visual, not an afterthought. Kept as one shared constant so all
- * three premium cards stay perfectly consistent.
+ * Home Visit and Tele use the same frame height as the insurance artwork card.
+ * Their photos fill that frame so type and picture scale match the third tile.
  */
-const CARD_IMAGE_HEIGHT_CLASS = 'h-[120px] sm:h-[134px]';
-const CARD_IMAGE_INTRINSIC_WIDTH = 240;
-const CARD_IMAGE_INTRINSIC_HEIGHT = 134;
+/** Shared frame so Home Visit and Tele match the insurance card. */
+const CARD_FRAME_CLASS = 'h-[11.25rem] sm:h-[12.25rem]';
+const CARD_IMAGE_INTRINSIC_WIDTH = 280;
+const CARD_IMAGE_INTRINSIC_HEIGHT = 196;
 
 export interface PremiumServiceCardProps {
   entry: PremiumServiceCardEntry;
@@ -32,7 +31,7 @@ function PremiumServiceCardComponent({ entry, index, onPress }: PremiumServiceCa
       <button
         type="button"
         onClick={onPress}
-        className={`premium-service-card-enter group relative block min-h-[10.25rem] min-w-0 overflow-hidden rounded-[26px] border bg-gradient-to-br text-left transition-[transform,box-shadow] duration-300 ease-out active:scale-[0.97] hover:-translate-y-1 hover:scale-[1.02] ${theme.gradientFrom} ${theme.gradientTo} ${theme.hoverGradientFrom} ${theme.hoverGradientTo} ${theme.borderClass} ${theme.shadowClass} ${theme.hoverShadowClass}`}
+        className={`premium-service-card-enter group relative block ${CARD_FRAME_CLASS} min-w-0 overflow-hidden rounded-[26px] border bg-gradient-to-br text-left transition-[transform,box-shadow] duration-300 ease-out active:scale-[0.97] hover:-translate-y-1 hover:scale-[1.02] ${theme.gradientFrom} ${theme.gradientTo} ${theme.hoverGradientFrom} ${theme.hoverGradientTo} ${theme.borderClass} ${theme.shadowClass} ${theme.hoverShadowClass}`}
         style={{ animationDelay: `${index * 70}ms` }}
         aria-label={ariaLabel}
       >
@@ -52,7 +51,7 @@ function PremiumServiceCardComponent({ entry, index, onPress }: PremiumServiceCa
     <button
       type="button"
       onClick={onPress}
-      className={`premium-service-card-enter group relative flex min-h-[10.25rem] min-w-0 items-stretch overflow-hidden rounded-[26px] border bg-gradient-to-br text-left transition-[transform,box-shadow] duration-300 ease-out active:scale-[0.97] hover:-translate-y-1 hover:scale-[1.02] ${theme.gradientFrom} ${theme.gradientTo} ${theme.hoverGradientFrom} ${theme.hoverGradientTo} ${theme.borderClass} ${theme.shadowClass} ${theme.hoverShadowClass}`}
+      className={`premium-service-card-enter group relative flex ${CARD_FRAME_CLASS} min-w-0 items-stretch overflow-hidden rounded-[26px] border bg-gradient-to-br text-left transition-[transform,box-shadow] duration-300 ease-out active:scale-[0.97] hover:-translate-y-1 hover:scale-[1.02] ${theme.gradientFrom} ${theme.gradientTo} ${theme.hoverGradientFrom} ${theme.hoverGradientTo} ${theme.borderClass} ${theme.shadowClass} ${theme.hoverShadowClass}`}
       style={{ animationDelay: `${index * 70}ms` }}
       aria-label={ariaLabel}
     >
@@ -93,13 +92,13 @@ function PremiumServiceCardComponent({ entry, index, onPress }: PremiumServiceCa
 
         <div className="min-w-0 flex-1">
           <h3
-            className={`text-[10px] font-extrabold uppercase leading-[1.08] tracking-[0.02em] transition-[letter-spacing] duration-300 ease-out group-hover:tracking-[0.04em] sm:text-[11px] ${theme.titleClass}`}
+            className={`text-[13px] font-extrabold uppercase leading-[1.05] tracking-[0.01em] transition-[letter-spacing] duration-300 ease-out group-hover:tracking-[0.03em] sm:text-sm ${theme.titleClass}`}
           >
             {entry.titleLines[0]}
             <br />
             {entry.titleLines[1]}
           </h3>
-          <p className={`mt-0.5 text-[8.5px] leading-snug sm:text-[9px] ${theme.subtitleClass}`}>
+          <p className={`mt-1 text-[11px] leading-snug sm:text-xs ${theme.subtitleClass}`}>
             {entry.subtitle}
           </p>
         </div>
@@ -113,14 +112,14 @@ function PremiumServiceCardComponent({ entry, index, onPress }: PremiumServiceCa
       </div>
 
       {/* Hero image: fixed equal height across all cards, bottom-right aligned with breathing room */}
-      <div className="relative z-10 w-[43%] shrink-0 self-stretch overflow-hidden sm:w-[40%]">
-        <div className="absolute inset-0 flex items-end justify-end pb-1.5 pr-1">
+      <div className="relative z-10 h-full w-[48%] shrink-0 self-stretch overflow-hidden">
+        <div className="absolute inset-0 flex items-end justify-end pb-1 pr-0.5">
           <CachedImage
             src={entry.imageUrl}
             alt={entry.imageAlt}
             width={CARD_IMAGE_INTRINSIC_WIDTH}
             height={CARD_IMAGE_INTRINSIC_HEIGHT}
-            className={`block w-auto object-contain object-bottom drop-shadow-[0_10px_20px_rgba(15,23,42,0.18)] transition-[transform,filter] duration-500 ease-out group-hover:translate-x-0.5 group-hover:scale-[1.03] group-hover:brightness-[1.03] ${CARD_IMAGE_HEIGHT_CLASS}`}
+            className="block h-full w-full object-contain object-bottom drop-shadow-[0_10px_20px_rgba(15,23,42,0.18)] transition-[transform,filter] duration-500 ease-out group-hover:translate-x-0.5 group-hover:scale-[1.03] group-hover:brightness-[1.03]"
             style={{
               marginRight: `${entry.imageNudgeX ?? 0}px`,
               marginBottom: `${entry.imageNudgeY ?? 0}px`,

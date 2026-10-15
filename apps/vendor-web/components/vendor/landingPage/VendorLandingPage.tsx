@@ -41,7 +41,7 @@ import { ProfileManager } from '../vendorProfileManager/ProfileManagerCenter'; /
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager'; // ✅ NEW: Advanced Availability System
 import { CafeVendorDashboard } from '../cafe/CafeVendorDashboard';
 import { SunsetServicesVendorDashboard } from '../sunset/SunsetServicesVendorDashboard';
-import { InsuranceWorkspace } from '../insurance/InsuranceWorkspace';
+import { InsuranceVendorShell } from '../insurance/InsuranceVendorShell';
 import { PhotographyVendorDashboard } from '../photography/PhotographyVendorDashboard';
 import { AmbulanceVendorDashboard } from '../ambulance/AmbulanceVendorDashboard';
 import { RelocationVendorDashboard } from '../relocation/RelocationVendorDashboard';
@@ -1556,11 +1556,6 @@ export function VendorLandingPage({
         );
       }
 
-      // roleId on the profile is the roles-table id (often a UUID). Match the same way as the Pet policies tile.
-      if (hasVendorRole(vendorData, ['insurance', 'pet_insurance'])) {
-        return <InsuranceWorkspace vendorId={vendorId} vendorPhone={vendorData?.phone} vendorName={vendorData?.businessName || vendorData?.ownerName} />;
-      }
-
       // 7. Photography Services
       if (vendorData?.roleId === 'pet_photography' || vendorData?.roleId === 'photography') {
         console.log('📸 Rendering PhotographyVendorDashboard');
@@ -1602,6 +1597,8 @@ export function VendorLandingPage({
       }
 
       // ✅ Full VendorDashboard (Figma UI) – all options, appointment models, navigation
+      // Insurance keeps this home and adds Kanban, Chat, and Form Library in a sidebar.
+      const insuranceVendor = hasVendorRole(vendorData, ['insurance', 'pet_insurance']);
       console.log('🎯 Rendering VendorDashboard (Figma UI) for vendor:', vendorId);
 
       const isGroomerVendorPortfolioUnwired = hasVendorRole(vendorData, [
@@ -1618,7 +1615,7 @@ export function VendorLandingPage({
       /** Dog walkers: "progress" is walk sessions (OTP start / end session / GPS), not training program trackers. */
       const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
 
-      return (
+      const dashboard = (
         <>
           <Suspense fallback={
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
@@ -1812,6 +1809,19 @@ export function VendorLandingPage({
           )}
         </>
       );
+
+      if (insuranceVendor) {
+        return (
+          <InsuranceVendorShell
+            vendorId={vendorId}
+            vendorPhone={vendorData?.phone}
+            vendorName={vendorData?.businessName || vendorData?.ownerName}
+          >
+            {dashboard}
+          </InsuranceVendorShell>
+        );
+      }
+      return dashboard;
 
     default:
       return null;

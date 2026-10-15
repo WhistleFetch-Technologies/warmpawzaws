@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@warmpawz/ui';
 import { formatDate } from '@/components/admin/warmpawz-insurance/shared/insurance-ui';
@@ -12,8 +12,6 @@ import {
   linkFrequencyLabel,
 } from './catalogue-format';
 import { VendorConfigEditor } from './VendorConfigEditor';
-
-const COLUMN_COUNT = 8;
 
 function Chip({ children, tone = 'gray' }: { children: ReactNode; tone?: 'gray' | 'orange' | 'green' }) {
   const tones = {
@@ -53,7 +51,10 @@ export function AssignedVendorsTable({
     return <p className="rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-500">No vendors assigned yet.</p>;
   }
 
+  const expandedLink = links.find((link) => link.id === expandedLinkId) ?? null;
+
   return (
+    <div className="space-y-3">
     <div className="overflow-x-auto rounded-lg border border-gray-200">
       <Table>
         <TableHeader>
@@ -72,8 +73,7 @@ export function AssignedVendorsTable({
           {links.map((link, index) => {
             const expanded = expandedLinkId === link.id;
             return (
-              <Fragment key={link.id}>
-                <TableRow className={expanded ? 'bg-orange-50/30' : undefined}>
+                <TableRow key={link.id} className={expanded ? 'bg-orange-50/30' : undefined}>
                   <TableCell>
                     <button
                       type="button"
@@ -140,25 +140,21 @@ export function AssignedVendorsTable({
                     </div>
                   </TableCell>
                 </TableRow>
-                {expanded ? (
-                  <TableRow>
-                    <TableCell colSpan={COLUMN_COUNT} className="bg-white">
-                      <VendorConfigEditor
-                        link={link}
-                        companyName={companyName}
-                        platformDefault={platformDefault}
-                        canWrite={canConfigure}
-                        onClose={() => onToggle(null)}
-                        onShowHistory={() => onShowHistory(link.id)}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-              </Fragment>
             );
           })}
         </TableBody>
       </Table>
+    </div>
+    {expandedLink ? (
+      <VendorConfigEditor
+        link={expandedLink}
+        companyName={companyName}
+        platformDefault={platformDefault}
+        canWrite={canConfigure}
+        onClose={() => onToggle(null)}
+        onShowHistory={() => onShowHistory(expandedLink.id)}
+      />
+    ) : null}
     </div>
   );
 }

@@ -9,7 +9,8 @@ import { InsuranceKanban } from './InsuranceKanban';
 import type { BoardApplication } from './kanban-view';
 
 const TABS = ['Kanban', 'Chat', 'Form Library'] as const;
-type Tab = (typeof TABS)[number];
+export type InsuranceWorkspaceTab = (typeof TABS)[number];
+type Tab = InsuranceWorkspaceTab;
 
 type PlanRow = {
   id?: string;
@@ -36,12 +37,15 @@ export function InsuranceWorkspace({
   vendorId,
   vendorPhone,
   vendorName,
+  panel,
 }: {
   vendorId: string;
   vendorPhone?: string;
   vendorName?: string;
+  /** When set, the shell sidebar chooses the screen and this header is hidden. */
+  panel?: Tab;
 }) {
-  const [tab, setTab] = useState<Tab>('Kanban');
+  const [tab, setTab] = useState<Tab>(panel ?? 'Kanban');
   const [applications, setApplications] = useState<BoardApplication[]>([]);
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [forms, setForms] = useState<FormRow[]>([]);
@@ -64,13 +68,18 @@ export function InsuranceWorkspace({
   }
 
   useEffect(() => {
+    if (panel) setTab(panel);
+  }, [panel]);
+
+  useEffect(() => {
     void reload();
   }, [vendorId]);
 
   const companies = [...new Set(applications.map((row) => row.company_name).filter(Boolean))] as string[];
 
   return (
-    <div className="min-h-screen bg-[#FFF8F3]">
+    <div className={panel ? 'min-h-0 bg-[#FFF8F3]' : 'min-h-screen bg-[#FFF8F3]'}>
+      {panel ? null : (
       <header className="border-b border-orange-100 bg-white px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-[#FF8C42]">Insurance Vendor Portal</p>
         <nav className="mt-2 flex gap-2">
@@ -86,6 +95,7 @@ export function InsuranceWorkspace({
           ))}
         </nav>
       </header>
+      )}
       <main className="mx-auto max-w-7xl px-4 py-5">
         {tab === 'Kanban' ? (
           <InsuranceKanban

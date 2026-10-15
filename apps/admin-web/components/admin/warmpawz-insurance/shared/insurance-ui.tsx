@@ -86,7 +86,7 @@ export function MetricTile({ label, value, hint }: { label: string; value: strin
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <label className="block space-y-1">
+    <label className="flex min-w-0 flex-col gap-1 whitespace-normal">
       <span className="text-sm font-medium text-gray-700">{label}</span>
       {children}
       {hint ? <span className="block text-xs text-gray-500">{hint}</span> : null}

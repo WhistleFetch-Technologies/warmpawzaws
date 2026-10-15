@@ -91,14 +91,14 @@ export function VendorConfigEditor({
     : 'Platform default';
 
   return (
-    <div className="space-y-4 rounded-lg border border-orange-100 bg-orange-50/40 p-4">
+    <div className="space-y-4 whitespace-normal rounded-lg border border-orange-100 bg-orange-50/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-sm font-semibold text-gray-900">Vendor Configuration ({companyName})</h4>
         <button type="button" className="text-sm font-medium text-[#FF8C42] hover:underline" onClick={onShowHistory}>
           Link details &amp; history
         </button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Payout Frequency">
           <select
             className={inputClass}
