@@ -1556,7 +1556,8 @@ export function VendorLandingPage({
         );
       }
 
-      if (vendorData?.roleId === 'insurance' || vendorData?.roleId === 'pet_insurance') {
+      // roleId on the profile is the roles-table id (often a UUID). Match the same way as the Pet policies tile.
+      if (hasVendorRole(vendorData, ['insurance', 'pet_insurance'])) {
         return <InsuranceWorkspace vendorId={vendorId} vendorPhone={vendorData?.phone} vendorName={vendorData?.businessName || vendorData?.ownerName} />;
       }
 

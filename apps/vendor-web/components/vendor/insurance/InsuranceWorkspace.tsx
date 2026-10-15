@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { FormSchema } from '@warmpawz/shared-types';
 import { apiClient } from '@/lib/api-client';
 import { InsuranceChatWorkspace } from './InsuranceChatWorkspace';
 import { InsuranceFormLibrary } from './InsuranceFormLibrary';
@@ -27,7 +28,7 @@ type FormRow = {
   status?: string;
   company_id?: string;
   plan_id?: string | null;
-  draft_schema?: { sections: Array<{ key: string; title: string; fields: Array<Record<string, unknown>> }> };
+  draft_schema?: FormSchema;
   published_version?: number | string | null;
 };
 
