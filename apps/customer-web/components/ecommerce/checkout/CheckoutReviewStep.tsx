@@ -8,9 +8,11 @@ import { useCheckout } from '@/context/CheckoutProvider';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { CheckoutPriceBreakdown } from './CheckoutPriceBreakdown';
 import {
-  allocateLinePromotionDiscount,
   cartLineMrpTotal,
+  readPromoLineDiscounts,
+  resolveLinePromotionDiscount,
 } from '@/lib/ecommerce/cart-product-helpers';
+import { parseCartLineKey } from '@/lib/product-sku-client';
 import { getShippingOptionLabel } from '@/lib/ecommerce/checkout-shipping-options';
 import { computeCheckoutDeliveryEstimate } from '@/lib/ecommerce/checkout-delivery-estimate';
 import {
@@ -123,13 +125,17 @@ export function CheckoutReviewStep() {
         <div className="space-y-2">
           {cart.map((item) => {
             const lineMrp = cartLineMrpTotal(item);
-            const lineDiscount = allocateLinePromotionDiscount(
+            const productId = parseCartLineKey(item.id).productId || item.id;
+            const lineDiscount = resolveLinePromotionDiscount({
+              lineId: item.id,
+              productId,
               lineMrp,
-              pricing.lineSubtotal,
-              pricing.discount,
-            );
+              orderMrp: pricing.lineSubtotal,
+              orderDiscount: pricing.discount,
+              lineDiscounts: readPromoLineDiscounts(),
+            });
             const linePayable = Math.max(0, lineMrp - lineDiscount);
-            const hasPromotion = pricing.discount > 0;
+            const hasPromotion = lineDiscount > 0.009;
 
             return (
               <div key={item.id} className="flex justify-between text-sm gap-2">

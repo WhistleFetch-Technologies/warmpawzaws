@@ -518,6 +518,7 @@ app.post('/promotions/calculate-cart', async (c) => {
           ? String(ownershipRaw)
           : undefined;
       const lineVendor = String(item.vendorId || item.vendor_id || '').trim();
+      const lineKey = String(item.lineKey || item.line_key || '').trim();
       return {
         productId,
         quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
@@ -527,6 +528,7 @@ app.post('/promotions/calculate-cart', async (c) => {
         id: productId || undefined,
         listingOwnership,
         vendorId: lineVendor || undefined,
+        lineKey: lineKey || undefined,
       };
     });
     const { enrichLinesWithListingOwnership } = await import(
@@ -546,6 +548,7 @@ app.post('/promotions/calculate-cart', async (c) => {
 
     let promoEngine: Record<string, unknown> | undefined;
     let winningDiscount = 0;
+    let lineDiscounts: Array<{ productId: string; lineKey?: string; discount: number }> = [];
     if (customerId) {
       try {
         const { evaluateEcommerceCartPromos } = await import(
@@ -557,6 +560,7 @@ app.post('/promotions/calculate-cart', async (c) => {
           persist: false,
           lines: cartLines.map((line) => ({
             id: line.productId || line.id,
+            lineKey: line.lineKey,
             vendorId: line.vendorId || fallbackVendor || null,
             amount: (Number(line.price) || 0) * (Number(line.quantity) || 1),
           })),
@@ -565,6 +569,11 @@ app.post('/promotions/calculate-cart', async (c) => {
           (b) => b.benefit_type === 'CASHBACK'
         );
         winningDiscount = Math.max(0, Number(engineResult.summary.discount) || 0);
+        lineDiscounts = (engineResult.lineDiscounts || []).map((row) => ({
+          productId: row.id,
+          ...(row.lineKey ? { lineKey: row.lineKey } : {}),
+          discount: row.discount,
+        }));
         promoEngine = {
           evaluationId: engineResult.evaluation_id,
           pendingCashback: engineResult.summary.cashback,
@@ -604,6 +613,7 @@ app.post('/promotions/calculate-cart', async (c) => {
       totalSavings: winningDiscount,
       promotionSource: winningDiscount > 0 ? 'admin' : null,
       promoEngine: promoEngine ?? null,
+      lineDiscounts,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);

@@ -4,9 +4,12 @@ import type { CartPricingBreakdown } from '@/lib/ecommerce/cart-pricing';
 import type { CartItem } from '@/context/CartContext';
 import { PriceBreakdown } from '@/components/customer/pricing/PriceBreakdown';
 import {
-  allocateLinePromotionDiscount,
   cartLineMrpTotal,
+  readPromoLineDiscounts,
+  resolveLinePromotionDiscount,
+  type PromoLineDiscount,
 } from '@/lib/ecommerce/cart-product-helpers';
+import { parseCartLineKey } from '@/lib/product-sku-client';
 import { buildEcommerceCheckoutPriceLines } from '@/lib/pricing/ecommerce-checkout-price-breakdown';
 
 type CheckoutPriceBreakdownProps = {
@@ -16,6 +19,7 @@ type CheckoutPriceBreakdownProps = {
   showItems?: boolean;
   promotionLabel?: string;
   walletAmount?: number;
+  lineDiscounts?: PromoLineDiscount[] | null;
 };
 
 export function CheckoutPriceBreakdown({
@@ -25,9 +29,10 @@ export function CheckoutPriceBreakdown({
   showItems = true,
   promotionLabel,
   walletAmount,
+  lineDiscounts,
 }: CheckoutPriceBreakdownProps) {
   const lines = buildEcommerceCheckoutPriceLines(pricing, { promotionLabel, walletAmount });
-  const hasPromotion = pricing.discount > 0;
+  const resolvedLineDiscounts = lineDiscounts === undefined ? readPromoLineDiscounts() : lineDiscounts;
 
   return (
     <div className="space-y-3">
@@ -35,13 +40,18 @@ export function CheckoutPriceBreakdown({
         <div className="space-y-2 border-b border-slate-100 pb-3">
           {cart.map((item) => {
             const lineMrp = cartLineMrpTotal(item);
-            const lineDiscount = allocateLinePromotionDiscount(
+            const productId = parseCartLineKey(item.id).productId || item.id;
+            const lineDiscount = resolveLinePromotionDiscount({
+              lineId: item.id,
+              productId,
               lineMrp,
-              pricing.lineSubtotal,
-              pricing.discount,
-            );
+              orderMrp: pricing.lineSubtotal,
+              orderDiscount: pricing.discount,
+              lineDiscounts: resolvedLineDiscounts,
+            });
             const linePayable = Math.max(0, lineMrp - lineDiscount);
             const unitMrp = item.originalPrice ?? item.price;
+            const hasPromotion = lineDiscount > 0.009;
 
             return (
               <div key={item.id} className="flex justify-between gap-3 text-sm">

@@ -47,8 +47,10 @@ import type { ShopProduct } from '@/components/shop/shop-types';
 import {
   formatSelectedVariations,
   shopProductToCartItem,
-  allocateLinePromotionDiscount,
   cartLineMrpTotal,
+  resolveLinePromotionDiscount,
+  writePromoLineDiscounts,
+  type PromoLineDiscount,
 } from '@/lib/ecommerce/cart-product-helpers';
 import type { CheckoutAddress } from '@/components/customer/ecommerce/useEcommerceCheckout';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
@@ -77,6 +79,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   const phone = phoneProp || resolveCustomerPhone();
   const isGuest = isGuestApplicationState();
 
+  const [lineDiscounts, setLineDiscounts] = useState<PromoLineDiscount[] | null>(null);
   const [autoPromo, setAutoPromo] = useState<{
     discountAmount: number;
     promotionId?: string;
@@ -141,6 +144,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
           categoryId: item.categoryId || item.category,
           category: item.categoryId || item.category,
           vendorId: item.vendorId && item.vendorId !== 'default' ? item.vendorId : undefined,
+          lineKey: item.id,
         };
       }),
     [cart]
@@ -149,6 +153,8 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   useEffect(() => {
     if (cart.length === 0) {
       setAutoPromo(null);
+      setLineDiscounts(null);
+      writePromoLineDiscounts([]);
       return;
     }
     let cancelled = false;
@@ -171,12 +177,16 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             redeemScope?: string[];
             expiryDays?: number | null;
           } | null;
+          lineDiscounts?: PromoLineDiscount[];
         }>('/promotions/calculate-cart', {
           ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
           customerId: getResolvedCustomerId() || undefined,
           items: cartPromoItems,
         });
         if (cancelled) return;
+        const nextLines = Array.isArray(res?.lineDiscounts) ? res.lineDiscounts : [];
+        setLineDiscounts(nextLines);
+        writePromoLineDiscounts(nextLines);
         const best = res?.bestPromotion;
         const amount = Math.max(
           Number(best?.calculatedDiscount ?? 0) || 0,
@@ -203,7 +213,10 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
           }
         }
       } catch {
-        if (!cancelled) setAutoPromo(null);
+        if (!cancelled) {
+          setAutoPromo(null);
+          setLineDiscounts(null);
+        }
       }
     })();
     return () => {
@@ -456,14 +469,22 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               {cart.map((item) => {
                 const variantLabel = formatSelectedVariations(item.selectedVariations);
                 const lineMrp = cartLineMrpTotal(item);
-                const lineDiscount = allocateLinePromotionDiscount(
+                const productId =
+                  parseCartLineKey(item.id).productId ||
+                  (item.warmpawzLine?.product?.id != null
+                    ? String(item.warmpawzLine.product.id)
+                    : item.id);
+                const lineDiscount = resolveLinePromotionDiscount({
+                  lineId: item.id,
+                  productId,
                   lineMrp,
-                  pricing.lineSubtotal,
-                  pricing.discount,
-                );
+                  orderMrp: pricing.lineSubtotal,
+                  orderDiscount: pricing.discount,
+                  lineDiscounts,
+                });
                 const linePayable = Math.max(0, lineMrp - lineDiscount);
                 const unitMrp = item.originalPrice ?? item.price;
-                const hasPromotion = pricing.discount > 0;
+                const hasPromotion = lineDiscount > 0.009;
                 const undeliverable =
                   Boolean(selectedAddress?.city) &&
                   undeliverableItems.some((u) => u.id === item.id);
@@ -555,6 +576,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                 pricing={pricing}
                 showItems={false}
                 promotionLabel={autoPromo?.label}
+                lineDiscounts={lineDiscounts}
               />
             </section>
           </div>
@@ -578,6 +600,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                 cart={cart}
                 pricing={pricing}
                 promotionLabel={autoPromo?.label}
+                lineDiscounts={lineDiscounts}
               />
               <Button
                 onClick={handleProceedCheckout}

@@ -8,8 +8,20 @@ import type {
 
 export type EcommercePromoLine = {
   id?: string;
+  /** Cart row id, echoed so the UI can mark only that product. */
+  lineKey?: string;
   vendorId?: string | null;
   amount: number;
+};
+
+export type EcommerceLineDiscount = {
+  id: string;
+  lineKey?: string;
+  discount: number;
+};
+
+export type EcommerceCartPromoResult = EvaluateResult & {
+  lineDiscounts: EcommerceLineDiscount[];
 };
 
 type EvaluateFn = (req: EvaluateRequest) => Promise<EvaluateResult>;
@@ -25,6 +37,33 @@ function vendorKey(vendorId: string | null | undefined): string {
 function lineAmount(line: EcommercePromoLine): number {
   const amount = Number(line.amount) || 0;
   return amount > 0 ? round2(amount) : 0;
+}
+
+/** Share a group discount across that group's lines only. The last line takes the remainder. */
+export function allocateGroupDiscount(
+  lines: EcommercePromoLine[],
+  discount: number,
+): EcommerceLineDiscount[] {
+  const cap = round2(Math.max(0, Number(discount) || 0));
+  const total = round2(lines.reduce((sum, line) => sum + lineAmount(line), 0));
+  if (cap <= 0 || total <= 0 || lines.length === 0) {
+    return lines.map((line) => ({
+      id: String(line.id || ''),
+      ...(line.lineKey ? { lineKey: line.lineKey } : {}),
+      discount: 0,
+    }));
+  }
+  let assigned = 0;
+  return lines.map((line, index) => {
+    const isLast = index === lines.length - 1;
+    const share = isLast ? round2(cap - assigned) : round2((lineAmount(line) / total) * cap);
+    assigned = round2(assigned + share);
+    return {
+      id: String(line.id || ''),
+      ...(line.lineKey ? { lineKey: line.lineKey } : {}),
+      discount: Math.max(0, share),
+    };
+  });
 }
 
 function hasOffer(result: EvaluateResult | null | undefined): boolean {
@@ -60,7 +99,7 @@ export async function evaluateEcommerceCartPromos(opts: {
   lines: EcommercePromoLine[];
   persist?: boolean;
   evaluate?: EvaluateFn;
-}): Promise<EvaluateResult> {
+}): Promise<EcommerceCartPromoResult> {
   const evaluate = opts.evaluate || evaluatePromotions;
   const userId = String(opts.userId || '').trim();
   const source = (opts.lines || [])
@@ -76,6 +115,7 @@ export async function evaluateEcommerceCartPromos(opts: {
   }
 
   const benefits: AppliedBenefit[] = [];
+  const lineDiscounts: EcommerceLineDiscount[] = [];
   const matched: string[] = [];
   const rejected: EvaluateResult['explain']['rejected_promotions'] = [];
   const uncovered: EcommercePromoLine[] = [];
@@ -103,6 +143,7 @@ export async function evaluateEcommerceCartPromos(opts: {
       uncovered.push(...groupLines);
       continue;
     }
+    lineDiscounts.push(...allocateGroupDiscount(groupLines, Number(result.summary?.discount) || 0));
     benefits.push(...(result.benefits || []));
     if (result.winner_promotion_id) matched.push(result.winner_promotion_id);
     if (!customerCopy && result.customer_copy) customerCopy = result.customer_copy;
@@ -120,9 +161,22 @@ export async function evaluateEcommerceCartPromos(opts: {
     if (result.benefit_cap) benefitCap = result.benefit_cap;
     rejected.push(...(result.explain?.rejected_promotions || []));
     if (hasOffer(result)) {
+      lineDiscounts.push(...allocateGroupDiscount(uncovered, Number(result.summary?.discount) || 0));
       benefits.push(...(result.benefits || []));
       if (result.winner_promotion_id) matched.push(result.winner_promotion_id);
       if (!customerCopy && result.customer_copy) customerCopy = result.customer_copy;
+    }
+  }
+
+  const covered = new Set(lineDiscounts.map((row) => row.lineKey || row.id));
+  for (const line of source) {
+    const key = line.lineKey || String(line.id || '');
+    if (!covered.has(key)) {
+      lineDiscounts.push({
+        id: String(line.id || ''),
+        ...(line.lineKey ? { lineKey: line.lineKey } : {}),
+        discount: 0,
+      });
     }
   }
 
@@ -133,12 +187,13 @@ export async function evaluateEcommerceCartPromos(opts: {
   const cashback = round2(
     benefits.filter((b) => b.benefit_type === 'CASHBACK').reduce((sum, b) => sum + b.amount, 0),
   );
-  const body: EvaluateResult = {
+  const body: EcommerceCartPromoResult = {
     eligible: discount > 0 || cashback > 0,
     evaluation_id: '',
     winner_promotion_id: benefits[0]?.promotion_id || null,
     customer_copy: customerCopy,
     benefits,
+    lineDiscounts,
     summary: {
       gross_amount: gross,
       discount,

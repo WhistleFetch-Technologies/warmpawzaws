@@ -67,6 +67,10 @@ describe('evaluateEcommerceCartPromos', () => {
     });
 
     expect(out.summary.discount).toBe(70);
+    expect(out.lineDiscounts).toEqual([
+      { id: 'kurta', discount: 70 },
+      { id: 'food', discount: 0 },
+    ]);
     expect(calls.map((c) => c.transaction.publish_letters)).toEqual([['V'], ['V'], ['F']]);
     expect(calls[0].transaction.amount).toBe(444);
     expect(calls[1].transaction.amount).toBe(500);
@@ -97,6 +101,11 @@ describe('evaluateEcommerceCartPromos', () => {
 
     expect(out.summary.discount).toBe(100);
     expect(out.summary.cashback).toBe(30);
+    expect(out.lineDiscounts).toEqual([
+      { id: 'a1', discount: 40 },
+      { id: 'a2', discount: 20 },
+      { id: 'b1', discount: 40 },
+    ]);
     expect(calls).toHaveLength(2);
     expect(calls[0].transaction.amount).toBe(300);
     expect(calls[1].transaction.amount).toBe(800);
@@ -123,6 +132,11 @@ describe('evaluateEcommerceCartPromos', () => {
     });
 
     expect(out.summary.discount).toBe(50);
+    expect(out.lineDiscounts).toEqual([
+      { id: 'a', discount: expect.any(Number) },
+      { id: 'b', discount: expect.any(Number) },
+    ]);
+    expect(out.lineDiscounts.reduce((sum, row) => sum + row.discount, 0)).toBe(50);
     expect(calls[calls.length - 1].transaction.amount).toBe(350);
     expect(calls[calls.length - 1].transaction.publish_letters).toEqual(['F']);
   });
