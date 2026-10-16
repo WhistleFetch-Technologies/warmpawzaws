@@ -60,6 +60,46 @@ async function loadCategoryIdByProductIds(
   return map;
 }
 
+async function loadVendorIdByProductIds(productIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const unique = Array.from(new Set(productIds.map(stripProductSkuSuffix).filter(Boolean)));
+  if (unique.length === 0) return map;
+  try {
+    const result = await query(
+      `SELECT id::text AS id, vendor_id::text AS vendor_id
+         FROM products
+        WHERE id = ANY($1::uuid[])`,
+      [unique]
+    );
+    for (const row of result.rows || []) {
+      const id = row.id != null ? String(row.id) : '';
+      const vendorId =
+        row.vendor_id != null && String(row.vendor_id).trim() !== ''
+          ? String(row.vendor_id).trim()
+          : '';
+      if (id && vendorId) map.set(id, vendorId);
+    }
+  } catch {
+    /* non-UUID product ids */
+  }
+  return map;
+}
+
+/** Fill vendorId from products when the cart line omitted it. Does not overwrite. */
+export async function fillProductVendorIfMissing<
+  T extends { productId: string; vendorId?: string },
+>(lines: T[]): Promise<T[]> {
+  if (lines.length === 0) return lines;
+  if (lines.every((line) => String(line.vendorId || '').trim())) return lines;
+  const vendorMap = await loadVendorIdByProductIds(lines.map((line) => line.productId));
+  return lines.map((line) => {
+    if (String(line.vendorId || '').trim()) return line;
+    const fromDb = vendorMap.get(stripProductSkuSuffix(line.productId));
+    if (!fromDb) return line;
+    return { ...line, vendorId: fromDb };
+  });
+}
+
 /** Fill categoryId/category only when both are empty. Does not overwrite. */
 export async function fillProductCategoryIfMissing<
   T extends { productId: string; categoryId?: string; category?: string },

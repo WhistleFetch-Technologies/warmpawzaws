@@ -156,6 +156,11 @@ export interface EvaluateTransaction {
   quantity?: number;
   /** Optional line items for SERVICE_LEVEL / CATEGORY_LEVEL stacking. */
   lines?: EvaluateTransactionLine[];
+  /**
+   * Ecommerce cart split only. When set, only these VCF publish letters are scored
+   * and legacy (non-VCF) promos are skipped.
+   */
+  publish_letters?: Array<'V' | 'C' | 'F'>;
   [key: string]: unknown;
 }
 

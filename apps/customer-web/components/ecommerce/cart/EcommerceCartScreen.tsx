@@ -140,6 +140,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
           price: item.price,
           categoryId: item.categoryId || item.category,
           category: item.categoryId || item.category,
+          vendorId: item.vendorId && item.vendorId !== 'default' ? item.vendorId : undefined,
         };
       }),
     [cart]

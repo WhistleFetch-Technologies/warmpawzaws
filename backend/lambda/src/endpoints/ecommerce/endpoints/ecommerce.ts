@@ -804,6 +804,7 @@ export function registerEcommerceEndpoints(app: Hono) {
             skuRowIdForStock: resolved.skuRowIdForStock,
             hsn_code: resolved.hsn_code,
             category_id: resolved.category_id,
+            vendor_id: resolved.vendor_id,
           });
         } catch (lineErr: unknown) {
           const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
@@ -902,10 +903,11 @@ export function registerEcommerceEndpoints(app: Hono) {
           evaluationId: requestedEvaluationId,
           amount: subtotal,
           vendorId: firstVendorId ? String(firstVendorId) : null,
-          lines: cartLines.map((line) => ({
-            id: line.productId,
+          lines: orderItems.map((oi) => ({
+            id: String(oi.product_id),
             service_category: 'ecommerce',
-            amount: (Number(line.price) || 0) * (Number(line.quantity) || 1),
+            vendorId: oi.vendor_id ? String(oi.vendor_id) : null,
+            amount: (Number(oi.unit_price) || 0) * (Number(oi.quantity) || 1),
           })),
         });
         engineEvaluationId = engine.evaluationId;

@@ -125,6 +125,47 @@ function collectLineBenefits(opts: {
   return { benefits: promoBenefits, anyRulePass, failures };
 }
 
+function publishLettersFromReq(req: EvaluateRequest): Array<'V' | 'C' | 'F'> | null {
+  const raw = req.transaction?.publish_letters;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const letters = raw
+    .map((letter) => String(letter || '').toUpperCase())
+    .filter((letter): letter is 'V' | 'C' | 'F' => letter === 'V' || letter === 'C' || letter === 'F');
+  return letters.length ? letters : null;
+}
+
+function snapshotForPublishLetters(
+  snapshot: EvaluateSnapshot,
+  letters: Array<'V' | 'C' | 'F'> | null,
+): EvaluateSnapshot {
+  if (!letters) return snapshot;
+  return {
+    ...snapshot,
+    candidates: snapshot.candidates.filter((promo) => {
+      const vcf = parseVcfConfig(promo.metadata);
+      return vcf != null && letters.includes(vcf.publish.letter);
+    }),
+  };
+}
+
+function emptyEvaluateResult(amount: number): Omit<EvaluateResult, 'evaluation_id'> {
+  return {
+    eligible: false,
+    winner_promotion_id: null,
+    winner_rule_id: null,
+    range: null,
+    customer_copy: null,
+    benefits: [],
+    summary: {
+      gross_amount: amount,
+      discount: 0,
+      payable: Math.round(Math.max(0, amount) * 100) / 100,
+      cashback: 0,
+    },
+    explain: { failures: [], matched_promotions: [], rejected_promotions: [] },
+  };
+}
+
 /** In-memory evaluate against a preloaded snapshot. No SQL. Does not persist. */
 export function evaluateAgainstSnapshot(
   snapshot: EvaluateSnapshot,
@@ -132,6 +173,8 @@ export function evaluateAgainstSnapshot(
   now = new Date(),
 ): Omit<EvaluateResult, 'evaluation_id'> {
   const amount = Number(req.transaction?.amount ?? 0) || 0;
+  const publishLetters = publishLettersFromReq(req);
+  const scopedSnapshot = snapshotForPublishLetters(snapshot, publishLetters);
   const stackInput: StackCandidate[] = [];
   const failures: EvaluateResult['explain']['failures'] = [];
   const matched: string[] = [];
@@ -183,7 +226,7 @@ export function evaluateAgainstSnapshot(
   }
 
   const vcfScore = scoreVcfCandidates({
-    candidates: snapshot.candidates,
+    candidates: scopedSnapshot.candidates,
     rulesByPromo: snapshot.rulesByPromo,
     limitsByPromo: snapshot.limitsByPromo,
     usageByPromo: snapshot.usageByPromo,
@@ -191,6 +234,10 @@ export function evaluateAgainstSnapshot(
     behaviour: snapshot.behaviour,
     req,
   });
+
+  if (publishLetters && !vcfScore.hadVcfCandidates) {
+    return emptyEvaluateResult(amount);
+  }
 
   if (vcfScore.hadVcfCandidates) {
     const payableBenefits = vcfScore.winnerBenefits.filter((b) => b.amount > 0);
@@ -231,7 +278,7 @@ export function evaluateAgainstSnapshot(
   }
   rejected.push(...vcfScore.rejected);
 
-  const legacyCandidates = snapshot.candidates.filter((p) => !parseVcfConfig(p.metadata));
+  const legacyCandidates = scopedSnapshot.candidates.filter((p) => !parseVcfConfig(p.metadata));
   for (const promo of legacyCandidates) {
     const limitCheck = checkPromoLimits({
       promo,

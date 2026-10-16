@@ -517,6 +517,7 @@ app.post('/promotions/calculate-cart', async (c) => {
         ownershipRaw === 'own_brand' || ownershipRaw === 'third_party'
           ? String(ownershipRaw)
           : undefined;
+      const lineVendor = String(item.vendorId || item.vendor_id || '').trim();
       return {
         productId,
         quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
@@ -525,16 +526,17 @@ app.post('/promotions/calculate-cart', async (c) => {
         categoryId: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
         id: productId || undefined,
         listingOwnership,
+        vendorId: lineVendor || undefined,
       };
     });
     const { enrichLinesWithListingOwnership } = await import(
       '../utils/compute-listing-ownership'
     );
-    const { fillProductCategoryIfMissing } = await import(
+    const { fillProductCategoryIfMissing, fillProductVendorIfMissing } = await import(
       '../utils/fill-product-category-if-missing'
     );
-    const cartLines = await fillProductCategoryIfMissing(
-      await enrichLinesWithListingOwnership(rawCartLines)
+    const cartLines = await fillProductVendorIfMissing(
+      await fillProductCategoryIfMissing(await enrichLinesWithListingOwnership(rawCartLines))
     );
 
     const originalTotal = cartLines.reduce(
@@ -546,22 +548,18 @@ app.post('/promotions/calculate-cart', async (c) => {
     let winningDiscount = 0;
     if (customerId) {
       try {
-        const { evaluatePromotions } = await import('../discount-engine/promo-engine');
-        const engineResult = await evaluatePromotions({
-          user_id: String(customerId),
+        const { evaluateEcommerceCartPromos } = await import(
+          './ecommerce/shared/evaluate-ecommerce-cart-promos'
+        );
+        const fallbackVendor = vendorId ? String(vendorId) : undefined;
+        const engineResult = await evaluateEcommerceCartPromos({
+          userId: String(customerId),
           persist: false,
-          transaction: {
-            type: 'ECOMMERCE',
-            channel: 'ecommerce',
-            service_category: 'ecommerce',
-            vendor_id: vendorId ? String(vendorId) : undefined,
-            vendorId: vendorId ? String(vendorId) : undefined,
-            amount: originalTotal,
-            lines: cartLines.map((line) => ({
-              id: line.productId || line.id,
-              amount: (Number(line.price) || 0) * (Number(line.quantity) || 1),
-            })),
-          },
+          lines: cartLines.map((line) => ({
+            id: line.productId || line.id,
+            vendorId: line.vendorId || fallbackVendor || null,
+            amount: (Number(line.price) || 0) * (Number(line.quantity) || 1),
+          })),
         });
         const cashbackBenefit = (engineResult.benefits || []).find(
           (b) => b.benefit_type === 'CASHBACK'

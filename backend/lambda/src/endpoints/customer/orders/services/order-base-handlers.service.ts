@@ -38,6 +38,7 @@ import {
 } from '../../../../utils/shop-payment-hold';
 import { reconcilePendingShopPayments, reconcileShopOrderPayment } from '../../../../utils/payments/shop-payment-reconciliation';
 import { assertShopCheckoutPaymentAllowed } from '../../../../utils/shop-checkout-payment-flags';
+import { signOrderItemImages } from '../shared/sign-order-item-images';
 
 /** Module helpers (move-only). */
 
@@ -555,7 +556,7 @@ export class GetCustomerOrdersHandler extends BaseHandler {
           ...rest,
           paymentHoldExpiresAt: order.payment_hold_expires_at ?? null,
           paymentCheckoutStartedAt: order.payment_checkout_started_at ?? null,
-          items: enrichedItems,
+          items: await signOrderItemImages(enrichedItems),
           has_returnable_items: hasReturnableItems,
           tracking,
           tracking_number: tracking?.trackingNumber || order.tracking_number || null,
@@ -632,7 +633,7 @@ export class GetOrderDetailsHandler extends BaseHandler {
 
       return this.success({
         order: orderRow,
-        items: items.rows,
+        items: await signOrderItemImages(items.rows as Array<Record<string, unknown>>),
         history: history.rows,
         shipments: shipments.rows,
         tracking: structuredTracking,
