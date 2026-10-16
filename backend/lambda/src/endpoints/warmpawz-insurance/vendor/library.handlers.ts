@@ -1,15 +1,20 @@
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { INSURANCE_SLUGS } from '@warmpawz/shared-types';
 import {
+  DEFAULT_PAWS_N_CLAWS_FORM,
+  DEFAULT_PAWS_N_CLAWS_FORM_NAME,
+  INSURANCE_SLUGS,
   canTransitionInsuranceStatus,
   chatCardSchema,
   normalizeInsuranceStatus,
   planQuoteCardSchema,
 } from '@warmpawz/shared-types';
 import { formSchemaIssues, parseFormSchema } from '../shared/form-library';
+import { transitionBlockReason } from '../shared/lifecycle';
 import { insuranceAdminError, insuranceAdminOk, InsuranceAdminError } from '../admin/shared/insurance-admin-response';
 import {
+  dbActiveCompanyIdsForVendor,
+  dbEnsureDefaultPublishedForm,
   dbGetForm,
   dbInsertForm,
   dbListForms,
@@ -19,6 +24,7 @@ import {
   dbVendorLinkedToCompany,
 } from './forms.repo';
 import {
+  dbGetBookingStatus,
   dbGetVendorApplication,
   dbInsertChatCard,
   dbListVendorApplications,
@@ -43,7 +49,44 @@ function checkedSchema(input: unknown) {
 
 export async function listFormsHandler(c: Context) {
   try {
-    return insuranceAdminOk(c, { forms: await dbListForms(c.req.param('vendorId')) });
+    const vendorId = c.req.param('vendorId');
+    const schema = checkedSchema(DEFAULT_PAWS_N_CLAWS_FORM);
+    const companyIds = await dbActiveCompanyIdsForVendor(vendorId);
+    for (const companyId of companyIds) {
+      await dbEnsureDefaultPublishedForm({
+        vendorId,
+        companyId,
+        name: DEFAULT_PAWS_N_CLAWS_FORM_NAME,
+        schema,
+        actor: vendorId,
+      });
+    }
+    return insuranceAdminOk(c, { forms: await dbListForms(vendorId) });
+  } catch (error) {
+    return insuranceAdminError(c, error);
+  }
+}
+
+export async function ensureDefaultFormHandler(c: Context) {
+  try {
+    const vendorId = c.req.param('vendorId');
+    const body = z.object({ companyId: z.string().uuid().optional() }).parse(await c.req.json().catch(() => ({})));
+    const schema = checkedSchema(DEFAULT_PAWS_N_CLAWS_FORM);
+    const companyIds = body.companyId ? [body.companyId] : await dbActiveCompanyIdsForVendor(vendorId);
+    const created: unknown[] = [];
+    for (const companyId of companyIds) {
+      const linked = await dbVendorLinkedToCompany(vendorId, companyId);
+      if (!linked) continue;
+      const form = await dbEnsureDefaultPublishedForm({
+        vendorId,
+        companyId,
+        name: DEFAULT_PAWS_N_CLAWS_FORM_NAME,
+        schema,
+        actor: vendorId,
+      });
+      if (form) created.push(form);
+    }
+    return insuranceAdminOk(c, { created, forms: await dbListForms(vendorId) });
   } catch (error) {
     return insuranceAdminError(c, error);
   }
@@ -123,14 +166,26 @@ async function transitionCard(
   const application = await dbGetVendorApplication(vendorId, c.req.param('id'));
   if (!application) throw new InsuranceAdminError(404, 'NOT_FOUND', 'Application not found');
   const from = normalizeInsuranceStatus(application.status);
-  if (!from || !canTransitionInsuranceStatus(from, toStatus)) {
-    throw new InsuranceAdminError(422, 'INVALID_TRANSITION', `Cannot move from ${application.status} to ${toStatus}`);
+  if (!application.booking_id) throw new InsuranceAdminError(422, 'NO_BOOKING', 'Application has no consultation booking');
+
+  const consultGuards =
+    toStatus === 'consulted'
+      ? [
+          {
+            ok: (await dbGetBookingStatus(String(application.booking_id)))?.toLowerCase() === 'completed',
+            reason: 'Mark the tele consultation complete in Bookings before marking consulted',
+          },
+        ]
+      : [];
+  const blocked = transitionBlockReason(String(application.status), toStatus, consultGuards);
+  if (blocked || !from || !canTransitionInsuranceStatus(from, toStatus)) {
+    throw new InsuranceAdminError(422, 'INVALID_TRANSITION', blocked || `Cannot move from ${application.status} to ${toStatus}`);
   }
+
   const parsed = chatCardSchema.parse(card);
   if (parsed.applicationId !== String(application.id)) {
     throw new InsuranceAdminError(422, 'WRONG_APPLICATION', 'Card application does not match');
   }
-  if (!application.booking_id) throw new InsuranceAdminError(422, 'NO_BOOKING', 'Application has no consultation booking');
   const saved = await dbInsertChatCard({
     bookingId: String(application.booking_id),
     senderPhone: vendorId,
@@ -213,7 +268,11 @@ export async function confirmFormHandler(c: Context) {
         fromStatus: from,
         toStatus: to,
       },
-      to === 'consulted' ? 'Consultation complete' : 'Details confirmed',
+      to === 'consulted'
+        ? 'Consultation complete'
+        : to === 'dropped' || to === 'cancelled'
+          ? 'Application archived'
+          : 'Details confirmed',
     );
   } catch (error) {
     return insuranceAdminError(c, error);

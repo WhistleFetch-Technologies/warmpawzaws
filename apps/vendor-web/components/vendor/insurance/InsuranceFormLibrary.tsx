@@ -1,7 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { FORM_FIELD_TYPES, INSURANCE_SLUGS, type FormFieldSchema, type FormSchema } from '@warmpawz/shared-types';
+import { useMemo, useState } from 'react';
+import {
+  DEFAULT_PAWS_N_CLAWS_FORM,
+  DEFAULT_PAWS_N_CLAWS_FORM_NAME,
+  FORM_FIELD_TYPES,
+  INSURANCE_SLUGS,
+  type FormFieldSchema,
+  type FormSchema,
+} from '@warmpawz/shared-types';
 import { apiClient } from '@/lib/api-client';
 
 type FormRow = {
@@ -14,12 +21,7 @@ type FormRow = {
   published_version?: number | string | null;
 };
 
-const STARTER: FormSchema = {
-  sections: [
-    { key: 'owner', title: 'Pet & Owner Details', fields: [{ key: 'pet_name', label: 'Pet name', type: 'text', required: true, slug: 'pet.name' }] },
-    { key: 'cover', title: 'Coverage & Declarations', fields: [] },
-  ],
-};
+const STARTER: FormSchema = structuredClone(DEFAULT_PAWS_N_CLAWS_FORM);
 
 function keyFrom(label: string) {
   const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
@@ -40,10 +42,11 @@ export function InsuranceFormLibrary({
   onChanged: () => void;
 }) {
   const [selectedId, setSelectedId] = useState('');
-  const [name, setName] = useState('New form');
+  const [name, setName] = useState(DEFAULT_PAWS_N_CLAWS_FORM_NAME);
   const [planId, setPlanId] = useState('');
   const [schema, setSchema] = useState<FormSchema>(STARTER);
   const [search, setSearch] = useState('');
+  const [workflowFilter, setWorkflowFilter] = useState<'all' | 'quote' | 'proposal'>('all');
   const [sectionIndex, setSectionIndex] = useState(0);
   const [fieldIndex, setFieldIndex] = useState(0);
   const [label, setLabel] = useState('');
@@ -51,16 +54,27 @@ export function InsuranceFormLibrary({
   const [required, setRequired] = useState(true);
   const [slug, setSlug] = useState('');
   const [helper, setHelper] = useState('');
+  const [optionsText, setOptionsText] = useState('');
+  const [showIfField, setShowIfField] = useState('');
+  const [showIfEquals, setShowIfEquals] = useState('');
   const [notice, setNotice] = useState('');
   const selected = forms.find((form) => String(form.id) === selectedId);
   const field = schema.sections[sectionIndex]?.fields[fieldIndex];
+
+  const visibleSections = useMemo(
+    () =>
+      schema.sections
+        .map((section, index) => ({ section, index }))
+        .filter(({ section }) => workflowFilter === 'all' || section.workflow === workflowFilter),
+    [schema.sections, workflowFilter],
+  );
 
   function openForm(form: FormRow) {
     setSelectedId(String(form.id || ''));
     setName(String(form.name || 'Form'));
     setPlanId(form.plan_id ? String(form.plan_id) : '');
     const draft = form.draft_schema;
-    setSchema(draft && Array.isArray(draft.sections) && draft.sections.length ? draft : STARTER);
+    setSchema(draft && Array.isArray(draft.sections) && draft.sections.length ? draft : structuredClone(STARTER));
     setSectionIndex(0);
     setFieldIndex(0);
   }
@@ -69,6 +83,10 @@ export function InsuranceFormLibrary({
     if (!label.trim()) return;
     const next = structuredClone(schema);
     const section = next.sections[sectionIndex] || next.sections[0];
+    const options = optionsText
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
     section.fields.push({
       key: keyFrom(label),
       label: label.trim(),
@@ -76,11 +94,19 @@ export function InsuranceFormLibrary({
       required,
       helperText: helper.trim() || undefined,
       slug: slug || undefined,
+      options: options.length ? options : undefined,
+      showIf:
+        showIfField.trim() && showIfEquals.trim()
+          ? { field: showIfField.trim(), equals: showIfEquals.trim() }
+          : undefined,
     });
     setSchema(next);
     setFieldIndex(section.fields.length - 1);
     setLabel('');
     setHelper('');
+    setOptionsText('');
+    setShowIfField('');
+    setShowIfEquals('');
   }
 
   async function save() {
@@ -119,10 +145,24 @@ export function InsuranceFormLibrary({
     }
     try {
       await apiClient.post(`/vendor/${vendorId}/insurance/forms/${selectedId}/publish`, {});
-      setNotice('Published');
+      setNotice('Published — available to send from Chat');
       onChanged();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Form could not be published');
+    }
+  }
+
+  async function ensureDefault() {
+    if (!companyId) {
+      setNotice('This vendor has no active insurer link yet.');
+      return;
+    }
+    try {
+      await apiClient.post(`/vendor/${vendorId}/insurance/forms/ensure-default`, { companyId });
+      setNotice('Default Paws n Claws form is ready to send');
+      onChanged();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Default form could not be created');
     }
   }
 
@@ -130,14 +170,29 @@ export function InsuranceFormLibrary({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Form Library</h1>
-          <p className="text-sm text-gray-500">Build reusable customer forms for your insurance plans.</p>
+          <p className="text-sm text-gray-500">
+            Quote → Proposal data collection with Warmpawz field mapping. A published default is created for each linked insurer.
+          </p>
         </div>
-        <button type="button" className="rounded-xl bg-[#FF8C42] px-3 py-2 text-sm font-semibold text-white" onClick={() => { setSelectedId(''); setName('New form'); setSchema(structuredClone(STARTER)); }}>
-          Create form
-        </button>
+        <div className="flex gap-2">
+          <button type="button" className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold" onClick={() => void ensureDefault()}>
+            Ensure default form
+          </button>
+          <button
+            type="button"
+            className="rounded-xl bg-[#FF8C42] px-3 py-2 text-sm font-semibold text-white"
+            onClick={() => {
+              setSelectedId('');
+              setName(DEFAULT_PAWS_N_CLAWS_FORM_NAME);
+              setSchema(structuredClone(STARTER));
+            }}
+          >
+            New from default
+          </button>
+        </div>
       </div>
       <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)_280px]">
         <aside className="rounded-2xl border bg-white p-3">
@@ -153,33 +208,65 @@ export function InsuranceFormLibrary({
           </div>
         </aside>
         <section className="space-y-3 rounded-2xl border bg-white p-4">
-          <div className="grid gap-2 md:grid-cols-3">
-            <input className="rounded-lg border px-2 py-2 text-sm" value={name} onChange={(e) => setName(e.target.value)} />
+          <div className="grid gap-2 md:grid-cols-4">
+            <input className="rounded-lg border px-2 py-2 text-sm md:col-span-2" value={name} onChange={(e) => setName(e.target.value)} />
             <select className="rounded-lg border px-2 py-2 text-sm" value={planId} onChange={(e) => setPlanId(e.target.value)}>
               <option value="">Any plan</option>
               {plans.map((plan) => <option key={String(plan.id)} value={String(plan.id)}>{plan.name}</option>)}
             </select>
             <p className="rounded-lg bg-orange-50 px-2 py-2 text-sm font-semibold text-orange-700">{selected?.status || 'Draft'}</p>
           </div>
-          {schema.sections.map((section, index) => (
+          <div className="flex gap-2">
+            {(['all', 'quote', 'proposal'] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${workflowFilter === item ? 'bg-[#FF8C42] text-white' : 'bg-orange-50 text-gray-600'}`}
+                onClick={() => setWorkflowFilter(item)}
+              >
+                {item === 'all' ? 'All sections' : item === 'quote' ? 'Quote' : 'Proposal'}
+              </button>
+            ))}
+          </div>
+          {visibleSections.map(({ section, index }) => (
             <div key={section.key} className="rounded-xl border p-3">
-              <input className="w-full font-semibold" value={section.title} onChange={(e) => {
-                const next = structuredClone(schema);
-                next.sections[index].title = e.target.value;
-                setSchema(next);
-              }} />
+              <div className="flex items-center justify-between gap-2">
+                <input className="w-full font-semibold" value={section.title} onChange={(e) => {
+                  const next = structuredClone(schema);
+                  next.sections[index].title = e.target.value;
+                  setSchema(next);
+                }} />
+                {section.workflow ? (
+                  <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold uppercase text-gray-600">{section.workflow}</span>
+                ) : null}
+              </div>
               <ul className="mt-2 space-y-1 text-sm">
                 {section.fields.map((item, itemIndex) => (
                   <li key={item.key}>
                     <button type="button" className="text-left" onClick={() => { setSectionIndex(index); setFieldIndex(itemIndex); }}>
-                      {item.label} · {item.type}{item.required ? ' · required' : ''}
+                      {item.label} · {item.type}
+                      {item.required ? ' · required' : ''}
+                      {item.slug ? ` · ${item.slug}` : ''}
+                      {item.optionsVerified === false ? ' · unverified options' : ''}
                     </button>
                   </li>
                 ))}
               </ul>
             </div>
           ))}
-          <button type="button" className="text-sm font-semibold text-[#FF8C42]" onClick={() => setSchema({ ...schema, sections: [...schema.sections, { key: `section_${schema.sections.length + 1}`, title: 'New section', fields: [] }] })}>
+          <button
+            type="button"
+            className="text-sm font-semibold text-[#FF8C42]"
+            onClick={() =>
+              setSchema({
+                ...schema,
+                sections: [
+                  ...schema.sections,
+                  { key: `section_${schema.sections.length + 1}`, title: 'New section', fields: [], workflow: workflowFilter === 'proposal' ? 'proposal' : 'quote' },
+                ],
+              })
+            }
+          >
             Add section
           </button>
           <div className="flex justify-end gap-2">
@@ -197,11 +284,20 @@ export function InsuranceFormLibrary({
               {FORM_FIELD_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
+          <label className="mt-2 block">Options (comma-separated)
+            <input className="mt-1 w-full rounded-lg border px-2 py-2" value={optionsText} onChange={(e) => setOptionsText(e.target.value)} placeholder="Yes, No" />
+          </label>
           <label className="mt-2 block">Map to Warmpawz field
             <select className="mt-1 w-full rounded-lg border px-2 py-2" value={slug} onChange={(e) => setSlug(e.target.value)}>
               <option value="">None</option>
               {INSURANCE_SLUGS.map((item) => <option key={item.slug} value={item.slug}>{item.label}</option>)}
             </select>
+          </label>
+          <label className="mt-2 block">Show if field
+            <input className="mt-1 w-full rounded-lg border px-2 py-2" value={showIfField} onChange={(e) => setShowIfField(e.target.value)} placeholder="opdCover" />
+          </label>
+          <label className="mt-2 block">Show if equals
+            <input className="mt-1 w-full rounded-lg border px-2 py-2" value={showIfEquals} onChange={(e) => setShowIfEquals(e.target.value)} placeholder="Yes" />
           </label>
           <label className="mt-2 block">Helper text
             <input className="mt-1 w-full rounded-lg border px-2 py-2" value={helper} onChange={(e) => setHelper(e.target.value)} />
@@ -210,7 +306,12 @@ export function InsuranceFormLibrary({
             <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Required
           </label>
           <button type="button" className="mt-3 w-full rounded-xl bg-[#FF8C42] px-3 py-2 font-semibold text-white" onClick={addField}>Add field</button>
-          {field ? <p className="mt-3 text-xs text-gray-500">Selected: {field.label}</p> : null}
+          {field ? (
+            <p className="mt-3 text-xs text-gray-500">
+              Selected: {field.label}
+              {field.showIf ? ` · showIf ${field.showIf.field}=${String(field.showIf.equals)}` : ''}
+            </p>
+          ) : null}
         </aside>
       </div>
       {notice ? <p className="text-sm text-gray-700">{notice}</p> : null}

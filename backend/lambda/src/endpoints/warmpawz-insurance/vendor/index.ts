@@ -8,6 +8,7 @@ import {
   changeRequestHandler,
   confirmFormHandler,
   createFormHandler,
+  ensureDefaultFormHandler,
   formRequestHandler,
   listFormsHandler,
   listSlugsHandler,
@@ -46,6 +47,7 @@ export function registerWarmpawzInsuranceVendorRoutes(app: Hono): void {
   const gate = requireWarmpawzInsuranceEnabled();
   app.get('/vendor/:vendorId/insurance/workspace', gate, vendorWorkspaceHandler);
   app.get('/vendor/:vendorId/insurance/forms', gate, listFormsHandler);
+  app.post('/vendor/:vendorId/insurance/forms/ensure-default', gate, ensureDefaultFormHandler);
   app.post('/vendor/:vendorId/insurance/forms', gate, createFormHandler);
   app.put('/vendor/:vendorId/insurance/forms/:id', gate, updateFormHandler);
   app.post('/vendor/:vendorId/insurance/forms/:id/publish', gate, publishFormHandler);

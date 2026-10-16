@@ -91,6 +91,19 @@ describe('insurance lifecycle guards', () => {
     expect(transitionBlockReason('cancelled', 'consulted')).toMatch(/Cannot move/);
   });
 
+  it('blocks consulted until the booking is marked complete', () => {
+    expect(
+      transitionBlockReason('consultation_booked', 'consulted', [
+        { ok: false, reason: 'Mark the tele consultation complete in Bookings before marking consulted' },
+      ]),
+    ).toMatch(/complete in Bookings/);
+    expect(
+      transitionBlockReason('consultation_booked', 'consulted', [
+        { ok: true, reason: 'Mark the tele consultation complete in Bookings before marking consulted' },
+      ]),
+    ).toBeNull();
+  });
+
   it('auto-confirms and expires links once, and locks a submitted report', () => {
     expect(shouldAutoConfirm('2026-10-01T10:00:00.000Z', 7, now, false)).toBe(true);
     expect(shouldAutoConfirm('2026-10-01T10:00:00.000Z', 7, now, true)).toBe(false);

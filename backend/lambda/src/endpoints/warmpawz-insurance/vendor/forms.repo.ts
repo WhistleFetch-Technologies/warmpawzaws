@@ -101,3 +101,42 @@ export async function dbListVersions(vendorId: string, templateId: string): Prom
   );
   return res.rows as Row[];
 }
+
+export async function dbActiveCompanyIdsForVendor(vendorId: string): Promise<string[]> {
+  const res = await query(
+    `SELECT company_id::text AS company_id
+     FROM insurance_vendor_companies
+     WHERE vendor_id = $1::uuid AND status = 'active'`,
+    [vendorId],
+  );
+  return (res.rows as Row[]).map((row) => String(row.company_id));
+}
+
+export async function dbHasPublishedFormForCompany(vendorId: string, companyId: string): Promise<boolean> {
+  const res = await query(
+    `SELECT 1 FROM insurance_form_templates
+     WHERE vendor_id = $1::uuid AND company_id = $2::uuid AND status = 'published'
+     LIMIT 1`,
+    [vendorId, companyId],
+  );
+  return (res.rows as Row[]).length > 0;
+}
+
+export async function dbEnsureDefaultPublishedForm(input: {
+  vendorId: string;
+  companyId: string;
+  name: string;
+  schema: unknown;
+  actor: string | null;
+}): Promise<Row | null> {
+  if (await dbHasPublishedFormForCompany(input.vendorId, input.companyId)) return null;
+  const form = await dbInsertForm({
+    vendorId: input.vendorId,
+    companyId: input.companyId,
+    planId: null,
+    name: input.name,
+    schema: input.schema,
+  });
+  await dbPublishForm(input.vendorId, String(form.id), input.actor);
+  return form;
+}

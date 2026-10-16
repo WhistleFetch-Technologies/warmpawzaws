@@ -24,4 +24,5 @@ export * from './insurance/insurance-slugs';
 export * from './insurance/form-field-types';
 export * from './insurance/form-schema';
 export * from './insurance/form-validation';
+export * from './insurance/default-paws-n-claws-form';
 export * from './insurance/chat-cards';

@@ -1,4 +1,4 @@
-import type { FormFieldSchema, FormSchema } from './form-schema';
+import { formShowIfMatches, type FormFieldSchema, type FormSchema } from './form-schema';
 
 export interface DynamicFormValues {
   readonly [key: string]: unknown;
@@ -11,8 +11,13 @@ function isEmpty(value: unknown): boolean {
   return false;
 }
 
-export function validateDynamicFormField(field: FormFieldSchema, value: unknown): string | null {
+export function validateDynamicFormField(
+  field: FormFieldSchema,
+  value: unknown,
+  values: DynamicFormValues = {},
+): string | null {
   if (field.type === 'section_note') return null;
+  if (!formShowIfMatches(field.showIf, values)) return null;
   if (field.required && isEmpty(value) && field.type !== 'checkbox') {
     return `${field.label} is required`;
   }
@@ -43,7 +48,7 @@ export function validateDynamicForm(schema: FormSchema, values: DynamicFormValue
   const errors: Record<string, string> = {};
   for (const section of schema.sections) {
     for (const field of section.fields) {
-      const message = validateDynamicFormField(field, values[field.key]);
+      const message = validateDynamicFormField(field, values[field.key], values);
       if (message) errors[field.key] = message;
     }
   }

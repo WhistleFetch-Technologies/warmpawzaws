@@ -16,6 +16,7 @@ export async function dbListVendorApplications(vendorId: string): Promise<Row[]>
   const res = await query(
     `SELECT a.id, a.booking_id, a.status, a.plan_id, a.pet_id, a.customer_id, a.company_id, a.updated_at,
             a.payment_link_expires_at,
+            b.status AS booking_status,
             p.name AS plan_name,
             co.name AS company_name,
             cu.full_name AS customer_name,
@@ -23,6 +24,7 @@ export async function dbListVendorApplications(vendorId: string): Promise<Row[]>
             pet.species AS pet_species,
             pet.breed AS pet_breed
      FROM insurance_applications a
+     LEFT JOIN bookings b ON b.id = a.booking_id
      LEFT JOIN insurance_company_plans p ON p.id = a.plan_id
      LEFT JOIN insurance_companies co ON co.id = a.company_id
      LEFT JOIN customers cu ON cu.id = a.customer_id
@@ -32,6 +34,12 @@ export async function dbListVendorApplications(vendorId: string): Promise<Row[]>
     [vendorId],
   );
   return res.rows as Row[];
+}
+
+export async function dbGetBookingStatus(bookingId: string): Promise<string | null> {
+  const res = await query(`SELECT status FROM bookings WHERE id = $1::uuid`, [bookingId]);
+  const row = (res.rows as Row[])[0];
+  return row?.status != null ? String(row.status) : null;
 }
 
 export async function dbInsertChatCard(input: {
