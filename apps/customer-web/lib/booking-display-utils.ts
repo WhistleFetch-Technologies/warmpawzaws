@@ -69,6 +69,32 @@ export function customerBookingStatusShowsCheckInOtp(status: string | null | und
 }
 
 /**
+ * Package purchases keep one OTP per session booking. Booking details should not
+ * also show the generic service/check-in card for that purchase.
+ */
+export function packageBookingUsesSessionOtps(booking: {
+  packagePurchaseId?: string | null;
+  package_purchase_id?: string | null;
+  isPackage?: boolean | null;
+  is_package?: boolean | null;
+  isPackageSession?: boolean | null;
+  is_package_session?: boolean | null;
+  packageDetails?: { packagePurchaseId?: string | null } | null;
+} | null | undefined): boolean {
+  if (!booking) return false;
+  const purchaseId = String(
+    booking.packagePurchaseId ||
+      booking.package_purchase_id ||
+      booking.packageDetails?.packagePurchaseId ||
+      ''
+  ).trim();
+  if (purchaseId) return true;
+  return Boolean(
+    booking.isPackage || booking.is_package || booking.isPackageSession || booking.is_package_session
+  );
+}
+
+/**
  * Whether to show the customer service/check-in OTP on detail views.
  * WAPPT Pay Bill may set status=completed before vendor OTP attestation — still show OTP.
  */

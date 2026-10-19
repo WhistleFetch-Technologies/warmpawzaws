@@ -22,7 +22,7 @@
 
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { vendorCanCreatePackages } from '@/lib/vendor-package-access';
+import { vendorCanCreatePackages, vendorServiceShowsDelete } from '@/lib/vendor-package-access';
 import { 
   Plus, Save, X, AlertCircle, Clock, IndianRupee, Package, FileText,
   CheckCircle, Tag, Info, ArrowLeft, Sparkles, Calendar, Users, Percent,
@@ -844,20 +844,24 @@ export function VendorCustomServiceCreationEnhanced({
     }
   };
 
-  const handleDeleteService = async (serviceId: string) => {
-    if (!confirm('Are you sure you want to delete this service?')) return;
+  const handleDeleteService = async (serviceId: string, isPackage = false) => {
+    const prompt = isPackage
+      ? 'Delete this package? It can be deleted only when it has no bookings.'
+      : 'Are you sure you want to delete this service?';
+    if (!confirm(prompt)) return;
     
     try {
       const data = await apiClient.delete(`/vendor/${vendorId}/services/${serviceId}`) as any;
       if (data?.success) {
-        toast.success('Service deleted successfully');
+        toast.success(isPackage ? 'Package deleted' : 'Service deleted successfully');
         await loadCustomServices();
       } else {
         toast.error(data?.error || 'Failed to delete service');
       }
     } catch (error) {
       console.error('Error deleting service:', error);
-      toast.error('Error deleting service');
+      const message = error instanceof Error ? error.message : 'Error deleting service';
+      toast.error(message || 'Error deleting service');
     }
   };
 
@@ -1253,9 +1257,12 @@ export function VendorCustomServiceCreationEnhanced({
                     Update Price
                   </Button>
                 )}
-                {(service.publishStatus === 'draft' || service.publishStatus === 'rejected') && (
+                {vendorServiceShowsDelete({
+                  publishStatus: service.publishStatus,
+                  isPackage: Boolean(service.isPackage),
+                }) && (
                   <Button
-                    onClick={() => handleDeleteService(service.id!)}
+                    onClick={() => handleDeleteService(service.id!, Boolean(service.isPackage))}
                     size="sm"
                     variant="outline"
                     className="text-red-600 border-red-200 hover:bg-red-50"

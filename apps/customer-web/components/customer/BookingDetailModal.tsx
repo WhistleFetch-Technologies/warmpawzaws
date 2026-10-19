@@ -7,7 +7,7 @@ import { navigateToBookingSupport } from '@/lib/support-contact';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
-import { customerBookingStatusShowsCheckInOtp } from '@/lib/booking-display-utils';
+import { customerBookingStatusShowsCheckInOtp, packageBookingUsesSessionOtps } from '@/lib/booking-display-utils';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { PrescriptionModal } from './PrescriptionModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
@@ -935,8 +935,10 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               />
             ) : null}
 
-            {/* Start OTP Section - Show for confirmed bookings that require start OTP */}
-            {booking.requiresStartOTP && booking.startOTP && booking.status === 'confirmed' && (
+            {/* Start OTP Section - Show for confirmed bookings that require start OTP.
+                Package sessions keep their own OTPs in the session list below. */}
+            {!packageBookingUsesSessionOtps(booking) &&
+            booking.requiresStartOTP && booking.startOTP && booking.status === 'confirmed' && (
               <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-2xl p-6 mb-6">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -970,8 +972,10 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               </div>
             )}
 
-            {/* Main Booking OTP Section - Show for confirmed bookings with OTP (at_home, at_center) */}
-            {booking.otpCode &&
+            {/* Main Booking OTP Section - Show for confirmed bookings with OTP (at_home, at_center).
+                Hidden for package purchases; each session has its own OTP. */}
+            {!packageBookingUsesSessionOtps(booking) &&
+            booking.otpCode &&
              customerBookingStatusShowsCheckInOtp(booking.status) &&
              !booking.otpVerified &&
              (booking.serviceStyle === 'at_home' || booking.serviceStyle === 'at_center' || booking.serviceType === 'at_home' || booking.serviceType === 'at_center') && (
@@ -1033,7 +1037,8 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
             )}
 
             {/* Completion OTP Section - Show for bookings ready to complete (walker services with end OTP) */}
-            {booking.requiresOTP && booking.completionOTP && 
+            {!packageBookingUsesSessionOtps(booking) &&
+            booking.requiresOTP && booking.completionOTP && 
              booking.status !== 'completed' && booking.status !== 'cancelled' && 
              (!booking.requiresStartOTP || booking.status === 'in_progress' || booking.status === 'active') && (
               <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-2xl p-6">
