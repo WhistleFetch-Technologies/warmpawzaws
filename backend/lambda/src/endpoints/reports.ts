@@ -19,6 +19,7 @@ import { select, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { resolveVendorId } from '../utils/vendor-resolve';
+import { sqlCountsTowardBookingMetrics } from '../utils/booking-cancellation-metrics';
 
 function getDateRange(dateRange: string): { startDate: string; endDate: string } {
   const endDate = new Date();
@@ -85,6 +86,7 @@ async function generateBookingsReport(startDate: string, endDate: string, groupB
       SUM(total_amount) as total_revenue
     FROM bookings
     WHERE booking_date >= $1 AND booking_date <= $2
+      AND ${sqlCountsTowardBookingMetrics()}
   `;
 
   const params: any[] = [startDate, endDate];

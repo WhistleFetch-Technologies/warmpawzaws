@@ -46,7 +46,12 @@ describe('commitWpayPromoEngine awardedCashback writeback', () => {
 
     expect(result.awardedCashback).toBe(150);
     expect(mockSafeCommit).toHaveBeenCalledWith(
-      expect.objectContaining({ evaluationId: 'eval-1', transactionId: 'pay-1' }),
+      expect.objectContaining({
+        evaluationId: 'eval-1',
+        transactionId: 'pay-1',
+        invoiceAmount: 1000,
+        walletUsed: 0,
+      }),
     );
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE payments'),
@@ -55,6 +60,31 @@ describe('commitWpayPromoEngine awardedCashback writeback', () => {
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE settlements'),
       expect.arrayContaining(['pay-1', 150, 'eval-1', 150]),
+    );
+  });
+
+  it('passes invoice and wallet spend into commit', async () => {
+    mockSafeCommit.mockResolvedValue({ ok: true, cashback: 8 });
+
+    const result = await commitWpayPromoEngine({
+      paymentId: 'pay-wallet',
+      customerId: 'cust-1',
+      vendorId: 'vend-1',
+      originalAmount: 1000,
+      metadata: {
+        evaluationId: 'eval-w',
+        walletAmount: 200,
+        promoEngine: { pendingCashback: 8, evaluationId: 'eval-w' },
+      },
+    });
+
+    expect(result.awardedCashback).toBe(8);
+    expect(mockSafeCommit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evaluationId: 'eval-w',
+        invoiceAmount: 1000,
+        walletUsed: 200,
+      }),
     );
   });
 

@@ -729,6 +729,13 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         walletAmountCreateOrder > 0.009 &&
         customerIdFinal
       ) {
+        // Wallet locked in at booking create was already checked there; only new wallet use is gated.
+        const bookingWalletIntent = resolveLockedBookingGrossFromNotes(booking.notes)?.walletAmount ?? 0;
+        if (bookingWalletIntent <= 0.009) {
+          const { resolveWalletBenefitCap } = await import('../../../discount-engine/promo-engine');
+          const capNotice = await resolveWalletBenefitCap({ userId: String(customerIdFinal) });
+          if (capNotice) return this.error(capNotice.message, 409);
+        }
         let walletFullyPaidBooking = false;
         try {
           await withTransaction(async (client) => {

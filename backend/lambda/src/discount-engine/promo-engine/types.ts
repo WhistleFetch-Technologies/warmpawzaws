@@ -4,6 +4,7 @@
  */
 
 import type { PromoCustomerCopy } from './customer-copy';
+import type { BenefitCapNotice } from './benefit-cap/gate';
 
 export type PromoEngineStatus =
   | 'DRAFT'
@@ -78,6 +79,12 @@ export interface PromoEnginePromotionRow {
   updated_at: string;
 }
 
+export type PromoBenefitMode = 'discount' | 'cashback' | 'both';
+
+/**
+ * One rule row = one bill-amount range of its promotion. Range columns are null on
+ * pre-range rows; null falls back to the promotion-level setting.
+ */
 export interface PromoEngineRuleRow {
   id: string;
   promotion_id: string;
@@ -86,6 +93,18 @@ export interface PromoEngineRuleRow {
   benefit_json: PromoEngineBenefit[];
   rule_type: PromoRuleType;
   is_active: boolean;
+  label?: string | null;
+  sort_order?: number | null;
+  min_amount?: number | null;
+  max_amount?: number | null;
+  benefit_mode?: PromoBenefitMode | null;
+  customer_copy?: Record<string, unknown> | null;
+  per_user_limit?: number | null;
+  daily_limit?: number | null;
+  campaign_limit?: number | null;
+  budget_limit?: number | null;
+  budget_consumed?: number;
+  archived_at?: string | null;
 }
 
 export interface PromoEngineLimitsRow {
@@ -137,6 +156,11 @@ export interface EvaluateTransaction {
   quantity?: number;
   /** Optional line items for SERVICE_LEVEL / CATEGORY_LEVEL stacking. */
   lines?: EvaluateTransactionLine[];
+  /**
+   * Ecommerce cart split only. When set, only these VCF publish letters are scored
+   * and legacy (non-VCF) promos are skipped.
+   */
+  publish_letters?: Array<'V' | 'C' | 'F'>;
   [key: string]: unknown;
 }
 
@@ -147,6 +171,8 @@ export interface EvaluateRequest {
   behaviour_override?: Partial<CustomerBehaviourProfile>;
   /** Persist evaluation row for commit. Default true. Display quotes should pass false. */
   persist?: boolean;
+  /** Admin simulator only — the HTTP route strips it for everyone else. */
+  skip_benefit_cap?: boolean;
 }
 
 export interface ConditionExplainFailure {
@@ -183,7 +209,10 @@ export interface EvaluateResult {
   eligible: boolean;
   evaluation_id: string;
   winner_promotion_id?: string | null;
-  /** Admin-configured wording for the winning promotion (metadata.customerCopy). */
+  /** Bill-amount range (rule row) of the winning promotion. */
+  winner_rule_id?: string | null;
+  range?: { id: string; label: string | null; min: number | null; max: number | null } | null;
+  /** Admin-configured wording for the winning promotion, range overrides merged on top. */
   customer_copy?: PromoCustomerCopy | null;
   benefits: AppliedBenefit[];
   summary: {
@@ -197,6 +226,8 @@ export interface EvaluateResult {
     matched_promotions: string[];
     rejected_promotions: Array<{ promotion_id: string; reason: string }>;
   };
+  /** Present only when the customer is at the global benefit cap for the current window. */
+  benefit_cap?: BenefitCapNotice | null;
 }
 
 export interface CommitRequest {
@@ -204,6 +235,10 @@ export interface CommitRequest {
   transaction_id: string;
   payment_id?: string;
   user_id?: string;
+  /** Quoted bill. Kept for callers; it does not change the configured cashback. */
+  invoice_amount?: number;
+  /** Wallet balance spent on this same payment. Does not change the configured cashback or discount. */
+  wallet_used?: number;
 }
 
 export interface ReverseRequest {

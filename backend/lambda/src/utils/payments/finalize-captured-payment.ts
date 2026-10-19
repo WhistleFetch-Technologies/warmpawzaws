@@ -186,6 +186,13 @@ export async function finalizeCapturedPayment(
       return;
     }
 
+    // WPay pays a vendor bill against an already-paid booking/order; it must never be
+    // treated as a duplicate or unfulfillable capture of that entity.
+    if (String(payment.payment_source || '') === 'warmpawz_pay') {
+      result = { outcome: 'already_final', paymentId };
+      return;
+    }
+
     const bookingId = payment.booking_id ? String(payment.booking_id) : null;
     const orderId = payment.order_id && !bookingId ? String(payment.order_id) : null;
 
@@ -587,7 +594,6 @@ async function restoreWalletAfterUnfulfillableCapture(params: {
        WHERE transaction_type = 'debit'
          AND (
            (reference_type = 'booking_payment' AND reference_id::text = $1)
-           OR booking_id = $1::uuid
            OR description ILIKE $2
          )`,
       [params.entityId, `%${params.entityId}%`]
@@ -596,10 +602,9 @@ async function restoreWalletAfterUnfulfillableCapture(params: {
       `SELECT COALESCE(SUM(amount), 0)::text AS total
        FROM wallet_transactions
        WHERE transaction_type = 'credit'
-         AND COALESCE(reference_type, '') = 'booking_refund'
+         AND COALESCE(reference_type, '') IN ('booking_refund', 'booking_refund_sync')
          AND (
-           booking_id = $1::uuid
-           OR reference_id::text = $1
+           reference_id::text = $1
            OR description ILIKE $2
          )`,
       [params.entityId, `%${params.entityId}%`]

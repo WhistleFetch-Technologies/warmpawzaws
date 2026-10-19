@@ -59,27 +59,45 @@ export async function refundCapturedPaymentById(input: {
 
     if (!razorpayPaymentId || amountPaise <= 0) return;
 
+    const baseValues = [
+      paymentId,
+      row.booking_id || null,
+      row.order_id || null,
+      row.customer_id,
+      row.vendor_id || null,
+      amountPaise / 100,
+      input.reason,
+    ];
     try {
       await client.query('SAVEPOINT refund_insert');
-      const ins = await client.query(
-        `INSERT INTO refunds (
-           payment_id, booking_id, order_id, customer_id, vendor_id,
-           refund_amount, refund_reason, refund_status, refund_method, idempotency_key, requested_at
-         ) VALUES (
-           $1::uuid, $2, $3, $4, $5, $6, $7, 'pending', 'original', $8, NOW()
-         )
-         RETURNING id::text`,
-        [
-          paymentId,
-          row.booking_id || null,
-          row.order_id || null,
-          row.customer_id,
-          row.vendor_id || null,
-          amountPaise / 100,
-          input.reason,
-          `wp-refund-${paymentId}`,
-        ]
-      );
+      let ins;
+      try {
+        ins = await client.query(
+          `INSERT INTO refunds (
+             payment_id, booking_id, order_id, customer_id, vendor_id,
+             refund_amount, refund_reason, refund_status, refund_method, idempotency_key, requested_at
+           ) VALUES (
+             $1::uuid, $2, $3, $4, $5, $6, $7, 'pending', 'original', $8, NOW()
+           )
+           RETURNING id::text`,
+          [...baseValues, `wp-refund-${paymentId}`]
+        );
+      } catch (colErr: any) {
+        // 42703 = column missing (migration 1124 not applied yet); the one-active-per-payment
+        // unique index still blocks a second pending/processing refund for this payment.
+        if (colErr?.code !== '42703') throw colErr;
+        await client.query('ROLLBACK TO SAVEPOINT refund_insert');
+        ins = await client.query(
+          `INSERT INTO refunds (
+             payment_id, booking_id, order_id, customer_id, vendor_id,
+             refund_amount, refund_reason, refund_status, refund_method, requested_at
+           ) VALUES (
+             $1::uuid, $2, $3, $4, $5, $6, $7, 'pending', 'original', NOW()
+           )
+           RETURNING id::text`,
+          baseValues
+        );
+      }
       await client.query('RELEASE SAVEPOINT refund_insert');
       refundRowId = ins.rows[0]?.id || null;
     } catch (insErr: any) {

@@ -1,5 +1,6 @@
 import {
   dbAdjustBudgetConsumed,
+  dbAdjustRuleBudgetConsumed,
   dbFindUsageByTransaction,
   dbInsertAudit,
   dbMarkUsageReversed,
@@ -47,6 +48,7 @@ export async function reversePromotion(req: ReverseRequest): Promise<{
     const spend = row.discount_amount + row.cashback_amount;
     if (spend > 0) {
       await dbAdjustBudgetConsumed(row.promotion_id, -spend);
+      if (row.rule_id) await dbAdjustRuleBudgetConsumed(row.rule_id, -spend);
     }
     await dbInsertAudit({
       promotion_id: row.promotion_id,
@@ -54,6 +56,7 @@ export async function reversePromotion(req: ReverseRequest): Promise<{
       event_type: 'REVERSED',
       payload: {
         transaction_id: req.transaction_id,
+        rule_id: row.rule_id,
         reason: req.reason,
         cashback_amount: cb,
         budget_released: spend,

@@ -1,14 +1,17 @@
 'use client';
 
+import { useState } from 'react';
 import { Input, Label } from '@warmpawz/ui';
 import {
   PROMO_CUSTOMER_COPY_FIELDS,
   PROMO_CUSTOMER_COPY_MAX_LENGTH,
   PROMO_CUSTOMER_COPY_PLACEHOLDERS,
   type PromoCustomerCopyKey,
+  type PromoEngineBenefit,
   type PromoEngineDraft,
 } from '@/lib/promo-engine/types';
 import { validateCustomerCopyDraft } from '@/lib/promo-engine/draft';
+import { rangeBoundsLabel, rangeTitle, sortedRanges, updateRange } from '@/lib/promo-engine/ranges';
 
 const SAMPLE_VARS: Record<string, string> = {
   amount: '150',
@@ -28,11 +31,13 @@ export function renderCopyPreview(
     .trim();
 }
 
-function sampleCashback(draft: PromoEngineDraft): string {
-  const cb = draft.benefitJson.find((b) => b.type === 'CASHBACK' && Number(b.value) > 0);
+function sampleCashback(benefits: PromoEngineBenefit[]): string {
+  const cb = benefits.find((b) => b.type === 'CASHBACK' && Number(b.value) > 0);
   if (!cb) return SAMPLE_VARS.amount;
   return cb.mode === 'FIXED' ? String(cb.value) : String(cb.maxAmount ?? SAMPLE_VARS.amount);
 }
+
+const ALL_RANGES = 'all';
 
 export function CustomerMessageSection({
   draft,
@@ -41,17 +46,32 @@ export function CustomerMessageSection({
   draft: PromoEngineDraft;
   onChange: (next: PromoEngineDraft) => void;
 }) {
-  const copy = draft.customerCopy ?? {};
-  const errors = validateCustomerCopyDraft(draft.customerCopy);
-  const vars = { ...SAMPLE_VARS, amount: sampleCashback(draft) };
+  const ranges = sortedRanges(draft.ranges);
+  const [scope, setScope] = useState<string>(ALL_RANGES);
+  const range = ranges.find((r) => r.key === scope);
+  const promoCopy = draft.customerCopy ?? {};
+  const copy = (range ? range.customerCopy : draft.customerCopy) ?? {};
+  const errors = validateCustomerCopyDraft(range ? range.customerCopy : draft.customerCopy);
+  const vars = { ...SAMPLE_VARS, amount: sampleCashback(range ? range.benefitJson : draft.benefitJson) };
 
   const setField = (key: PromoCustomerCopyKey, value: string) => {
+    if (range) {
+      onChange({
+        ...draft,
+        ranges: updateRange(draft.ranges || [], range.key, { customerCopy: { ...copy, [key]: value } }),
+      });
+      return;
+    }
     onChange({ ...draft, customerCopy: { ...copy, [key]: value } });
   };
 
+  /** A range field left blank falls back to the promotion wording, then the default. */
+  const fallback = (key: PromoCustomerCopyKey, defaultText: string) =>
+    (range ? promoCopy[key]?.trim() : '') || defaultText;
+
   const line = (key: PromoCustomerCopyKey) => {
     const field = PROMO_CUSTOMER_COPY_FIELDS.find((f) => f.key === key)!;
-    return renderCopyPreview(copy[key]?.trim() || field.placeholder, vars);
+    return renderCopyPreview(copy[key]?.trim() || fallback(key, field.placeholder), vars);
   };
 
   return (
@@ -72,6 +92,33 @@ export function CustomerMessageSection({
         </p>
       </div>
 
+      {ranges.length ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {[{ key: ALL_RANGES, label: 'All ranges (default)' }, ...ranges.map((r, i) => ({
+              key: r.key,
+              label: `${rangeTitle(r, i)} · ${rangeBoundsLabel(r)}`,
+            }))].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setScope(tab.key)}
+                className={`rounded-full border px-3 py-1.5 text-xs ${
+                  scope === tab.key ? 'border-[#FF8C42] bg-orange-50 font-medium' : 'border-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">
+            {range
+              ? 'Only fill the lines this range should word differently; blank lines use the "All ranges" wording.'
+              : 'Used by every range unless a range tab overrides a line.'}
+          </p>
+        </div>
+      ) : null}
+
       <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="grid gap-3">
           {PROMO_CUSTOMER_COPY_FIELDS.map((field) => (
@@ -80,7 +127,7 @@ export function CustomerMessageSection({
               <Input
                 value={copy[field.key] ?? ''}
                 maxLength={PROMO_CUSTOMER_COPY_MAX_LENGTH}
-                placeholder={field.placeholder}
+                placeholder={fallback(field.key, field.placeholder)}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setField(field.key, e.target.value)}
               />
             </div>

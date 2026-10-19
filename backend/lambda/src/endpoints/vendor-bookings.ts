@@ -470,12 +470,12 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             `UPDATE bookings SET otp_code = $1, otp_expires_at = $2, updated_at = NOW() WHERE id = $3`,
             [otpCode, otpExpiry.toISOString(), bookingId]
           );
-          console.log(`[CONFIRM-BOOKING] OTP ${otpCode} generated for booking ${bookingId} (service_type: ${serviceType})`);
+          console.log(`[CONFIRM-BOOKING] OTP generated for booking ${bookingId} (service_type: ${serviceType})`);
         } else if (isTele) {
           console.log(`[CONFIRM-BOOKING] Tele service - no OTP needed for booking ${bookingId}`);
         } else {
           otpCode = booking.otp_code;
-          console.log(`[CONFIRM-BOOKING] OTP already exists for booking ${bookingId}: ${otpCode}`);
+          console.log(`[CONFIRM-BOOKING] OTP already exists for booking ${bookingId}`);
         }
       } catch (otpErr: any) {
         console.warn(`[CONFIRM-BOOKING] Failed to generate OTP:`, otpErr?.message);

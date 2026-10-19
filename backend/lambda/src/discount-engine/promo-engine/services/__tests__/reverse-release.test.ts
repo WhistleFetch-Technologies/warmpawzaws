@@ -3,6 +3,7 @@ import { reversePromotion } from '../reverse.service';
 const mockFind = jest.fn();
 const mockMark = jest.fn();
 const mockAdjust = jest.fn();
+const mockAdjustRule = jest.fn();
 const mockAudit = jest.fn();
 const mockReverseCashback = jest.fn();
 
@@ -10,6 +11,7 @@ jest.mock('../../repos/promo-engine.repo', () => ({
   dbFindUsageByTransaction: (...a: unknown[]) => mockFind(...a),
   dbMarkUsageReversed: (...a: unknown[]) => mockMark(...a),
   dbAdjustBudgetConsumed: (...a: unknown[]) => mockAdjust(...a),
+  dbAdjustRuleBudgetConsumed: (...a: unknown[]) => mockAdjustRule(...a),
   dbInsertAudit: (...a: unknown[]) => mockAudit(...a),
 }));
 jest.mock('../wallet-cashback.service', () => ({
@@ -34,6 +36,22 @@ describe('reversePromotion releases limits and budget', () => {
     expect(res).toEqual({ success: true, reversed_cashback: 150, usage_count: 1 });
     expect(mockAdjust).toHaveBeenCalledWith('p1', -250);
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'REVERSED' }));
+  });
+
+  it('returns spend to the range budget too when the usage came from a range', async () => {
+    mockMark.mockResolvedValue([
+      {
+        promotion_id: 'p1',
+        rule_id: 'r1',
+        user_id: 'cust-1',
+        evaluation_id: 'e1',
+        discount_amount: 125,
+        cashback_amount: 100,
+      },
+    ]);
+    await reversePromotion({ transaction_id: 'pay-2', reason: 'refund' });
+    expect(mockAdjust).toHaveBeenCalledWith('p1', -225);
+    expect(mockAdjustRule).toHaveBeenCalledWith('r1', -225);
   });
 
   it('is idempotent — a second reverse releases nothing', async () => {

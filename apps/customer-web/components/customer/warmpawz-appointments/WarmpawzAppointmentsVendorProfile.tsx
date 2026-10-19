@@ -29,6 +29,8 @@ import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/Discov
 import { VendorOverviewAboutCard } from '@/components/customer/shared/VendorOverviewAboutCard';
 import { VendorStatsCard } from '@/components/customer/shared/VendorStatsCard';
 import { VendorSpecializationChips } from '@/components/customer/shared/VendorSpecializationChips';
+import { VendorReviewItem } from '@/components/customer/shared/VendorReviewItem';
+import { VendorReviewsPreview } from '@/components/customer/shared/VendorReviewsPreview';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import {
@@ -265,45 +267,48 @@ export function WarmpawzAppointmentsVendorProfile({
       setActiveTab('services');
       return;
     }
+    const bookingScreen =
+      category === 'nutrition' ? 'nutritionist-booking' : resolveWarmpawzBookingScreen(category);
+    const bookingNav =
+      category === 'nutrition'
+        ? {
+            vendorId: vid,
+            vendorName: providerName,
+            nutritionist: { id: vid, name: providerName },
+            serviceStyle,
+            serviceType: serviceStyle,
+            returnScreen: 'wappt-vendor-profile',
+          }
+        : {
+            ...buildWarmpawzAppointmentsBookingNav({
+              vendorId: vid,
+              vendorName: providerName,
+              serviceStyle,
+              category,
+              selectedServices: toWapptRequestedServices(
+                selectableServices.filter((service) =>
+                  selectedServiceIds.has(wapptServiceSelectionKey(service)),
+                ),
+              ),
+            }),
+            appointmentsMode: true,
+            ...(appointmentFee != null && appointmentFee > 0 ? { initialPrice: appointmentFee } : {}),
+          };
     if (
       requestGuestAuthForProfileContinue({
         persona: category,
         category,
         vendorId: vid,
-        resumeScreen: resolveWarmpawzBookingScreen(category === 'nutrition' ? 'nutrition' : category),
+        serviceStyle,
+        resumeScreen: bookingScreen,
         wapptMode: true,
+        bookingNav,
       })
     ) {
       return;
     }
     if (!canBookSlot) return;
-    if (category === 'nutrition') {
-      onNavigate('nutritionist-booking', {
-        vendorId: vid,
-        vendorName: providerName,
-        nutritionist: { id: vid, name: providerName },
-        serviceStyle,
-        serviceType: serviceStyle,
-        returnScreen: 'wappt-vendor-profile',
-      });
-      return;
-    }
-    const requested = toWapptRequestedServices(
-      selectableServices.filter((service) =>
-        selectedServiceIds.has(wapptServiceSelectionKey(service)),
-      ),
-    );
-    onNavigate(resolveWarmpawzBookingScreen(category), {
-      ...buildWarmpawzAppointmentsBookingNav({
-        vendorId: vid,
-        vendorName: providerName,
-        serviceStyle,
-        category,
-        selectedServices: requested,
-      }),
-      appointmentsMode: true,
-      ...(appointmentFee != null && appointmentFee > 0 ? { initialPrice: appointmentFee } : {}),
-    });
+    onNavigate(bookingScreen, bookingNav);
   };
 
   const handleBookPackages = () => {
@@ -385,20 +390,7 @@ export function WarmpawzAppointmentsVendorProfile({
     const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
     const sid = String(service.serviceId || service.id || '').trim();
     if (!vid || !sid) return;
-    if (
-      requestGuestAuthForProfileContinue({
-        persona: category,
-        category,
-        vendorId: vid,
-        serviceId: sid,
-        serviceStyle: 'tele',
-        resumeScreen: 'vet-booking',
-        wapptMode: false,
-      })
-    ) {
-      return;
-    }
-    onNavigate('vet-booking', {
+    const bookingNav = {
       vendorId: vid,
       vendorName: providerName,
       serviceType: 'tele',
@@ -410,7 +402,22 @@ export function WarmpawzAppointmentsVendorProfile({
       appointmentsMode: false,
       category,
       returnScreen: 'wappt-vendor-profile',
-    });
+    };
+    if (
+      requestGuestAuthForProfileContinue({
+        persona: category,
+        category,
+        vendorId: vid,
+        serviceId: sid,
+        serviceStyle: 'tele',
+        resumeScreen: 'vet-booking',
+        wapptMode: false,
+        bookingNav,
+      })
+    ) {
+      return;
+    }
+    onNavigate('vet-booking', bookingNav);
   };
 
   if (loading) {
@@ -634,6 +641,12 @@ export function WarmpawzAppointmentsVendorProfile({
                       : null
                   }
                   reviewCount={reviewCountForStats}
+                />
+                <VendorReviewsPreview
+                  reviews={reviews}
+                  averageRating={rating?.averageRating ?? provider.rating}
+                  totalReviews={reviewCountForStats}
+                  onSeeAll={() => handleTabChange('reviews')}
                 />
                 <VendorSpecializationChips
                   specializations={specializationLabels}
@@ -879,43 +892,7 @@ export function WarmpawzAppointmentsVendorProfile({
                   </div>
                 ) : null}
                 {reviews.length > 0 ? (
-                  reviews.map((review) => (
-                    <div
-                      key={review.id}
-                      className="rounded-xl border border-gray-200 bg-gray-50 p-5 transition-shadow hover:shadow-md"
-                    >
-                      <div className="mb-3 flex items-start gap-4">
-                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-lg font-bold text-white shadow-md">
-                          {review.customerName?.charAt(0).toUpperCase() || 'U'}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-2 flex items-center justify-between">
-                            <h4 className="font-bold text-gray-900">
-                              {review.customerName || 'Anonymous'}
-                            </h4>
-                            <span className="ml-2 flex-shrink-0 text-xs text-gray-500">
-                              {new Date(review.date).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })}
-                            </span>
-                          </div>
-                          <div className="mb-3 flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`h-4 w-4 ${i < review.rating ? 'fill-amber-500 text-amber-500' : 'text-gray-300'}`}
-                              />
-                            ))}
-                          </div>
-                          {review.comment ? (
-                            <p className="text-sm leading-relaxed text-gray-700">{review.comment}</p>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  ))
+                  reviews.map((review) => <VendorReviewItem key={review.id} review={review} />)
                 ) : (
                   <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 py-16 text-center">
                     <Star className="mx-auto mb-4 h-16 w-16 text-gray-300" />

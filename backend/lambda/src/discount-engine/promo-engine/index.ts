@@ -38,6 +38,7 @@ export {
   debitScopedWallet,
   debitScopedWalletInTransaction,
 } from './services/wallet-debit.service';
+export { computeCheckoutSpendableWallet } from './services/checkout-wallet.service';
 export {
   createPromotionFromDraft,
   updatePromotionFromDraft,
@@ -52,6 +53,18 @@ export {
   hydrateEvaluateRequest,
 } from './services/payment-context-load.service';
 export { applyDiscountCap } from './vcf/discount-cap';
+export {
+  resolveBenefitCapNotice,
+  resolveWalletBenefitCap,
+  getBenefitCapSettings,
+  saveBenefitCapSettings,
+  loadBenefitCapConfig,
+} from './services/benefit-cap.service';
+export {
+  applyBenefitCapToResult,
+  BENEFIT_CAP_CODE,
+  type BenefitCapNotice,
+} from './benefit-cap/gate';
 export {
   classifyPaymentChannel,
   inferEvaluateSurface,

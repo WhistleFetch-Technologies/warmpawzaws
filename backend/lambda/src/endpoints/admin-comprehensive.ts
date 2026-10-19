@@ -3593,7 +3593,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     try {
       // ✅ FIX: Parse body from Hono context FIRST, then pass to createApiGatewayEvent
       const requestBody = await c.req.json().catch(() => ({}));
-      console.log('[ADMIN AUTH] Request body:', JSON.stringify(requestBody));
+      console.log('[ADMIN AUTH] Request body keys:', Object.keys(requestBody || {}).join(', '));
       
     const handler = new AdminLoginHandler();
       const event = createApiGatewayEventWithBody(c.req, requestBody);

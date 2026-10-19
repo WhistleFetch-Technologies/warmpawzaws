@@ -48,11 +48,17 @@ function rowTintClass(status: WpayAdminPayoutStatus | undefined): string {
   return '';
 }
 
+function razorpayPaidAmount(item: WpayAdminPaymentItem): number {
+  return (
+    item.razorpayChargeAmount ??
+    Math.max(0, Math.round((item.payableAmount - (item.walletAmount ?? 0)) * 100) / 100)
+  );
+}
+
 function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
   const walletUsed = item.walletAmount ?? 0;
-  const razorpayCharge =
-    item.razorpayChargeAmount ??
-    Math.max(0, Math.round((item.payableAmount - walletUsed) * 100) / 100);
+  const razorpayCharge = razorpayPaidAmount(item);
+  const appointmentFeeCredit = item.appointmentFeeCredit ?? 0;
   const reconBlock = (
     <div className="mt-3 rounded-lg border border-orange-100 bg-orange-50/40 p-3">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-orange-800">
@@ -76,6 +82,12 @@ function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
             {item.discountPercent > 0 ? ` (${item.discountPercent}%)` : ''}
           </p>
         </div>
+        {appointmentFeeCredit > 0.009 ? (
+          <div>
+            <span className="text-gray-500">Appointment fee adjusted</span>
+            <p className="font-medium text-green-700">{formatWpayInr(appointmentFeeCredit)}</p>
+          </div>
+        ) : null}
         <div>
           <span className="text-gray-500">Wallet / cashback used</span>
           <p className="font-medium">{formatWpayInr(walletUsed)}</p>
@@ -398,19 +410,10 @@ export function PaymentsTable({
                     </TableCell>
                     <TableCell className="text-right font-semibold text-green-700">
                       <div className="space-y-0.5">
-                        <span className="block">{formatWpayInr(item.payableAmount)}</span>
-                        {(item.walletAmount ?? 0) > 0.009 ? (
+                        <span className="block">{formatWpayInr(razorpayPaidAmount(item))}</span>
+                        {Math.abs(razorpayPaidAmount(item) - item.payableAmount) > 0.009 ? (
                           <span className="block text-[10px] font-normal text-gray-500">
-                            RZ{' '}
-                            {formatWpayInr(
-                              item.razorpayChargeAmount ??
-                                Math.max(
-                                  0,
-                                  Math.round(
-                                    (item.payableAmount - (item.walletAmount ?? 0)) * 100,
-                                  ) / 100,
-                                ),
-                            )}
+                            Bill {formatWpayInr(item.payableAmount)}
                           </span>
                         ) : null}
                       </div>

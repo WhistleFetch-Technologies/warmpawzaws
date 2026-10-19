@@ -1,6 +1,7 @@
 /**
- * Optimistic Pay Bill listing discount % from VCF publish ranking (V > C > F).
- * Display-only ("Upto X%") — checkout still runs full evaluate (visit/limits).
+ * Optimistic Pay Bill listing offer from VCF publish ranking (V > C > F).
+ * The list shows Instant Savings / Wallet Cashback, not a percent.
+ * Checkout still runs full evaluate (visit/limits).
  */
 import { mapWithConcurrency } from '../../../../services/image';
 import { calculateBenefits } from '../../../../discount-engine/promo-engine/benefits/calculate-benefits';
@@ -18,10 +19,19 @@ import {
 import { rankEligible } from '../../../../discount-engine/promo-engine/vcf/rank-eligible';
 import { resolvePaymentContext } from '../../../../discount-engine/promo-engine/vcf/payment-context';
 import type { RankedPromo } from '../../../../discount-engine/promo-engine/vcf/types';
-import type { PromoEngineBenefit } from '../../../../discount-engine/promo-engine/types';
+import type {
+  PromoEngineBenefit,
+  PromoEngineRuleRow,
+} from '../../../../discount-engine/promo-engine/types';
+import { isRangedRule } from '../../../../discount-engine/promo-engine/vcf/amount-range';
 
 const REF_AMOUNT = 1000;
 const ROLE_CONCURRENCY = 6;
+
+export type WpayListingOffer = {
+  discountPercent: number;
+  hasCashback: boolean;
+};
 
 function benefitDiscountPercent(benefits: PromoEngineBenefit[]): number | null {
   for (const b of benefits) {
@@ -34,15 +44,62 @@ function benefitDiscountPercent(benefits: PromoEngineBenefit[]): number | null {
   return null;
 }
 
-function percentFromDiscountAmount(discountAmount: number): number {
-  if (!(discountAmount > 0)) return 0;
-  return Math.round((discountAmount / REF_AMOUNT) * 10000) / 100;
+function percentFromDiscountAmount(discountAmount: number, billAmount: number): number {
+  if (!(discountAmount > 0) || !(billAmount > 0)) return 0;
+  return Math.round((discountAmount / billAmount) * 10000) / 100;
+}
+
+/** Reference bill for a range: ₹1,000 pulled inside the range's bounds. */
+function referenceBill(rule: PromoEngineRuleRow): number {
+  let ref = REF_AMOUNT;
+  if (rule.min_amount != null) ref = Math.max(ref, rule.min_amount);
+  if (rule.max_amount != null) ref = Math.min(ref, rule.max_amount);
+  return ref;
+}
+
+type RangeQuote = { displayPct: number; discount: number; cashback: number };
+
+/** Best display percent across a promo's live ranges; pre-range promos quote their single rule at ₹1,000. */
+function bestRangeQuote(
+  promoId: string,
+  rules: PromoEngineRuleRow[],
+  vcf: NonNullable<ReturnType<typeof parseVcfConfig>>,
+): RangeQuote | null {
+  let best: RangeQuote | null = null;
+  for (const rule of rules) {
+    if (rule.is_active === false || rule.archived_at) continue;
+    const ranged = isRangedRule(rule);
+    const bill = ranged ? referenceBill(rule) : REF_AMOUNT;
+    const applied = calculateBenefits({
+      promotionId: promoId,
+      ruleId: rule.id,
+      benefits: rule.benefit_json || [],
+      orderAmount: bill,
+      maxDiscount: ranged ? undefined : vcf.maxDiscount,
+      benefitMode: rule.benefit_mode || vcf.benefitMode,
+    });
+    const discount = applied
+      .filter((b) => b.benefit_type === 'DISCOUNT')
+      .reduce((s, b) => s + b.amount, 0);
+    const cashback = applied
+      .filter((b) => b.benefit_type === 'CASHBACK')
+      .reduce((s, b) => s + b.amount, 0);
+    // An explicit 0 still ranks, so it can hide another offer. It is not shown as a percent.
+    if (applied.length === 0) continue;
+    const stated = benefitDiscountPercent(rule.benefit_json || []);
+    const displayPct =
+      stated != null && stated > 0 ? stated : percentFromDiscountAmount(discount, bill);
+    const quote = { displayPct, discount, cashback };
+    if (!best || quote.displayPct > best.displayPct) best = quote;
+    if (!ranged) break;
+  }
+  return best;
 }
 
 export async function resolveWpayListingDiscountPercents(
   vendorIds: readonly string[],
-): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
+): Promise<Map<string, WpayListingOffer>> {
+  const out = new Map<string, WpayListingOffer>();
   const unique = [...new Set(vendorIds.map((id) => String(id || '').trim()).filter(Boolean))];
   if (unique.length === 0) return out;
 
@@ -78,6 +135,7 @@ export async function resolveWpayListingDiscountPercents(
   for (const row of candidateLists) {
     const eligible: RankedPromo[] = [];
     const displayPercentByPromo = new Map<string, number>();
+    let hasCashback = false;
 
     for (const promo of row.candidates) {
       const vcf = parseVcfConfig(promo.metadata);
@@ -92,29 +150,10 @@ export async function resolveWpayListingDiscountPercents(
         continue;
       }
 
-      const rules = rulesByPromo.get(promo.id) || [];
-      const rule = rules.find((r) => r.is_active !== false) || rules[0];
-      if (!rule) continue;
-
-      const stated = benefitDiscountPercent(rule.benefit_json || []);
-      const applied = calculateBenefits({
-        promotionId: promo.id,
-        ruleId: rule.id,
-        benefits: rule.benefit_json || [],
-        orderAmount: REF_AMOUNT,
-        maxDiscount: vcf.maxDiscount,
-        benefitMode: vcf.benefitMode,
-      });
-      const discount = applied
-        .filter((b) => b.benefit_type === 'DISCOUNT')
-        .reduce((s, b) => s + b.amount, 0);
-      const cashback = applied
-        .filter((b) => b.benefit_type === 'CASHBACK')
-        .reduce((s, b) => s + b.amount, 0);
-      if (discount <= 0 && cashback <= 0) continue;
-
-      const displayPct =
-        stated != null && stated > 0 ? stated : percentFromDiscountAmount(discount);
+      const quote = bestRangeQuote(promo.id, rulesByPromo.get(promo.id) || [], vcf);
+      if (!quote) continue;
+      const { discount, cashback, displayPct } = quote;
+      if (cashback > 0) hasCashback = true;
       if (displayPct > 0) displayPercentByPromo.set(promo.id, displayPct);
 
       eligible.push({
@@ -132,7 +171,7 @@ export async function resolveWpayListingDiscountPercents(
     const { winner } = rankEligible(eligible);
     if (!winner) continue;
     const pct = displayPercentByPromo.get(winner.promotionId) || 0;
-    if (pct > 0) out.set(row.vendorId, pct);
+    if (pct > 0 || hasCashback) out.set(row.vendorId, { discountPercent: pct, hasCashback });
   }
 
   return out;

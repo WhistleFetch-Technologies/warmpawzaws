@@ -2,6 +2,7 @@
 
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { UnifiedAdminRefundHub } from '@/components/admin/refunds/UnifiedAdminRefundHub';
+import { AdminBookingCancelPanel } from '@/components/admin/refunds/AdminBookingCancelPanel';
 
 export function RefundsPageContent() {
   return (
@@ -18,6 +19,7 @@ export function RefundsPageContent() {
 
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto p-8">
+            <AdminBookingCancelPanel />
             <UnifiedAdminRefundHub />
           </div>
         </main>

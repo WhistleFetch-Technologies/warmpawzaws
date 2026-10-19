@@ -11,6 +11,7 @@ import {
 } from '@/components/customer/promo-engine/PromoEarnPreview';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { parseCartLineKey } from '@/lib/product-sku-client';
+import { writePromoLineDiscounts, type PromoLineDiscount } from '@/lib/ecommerce/cart-product-helpers';
 import { buildCustomerWalletPath } from '@/lib/wallet-redeem-query';
 
 function formatINR(amount: number): string {
@@ -60,6 +61,7 @@ export function CheckoutPaymentStep() {
         const customerId = getResolvedCustomerId();
         const res = await apiClient.post<{
           promoEngine?: PromoEngineEarnPreviewData | null;
+          lineDiscounts?: PromoLineDiscount[];
         }>('/promotions/calculate-cart', {
           ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
           customerId: customerId || undefined,
@@ -76,10 +78,13 @@ export function CheckoutPaymentStep() {
               price: item.price,
               categoryId: item.categoryId || item.category,
               category: item.categoryId || item.category,
+              vendorId: item.vendorId && item.vendorId !== 'default' ? item.vendorId : undefined,
+              lineKey: item.id,
             };
           }),
         });
         if (cancelled) return;
+        writePromoLineDiscounts(Array.isArray(res?.lineDiscounts) ? res.lineDiscounts : []);
         const pe = res?.promoEngine ?? null;
         setPromoEngine(pe);
         if (pe?.evaluationId) {

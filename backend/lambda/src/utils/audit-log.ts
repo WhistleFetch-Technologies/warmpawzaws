@@ -135,24 +135,74 @@ export async function logBookingStatusChange(
   }
 
   try {
-    await query(
-      `INSERT INTO booking_status_history (
-        booking_id, old_status, new_status, changed_by_id, 
-        changed_by_type, change_reason, metadata
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        bookingId,
-        oldStatus,
-        newStatus,
-        changedById || null,
-        changedByType || null,
-        changeReason || null,
-        metadata ? JSON.stringify(metadata) : null,
-      ]
-    );
+    const shape = await resolveBookingStatusHistoryShape();
+    if (shape === 'from_to') {
+      await query(
+        `INSERT INTO booking_status_history (
+          booking_id, from_status, to_status, changed_by, changed_by_id, note
+        ) VALUES ($1::uuid, $2, $3, $4, $5::uuid, $6)`,
+        [
+          bookingId,
+          oldStatus,
+          newStatus,
+          changedByType || null,
+          changedById && UUID_RE.test(changedById) ? changedById : null,
+          changeReason || null,
+        ]
+      );
+      return;
+    }
+    if (shape === 'old_new') {
+      await query(
+        `INSERT INTO booking_status_history (
+          booking_id, old_status, new_status, changed_by_id,
+          changed_by_type, change_reason, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          bookingId,
+          oldStatus,
+          newStatus,
+          changedById || null,
+          changedByType || null,
+          changeReason || null,
+          metadata ? JSON.stringify(metadata) : null,
+        ]
+      );
+      return;
+    }
+    console.warn('[AUDIT] booking_status_history has an unrecognised column layout - skipped');
   } catch (error) {
     console.error('[AUDIT] Failed to log booking status change:', error);
   }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Prod uses (from_status, to_status, changed_by, changed_by_id, note); older environments
+ * were created with (old_status, new_status, changed_by_type, change_reason, metadata).
+ */
+let bookingStatusHistoryShape: 'from_to' | 'old_new' | 'unknown' | null = null;
+
+async function resolveBookingStatusHistoryShape(): Promise<'from_to' | 'old_new' | 'unknown'> {
+  if (bookingStatusHistoryShape) return bookingStatusHistoryShape;
+  const result = await query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'booking_status_history'`
+  );
+  const cols = new Set(result.rows.map((r: { column_name: string }) => r.column_name));
+  bookingStatusHistoryShape = cols.has('to_status')
+    ? 'from_to'
+    : cols.has('new_status')
+      ? 'old_new'
+      : 'unknown';
+  return bookingStatusHistoryShape;
+}
+
+/** @internal test hook */
+export function __resetBookingStatusHistoryShapeForTests(): void {
+  bookingStatusHistoryShape = null;
+  tableCache.booking_status_history = null;
 }
 
 /**

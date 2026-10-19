@@ -1,8 +1,11 @@
 import {
   dbAdjustBudgetConsumed,
+  dbAdjustRuleBudgetConsumed,
+  dbCountRuleUsageBatch,
   dbCountUsageBatch,
   dbGetEvaluation,
   dbGetLimits,
+  dbGetRule,
   dbGetUsageByIdempotencyKey,
   dbInsertAudit,
   dbInsertUsage,
@@ -16,7 +19,10 @@ import {
   istDayStart,
   type PromoLimitReason,
 } from './promo-limits';
+import { rangeCountLimitExceededAfterInsert, type RangeLimitReason } from '../vcf/amount-range';
 import { parseCustomerCopy } from '../customer-copy';
+import { dbTransactionHasUsage } from '../repos/benefit-cap.repo';
+import { resolveBenefitCapNotice } from './benefit-cap.service';
 import type { AppliedBenefit, CommitRequest } from '../types';
 
 function parseJson(v: unknown): Record<string, unknown> {
@@ -42,24 +48,35 @@ function round2(n: number): number {
  */
 async function resolveAllowedCashbackAfterInsert(opts: {
   promotionId: string;
+  ruleId: string | null;
   userId: string;
   discount: number;
   cashback: number;
-}): Promise<{ allowed: number; reason: PromoLimitReason | null }> {
-  const [limits, usageMap, budget] = await Promise.all([
+}): Promise<{ allowed: number; reason: PromoLimitReason | RangeLimitReason | null }> {
+  const since = istDayStart(new Date());
+  const spend = opts.discount + opts.cashback;
+  const [limits, usageMap, budget, rule, rangeBudget] = await Promise.all([
     dbGetLimits(opts.promotionId),
-    dbCountUsageBatch({
-      promotionIds: [opts.promotionId],
-      userId: opts.userId,
-      since: istDayStart(new Date()),
-    }),
-    dbAdjustBudgetConsumed(opts.promotionId, opts.discount + opts.cashback),
+    dbCountUsageBatch({ promotionIds: [opts.promotionId], userId: opts.userId, since }),
+    dbAdjustBudgetConsumed(opts.promotionId, spend),
+    opts.ruleId ? dbGetRule(opts.ruleId) : Promise.resolve(null),
+    opts.ruleId ? dbAdjustRuleBudgetConsumed(opts.ruleId, spend) : Promise.resolve(null),
   ]);
 
-  const countReason = countLimitExceededAfterInsert(limits, usageMap.get(opts.promotionId));
+  let rangeCountReason: RangeLimitReason | null = null;
+  if (
+    rule &&
+    (rule.per_user_limit != null || rule.daily_limit != null || rule.campaign_limit != null)
+  ) {
+    const ruleUsage = await dbCountRuleUsageBatch({ ruleIds: [rule.id], userId: opts.userId, since });
+    rangeCountReason = rangeCountLimitExceededAfterInsert(rule, ruleUsage.get(rule.id));
+  }
+
+  const countReason =
+    countLimitExceededAfterInsert(limits, usageMap.get(opts.promotionId)) ?? rangeCountReason;
   const budgetCap = limits?.budget_limit ?? budget?.budget_limit ?? null;
   let allowed = countReason ? 0 : opts.cashback;
-  let reason: PromoLimitReason | null = countReason;
+  let reason: PromoLimitReason | RangeLimitReason | null = countReason;
   if (!countReason && budget) {
     allowed = cashbackAllowedWithinBudget({
       budgetCap,
@@ -68,11 +85,65 @@ async function resolveAllowedCashbackAfterInsert(opts: {
     });
     if (allowed < opts.cashback) reason = 'BUDGET_EXHAUSTED';
   }
+  if (!countReason && rangeBudget) {
+    const rangeAllowed = cashbackAllowedWithinBudget({
+      budgetCap: rangeBudget.budget_limit,
+      consumedAfter: rangeBudget.budget_consumed,
+      cashback: opts.cashback,
+    });
+    if (rangeAllowed < allowed) {
+      allowed = rangeAllowed;
+      reason = 'RANGE_BUDGET_EXHAUSTED';
+    }
+  }
   const withheld = round2(opts.cashback - allowed);
   if (withheld > 0) {
     await dbAdjustBudgetConsumed(opts.promotionId, -withheld);
+    if (opts.ruleId) await dbAdjustRuleBudgetConsumed(opts.ruleId, -withheld);
   }
   return { allowed: round2(allowed), reason };
+}
+
+function ruleIdOf(benefits: AppliedBenefit[]): string | null {
+  const id = benefits.find((b) => b.rule_id)?.rule_id;
+  return id && /^[0-9a-f-]{36}$/i.test(id) ? id : null;
+}
+
+/**
+ * Backstop for payments that slipped past the evaluate-time cap (two checkouts at once, or a
+ * quote stored before the cap was reached). Discount is already inside the captured payment,
+ * so only cashback can be withheld. Retries keep whatever the first commit decided.
+ */
+async function withholdCashbackOverBenefitCap(opts: {
+  benefits: AppliedBenefit[];
+  userId: string;
+  transactionId: string;
+  evaluationId: string;
+}): Promise<AppliedBenefit[]> {
+  const cashback = opts.benefits.filter((b) => b.benefit_type === 'CASHBACK');
+  if (!cashback.length) return opts.benefits;
+  const notice = await resolveBenefitCapNotice({
+    userId: opts.userId,
+    excludeTransactionId: opts.transactionId,
+  });
+  if (!notice?.blocked.cashback) return opts.benefits;
+  if (await dbTransactionHasUsage(opts.transactionId).catch(() => true)) return opts.benefits;
+  try {
+    await dbInsertAudit({
+      promotion_id: cashback[0].promotion_id,
+      evaluation_id: opts.evaluationId,
+      event_type: 'BENEFIT_CAP_AT_COMMIT',
+      payload: {
+        transaction_id: opts.transactionId,
+        cashback_withheld: round2(cashback.reduce((s, b) => s + b.amount, 0)),
+        used: notice.used,
+        cap: notice.cap,
+      },
+    });
+  } catch {
+    // audit is best-effort
+  }
+  return opts.benefits.filter((b) => b.benefit_type !== 'CASHBACK');
 }
 
 /**
@@ -93,7 +164,12 @@ export async function commitPromotion(req: CommitRequest): Promise<{
 
   const userId = req.user_id || String(evalRow.user_id);
   const result = parseJson(evalRow.result_json);
-  const benefits = (Array.isArray(result.benefits) ? result.benefits : []) as AppliedBenefit[];
+  const benefits = await withholdCashbackOverBenefitCap({
+    benefits: (Array.isArray(result.benefits) ? result.benefits : []) as AppliedBenefit[],
+    userId,
+    transactionId: req.transaction_id,
+    evaluationId: req.evaluation_id,
+  });
   const customerCopy = parseCustomerCopy({ customerCopy: result.customer_copy });
 
   if (!benefits.length) {
@@ -127,8 +203,10 @@ export async function commitPromotion(req: CommitRequest): Promise<{
 
     // One usage row per promotion+transaction; idempotency covers retries
     const idempotencyKey = `${promotionId}:${req.transaction_id}:all`;
+    const ruleId = ruleIdOf(promoBenefits);
     const { inserted } = await dbInsertUsage({
       promotion_id: promotionId,
+      rule_id: ruleId,
       user_id: userId,
       transaction_id: req.transaction_id,
       transaction_type: 'BOOKING',
@@ -143,6 +221,7 @@ export async function commitPromotion(req: CommitRequest): Promise<{
       anyInserted = true;
       const decision = await resolveAllowedCashbackAfterInsert({
         promotionId,
+        ruleId,
         userId,
         discount,
         cashback,
@@ -156,6 +235,7 @@ export async function commitPromotion(req: CommitRequest): Promise<{
           event_type: 'LIMIT_EXCEEDED_AT_COMMIT',
           payload: {
             transaction_id: req.transaction_id,
+            rule_id: ruleId,
             reason: decision.reason,
             cashback_quoted: cashback,
             cashback_allowed: allowedCashback,
@@ -206,6 +286,7 @@ export async function commitPromotion(req: CommitRequest): Promise<{
         payload: {
           transaction_id: req.transaction_id,
           payment_id: req.payment_id,
+          rule_id: ruleId,
           discount,
           cashback: allowedCashback,
         },

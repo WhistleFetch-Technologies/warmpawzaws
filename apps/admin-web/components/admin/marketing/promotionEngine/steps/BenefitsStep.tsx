@@ -1,18 +1,24 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
+import type { PromoEngineBenefit, PromoEngineDraft, PromoRangeDraft } from '@/lib/promo-engine/types';
 import {
-  Input,
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@warmpawz/ui';
-import type { PromoEngineBenefit, PromoEngineDraft } from '@/lib/promo-engine/types';
-import { createEmptyVcf } from '@/lib/promo-engine/types';
-import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
+  MAX_RANGES,
+  appendRange,
+  benefitModeOf,
+  buildBenefits,
+  cashbackOf,
+  describeRangeBenefits,
+  discountOf,
+  rangeBoundsLabel,
+  rangeFromSingle,
+  rangeWarnings,
+  removeRange,
+  sortedRanges,
+  updateRange,
+  validateRangesDraft,
+} from '@/lib/promo-engine/ranges';
 import {
   inheritRedeemScopeFromAudience,
   normalizeRedeemMulti,
@@ -21,22 +27,34 @@ import {
   resolveScopeCategoryIds,
   resolveScopeVendorIds,
 } from '@/lib/promo-engine/vcf';
-import { CategoryMultiChips } from './CategoryMultiChips';
-import { VendorMultiPicker } from './VendorMultiPicker';
+import { BenefitValueFields } from './BenefitValueFields';
+import { CashbackRedeemSection, redeemSummary } from './CashbackRedeemSection';
+import { RangeCard } from './RangeCard';
 
-function discountBenefit(list: PromoEngineBenefit[]): PromoEngineBenefit {
-  return list.find((b) => b.type === 'DISCOUNT') || { type: 'DISCOUNT', mode: 'PERCENT', value: 0 };
+function offerHeadline(list: PromoEngineBenefit[]): string {
+  const d = discountOf(list);
+  if (!(Number(d.value) > 0)) return 'No discount';
+  const v = d.mode === 'PERCENT' ? `${d.value}% off` : `₹${d.value} off`;
+  return d.maxAmount ? `${v} · max ₹${d.maxAmount}` : v;
 }
 
-function cashbackBenefit(list: PromoEngineBenefit[]): PromoEngineBenefit | null {
-  return list.find((b) => b.type === 'CASHBACK') || null;
-}
-
-function rebuild(discount: PromoEngineBenefit, cashback: PromoEngineBenefit | null): PromoEngineBenefit[] {
-  const out: PromoEngineBenefit[] = [];
-  if ((discount.value ?? 0) > 0) out.push(discount);
-  if (cashback && (cashback.value ?? 0) > 0) out.push(cashback);
-  return out;
+function CustomerOffer({ benefits, caption }: { benefits: PromoEngineBenefit[]; caption?: string }) {
+  const cashback = cashbackOf(benefits);
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <p className="text-xs font-semibold text-[#FF8C42]">{caption || 'Special offer'}</p>
+      <p className="mt-2 text-base font-semibold text-slate-900">{offerHeadline(benefits)}</p>
+      {cashback && Number(cashback.value) > 0 ? (
+        <p className="mt-2 text-sm text-emerald-700">
+          Plus {cashback.mode === 'PERCENT' ? `${cashback.value}%` : `₹${cashback.value}`} cashback
+          {cashback.maxAmount && cashback.mode === 'PERCENT' ? ` (max ₹${cashback.maxAmount})` : ''}
+        </p>
+      ) : null}
+      {cashback?.expiryDays ? (
+        <p className="mt-1 text-xs text-slate-500">Cashback valid for {cashback.expiryDays} days</p>
+      ) : null}
+    </div>
+  );
 }
 
 export function BenefitsStep({
@@ -46,11 +64,11 @@ export function BenefitsStep({
   draft: PromoEngineDraft;
   onChange: (next: PromoEngineDraft) => void;
 }) {
-  const { categories, loading, error } = useCatalogServiceCategories();
-  const discount = discountBenefit(draft.benefitJson);
-  const cashback = cashbackBenefit(draft.benefitJson);
-  const redeemVendorIds = resolveRedeemVendorIds(draft.vcf?.redeem);
-  const redeemCategoryIds = resolveRedeemCategoryIds(draft.vcf?.redeem);
+  const ranges = draft.ranges || [];
+  const ranged = ranges.length > 0;
+  const [expandedKey, setExpandedKey] = useState<string | null>(ranges[0]?.key ?? null);
+  const discount = discountOf(draft.benefitJson);
+  const cashback = cashbackOf(draft.benefitJson);
 
   // Seed Same vendor/category from Audience only when redeem lists are still empty.
   useEffect(() => {
@@ -85,341 +103,158 @@ export function BenefitsStep({
     draft.vcf?.redeem?.letter,
   ]);
 
-  const setDiscount = (patch: Partial<PromoEngineBenefit>) => {
-    const next = { ...discount, type: 'DISCOUNT' as const, ...patch };
-    onChange({ ...draft, benefitJson: rebuild(next, cashback) });
-  };
-
-  const setCashback = (patch: Partial<PromoEngineBenefit> | null) => {
-    if (patch === null) {
-      onChange({
-        ...draft,
-        benefitJson: rebuild(discount, null),
-        vcf: draft.vcf ? { ...draft.vcf, benefitMode: 'discount' } : draft.vcf,
-      });
-      return;
-    }
-    const next: PromoEngineBenefit = {
-      type: 'CASHBACK',
-      mode: cashback?.mode || 'FIXED',
-      value: cashback?.value ?? 0,
-      expiryDays: cashback?.expiryDays ?? 30,
-      redeemScope: cashback?.redeemScope || [],
-      ...patch,
-    };
-    const hasDiscount = Number(discount.value) > 0;
+  const setSingle = (d: PromoEngineBenefit, c: PromoEngineBenefit | null, maxDiscountChanged = false) => {
+    const benefitJson = buildBenefits(d, c);
+    const mode = benefitModeOf(benefitJson);
     onChange({
       ...draft,
-      benefitJson: rebuild(discount, next),
+      benefitJson,
       vcf: draft.vcf
         ? {
             ...draft.vcf,
-            benefitMode: hasDiscount ? 'both' : 'cashback',
-            expiryDays: next.expiryDays,
+            ...(mode ? { benefitMode: mode } : {}),
+            ...(c ? { expiryDays: c.expiryDays } : {}),
+            ...(maxDiscountChanged ? { maxDiscount: d.maxAmount } : {}),
           }
         : draft.vcf,
     });
   };
 
-  const patchRedeem = (
-    patch: Partial<NonNullable<PromoEngineDraft['vcf']>['redeem']>
-  ) => {
-    const base = draft.vcf || createEmptyVcf();
-    const redeem = normalizeRedeemMulti({
-      letter: base.redeem?.letter || 'F',
-      channels: base.redeem?.channels || ['tele', 'appointment', 'paybill', 'ecommerce'],
-      ...base.redeem,
-      ...patch,
-    });
-    onChange({ ...draft, vcf: { ...base, redeem } });
+  const setRanges = (next: PromoRangeDraft[]) => onChange({ ...draft, ranges: next });
+
+  const addRange = () => {
+    const promoCap = draft.vcf?.maxDiscount;
+    const carried = draft.benefitJson.map((b) =>
+      b.type === 'DISCOUNT' && b.maxAmount == null && promoCap != null ? { ...b, maxAmount: promoCap } : b
+    );
+    const base = ranged ? ranges : [rangeFromSingle(carried)];
+    const next = appendRange(base);
+    setExpandedKey(next[next.length - 1].key);
+    setRanges(next);
   };
+
+  const sorted = sortedRanges(ranges);
+  const errors = validateRangesDraft(ranges);
+  const warnings = rangeWarnings(ranges, draft.limits?.budgetLimit);
+  const anyCashback = ranged
+    ? ranges.some((r) => cashbackOf(r.benefitJson) !== null)
+    : cashback !== null;
+  const previewRange = sorted.find((r) => r.key === expandedKey) || sorted[0];
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
       <div className="min-w-0 space-y-5">
         <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
-          <h3 className="text-base font-semibold text-slate-900">Discount</h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-2">
-              <Label>Value type</Label>
-              <Select
-                value={discount.mode || 'PERCENT'}
-                onValueChange={(v: string) => setDiscount({ mode: v as 'PERCENT' | 'FIXED' })}
-              >
-                <SelectTrigger className="min-h-11 bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="PERCENT">Percentage</SelectItem>
-                  <SelectItem value="FIXED">Fixed ₹</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Value</Label>
-              <Input
-                type="number"
-                min={0}
-                value={discount.value ?? ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setDiscount({ value: e.target.value === '' ? 0 : Number(e.target.value) })
-                }
-                className="min-h-11"
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2 lg:col-span-1">
-              <Label>Max discount ₹</Label>
-              <Input
-                type="number"
-                min={0}
-                value={discount.maxAmount ?? draft.vcf?.maxDiscount ?? ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                  const n = e.target.value === '' ? undefined : Number(e.target.value);
-                  setDiscount({ maxAmount: n });
-                  if (draft.vcf) {
-                    onChange({
-                      ...draft,
-                      benefitJson: rebuild({ ...discount, maxAmount: n }, cashback),
-                      vcf: { ...draft.vcf, maxDiscount: n },
-                    });
-                  }
-                }}
-                className="min-h-11"
-              />
-              <p className="text-xs text-slate-500">
-                Caps the instant discount only. Cashback is always paid in full.
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">Value ranges and benefits</h3>
+              <p className="text-sm text-slate-500">
+                {ranged
+                  ? 'Each bill matches one range; a bill exactly on a shared boundary uses the lower range.'
+                  : 'If no range is added, the values below apply to all orders.'}
               </p>
             </div>
-          </div>
-        </section>
-
-        <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-slate-900">Cashback</h3>
             <button
               type="button"
-              className="text-sm font-medium text-[#FF8C42] hover:underline"
-              onClick={() =>
-                cashback
-                  ? setCashback(null)
-                  : setCashback({ mode: 'FIXED', value: 150, expiryDays: 30 })
-              }
+              disabled={ranges.length >= MAX_RANGES}
+              className="inline-flex items-center gap-1 rounded-lg border border-[#FF8C42] px-3 py-2 text-sm font-medium text-[#C2410C] hover:bg-orange-50 disabled:opacity-50"
+              onClick={addRange}
             >
-              {cashback ? 'Remove cashback' : '+ Add cashback'}
+              <Plus className="h-4 w-4" /> New range
             </button>
           </div>
-          {cashback ? (
-            <>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-2">
-                  <Label>Value type</Label>
-                  <Select
-                    value={cashback.mode || 'FIXED'}
-                    onValueChange={(v: string) => setCashback({ mode: v as 'PERCENT' | 'FIXED' })}
-                  >
-                    <SelectTrigger className="min-h-11 bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FIXED">Fixed ₹</SelectItem>
-                      <SelectItem value="PERCENT">Percentage</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Value</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={cashback.value ?? ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setCashback({ value: e.target.value === '' ? 0 : Number(e.target.value) })
-                    }
-                    className="min-h-11"
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2 lg:col-span-1">
-                  <Label>Expires (days after earn)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={cashback.expiryDays ?? 30}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setCashback({ expiryDays: Number(e.target.value) || 30 })
-                    }
-                    className="min-h-11"
-                  />
-                </div>
-              </div>
-              <div className="space-y-3">
-                <Label>Redeem cashback</Label>
-                <p className="text-xs text-slate-500">
-                  Same vendor / category seeds from Audience; add more so one promo covers multiple spend targets.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {(['V', 'C', 'F'] as const).map((letter) => (
-                    <button
-                      key={letter}
-                      type="button"
-                      className={`rounded-full border px-3 py-1.5 text-sm ${
-                        (draft.vcf?.redeem?.letter || 'F') === letter
-                          ? 'border-[#FF8C42] bg-orange-50'
-                          : 'border-slate-200'
-                      }`}
-                      onClick={() => {
-                        const base = draft.vcf || createEmptyVcf();
-                        const inherited = inheritRedeemScopeFromAudience(base, letter);
-                        patchRedeem({
-                          letter,
-                          channels: base.redeem?.channels || [
-                            'tele',
-                            'appointment',
-                            'paybill',
-                            'ecommerce',
-                          ],
-                          vendorId: undefined,
-                          vendorIds: undefined,
-                          vendorName: undefined,
-                          vendorNames: undefined,
-                          categoryId: undefined,
-                          categoryIds: undefined,
-                          categoryName: undefined,
-                          categoryNames: undefined,
-                          ...(letter === 'V' || letter === 'C' ? inherited : {}),
-                        });
-                      }}
-                    >
-                      {letter === 'V' ? 'Same vendor' : letter === 'C' ? 'Same category' : 'Anywhere'}
-                    </button>
-                  ))}
-                </div>
 
-                {draft.vcf?.redeem?.letter === 'C' ? (
-                  <div className="space-y-2">
-                    <CategoryMultiChips
-                      label="Categories where cashback can be spent (multi)"
-                      categories={categories}
-                      loading={loading}
-                      error={error}
-                      ids={redeemCategoryIds}
-                      names={draft.vcf?.redeem?.categoryNames || []}
-                      onChange={(ids, names) =>
-                        patchRedeem({
-                          letter: 'C',
-                          categoryIds: ids,
-                          categoryId: ids[0],
-                          categoryNames: names,
-                          categoryName: names[0],
-                        })
-                      }
-                    />
-                    {!redeemCategoryIds.length ? (
-                      <p className="text-xs text-amber-700">
-                        Pick at least one category (Audience seed appears after Visit/Publish = Category).
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {draft.vcf?.redeem?.letter === 'V' ? (
-                  <div className="space-y-2">
-                    <VendorMultiPicker
-                      label="Vendors where cashback can be spent (multi)"
-                      ids={redeemVendorIds}
-                      names={
-                        draft.vcf.redeem.vendorNames?.length
-                          ? draft.vcf.redeem.vendorNames
-                          : redeemVendorIds.map((id) =>
-                              id === draft.vcf?.redeem?.vendorId
-                                ? draft.vcf.redeem.vendorName || id
-                                : id
-                            )
-                      }
-                      onChange={(ids, names) =>
-                        patchRedeem({
-                          letter: 'V',
-                          vendorIds: ids,
-                          vendorId: ids[0],
-                          vendorNames: names,
-                          vendorName: names[0],
-                        })
-                      }
-                    />
-                    {!redeemVendorIds.length ? (
-                      <p className="text-xs text-amber-700">
-                        Pick at least one vendor (Audience seed appears after Visit/Publish = Vendor).
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div className="flex flex-wrap gap-2">
-                  {(['tele', 'appointment', 'paybill', 'ecommerce'] as const).map((ch) => {
-                    const on = (draft.vcf?.redeem?.channels || []).includes(ch);
-                    return (
-                      <button
-                        key={ch}
-                        type="button"
-                        className={`rounded-full border px-3 py-1.5 text-sm ${
-                          on ? 'border-[#FF8C42] bg-orange-50' : 'border-slate-200'
-                        }`}
-                        onClick={() => {
-                          const set = new Set(draft.vcf?.redeem?.channels || []);
-                          if (set.has(ch)) set.delete(ch);
-                          else set.add(ch);
-                          patchRedeem({ channels: Array.from(set) });
-                        }}
-                      >
-                        {ch === 'paybill' ? 'Pay Bill' : ch}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
+          {ranged ? (
+            <div className="space-y-3">
+              {sorted.map((r, i) => (
+                <RangeCard
+                  key={r.key}
+                  range={r}
+                  index={i}
+                  prev={sorted[i - 1]}
+                  expanded={expandedKey === r.key}
+                  onToggle={() => setExpandedKey(expandedKey === r.key ? null : r.key)}
+                  onChange={(patch) => setRanges(updateRange(ranges, r.key, patch))}
+                  onRemove={() => onChange(removeRange(draft, r.key))}
+                />
+              ))}
+            </div>
           ) : (
-            <p className="text-sm leading-6 text-slate-500">
-              Optional. Combine discount + cashback in one promotion.
-            </p>
+            <BenefitValueFields
+              discount={discount}
+              cashback={cashback}
+              maxDiscountFallback={draft.vcf?.maxDiscount}
+              onDiscount={(patch) =>
+                setSingle({ ...discount, type: 'DISCOUNT', ...patch }, cashback, 'maxAmount' in patch)
+              }
+              onCashback={(patch) =>
+                setSingle(
+                  discount,
+                  patch === null
+                    ? null
+                    : {
+                        type: 'CASHBACK',
+                        mode: cashback?.mode || 'FIXED',
+                        value: cashback?.value ?? 0,
+                        expiryDays: cashback?.expiryDays ?? 30,
+                        redeemScope: cashback?.redeemScope || [],
+                        ...cashback,
+                        ...patch,
+                      },
+                )
+              }
+            />
           )}
+
+          {errors.length ? (
+            <ul className="space-y-1 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+              {errors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          ) : null}
+          {warnings.length ? (
+            <ul className="space-y-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+              {warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          ) : null}
         </section>
+
+        {anyCashback ? <CashbackRedeemSection draft={draft} onChange={onChange} /> : null}
       </div>
 
       <aside className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm xl:sticky xl:top-0">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Customer view</p>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="text-xs font-semibold text-[#FF8C42]">Special offer</p>
-          <p className="mt-2 text-base font-semibold text-slate-900">
-            {(discount.value ?? 0) > 0
-              ? discount.mode === 'FIXED'
-                ? `₹${discount.value} off`
-                : `${discount.value}% off`
-              : 'No discount'}
-            {discount.maxAmount ? ` · max ₹${discount.maxAmount}` : ''}
-          </p>
-          {cashback && (cashback.value ?? 0) > 0 ? (
-            <p className="mt-2 text-sm text-emerald-700">
-              Plus {cashback.mode === 'PERCENT' ? `${cashback.value}%` : `₹${cashback.value}`} cashback
-            </p>
-          ) : null}
-          {cashback?.expiryDays ? (
-            <p className="mt-1 text-xs text-slate-500">Cashback valid for {cashback.expiryDays} days</p>
-          ) : null}
-        </div>
-        {cashback && (draft.vcf?.redeem?.channels?.length || 0) > 0 ? (
+        {ranged && previewRange ? (
+          <>
+            <CustomerOffer
+              benefits={previewRange.benefitJson}
+              caption={`Special offer · bills ${rangeBoundsLabel(previewRange)}`}
+            />
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold text-slate-500">All ranges</p>
+              {sorted.map((r) => (
+                <button
+                  key={r.key}
+                  type="button"
+                  onClick={() => setExpandedKey(r.key)}
+                  className={`block w-full rounded-lg px-2 py-1.5 text-left text-xs ${
+                    r.key === previewRange.key ? 'bg-orange-50' : 'hover:bg-slate-50'
+                  } ${r.active ? 'text-slate-700' : 'text-slate-400 line-through'}`}
+                >
+                  <span className="font-medium">{rangeBoundsLabel(r)}</span> · {describeRangeBenefits(r.benefitJson)}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <CustomerOffer benefits={draft.benefitJson} />
+        )}
+        {anyCashback && (draft.vcf?.redeem?.channels?.length || 0) > 0 ? (
           <div className="rounded-xl border border-violet-100 bg-violet-50 p-4 text-sm text-violet-900">
-            Use on{' '}
-            {draft.vcf?.redeem?.letter === 'F'
-              ? 'anywhere'
-              : draft.vcf?.redeem?.letter === 'V'
-                ? redeemVendorIds.length > 1
-                  ? `${redeemVendorIds.length} vendors`
-                  : 'selected vendor(s)'
-                : redeemCategoryIds.length > 1
-                  ? `${redeemCategoryIds.length} categories`
-                  : 'selected category(ies)'}
-            {' · '}
-            {(draft.vcf?.redeem?.channels || []).join(', ')}
+            {redeemSummary(draft)}
           </div>
         ) : null}
         <p className="text-xs leading-5 text-slate-500">

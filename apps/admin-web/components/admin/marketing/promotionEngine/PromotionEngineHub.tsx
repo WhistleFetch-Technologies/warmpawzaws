@@ -20,6 +20,7 @@ import {
 import { PromotionEngineList } from './PromotionEngineList';
 import { PromotionEngineWizard } from './PromotionEngineWizard';
 import { PromotionEngineSimulator } from './PromotionEngineSimulator';
+import { BenefitCapSettingsCard } from './BenefitCapSettingsCard';
 
 export function PromotionEngineHub() {
   const [rows, setRows] = useState<PromoEngineListItem[]>([]);
@@ -131,6 +132,7 @@ export function PromotionEngineHub() {
           {loading ? ' · loading…' : apiAvailable ? '' : ' · API offline'}.
         </p>
       </div>
+      <BenefitCapSettingsCard />
       <PromotionEngineList
         rows={rows}
         loading={loading}

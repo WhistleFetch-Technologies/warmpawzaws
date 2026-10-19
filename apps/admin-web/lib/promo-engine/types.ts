@@ -86,8 +86,39 @@ export interface PromoEngineDraft {
   vcf?: PromoVcfDraft;
   /** Customer-facing message overrides; blank keys fall back to app defaults. */
   customerCopy?: PromoCustomerCopy;
+  /**
+   * Bill-amount ranges, each with its own benefits, limits and message overrides.
+   * Empty/absent = `benefitJson` applies to every bill.
+   */
+  ranges?: PromoRangeDraft[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PromoRangeLimits {
+  perUser?: number | null;
+  dailyLimit?: number | null;
+  campaignLimit?: number | null;
+  budgetLimit?: number | null;
+}
+
+export interface PromoRangeDraft {
+  /** Stable React key; equals `id` once saved. */
+  key: string;
+  /** Rule row id; absent until the range is saved. */
+  id?: string;
+  label: string;
+  /** Inclusive floor; null = from ₹0. */
+  minAmount: number | null;
+  /** Inclusive ceiling (a bill on a shared edge goes to the lower range); null = no ceiling. */
+  maxAmount: number | null;
+  active: boolean;
+  benefitJson: PromoEngineBenefit[];
+  customerCopy?: PromoCustomerCopy;
+  limits: PromoRangeLimits;
+  /** Read-only stats from the API. */
+  budgetConsumed?: number;
+  usage?: { uses: number; discount: number; cashback: number };
 }
 
 export const PROMO_CUSTOMER_COPY_FIELDS = [

@@ -28,6 +28,7 @@ import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryP
 import { StarRating } from '@/components/customer/shared/StarRating';
 import {
   PromoEarnPreview,
+  readBenefitCapNotice,
   readPromoCustomerCopy,
   type PromoEngineEarnPreviewData,
 } from '@/components/customer/promo-engine/PromoEarnPreview';
@@ -45,6 +46,8 @@ import {
 } from '@/components/ui/dialog';
 
 const QUICK_AMOUNTS = [500, 1000, 1500, 2000];
+
+type OfferPreviewStatus = 'loading' | 'ready' | 'guest' | 'error';
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -73,6 +76,8 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const [showWaitForConfirmDialog, setShowWaitForConfirmDialog] = useState(false);
   const [promoEnginePreview, setPromoEnginePreview] =
     useState<PromoEngineEarnPreviewData | null>(null);
+  const [previewStatus, setPreviewStatus] = useState<OfferPreviewStatus>('loading');
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [useWallet, setUseWallet] = useState(false);
   const [appointmentContext, setAppointmentContext] = useState<WpayAppointmentContext | null>(null);
   const phone = readCustomerPhoneFromStorage();
@@ -127,6 +132,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     if (typeof window === 'undefined') return;
     const onAuth = () => {
       void refreshAppointmentContext();
+      setPreviewAttempt((n) => n + 1);
     };
     window.addEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuth);
     return () => window.removeEventListener(CUSTOMER_AUTH_COMPLETED_EVENT, onAuth);
@@ -152,6 +158,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   }, [amountInput]);
 
   const engineDiscount = Math.max(0, Number(promoEnginePreview?.engineDiscount) || 0);
+  const platformFeeWaived = promoEnginePreview?.benefitCap?.platformFeeWaived === true;
   const quote = useMemo(() => {
     if (!vendor || billAmount <= 0) return null;
     const credit = linkedBookingId && appointmentFeeCredit > 0 ? appointmentFeeCredit : 0;
@@ -161,7 +168,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         engineDiscount,
         appointmentFeeCredit: credit,
         maxDiscountAmount: vendor.maxDiscountAmount,
-        platformFee: vendor.platformFee ?? 0,
+        platformFee: platformFeeWaived ? 0 : vendor.platformFee ?? 0,
         platformFeeMode: vendor.platformFeeMode ?? 'fixed',
         platformFeeGstRate: vendor.platformFeeGstRate ?? 18,
         convenienceFee: 0,
@@ -175,7 +182,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
       appointmentFeeCredit: credit,
       maxDiscountAmount: vendor.maxDiscountAmount,
     });
-  }, [billAmount, vendor, engineDiscount, linkedBookingId, appointmentFeeCredit]);
+  }, [billAmount, vendor, engineDiscount, platformFeeWaived, linkedBookingId, appointmentFeeCredit]);
 
   const isTierQuote = quote != null && 'commercialModel' in quote && quote.commercialModel === 'tier_commission';
   const displayPayable = quote != null ? quote.payableAmount : 0;
@@ -194,6 +201,9 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
   useEffect(() => {
     if (!quoteReady || billAmount <= 0 || !resolvedVendorId) return;
+    let cancelled = false;
+    setPromoEnginePreview(null);
+    setPreviewStatus('loading');
     const handle = window.setTimeout(() => {
       void (async () => {
         try {
@@ -203,7 +213,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
               ? localStorage.getItem('customerId') || localStorage.getItem('customer_id')
               : null);
           if (!userId) {
-            setPromoEnginePreview(null);
+            if (!cancelled) setPreviewStatus('guest');
             return;
           }
           const ev = await apiClient.post<{
@@ -212,9 +222,11 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
             eligible?: boolean;
             summary?: { cashback?: number; discount?: number };
             customer_copy?: unknown;
+            benefit_cap?: unknown;
             data?: {
               evaluation_id?: string;
               customer_copy?: unknown;
+              benefit_cap?: unknown;
               eligible?: boolean;
               summary?: { cashback?: number; discount?: number };
               benefits?: Array<{
@@ -241,6 +253,7 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
               amount: billAmount,
             },
           });
+          if (cancelled) return;
           const payload = ev?.data ?? ev;
           const cb = (payload?.benefits || ev?.benefits || []).find((b) => b.benefit_type === 'CASHBACK');
           const redeem = cb?.redeem;
@@ -260,14 +273,19 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
             redeemLabel,
             expiryDays: cb?.expiry_days ?? null,
             customerCopy: readPromoCustomerCopy(payload?.customer_copy ?? ev?.customer_copy),
+            benefitCap: readBenefitCapNotice(payload?.benefit_cap ?? ev?.benefit_cap),
           });
+          setPreviewStatus('ready');
         } catch {
-          setPromoEnginePreview(null);
+          if (!cancelled) setPreviewStatus('error');
         }
       })();
     }, 300);
-    return () => window.clearTimeout(handle);
-  }, [quoteReady, billAmount, resolvedVendorId]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [quoteReady, billAmount, resolvedVendorId, previewAttempt]);
 
   const runPaymentCheckout = useCallback(async () => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
@@ -460,7 +478,32 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
               </div>
             </div>
 
-            {quoteReady && quote ? (
+            {quoteReady && quote && previewStatus !== 'ready' ? (
+              <div className="rounded-xl bg-gray-50 p-3 text-sm" data-testid="wpay-offer-status">
+                <div className="flex justify-between">
+                  <span>Quoted bill</span>
+                  <span>{formatInr(quote.originalAmount)}</span>
+                </div>
+                <p className="mt-2 text-center text-xs text-gray-600">
+                  {previewStatus === 'loading'
+                    ? 'Checking your offer…'
+                    : previewStatus === 'guest'
+                      ? 'Log in to unlock your discount and cashback on this bill.'
+                      : "We couldn't load your offer. Any discount you're eligible for still applies at payment."}
+                </p>
+                {previewStatus === 'error' ? (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewAttempt((n) => n + 1)}
+                    className="mt-2 w-full text-center text-xs font-semibold text-[#FF6B00]"
+                  >
+                    Try again
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {quoteReady && quote && previewStatus === 'ready' ? (
               <div className="rounded-xl bg-gray-50 p-3 text-sm">
                 <div className="flex justify-between">
                   <span>Quoted bill</span>
@@ -520,11 +563,19 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
             <button
               type="button"
-              disabled={billAmount <= 0 || paying}
+              disabled={billAmount <= 0 || paying || (quoteReady && previewStatus === 'loading')}
               onClick={quoteReady ? () => onProceedToPay() : onGetDiscount}
               className="w-full rounded-xl bg-[#FF6B00] py-3 text-center font-semibold text-white disabled:opacity-50"
             >
-              {paying ? 'Opening payment…' : quoteReady ? 'Proceed to Pay' : 'Get Discount'}
+              {paying
+                ? 'Opening payment…'
+                : !quoteReady
+                  ? 'Get Discount'
+                  : previewStatus === 'loading'
+                    ? 'Checking offer…'
+                    : previewStatus === 'guest'
+                      ? 'Log in to get discount'
+                      : 'Proceed to Pay'}
             </button>
             {payError ? <p className="text-center text-sm text-red-600">{payError}</p> : null}
           </div>

@@ -21,6 +21,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/b
 import { query, select, update, insert, deleteRows, upsert } from '../../../database/rds-connection';
 import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../../../utils/payments/razorpay-client';
 import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-payout';
+import { sqlCountsTowardBookingMetrics } from '../../../utils/booking-cancellation-metrics';
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -9469,7 +9470,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           COUNT(b.id) FILTER (WHERE b.status = 'cancelled') as cancelled_bookings,
           COUNT(b.id) FILTER (WHERE b.status = 'completed' AND b.rating < 3) as low_rated_bookings
         FROM vendors v
-        LEFT JOIN bookings b ON v.id = b.vendor_id
+        LEFT JOIN bookings b ON v.id = b.vendor_id AND ${sqlCountsTowardBookingMetrics('b')}
         WHERE v.is_active = true
         GROUP BY v.id, v.business_name, v.phone
         HAVING COUNT(b.id) FILTER (WHERE b.status = 'cancelled') > 5
@@ -9806,6 +9807,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           AVG(rating) FILTER (WHERE rating IS NOT NULL) as avg_rating
         FROM bookings
         WHERE created_at >= NOW() - INTERVAL '${days} days'
+          AND ${sqlCountsTowardBookingMetrics()}
       `).catch(() => ({ rows: [{ completed_bookings: 0, cancelled_bookings: 0, total_bookings: 0, avg_rating: 0 }] }));
 
       const stats = bookingStats.rows[0] || { completed_bookings: 0, cancelled_bookings: 0, total_bookings: 0, avg_rating: 0 };
@@ -9997,6 +9999,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         FROM vendors v
         LEFT JOIN transactions t ON t.vendor_id = v.id AND t.created_at >= NOW() - INTERVAL '30 days'
         LEFT JOIN bookings b ON b.vendor_id = v.id AND b.created_at >= NOW() - INTERVAL '30 days'
+          AND ${sqlCountsTowardBookingMetrics('b')}
         WHERE v.is_active = true
         GROUP BY v.id, v.business_name
         HAVING 
@@ -10101,6 +10104,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           ROUND(AVG(b.rating) FILTER (WHERE b.rating IS NOT NULL), 1) as avg_rating
         FROM vendors v
         LEFT JOIN bookings b ON b.vendor_id = v.id AND b.created_at >= NOW() - INTERVAL '30 days'
+          AND ${sqlCountsTowardBookingMetrics('b')}
         WHERE v.is_active = true
         GROUP BY v.id, v.business_name
         HAVING 

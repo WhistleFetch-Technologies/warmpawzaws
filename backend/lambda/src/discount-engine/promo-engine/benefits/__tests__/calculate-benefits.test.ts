@@ -43,6 +43,33 @@ describe('promo-engine benefits + stacking', () => {
     expect(benefits.find((b) => b.benefit_type === 'CASHBACK')?.amount).toBe(50);
   });
 
+  it('keeps an explicit zero discount and zero cashback so the promo can win', () => {
+    const benefits = calculateBenefits({
+      promotionId: 'P0',
+      ruleId: 'R0',
+      orderAmount: 1000,
+      benefitMode: 'both',
+      benefits: [
+        { type: 'DISCOUNT', mode: 'PERCENT', value: 0 },
+        { type: 'CASHBACK', mode: 'PERCENT', value: 0 },
+      ],
+    });
+    expect(benefits.map((b) => [b.benefit_type, b.amount])).toEqual([
+      ['DISCOUNT', 0],
+      ['CASHBACK', 0],
+    ]);
+  });
+
+  it('skips a benefit with no configured value', () => {
+    const benefits = calculateBenefits({
+      promotionId: 'P0',
+      ruleId: 'R0',
+      orderAmount: 1000,
+      benefits: [{ type: 'DISCOUNT', mode: 'PERCENT' }],
+    });
+    expect(benefits).toEqual([]);
+  });
+
   it('caps only the discount in both mode', () => {
     const benefits = calculateBenefits({
       promotionId: 'P1',

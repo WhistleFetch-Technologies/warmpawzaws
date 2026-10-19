@@ -9,6 +9,9 @@ const repo = {
   dbSetUsageCashback: jest.fn(),
   dbGetUsageByIdempotencyKey: jest.fn(),
   dbInsertAudit: jest.fn(),
+  dbGetRule: jest.fn(),
+  dbAdjustRuleBudgetConsumed: jest.fn(),
+  dbCountRuleUsageBatch: jest.fn(),
 };
 const mockCredit = jest.fn();
 const mockNotify = jest.fn();
@@ -22,6 +25,9 @@ jest.mock('../../repos/promo-engine.repo', () => ({
   dbSetUsageCashback: (...a: unknown[]) => repo.dbSetUsageCashback(...a),
   dbGetUsageByIdempotencyKey: (...a: unknown[]) => repo.dbGetUsageByIdempotencyKey(...a),
   dbInsertAudit: (...a: unknown[]) => repo.dbInsertAudit(...a),
+  dbGetRule: (...a: unknown[]) => repo.dbGetRule(...a),
+  dbAdjustRuleBudgetConsumed: (...a: unknown[]) => repo.dbAdjustRuleBudgetConsumed(...a),
+  dbCountRuleUsageBatch: (...a: unknown[]) => repo.dbCountRuleUsageBatch(...a),
 }));
 
 jest.mock('../wallet-cashback.service', () => ({
@@ -31,6 +37,19 @@ jest.mock('../wallet-cashback.service', () => ({
 
 jest.mock('../cashback-notification.service', () => ({
   notifyPromoCashbackCredited: (...a: unknown[]) => mockNotify(...a),
+}));
+
+const capRepo = {
+  dbGetBenefitCapSettings: jest.fn(),
+  dbListBenefitPaymentsSince: jest.fn(),
+  dbTransactionHasUsage: jest.fn(),
+  dbSaveBenefitCapSettings: jest.fn(),
+};
+jest.mock('../../repos/benefit-cap.repo', () => ({
+  dbGetBenefitCapSettings: (...a: unknown[]) => capRepo.dbGetBenefitCapSettings(...a),
+  dbListBenefitPaymentsSince: (...a: unknown[]) => capRepo.dbListBenefitPaymentsSince(...a),
+  dbTransactionHasUsage: (...a: unknown[]) => capRepo.dbTransactionHasUsage(...a),
+  dbSaveBenefitCapSettings: (...a: unknown[]) => capRepo.dbSaveBenefitCapSettings(...a),
 }));
 
 const evaluation = {
@@ -82,6 +101,20 @@ describe('commitPromotion limits re-check + notification', () => {
     );
   });
 
+  it('credits the configured cashback when wallet is spent on this payment', async () => {
+    const res = await commitPromotion({
+      evaluation_id: 'e1',
+      transaction_id: 'pay-wallet',
+      invoice_amount: 1000,
+      wallet_used: 200,
+    });
+    expect(res.cashback_credited).toBe(150);
+    expect(mockCredit).toHaveBeenCalledWith(expect.objectContaining({ amount: 150 }));
+    expect(repo.dbInsertUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ discount_amount: 100, cashback_amount: 150 }),
+    );
+  });
+
   it('withholds cashback when a concurrent payment pushed per-user usage past the limit', async () => {
     repo.dbGetLimits.mockResolvedValue(limitsRow({ per_user: 1 }));
     repo.dbCountUsageBatch.mockResolvedValue(new Map([['p1', { user: 2, campaign: 2, daily: 2 }]]));
@@ -125,5 +158,136 @@ describe('commitPromotion limits re-check + notification', () => {
     expect(res.cashback_credited).toBe(150);
     expect(mockCredit).toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
+  });
+});
+
+describe('commitPromotion with a bill-amount range', () => {
+  const RULE = '33333333-3333-4333-8333-333333333333';
+  const rangedEvaluation = {
+    ...evaluation,
+    result_json: {
+      ...evaluation.result_json,
+      benefits: evaluation.result_json.benefits.map((b) => ({ ...b, rule_id: RULE })),
+    },
+  };
+  const ruleRow = (over: Record<string, unknown> = {}) => ({
+    id: RULE,
+    promotion_id: 'p1',
+    per_user_limit: null,
+    daily_limit: null,
+    campaign_limit: null,
+    budget_limit: null,
+    budget_consumed: 0,
+    ...over,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repo.dbGetEvaluation.mockResolvedValue(rangedEvaluation);
+    repo.dbInsertUsage.mockResolvedValue({ inserted: true });
+    repo.dbGetLimits.mockResolvedValue(limitsRow());
+    repo.dbCountUsageBatch.mockResolvedValue(new Map([['p1', { user: 1, campaign: 1, daily: 1 }]]));
+    repo.dbAdjustBudgetConsumed.mockResolvedValue({ budget_consumed: 250, budget_limit: null });
+    repo.dbGetRule.mockResolvedValue(ruleRow());
+    repo.dbAdjustRuleBudgetConsumed.mockResolvedValue({ budget_consumed: 250, budget_limit: null });
+    repo.dbCountRuleUsageBatch.mockResolvedValue(new Map());
+    mockCredit.mockResolvedValue({ walletTransactionId: 'wt-1', credited: true });
+  });
+
+  it('records the range on usage and adds spend to both promo and range budgets', async () => {
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-r1' });
+    expect(res.cashback_credited).toBe(150);
+    expect(repo.dbInsertUsage).toHaveBeenCalledWith(expect.objectContaining({ rule_id: RULE }));
+    expect(repo.dbAdjustBudgetConsumed).toHaveBeenCalledWith('p1', 250);
+    expect(repo.dbAdjustRuleBudgetConsumed).toHaveBeenCalledWith(RULE, 250);
+  });
+
+  it('trims cashback to the range budget when it is tighter than the promo budget', async () => {
+    repo.dbAdjustRuleBudgetConsumed.mockResolvedValueOnce({ budget_consumed: 1080, budget_limit: 1000 });
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-r2' });
+    expect(res.cashback_credited).toBe(70);
+    expect(repo.dbAdjustBudgetConsumed).toHaveBeenLastCalledWith('p1', -80);
+    expect(repo.dbAdjustRuleBudgetConsumed).toHaveBeenLastCalledWith(RULE, -80);
+    expect(repo.dbInsertAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'LIMIT_EXCEEDED_AT_COMMIT',
+        payload: expect.objectContaining({ reason: 'RANGE_BUDGET_EXHAUSTED', rule_id: RULE }),
+      }),
+    );
+  });
+
+  it('withholds cashback when a concurrent payment pushed the range per-user count past its limit', async () => {
+    repo.dbGetRule.mockResolvedValue(ruleRow({ per_user_limit: 1 }));
+    repo.dbCountRuleUsageBatch.mockResolvedValue(new Map([[RULE, { user: 2, campaign: 2, daily: 2 }]]));
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-r3' });
+    expect(res.cashback_credited).toBe(0);
+    expect(repo.dbAdjustRuleBudgetConsumed).toHaveBeenLastCalledWith(RULE, -150);
+  });
+});
+
+describe('commitPromotion benefit cap backstop', () => {
+  const CUSTOMER = '9c6f3ba6-efdc-408b-86c4-2c2c3ce1e318';
+  const capOn = { enabled: true, max_benefit_payments: 3, block: 'both' };
+  const earlier = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ ref: `pay-${i}`, at: new Date(Date.now() - (n - i) * 60_000) }));
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const { clearBenefitCapConfigCache } = await import('../benefit-cap.service');
+    clearBenefitCapConfigCache();
+    repo.dbGetEvaluation.mockResolvedValue({ ...evaluation, user_id: CUSTOMER });
+    repo.dbInsertUsage.mockResolvedValue({ inserted: true });
+    repo.dbGetLimits.mockResolvedValue(limitsRow());
+    repo.dbCountUsageBatch.mockResolvedValue(new Map([['p1', { user: 1, campaign: 1, daily: 1 }]]));
+    repo.dbAdjustBudgetConsumed.mockResolvedValue({ budget_consumed: 100, budget_limit: null });
+    mockCredit.mockResolvedValue({ walletTransactionId: 'wt-1', credited: true });
+    capRepo.dbGetBenefitCapSettings.mockResolvedValue({ benefit_cap: capOn, updated_by: null, updated_at: null });
+    capRepo.dbTransactionHasUsage.mockResolvedValue(false);
+  });
+
+  it('credits cashback normally while the customer is under the cap', async () => {
+    capRepo.dbListBenefitPaymentsSince.mockResolvedValue(earlier(2));
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-third' });
+    expect(res.cashback_credited).toBe(150);
+    expect(capRepo.dbListBenefitPaymentsSince).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: CUSTOMER, excludeTransactionId: 'pay-third' }),
+    );
+  });
+
+  it('withholds cashback when other payments reached the cap first; discount is still recorded', async () => {
+    capRepo.dbListBenefitPaymentsSince.mockResolvedValue(earlier(3));
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-fourth' });
+    expect(res.cashback_credited).toBe(0);
+    expect(mockCredit).not.toHaveBeenCalled();
+    expect(repo.dbInsertUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ discount_amount: 100, cashback_amount: 0 }),
+    );
+    expect(repo.dbInsertAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'BENEFIT_CAP_AT_COMMIT',
+        payload: expect.objectContaining({ cashback_withheld: 150, used: 3, cap: 3 }),
+      }),
+    );
+  });
+
+  it('keeps the first commit decision on retry even if the cap was reached since', async () => {
+    capRepo.dbListBenefitPaymentsSince.mockResolvedValue(earlier(3));
+    capRepo.dbTransactionHasUsage.mockResolvedValue(true);
+    repo.dbInsertUsage.mockResolvedValue({ inserted: false });
+    repo.dbGetUsageByIdempotencyKey.mockResolvedValue({ cashback_amount: 150, discount_amount: 100, reversed_at: null });
+    mockCredit.mockResolvedValue({ walletTransactionId: 'wt-1', credited: false });
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-retry' });
+    expect(res.cashback_credited).toBe(150);
+  });
+
+  it('does nothing when the cap only blocks discounts', async () => {
+    capRepo.dbGetBenefitCapSettings.mockResolvedValue({
+      benefit_cap: { ...capOn, block: 'discount' },
+      updated_by: null,
+      updated_at: null,
+    });
+    capRepo.dbListBenefitPaymentsSince.mockResolvedValue(earlier(5));
+    const res = await commitPromotion({ evaluation_id: 'e1', transaction_id: 'pay-x' });
+    expect(res.cashback_credited).toBe(150);
   });
 });

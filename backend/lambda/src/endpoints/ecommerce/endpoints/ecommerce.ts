@@ -804,6 +804,7 @@ export function registerEcommerceEndpoints(app: Hono) {
             skuRowIdForStock: resolved.skuRowIdForStock,
             hsn_code: resolved.hsn_code,
             category_id: resolved.category_id,
+            vendor_id: resolved.vendor_id,
           });
         } catch (lineErr: unknown) {
           const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
@@ -892,6 +893,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         orderData.evaluationId || orderData.evaluation_id || '',
       ).trim();
       let engineEvaluationId: string | null = null;
+      let engineBenefitCap: { code: string; message: string } | null = null;
       try {
         const { resolveEcommerceEngineDiscount } = await import(
           '../shared/resolve-ecommerce-engine-discount'
@@ -901,14 +903,16 @@ export function registerEcommerceEndpoints(app: Hono) {
           evaluationId: requestedEvaluationId,
           amount: subtotal,
           vendorId: firstVendorId ? String(firstVendorId) : null,
-          lines: cartLines.map((line) => ({
-            id: line.productId,
+          lines: orderItems.map((oi) => ({
+            id: String(oi.product_id),
             service_category: 'ecommerce',
-            amount: (Number(line.price) || 0) * (Number(line.quantity) || 1),
+            vendorId: oi.vendor_id ? String(oi.vendor_id) : null,
+            amount: (Number(oi.unit_price) || 0) * (Number(oi.quantity) || 1),
           })),
         });
         engineEvaluationId = engine.evaluationId;
         serverPromoDiscount = engine.discount;
+        engineBenefitCap = engine.benefitCap ?? null;
         if (engine.evaluationId) {
           promotionSource = 'admin';
           appliedPromotionId = engine.evaluationId;
@@ -925,6 +929,12 @@ export function registerEcommerceEndpoints(app: Hono) {
           serverPromoDiscount === 0 ||
           !discountsWithinTolerance(serverPromoDiscount, Number(bodyDiscount))
         ) {
+          if (engineBenefitCap) {
+            return c.json(
+              { error: engineBenefitCap.message, code: engineBenefitCap.code, benefitCap: engineBenefitCap },
+              409,
+            );
+          }
           return c.json({ error: 'Promotion discount mismatch' }, 400);
         }
       }
@@ -1039,15 +1049,21 @@ export function registerEcommerceEndpoints(app: Hono) {
         if (!customerId) {
           return c.json({ error: 'Customer account required to use wallet balance' }, 400);
         }
-        const { computeSpendableWalletBalance } = await import(
+        const { computeCheckoutSpendableWallet } = await import(
           '../../../discount-engine/promo-engine'
         );
-        const scoped = await computeSpendableWalletBalance(String(customerId), 'ecommerce', {
+        const scoped = await computeCheckoutSpendableWallet(String(customerId), 'ecommerce', {
           serviceCategory: 'ecommerce',
           channel: 'ecommerce',
           vendorId: firstVendorId ? String(firstVendorId) : null,
           ecommerceCategoryId: cartLines[0]?.categoryId ? String(cartLines[0].categoryId) : null,
         });
+        if (scoped.benefitCap) {
+          return c.json(
+            { error: scoped.benefitCap.message, code: scoped.benefitCap.code, benefitCap: scoped.benefitCap },
+            409,
+          );
+        }
         if (scoped.spendable < walletAmountApplied) {
           return c.json(
             {

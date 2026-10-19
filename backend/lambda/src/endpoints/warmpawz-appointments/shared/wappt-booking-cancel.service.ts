@@ -7,7 +7,8 @@ import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
 import { computeHoursUntilBookingStart } from '../../../lib/utils/booking-start-wall-time';
 import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
 import { processBookingOriginalPaymentRefund } from '../../../utils/payments/booking-original-refund';
-import { query, select } from '../../../database/rds-connection';
+import { select } from '../../../database/rds-connection';
+import { logBookingStatusChange } from '../../../utils/audit-log';
 import {
   dbMarkBookingCancelled,
   rowToBookingForPolicy,
@@ -107,11 +108,14 @@ export async function executeWapptCustomerCancel(opts: {
     }
   }
 
-  await query(
-    `INSERT INTO booking_status_history (booking_id, status, notes, created_at)
-     VALUES ($1::uuid, 'cancelled', $2, NOW())`,
-    [bookingId, reason],
-  ).catch(() => undefined);
+  await logBookingStatusChange(
+    bookingId,
+    opts.bookingRow.status != null ? String(opts.bookingRow.status) : null,
+    'cancelled',
+    customerId || undefined,
+    'customer',
+    reason,
+  );
 
   const vendorId = String(opts.bookingRow.vendor_id ?? updated.vendor_id ?? '');
   if (vendorId && customerId) {

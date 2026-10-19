@@ -47,13 +47,13 @@ import { readProfileCompleted, shouldRestoreGuestJourneyOnHome } from '@/lib/cus
 import {
   abortGuestJourneyRestore,
   beginGuestJourneyRestore,
+  buildRestoredBookingState,
   finishGuestJourneyRestore,
-  GUEST_SERVICE_RESUME_SCREENS,
   isGuestAppointmentJourney,
   readGuestBookingIntent,
   resolveResumeScreen,
-  transactionRequiresPet,
 } from '@/lib/guest-booking-intent';
+import { isWpayPayBillJourney } from '@/lib/warmpawz-pay/wpay-guest-journey';
 import { emitGuestAuthAnalytics, requestGuestAuth, requestGuestAuthForProfileContinue } from '@/lib/guest-auth-gate';
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
@@ -964,41 +964,24 @@ export function CustomerHomeWrapper({
       router.replace(intent.returnPath || '/checkout');
       return;
     }
+    if (intent && isWpayPayBillJourney(intent)) {
+      // Pay Bill screen consumes its own snapshot (consumeRestoredWpayPayBillAmount).
+      abortGuestJourneyRestore();
+      return;
+    }
     if (intent) {
-      emitGuestAuthAnalytics('booking_resumed', { kind: intent.kind || 'booking' });
-      if (isGuestAppointmentJourney(intent) && (intent.vendorId || intent.date || intent.time || intent.serviceId)) {
-        setVetServiceData((prev: any) => ({
-          ...(prev && typeof prev === 'object' ? prev : {}),
-          vendorId: intent.vendorId || prev?.vendorId,
-          serviceId: intent.serviceId || prev?.serviceId,
-          serviceStyle: intent.serviceStyle || prev?.serviceStyle,
-          serviceType: intent.persona || intent.category || prev?.serviceType,
-          bookingDate: intent.date || prev?.bookingDate,
-          bookingTime: intent.time || prev?.bookingTime,
-          slotId: intent.slotId || prev?.slotId,
-          appointmentType: intent.appointmentType || prev?.appointmentType,
-          appointmentsMode:
-            intent.wapptMode === true || prev?.appointmentsMode === true,
-          price: intent.price ?? prev?.price,
-          offerId: intent.offerId || prev?.offerId,
-          promotionId: intent.promotionId || prev?.promotionId,
-          packageId: intent.packageId || prev?.packageId,
-          variantId: intent.variantId || prev?.variantId,
-          slotNeedsRevalidation: true,
-          openAddPetAfterRestore: transactionRequiresPet(intent),
-        }));
+      if (
+        isGuestAppointmentJourney(intent) &&
+        (intent.vendorId || intent.date || intent.time || intent.serviceId || intent.bookingNav)
+      ) {
+        setVetServiceData((prev: Record<string, unknown> | null) =>
+          buildRestoredBookingState(intent, prev),
+        );
         const persona = String(intent.persona || intent.category || '').toLowerCase();
         if (persona === 'walker' || intent.resumeScreen === 'walker-booking') {
-          setWalkerServiceData((prev: any) => ({
-            ...(prev && typeof prev === 'object' ? prev : {}),
-            vendorId: intent.vendorId || prev?.vendorId,
-            serviceId: intent.serviceId || prev?.serviceId,
-            serviceStyle: intent.serviceStyle || prev?.serviceStyle,
-            bookingDate: intent.date || prev?.bookingDate,
-            bookingTime: intent.time || prev?.bookingTime,
-            appointmentsMode: intent.wapptMode === true || prev?.appointmentsMode === true,
-            slotNeedsRevalidation: true,
-          }));
+          setWalkerServiceData((prev: Record<string, unknown> | null) =>
+            buildRestoredBookingState(intent, prev),
+          );
         }
       }
     }
@@ -1056,6 +1039,27 @@ export function CustomerHomeWrapper({
         /* ignore */
       }
       shellNav.navigateToScreen(resume as ScreenType);
+    } else if (resume === 'wappt-vendor-profile' && intent?.vendorId) {
+      try {
+        sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+      } catch {
+        /* ignore */
+      }
+      const profileCategory = String(intent.category || intent.persona || 'vet');
+      const profileStyle = String(
+        intent.serviceStyle || getWapptDefaultDiscoveryStyle(profileCategory),
+      );
+      setWapptProfileData(
+        toWapptProfileShellState(
+          { vendorId: intent.vendorId, profileBackScreen: 'home' },
+          profileCategory,
+          profileStyle,
+        ),
+      );
+      shellNav.navigateToScreen(
+        'wappt-vendor-profile',
+        routeKey.wapptProfile(intent.vendorId, profileStyle),
+      );
     } else if (intent?.kind === 'instant_tele') {
       try {
         sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
@@ -1063,17 +1067,17 @@ export function CustomerHomeWrapper({
         /* ignore */
       }
       shellNav.navigateToScreen('vet-tele-consultation');
+    } else {
+      // Nothing to reopen (plain login, shop, unknown screen): drop the snapshot so it
+      // is not retried — and re-counted as booking_resumed — on every Home render.
       finishGuestJourneyRestore();
       return;
-    } else if (
-      intent &&
-      !isGuestAppointmentJourney(intent) &&
-      intent.kind !== 'add_pet' &&
-      !GUEST_SERVICE_RESUME_SCREENS.has(String(resume || ''))
-    ) {
-      // WPay / other non-appointment snapshots are consumed by their own restore owners.
-      abortGuestJourneyRestore();
-      return;
+    }
+    if (intent) {
+      emitGuestAuthAnalytics('booking_resumed', {
+        kind: intent.kind || 'booking',
+        screen: resume || intent.kind,
+      });
     }
     finishGuestJourneyRestore();
   }, [pathname, isGuest, shellNav, router]);
@@ -2072,8 +2076,10 @@ export function CustomerHomeWrapper({
           persona: 'vet',
           category: 'vet',
           vendorId: String(data?.vendorId || data?.clinicId || ''),
+          serviceStyle: data?.serviceStyle ? String(data.serviceStyle) : undefined,
           resumeScreen: 'vet-booking',
           wapptMode: data?.appointmentsMode === true,
+          bookingNav: data && typeof data === 'object' ? (data as Record<string, unknown>) : undefined,
         })
       ) {
         return;
@@ -3658,8 +3664,10 @@ export function CustomerHomeWrapper({
           persona: 'vet',
           category: 'vet',
           vendorId: String(data?.vendorId || data?.clinicId || ''),
+          serviceStyle: String(data?.serviceStyle || 'at_center'),
           resumeScreen: 'vet-booking',
           wapptMode: data?.appointmentsMode === true,
+          bookingNav: data && typeof data === 'object' ? (data as Record<string, unknown>) : undefined,
         })
       ) {
         return;
@@ -3695,8 +3703,10 @@ export function CustomerHomeWrapper({
           persona: 'vet',
           category: 'vet',
           vendorId: String(data?.vendorId || data?.clinicId || vetServiceData?.id || ''),
+          serviceStyle: String(data?.serviceStyle || 'at_center'),
           resumeScreen: 'vet-booking',
           wapptMode: data?.appointmentsMode === true || vetServiceData?.appointmentsMode === true,
+          bookingNav: data && typeof data === 'object' ? (data as Record<string, unknown>) : undefined,
         })
       ) {
         return;

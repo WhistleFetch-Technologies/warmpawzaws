@@ -144,7 +144,9 @@ export function VetBookingRouter({
   const [step, setStep] = useState<BookingStep>(initialStep);
   // Map 'clinic' to 'at_center'; must be declared before effects that reference it (dependency arrays run during render).
   const normalizedServiceType =
-    (serviceStyle || serviceType) === 'clinic' ? 'at_center' : (serviceStyle || serviceType || 'tele');
+    (serviceStyle || serviceType) === 'clinic'
+      ? 'at_center'
+      : (serviceStyle || serviceType || (appointmentsMode ? 'at_center' : 'tele'));
 
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops

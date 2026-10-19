@@ -13,6 +13,7 @@ import {
   rowToBookingForPolicy,
 } from '../../customer/warmpawz-appointments/repos/wappt_booking_policy.repo';
 import { notifyBookingCancelledByVendor } from '../../../utils/booking-notifications';
+import { logBookingStatusChange } from '../../../utils/audit-log';
 
 export function registerVendorWapptAppointmentsEndpoints(app: Hono): void {
   app.get('/vendor/warmpawz-appointments/policies', async (c) => {
@@ -89,6 +90,15 @@ export function registerVendorWapptAppointmentsEndpoints(app: Hono): void {
           cancelled_at: new Date().toISOString(),
           cancelled_by: 'provider',
         },
+      );
+
+      await logBookingStatusChange(
+        bookingId,
+        oldStatus,
+        'cancelled',
+        String(vendorId),
+        'vendor',
+        cancellation_reason,
       );
 
       const refundInfo = await applyRefundAfterProviderCancellation(

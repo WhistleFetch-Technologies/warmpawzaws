@@ -25,7 +25,7 @@ import { ForYouSection } from '../ForYouSection';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { TrendingProblems, type TrendingProblem } from '../TrendingProblems';
 import { CustomerNotificationModal } from '../CustomerNotificationModal';
-import { EcommerceLaunchPopup } from '../EcommerceLaunchPopup';
+import { VendorFeedbackPrompt } from '../vendor-feedback/VendorFeedbackPrompt';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
 import { Dog, Cat, Shirt, Watch, Bed, Store } from 'lucide-react';
 import { useActiveGpsTracking, ActiveTrackingSession } from '@/hooks/useActiveGpsTracking';
@@ -1760,7 +1760,6 @@ export function CustomerHomeComplete({
     const runPollingTick = () => {
       if (cancelled || document.hidden) return;
       loadActiveBookings();
-      checkPendingReviews();
       checkUpcomingCalls();
       checkActiveOrderTracking();
       // Incoming tele owned solely by runIncomingCallTick (avoid duplicate /notifications)
@@ -1823,7 +1822,6 @@ export function CustomerHomeComplete({
               .catch(() => {});
           }
           loadActiveBookings();
-          checkPendingReviews();
           checkUpcomingCalls();
           checkActiveOrderTracking();
           checkIncomingCalls();
@@ -2191,54 +2189,6 @@ export function CustomerHomeComplete({
       setActiveOrderTracking(activeOrders[0]);
     } else {
       setActiveOrderTracking(null);
-    }
-  };
-
-  // ✅ Check for pending reviews on completed bookings
-  const checkPendingReviews = async () => {
-    try {
-      let custId = customerId || getResolvedCustomerId();
-      if (!custId) {
-        // One-shot resolve only when cache empty (not every home tick)
-        const customerRes = await apiClient.get<any>(
-          `/customer/by-phone?phone=${encodeURIComponent(phone)}`
-        );
-        custId = customerRes.customer?.id ? String(customerRes.customer.id) : null;
-        if (custId) {
-          persistCustomerDatabaseId(custId);
-          setCustomerId(custId);
-        }
-      }
-      if (!custId) return;
-
-      const reviewRes = await apiClient.get<any>(`/reviews/pending/${custId}`);
-      if (reviewRes.hasPending && reviewRes.booking) {
-        const pendingBookingId = reviewRes.booking.bookingId;
-        if (pendingBookingId) {
-          try {
-            const id = String(pendingBookingId);
-            const submittedRaw = localStorage.getItem('warmpawz_review_submitted_booking_ids');
-            const skippedRaw = localStorage.getItem('warmpawz_review_skipped_booking_ids');
-            const submittedIds: string[] = submittedRaw ? JSON.parse(submittedRaw) : [];
-            const skippedIds: string[] = skippedRaw ? JSON.parse(skippedRaw) : [];
-            if (submittedIds.includes(id) || skippedIds.includes(id)) return;
-          } catch {
-            /* ignore */
-          }
-        }
-        setPendingReview({
-          isOpen: true,
-          bookingId: reviewRes.booking.bookingId,
-          vendorId: reviewRes.booking.vendorId,
-          vendorName: reviewRes.booking.vendorName || 'Service Provider',
-          serviceName: reviewRes.booking.serviceName || 'Service',
-          serviceStyle: reviewRes.booking.serviceStyle || 'at_center',
-          staffId: reviewRes.booking.staffId,
-          staffName: reviewRes.booking.staffName,
-        });
-      }
-    } catch (error) {
-      console.log('No pending reviews');
     }
   };
 
@@ -3887,10 +3837,7 @@ export function CustomerHomeComplete({
         }}
       />
 
-      <EcommerceLaunchPopup
-        enabled={customerCommerceEnabled}
-        onExploreShop={() => handleNavigation('shop')}
-      />
+      <VendorFeedbackPrompt enabled={!isGuest && Boolean(phone)} />
     </div>
   );
 }

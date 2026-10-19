@@ -898,7 +898,7 @@ class AssignSampleCollectionHandler extends BaseHandler {
       });
 
       // Also send SMS if phone available (placeholder - would use SNS)
-      console.log(`📱 [SMS] Would send to ${customerPhone}: Sample collection by ${staff.name} scheduled for ${scheduledDate} at ${scheduledTime}. OTP: ${collectionOtp}`);
+      console.log(`📱 [SMS] Would send to ${customerPhone}: Sample collection by ${staff.name} scheduled for ${scheduledDate} at ${scheduledTime}. OTP: [redacted]`);
 
       return this.success({
         success: true,

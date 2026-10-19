@@ -7,6 +7,7 @@ import {
   dbGetLimitsForPromotions,
   dbListRulesForPromotions,
   dbCountUsageBatch,
+  dbCountRuleUsageBatch,
   type PromoUsageCounts,
 } from '../repos/promo-engine.repo';
 import type {
@@ -29,6 +30,8 @@ export type EvaluateSnapshot = {
   rulesByPromo: Map<string, PromoEngineRuleRow[]>;
   limitsByPromo: Map<string, PromoEngineLimitsRow>;
   usageByPromo: Map<string, PromoUsageCounts>;
+  /** Usage per bill-amount range (rule_id). Optional for callers that build snapshots by hand. */
+  usageByRule?: Map<string, PromoUsageCounts>;
   behaviour: CustomerBehaviourProfile;
 };
 
@@ -54,16 +57,30 @@ export async function loadEvaluateSnapshot(opts: {
     dbGetLimitsForPromotions(ids),
     dbCountUsageBatch({ promotionIds: ids, userId: opts.userId, since: dayStart }),
   ]);
-  return { candidates, rulesByPromo, limitsByPromo, usageByPromo, behaviour };
+  const limitedRuleIds = [...rulesByPromo.values()]
+    .flat()
+    .filter((r) => r.per_user_limit != null || r.daily_limit != null || r.campaign_limit != null)
+    .map((r) => r.id);
+  const usageByRule = await dbCountRuleUsageBatch({
+    ruleIds: limitedRuleIds,
+    userId: opts.userId,
+    since: dayStart,
+  });
+  return { candidates, rulesByPromo, limitsByPromo, usageByPromo, usageByRule, behaviour };
 }
 
 function customerCopyFor(
   snapshot: EvaluateSnapshot,
   promotionId: string | null | undefined,
+  rule?: PromoEngineRuleRow | null,
 ): PromoCustomerCopy | null {
   if (!promotionId) return null;
   const promo = snapshot.candidates.find((c) => c.id === promotionId);
-  return promo ? parseCustomerCopy(promo.metadata) : null;
+  if (!promo) return null;
+  const base = parseCustomerCopy(promo.metadata);
+  const override = rule?.customer_copy ? parseCustomerCopy({ customerCopy: rule.customer_copy }) : null;
+  if (!override) return base;
+  return { ...(base || {}), ...override };
 }
 
 function collectLineBenefits(opts: {
@@ -108,6 +125,47 @@ function collectLineBenefits(opts: {
   return { benefits: promoBenefits, anyRulePass, failures };
 }
 
+function publishLettersFromReq(req: EvaluateRequest): Array<'V' | 'C' | 'F'> | null {
+  const raw = req.transaction?.publish_letters;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const letters = raw
+    .map((letter) => String(letter || '').toUpperCase())
+    .filter((letter): letter is 'V' | 'C' | 'F' => letter === 'V' || letter === 'C' || letter === 'F');
+  return letters.length ? letters : null;
+}
+
+function snapshotForPublishLetters(
+  snapshot: EvaluateSnapshot,
+  letters: Array<'V' | 'C' | 'F'> | null,
+): EvaluateSnapshot {
+  if (!letters) return snapshot;
+  return {
+    ...snapshot,
+    candidates: snapshot.candidates.filter((promo) => {
+      const vcf = parseVcfConfig(promo.metadata);
+      return vcf != null && letters.includes(vcf.publish.letter);
+    }),
+  };
+}
+
+function emptyEvaluateResult(amount: number): Omit<EvaluateResult, 'evaluation_id'> {
+  return {
+    eligible: false,
+    winner_promotion_id: null,
+    winner_rule_id: null,
+    range: null,
+    customer_copy: null,
+    benefits: [],
+    summary: {
+      gross_amount: amount,
+      discount: 0,
+      payable: Math.round(Math.max(0, amount) * 100) / 100,
+      cashback: 0,
+    },
+    explain: { failures: [], matched_promotions: [], rejected_promotions: [] },
+  };
+}
+
 /** In-memory evaluate against a preloaded snapshot. No SQL. Does not persist. */
 export function evaluateAgainstSnapshot(
   snapshot: EvaluateSnapshot,
@@ -115,6 +173,8 @@ export function evaluateAgainstSnapshot(
   now = new Date(),
 ): Omit<EvaluateResult, 'evaluation_id'> {
   const amount = Number(req.transaction?.amount ?? 0) || 0;
+  const publishLetters = publishLettersFromReq(req);
+  const scopedSnapshot = snapshotForPublishLetters(snapshot, publishLetters);
   const stackInput: StackCandidate[] = [];
   const failures: EvaluateResult['explain']['failures'] = [];
   const matched: string[] = [];
@@ -166,26 +226,43 @@ export function evaluateAgainstSnapshot(
   }
 
   const vcfScore = scoreVcfCandidates({
-    candidates: snapshot.candidates,
+    candidates: scopedSnapshot.candidates,
     rulesByPromo: snapshot.rulesByPromo,
     limitsByPromo: snapshot.limitsByPromo,
     usageByPromo: snapshot.usageByPromo,
+    usageByRule: snapshot.usageByRule,
     behaviour: snapshot.behaviour,
     req,
   });
 
+  if (publishLetters && !vcfScore.hadVcfCandidates) {
+    return emptyEvaluateResult(amount);
+  }
+
   if (vcfScore.hadVcfCandidates) {
-    const discount = vcfScore.winnerBenefits
+    const payableBenefits = vcfScore.winnerBenefits.filter((b) => b.amount > 0);
+    const discount = payableBenefits
       .filter((b) => b.benefit_type === 'DISCOUNT')
       .reduce((s, b) => s + b.amount, 0);
-    const cashback = vcfScore.winnerBenefits
+    const cashback = payableBenefits
       .filter((b) => b.benefit_type === 'CASHBACK')
       .reduce((s, b) => s + b.amount, 0);
+    const rule = vcfScore.winnerRule;
+    const showsOffer = discount > 0 || cashback > 0;
     return {
-      eligible: Boolean(vcfScore.winnerId) && vcfScore.winnerBenefits.length > 0,
+      eligible: showsOffer,
       winner_promotion_id: vcfScore.winnerId,
-      customer_copy: customerCopyFor(snapshot, vcfScore.winnerId),
-      benefits: vcfScore.winnerBenefits,
+      winner_rule_id: rule?.id ?? null,
+      range: rule
+        ? {
+            id: rule.id,
+            label: rule.label ?? null,
+            min: rule.min_amount ?? null,
+            max: rule.max_amount ?? null,
+          }
+        : null,
+      customer_copy: showsOffer ? customerCopyFor(snapshot, vcfScore.winnerId, rule) : null,
+      benefits: payableBenefits,
       summary: {
         gross_amount: amount,
         discount: Math.round(discount * 100) / 100,
@@ -201,7 +278,7 @@ export function evaluateAgainstSnapshot(
   }
   rejected.push(...vcfScore.rejected);
 
-  const legacyCandidates = snapshot.candidates.filter((p) => !parseVcfConfig(p.metadata));
+  const legacyCandidates = scopedSnapshot.candidates.filter((p) => !parseVcfConfig(p.metadata));
   for (const promo of legacyCandidates) {
     const limitCheck = checkPromoLimits({
       promo,

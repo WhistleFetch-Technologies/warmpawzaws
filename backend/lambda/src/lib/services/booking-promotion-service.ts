@@ -179,6 +179,7 @@ export function buildUnifiedQuoteFromEngine(opts: {
           eligible: opts.result.eligible,
           redeemScope: cashbackBenefit?.redeem_scope || [],
           expiryDays: cashbackBenefit?.expiry_days ?? null,
+          ...(opts.result.benefit_cap ? { benefitCap: opts.result.benefit_cap } : {}),
         }
       : undefined,
   };
@@ -271,9 +272,14 @@ export async function resolveBookingDiscountQuoteBatch(params: {
     loadServerPaymentContext,
     classifyPaymentChannel,
     normalizePromoCategory,
+    resolveBenefitCapNotice,
+    applyBenefitCapToResult,
   } = await import('../../discount-engine/promo-engine');
   const now = new Date();
-  const behaviour = await loadBehaviourProfile(customerId);
+  const [behaviour, capNotice] = await Promise.all([
+    loadBehaviourProfile(customerId),
+    resolveBenefitCapNotice({ userId: customerId, now }),
+  ]);
   const ctx = await loadServerPaymentContext({
     surface: 'booking',
     vendorId,
@@ -297,7 +303,7 @@ export async function resolveBookingDiscountQuoteBatch(params: {
         surface: 'booking',
         serviceStyle: item.serviceStyle,
       });
-      const body = evaluateAgainstSnapshot(
+      const evaluated = evaluateAgainstSnapshot(
         snapshot,
         {
           user_id: customerId,
@@ -314,6 +320,7 @@ export async function resolveBookingDiscountQuoteBatch(params: {
         },
         now,
       );
+      const body = capNotice ? applyBenefitCapToResult(evaluated, capNotice) : evaluated;
       return {
         key: item.key,
         quote: buildUnifiedQuoteFromEngine({

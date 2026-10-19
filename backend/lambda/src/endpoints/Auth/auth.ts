@@ -195,7 +195,7 @@ class SendOtpHandler extends BaseHandler {
     // Generate 6-digit OTP (or use 123456 for UAT)
     const otp = UAT_MODE ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
     
-    console.log(`[AUTH] Generating OTP for ${phone}: ${UAT_MODE ? '123456 (UAT Mode)' : otp}`);
+    console.log(`[AUTH] Generating OTP for ${phone}${UAT_MODE ? ' (UAT Mode)' : ''}`);
 
     // Store OTP in database
     await createOtp(phone, otp, 'login');
@@ -344,7 +344,7 @@ class VerifyOtpHandler extends BaseHandler {
     
     // TEST USER BYPASS (PRODUCTION MODE)
     if (isTestUser) {
-      console.log(`[AUTH] 🧪 TEST USER: Bypassing OTP verification for test phone ${normalizedPhone} with OTP ${otp}`);
+      console.log(`[AUTH] 🧪 TEST USER: Bypassing OTP verification for test phone ${normalizedPhone}`);
       await this.markOtpAsUsed(normalizedPhone);
       return true;
     }

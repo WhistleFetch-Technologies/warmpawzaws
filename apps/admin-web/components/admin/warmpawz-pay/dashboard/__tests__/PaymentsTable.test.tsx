@@ -109,6 +109,61 @@ describe('PaymentsTable', () => {
     expect(cells[feeGstIdx]).toBe('₹8.10');
   });
 
+  it('Customer Paid shows the Razorpay amount and the drawer shows appointment fee adjusted', () => {
+    const { container } = render(
+      <PaymentsTable
+        items={[
+          {
+            ...burnItem,
+            originalAmount: 2420,
+            discountAmount: 350,
+            payableAmount: 1624.1,
+            appointmentFeeCredit: 499,
+            walletAmount: 499,
+            razorpayChargeAmount: 1125.1,
+          },
+        ]}
+        page={1}
+        pageSize={5}
+        total={1}
+        onPageChange={() => undefined}
+        {...selectionProps}
+      />,
+    );
+
+    const headers = Array.from(container.querySelectorAll('thead th')).map((th) => th.textContent);
+    const paidIdx = headers.indexOf('Customer Paid');
+    const cells = Array.from(container.querySelectorAll('tbody tr:first-child td'));
+    const paidCell = cells[paidIdx]!;
+    expect(paidCell.querySelector('span')?.textContent).toBe('₹1,125.10');
+    expect(paidCell.textContent).toContain('Bill ₹1,624.10');
+
+    expect(screen.queryByText('Appointment fee adjusted')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+' }));
+    const label = screen.getByText('Appointment fee adjusted');
+    expect(label.nextElementSibling?.textContent).toBe('₹499.00');
+  });
+
+  it('hides appointment fee adjusted and the bill sub-line when there is no credit or wallet', () => {
+    const { container } = render(
+      <PaymentsTable
+        items={[{ ...burnItem, appointmentFeeCredit: 0, walletAmount: 0 }]}
+        page={1}
+        pageSize={5}
+        total={1}
+        onPageChange={() => undefined}
+        {...selectionProps}
+      />,
+    );
+
+    const headers = Array.from(container.querySelectorAll('thead th')).map((th) => th.textContent);
+    const paidCell = container.querySelectorAll('tbody tr:first-child td')[headers.indexOf('Customer Paid')]!;
+    expect(paidCell.textContent).toBe('₹8,559.00');
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }));
+    expect(screen.queryByText('Appointment fee adjusted')).not.toBeInTheDocument();
+  });
+
   it('tints pending rows and allows selecting only pending payouts', () => {
     const onSelectedPaymentIdsChange = jest.fn();
     const settled: WpayAdminPaymentItem = {

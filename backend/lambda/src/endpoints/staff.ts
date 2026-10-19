@@ -15,7 +15,7 @@
  * ============================================================================
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { sendSMS } from '../utils/sms-service';
 import {
@@ -64,6 +64,36 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c; // Distance in km
 }
 
+/** staff_availability_slots / staff_slot_services are not migrated on every environment (prod has no staff yet). */
+let staffSlotTablesReady: boolean | null = null;
+
+async function areStaffSlotTablesReady(): Promise<boolean> {
+  if (staffSlotTablesReady !== null) return staffSlotTablesReady;
+  try {
+    const result = await query(
+      `SELECT to_regclass('public.staff_availability_slots') IS NOT NULL
+          AND to_regclass('public.staff_slot_services') IS NOT NULL AS ready`
+    );
+    staffSlotTablesReady = result.rows[0]?.ready === true;
+  } catch {
+    return false;
+  }
+  return staffSlotTablesReady;
+}
+
+/** Reads get an empty payload of their usual shape; writes get a 503 instead of a SQL error. */
+async function staffSlotTablesMissingResponse(
+  c: Context,
+  emptyReadBody?: Record<string, unknown>
+): Promise<Response | null> {
+  if (await areStaffSlotTablesReady()) return null;
+  if (emptyReadBody) return c.json(emptyReadBody);
+  return c.json(
+    { error: 'Staff slot scheduling is not enabled yet', code: 'STAFF_SLOTS_DISABLED' },
+    503
+  );
+}
+
 export function registerStaffEndpoints(app: Hono) {
   // ============================================
   // STAFF DISCOVERY (Customer-facing)
@@ -91,6 +121,9 @@ export function registerStaffEndpoints(app: Hono) {
       if (!serviceStyle || !['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
         return c.json({ error: 'serviceStyle is required (at_home, at_center, or tele)' }, 400);
       }
+
+      const slotsMissing = await staffSlotTablesMissingResponse(c, { success: true, staff: [], total: 0 });
+      if (slotsMissing) return slotsMissing;
 
       // Resolve vendorId to canonical vendors.id so vendor_identity.id works
       let resolvedVendorId: string | null = null;
@@ -1624,6 +1657,8 @@ export function registerStaffEndpoints(app: Hono) {
    */
   app.get("/staff/:staffId/availability-slots", async (c) => {
     try {
+      const slotsMissing = await staffSlotTablesMissingResponse(c, { success: true, slots: [] });
+      if (slotsMissing) return slotsMissing;
       const { staffId } = c.req.param();
       const startDate = c.req.query('startDate') || new Date().toISOString().split('T')[0];
       const endDate = c.req.query('endDate');
@@ -1689,6 +1724,8 @@ export function registerStaffEndpoints(app: Hono) {
    */
   app.post("/staff/:staffId/availability-slots", async (c) => {
     try {
+      const slotsMissing = await staffSlotTablesMissingResponse(c);
+      if (slotsMissing) return slotsMissing;
       const { staffId } = c.req.param();
       const slotData = await c.req.json();
 
@@ -1766,6 +1803,8 @@ export function registerStaffEndpoints(app: Hono) {
    */
   app.put("/staff/:staffId/availability-slots/:slotId", async (c) => {
     try {
+      const slotsMissing = await staffSlotTablesMissingResponse(c);
+      if (slotsMissing) return slotsMissing;
       const { staffId, slotId } = c.req.param();
       const slotData = await c.req.json();
 
@@ -1830,6 +1869,8 @@ export function registerStaffEndpoints(app: Hono) {
    */
   app.delete("/staff/:staffId/availability-slots/:slotId", async (c) => {
     try {
+      const slotsMissing = await staffSlotTablesMissingResponse(c);
+      if (slotsMissing) return slotsMissing;
       const { staffId, slotId } = c.req.param();
 
       // Delete related records first (CASCADE should handle, but explicit for clarity)
@@ -1856,6 +1897,13 @@ export function registerStaffEndpoints(app: Hono) {
   app.get("/staff/:staffId/availability-by-style", async (c) => {
     try {
       const { staffId } = c.req.param();
+      const slotsMissing = await staffSlotTablesMissingResponse(c, {
+        success: true,
+        staffId,
+        availability: { at_home: [], tele: [], at_center: [] },
+        summary: { at_home: 0, tele: 0, at_center: 0 },
+      });
+      if (slotsMissing) return slotsMissing;
       const serviceStyle = c.req.query('serviceStyle'); // Optional filter
       const startDate = c.req.query('startDate') || new Date().toISOString().split('T')[0];
       const endDate = c.req.query('endDate');
@@ -1952,6 +2000,8 @@ export function registerStaffEndpoints(app: Hono) {
    */
   app.put("/staff/:staffId/availability-by-style", async (c) => {
     try {
+      const slotsMissing = await staffSlotTablesMissingResponse(c);
+      if (slotsMissing) return slotsMissing;
       const { staffId } = c.req.param();
       const body = await c.req.json();
 
