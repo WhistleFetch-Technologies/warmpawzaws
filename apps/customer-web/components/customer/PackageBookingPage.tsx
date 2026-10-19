@@ -14,21 +14,27 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
 import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
 import { openStandardRazorpayCheckout } from '@/lib/razorpay/open-standard-razorpay-checkout';
 import { toast } from 'sonner';
-import { Package, Check, ChevronRight, Info, Star, Users, Dog, Footprints, Receipt } from 'lucide-react';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 import {
   findDuplicateSlotIndices,
   hasDuplicatePackageSlotTimes,
   isTimeTakenByOtherSlot,
 } from '@/lib/ecommerce/package-slot-times';
-
-const scheduleFieldInputClassName =
-  'w-full min-w-0 max-w-full box-border rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500';
+import {
+  BrowsePackagesPanel,
+  MyPackagesPanel,
+  ReviewPackagePanel,
+  SchedulePackagePanel,
+  ServicePackagesShell,
+  WalkSessionBanner,
+  type OwnedPackageCard,
+} from '@/components/customer/packages/ServicePackagesExperience';
 
 function parseServiceMetadata(m: unknown): Record<string, unknown> {
   if (m == null) return {};
@@ -133,9 +139,16 @@ interface PackageBooking {
   packageName: string;
   totalSessions: number;
   completedSessions: number;
-  status: 'active' | 'completed' | 'cancelled';
+  remainingSessions: number;
+  unlimited?: boolean;
+  status: string;
   sessions: Session[];
   createdAt: string;
+  expiresAt?: string;
+  petName?: string;
+  petPhoto?: string;
+  petBreed?: string;
+  serviceLabel: string;
 }
 
 export interface WalkSessionIntent {
@@ -220,6 +233,9 @@ export function PackageBookingPage({
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Shown once after a verified purchase. Cleared on dismiss or when leaving My Packages. */
+  const [purchaseNotice, setPurchaseNotice] = useState<string | null>(null);
+  const router = useRouter();
   const [walletBalance, setWalletBalance] = useState(0);
   const [useWallet, setUseWallet] = useState(false);
   /** Server pricing quote (GST + platform fee) — same shape as UniversalPaymentPage. */
@@ -735,23 +751,42 @@ export function PackageBookingPage({
         rows.map((p) => {
           const total = Number(p.totalSessions ?? p.total_sessions ?? 0);
           const used = Number(p.sessionsUsed ?? p.sessions_used ?? 0);
-          const unlimited = p.isUnlimited || p.remainingSessions === 'unlimited';
+          const unlimited = Boolean(p.isUnlimited || p.remainingSessions === 'unlimited');
+          const rawRemaining = p.remainingSessions ?? p.remaining_sessions;
+          const remaining = unlimited
+            ? Number.MAX_SAFE_INTEGER
+            : Number(rawRemaining ?? Math.max(0, total - used));
+          const name = String(p.packageName || p.package_name || 'Package');
+          const style = String(p.serviceStyle || p.service_style || p.packageType || p.package_type || '');
+          const vendorName = String(p.vendorName || p.vendor_name || '');
+          const blob = `${name} ${style}`.toLowerCase();
+          const serviceLabel = blob.includes('walk')
+            ? 'Private walker'
+            : blob.includes('groom')
+              ? 'Grooming'
+              : blob.includes('train')
+                ? 'Training'
+                : blob.includes('vet') || blob.includes('clinic')
+                  ? 'Vet care'
+                  : blob.includes('nutri')
+                    ? 'Nutrition'
+                    : vendorName || 'Service package';
           return {
             id: String(p.id),
             packageId: String(p.packageId || p.id),
-            packageName: String(p.packageName || p.package_name || 'Package'),
-            totalSessions: unlimited ? Math.max(used, 1) : total || Math.max(used, 1),
-            completedSessions: unlimited ? used : used,
-            status: (p.status === 'cancelled' || p.status === 'canceled'
-              ? 'cancelled'
-              : p.status === 'exhausted' || p.status === 'expired'
-                ? 'completed'
-                : 'active') as
-              | 'active'
-              | 'completed'
-              | 'cancelled',
+            packageName: name,
+            totalSessions: unlimited ? Math.max(used, total, 0) : total,
+            completedSessions: used,
+            remainingSessions: Number.isFinite(remaining) ? remaining : 0,
+            unlimited,
+            status: String(p.status || p.computed_status || 'active'),
             sessions: [],
-            createdAt: p.expiresAt || p.expires_at || new Date().toISOString(),
+            createdAt: String(p.purchasedAt || p.purchased_at || p.createdAt || p.created_at || ''),
+            expiresAt: p.expiresAt || p.expires_at || undefined,
+            petName: p.petName || p.pet_name || undefined,
+            petPhoto: p.petPhoto || p.pet_photo || undefined,
+            petBreed: p.petBreed || p.pet_breed || undefined,
+            serviceLabel,
           };
         })
       );
@@ -1003,6 +1038,11 @@ export function PackageBookingPage({
                     throw new Error(confirm?.error || 'Purchase confirmation failed');
                   }
                   completed = true;
+                  const sessionCount =
+                    confirm.purchase?.remainingSessions ??
+                    confirm.purchase?.totalSessions ??
+                    selectedPackage.totalSessions;
+                  setPurchaseNotice(`Package purchased! ${sessionCount} sessions available.`);
                   toast.success(
                     confirm.message ||
                       `Package purchased — ${confirm.purchase?.totalSessions ?? selectedPackage.totalSessions} sessions`
@@ -1032,6 +1072,9 @@ export function PackageBookingPage({
           return;
         }
 
+        const sessionCount =
+          res.purchase?.remainingSessions ?? res.purchase?.totalSessions ?? selectedPackage.totalSessions;
+        setPurchaseNotice(`Package purchased! ${sessionCount} sessions available.`);
         toast.success(
           res.message ||
             `Package purchased — ${res.purchase?.totalSessions ?? selectedPackage.totalSessions} sessions`
@@ -1054,6 +1097,7 @@ export function PackageBookingPage({
         if (!res?.success) {
           throw new Error(res?.error || 'Purchase failed');
         }
+        setPurchaseNotice(res.message || 'Package purchased!');
         toast.success(res.message || 'Package purchased');
         await loadMyPackages();
         setView('my-packages');
@@ -1083,10 +1127,11 @@ export function PackageBookingPage({
     }
     if (view === 'schedule') {
       setView('browse');
-      setSelectedPackage(null);
+      setError(null);
       return;
     }
     if (view === 'my-packages') {
+      setPurchaseNotice(null);
       setView('browse');
       return;
     }
@@ -1099,557 +1144,190 @@ export function PackageBookingPage({
 
   if (loading && view === 'browse') {
     return (
-      <div className="flex min-h-screen min-h-[100dvh] items-center justify-center cw-header-safe-top cw-header-safe-x max-w-customer mx-auto w-full bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer items-center justify-center bg-[#FFF9F3] cw-header-safe-top">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[#FF6B0B]" />
       </div>
     );
   }
 
+  const sessionsPerDay = Math.max(1, Math.min(24, Number(selectedPackage?.sessionsPerDay) || 1));
+  const intervalDays = Math.max(1, Number(selectedPackage?.sessionIntervalDays) || 7);
+  const chosenPet = schedulePets.find((p) => p.id === chosenPetId);
+  const ownedCards: OwnedPackageCard[] = myPackages.map((pkg) => ({
+    id: pkg.id,
+    packageName: pkg.packageName,
+    serviceLabel: pkg.serviceLabel,
+    petName: pkg.petName,
+    petPhoto: pkg.petPhoto,
+    purchasedAt: pkg.createdAt || undefined,
+    expiresAt: pkg.expiresAt,
+    status: pkg.status,
+    totalSessions: pkg.totalSessions,
+    completedSessions: pkg.completedSessions,
+    remainingSessions: pkg.unlimited ? Number.MAX_SAFE_INTEGER : pkg.remainingSessions,
+    unlimited: pkg.unlimited,
+  }));
+
+  const reviewLines: Array<{ label: string; value: string; emphasize?: boolean }> = [];
+  if (selectedPackage?.vendorServiceId && priceQuote) {
+    reviewLines.push({
+      label: 'Service amount',
+      value: `₹${Math.round(priceQuote.basePrice).toLocaleString('en-IN')}`,
+    });
+    if ((priceQuote.discount ?? 0) > 0) {
+      reviewLines.push({
+        label: 'Discount',
+        value: `− ₹${Math.round(priceQuote.discount ?? 0).toLocaleString('en-IN')}`,
+      });
+    }
+    if ((priceQuote.taxBreakdown?.length ?? 0) > 0) {
+      for (const row of priceQuote.taxBreakdown ?? []) {
+        const rate = row.rate != null && Number(row.rate) > 0 ? ` (${Number(row.rate)}%)` : '';
+        reviewLines.push({
+          label: `${row.name || 'GST'}${rate}`,
+          value: `₹${Math.round(row.amount || 0).toLocaleString('en-IN')}`,
+        });
+      }
+    } else if (priceQuote.tax > 0) {
+      reviewLines.push({
+        label: 'GST / taxes',
+        value: `₹${Math.round(priceQuote.tax).toLocaleString('en-IN')}`,
+      });
+    }
+    if (Number(priceQuote.platformFee) > 0) {
+      reviewLines.push({
+        label: 'Platform fee',
+        value: `₹${Math.round(priceQuote.platformFee || 0).toLocaleString('en-IN')}`,
+      });
+    }
+    if (Number(priceQuote.convenienceFee) > 0) {
+      reviewLines.push({
+        label: 'Convenience fee',
+        value: `₹${Math.round(priceQuote.convenienceFee || 0).toLocaleString('en-IN')}`,
+      });
+    }
+    if (Number(priceQuote.deliveryFee) > 0) {
+      reviewLines.push({
+        label: 'Delivery fee',
+        value: `₹${Math.round(priceQuote.deliveryFee || 0).toLocaleString('en-IN')}`,
+      });
+    }
+  } else if (selectedPackage) {
+    reviewLines.push({
+      label: 'Package total',
+      value: `₹${selectedPackage.totalPrice.toLocaleString('en-IN')}`,
+    });
+  }
+
+  const payableAmount = selectedPackage?.vendorServiceId && priceQuote
+    ? Math.round(priceQuote.finalPrice)
+    : Math.round(selectedPackage?.totalPrice ?? 0);
+  const policyBody = [packagePolicy?.cancellationPolicy, packagePolicy?.refundPolicy]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join('\n\n');
+
   return (
-    <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto overflow-x-hidden bg-gray-50 cw-header-safe-top cw-header-safe-x pb-24">
-      {/* Header */}
-      <div className="bg-white rounded-xl p-4 shadow-sm mb-6">
-        {onBack && (
-          <button
-            type="button"
-            onClick={handleInternalBack}
-            className="mb-2 inline-flex min-h-11 min-w-11 items-center justify-start gap-2 rounded-lg px-1 text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-            aria-label="Go back"
-          >
-            <ChevronRight className="h-5 w-5 shrink-0 rotate-180" />
-            <span className="text-sm font-medium">Back</span>
-          </button>
-        )}
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Service Packages</h1>
-        <p className="text-sm text-gray-600">
-          Save more with multi-session packages
-        </p>
-      </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
-          {error}
-        </div>
-      )}
-
-      {walkSessionIntent && onContinueToChooseWalker && (
-        <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4 shadow-sm mb-6">
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-xl bg-white border border-orange-100 flex items-center justify-center shrink-0">
-              <Dog className="w-7 h-7 text-orange-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-orange-700 mb-1">Dog walking</p>
-              <h2 className="text-lg font-bold text-gray-900">{walkSessionIntent.serviceName}</h2>
-              <p className="text-sm text-gray-600 mt-1">
-                <span className="font-semibold text-orange-600">₹{walkSessionIntent.price}</span>
-                {' / walk · '}
-                {walkSessionIntent.duration} minutes
-              </p>
-              <p className="text-sm text-gray-600 mt-2">
-                Tap below to return to dog walking and pick a walker for this session.
-              </p>
-              <button
-                type="button"
-                onClick={onContinueToChooseWalker}
-                className="mt-4 w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
-              >
-                <Footprints className="w-5 h-5" />
-                Choose a walker
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* View Tabs */}
-      <div className="flex gap-2 mb-6">
-        <button
-          type="button"
-          onClick={() => setView('browse')}
-          className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-colors ${
-            view === 'browse'
-              ? 'bg-orange-500 text-white'
-              : 'bg-white text-gray-700 hover:bg-gray-50'
-          }`}
-        >
-          Browse Packages
-        </button>
-        <button
-          type="button"
-          onClick={() => setView('my-packages')}
-          className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-colors ${
-            view === 'my-packages'
-              ? 'bg-orange-500 text-white'
-              : 'bg-white text-gray-700 hover:bg-gray-50'
-          }`}
-        >
-          My Packages ({myPackages.length})
-        </button>
-      </div>
-
-      {/* Browse Packages View */}
+    <ServicePackagesShell
+      onBack={onBack ? handleInternalBack : undefined}
+      view={view}
+      packageCount={myPackages.length}
+      onBrowse={() => {
+        setPurchaseNotice(null);
+        setError(null);
+        setView('browse');
+      }}
+      onMyPackages={() => {
+        setError(null);
+        setView('my-packages');
+      }}
+      error={error}
+    >
       {view === 'browse' && (
-        <div className="space-y-4">
-          {packages.length === 0 ? (
-            <div className="bg-white rounded-xl p-8 text-center border border-gray-200 shadow-sm">
-              <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" aria-hidden />
-              <p className="text-gray-900 font-semibold mb-1">No packages available</p>
-              <p className="text-sm text-gray-600 max-w-sm mx-auto">
-                This provider has not published any multi-session packages yet. Check back later or choose
-                another service.
-              </p>
-            </div>
-          ) : null}
-          {packages.map((pkg) => {
-            const savings = pkg.discount || 0;
-            const regularPrice = pkg.pricePerSession * pkg.totalSessions;
-            
-            return (
-              <div
-                key={pkg.id}
-                className="bg-white rounded-xl p-4 shadow-sm border border-gray-200"
-              >
-                {pkg.popular && (
-                  <div className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-semibold mb-3">
-                    <Star className="w-3 h-3" />
-                    Popular
-                  </div>
-                )}
-
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 mb-1">{pkg.name}</h3>
-                    <p className="text-sm text-gray-600 mb-2">{pkg.description}</p>
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Users className="w-4 h-4 text-gray-400" />
-                      <span>{pkg.vendorName}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <div className="text-xs text-gray-600 mb-1">Sessions</div>
-                    <div className="font-semibold text-gray-900">{pkg.totalSessions}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-600 mb-1">Per Session</div>
-                    <div className="font-semibold text-gray-900">₹{pkg.pricePerSession}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-600 mb-1">Duration</div>
-                    <div className="font-semibold text-gray-900">{pkg.duration}m</div>
-                  </div>
-                </div>
-
-                {savings > 0 && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-semibold text-green-700">You Save ₹{savings}</div>
-                        <div className="text-xs text-green-600">Regular: <span className="cw-price-strike">₹{regularPrice}</span></div>
-                      </div>
-                      <div className="text-2xl font-bold text-green-700">₹{pkg.totalPrice}</div>
-                    </div>
-                  </div>
-                )}
-
-                {!savings && (
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm text-gray-600">Total Package Price</span>
-                    <span className="text-2xl font-bold text-gray-900">₹{pkg.totalPrice}</span>
-                  </div>
-                )}
-
-                <button
-                  onClick={() => handlePackageSelect(pkg)}
-                  className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
-                >
-                  Book Package
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        <BrowsePackagesPanel
+          packages={packages}
+          onBook={(id) => {
+            const pkg = packages.find((item) => item.id === id);
+            if (pkg) handlePackageSelect(pkg);
+          }}
+          walkBanner={
+            walkSessionIntent && onContinueToChooseWalker ? (
+              <WalkSessionBanner
+                serviceName={walkSessionIntent.serviceName}
+                price={walkSessionIntent.price}
+                duration={walkSessionIntent.duration}
+                onChoose={onContinueToChooseWalker}
+              />
+            ) : null
+          }
+        />
       )}
 
-      {/* Schedule Sessions View */}
       {view === 'schedule' && selectedPackage && (
-        <div className="min-w-0 space-y-6 overflow-x-hidden">
-          {/* Package Summary */}
-          <div className="bg-white rounded-xl p-4 shadow-sm">
-            <h3 className="font-bold text-gray-900 mb-3">{selectedPackage.name}</h3>
-            <p className="text-sm text-gray-800 mb-4 rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
-              <span className="font-semibold text-orange-800">
-                You get {selectedPackage.totalSessions}{' '}
-                {selectedPackage.totalSessions === 1 ? 'session' : 'sessions'}
-              </span>{' '}
-              with this package. You can book each session from your package later.
-            </p>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-sm text-gray-600">Sessions in package</span>
-              <span className="font-semibold text-gray-900">{selectedPackage.totalSessions}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Total Amount</span>
-              <span className="text-xl font-bold text-orange-600">₹{selectedPackage.totalPrice}</span>
-            </div>
-          </div>
-
-          {/* Pet selection */}
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
-              <Dog className="w-5 h-5 text-orange-500 shrink-0" />
-              Pet for this package
-            </h3>
-            <p className="text-xs text-gray-500 mb-3">Choose which pet this purchase is for.</p>
-            {petsLoading ? (
-              <div className="flex items-center gap-2 text-sm text-gray-600 py-2">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-orange-500" />
-                Loading your pets…
-              </div>
-            ) : schedulePets.length === 0 ? (
-              <p className="text-sm text-gray-600">
-                No pets found on your account. Add a pet from your profile, then return here to book.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {schedulePets.map((p) => {
-                  const selected = chosenPetId === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => pickPetAndRemember(p.id)}
-                      className={`w-full text-left rounded-lg border px-3 py-3 flex items-center gap-3 transition-colors ${
-                        selected
-                          ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-200'
-                          : 'border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span
-                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                          selected ? 'border-orange-500 bg-orange-500' : 'border-gray-300'
-                        }`}
-                      >
-                        {selected ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium text-gray-900">{p.name}</div>
-                        {(p.breed || p.species) && (
-                          <div className="text-xs text-gray-500 truncate">
-                            {[p.breed, p.species !== 'pet' ? p.species : null].filter(Boolean).join(' · ')}
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-blue-700">
-                <p className="font-semibold mb-1">
-                  {selectedPackage.vendorServiceId ? 'Session schedule (required)' : 'Starting session (optional)'}
-                </p>
-                <p>
-                  {selectedPackage.vendorServiceId ? (
-                    <>
-                      Pick the <strong>first day</strong> and{' '}
-                      {(Number(selectedPackage.sessionsPerDay) || 1) > 1 ? (
-                        <>
-                          <strong>{Number(selectedPackage.sessionsPerDay) || 1} time slots</strong> on your first
-                          day (multiple sessions that day). The next block of sessions uses the{' '}
-                          <strong>next calendar day</strong>, then the day after that, and so on — same times each
-                          day (e.g. sessions 1–2 on the 27th, 3–4 on the 28th, 5–6 on the 29th).
-                        </>
-                      ) : (
-                        <>
-                          the <strong>time</strong> for your visits. We repeat that time every{' '}
-                          <strong>{Number(selectedPackage.sessionIntervalDays) || 7} days</strong> for each
-                          remaining session.
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      Choose a date for your <strong>first</strong> session, or leave blank and schedule later
-                      after payment where allowed.
-                    </>
-                  )}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="min-w-0 space-y-4 overflow-hidden rounded-xl bg-white p-4 shadow-sm">
-            <div className="min-w-0">
-              <h3 className="mb-1 font-semibold text-gray-900">
-                {selectedPackage.vendorServiceId ? 'First session date' : 'First session date (optional)'}
-              </h3>
-              <p className="mb-3 text-xs text-gray-500">
-                {selectedPackage.vendorServiceId
-                  ? (Number(selectedPackage.sessionsPerDay) || 1) > 1
-                    ? 'Required — first calendar day for sessions 1–N; later sessions move forward one day per block with the same daily times.'
-                    : 'Required — later sessions repeat every calendar interval (e.g. weekly) at the same time.'
-                  : 'Optional for some package types.'}
-              </p>
-              <div className="warmpawz-date-field-wrap">
-                <input
-                  type="date"
-                  min={getMinDate()}
-                  value={startingSessionDate}
-                  onChange={(e) => {
-                    setStartingSessionDate(e.target.value);
-                    setError(null);
-                  }}
-                  className={scheduleFieldInputClassName}
-                />
-              </div>
-            </div>
-            {selectedPackage.vendorServiceId ? (
-              (Number(selectedPackage.sessionsPerDay) || 1) > 1 ? (
-                <div className="min-w-0 space-y-3">
-                  <h3 className="mb-1 font-semibold text-gray-900">
-                    Times on the first day ({Number(selectedPackage.sessionsPerDay) || 1} slots)
-                  </h3>
-                  <p className="mb-2 text-xs text-gray-500">
-                    Each group of {Number(selectedPackage.sessionsPerDay) || 1} sessions stays on one calendar day;
-                    the next group is the <strong>next day</strong>, until all {selectedPackage.totalSessions} sessions
-                    are scheduled. Each slot on the first day must be a <strong>different time</strong>.
-                  </p>
-                  {perDaySessionTimes.slice(0, Number(selectedPackage.sessionsPerDay) || 1).map((t, idx) => (
-                    <div key={idx} className="min-w-0">
-                      <label className="mb-1 block text-xs text-gray-600">Session slot {idx + 1}</label>
-                      <div className="warmpawz-time-field-wrap">
-                        <input
-                          type="time"
-                          value={t}
-                          onChange={(e) => handlePerDaySlotTimeChange(idx, e.target.value)}
-                          className={`${scheduleFieldInputClassName}${
-                            slotFieldHints[idx] ? ' border-red-400 focus:border-red-500 focus:ring-red-500' : ''
-                          }`}
-                          required
-                        />
-                      </div>
-                      {slotFieldHints[idx] ? (
-                        <p className="mt-1 text-xs text-red-600">{slotFieldHints[idx]}</p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="min-w-0">
-                  <h3 className="mb-1 font-semibold text-gray-900">Time for every session</h3>
-                  <p className="mb-3 text-xs text-gray-500">
-                    Same clock time every {Number(selectedPackage.sessionIntervalDays) || 7} days for all{' '}
-                    {selectedPackage.totalSessions} sessions.
-                  </p>
-                  <div className="warmpawz-time-field-wrap">
-                    <input
-                      type="time"
-                      value={startingSessionTime}
-                      onChange={(e) => {
-                        setStartingSessionTime(e.target.value);
-                        setError(null);
-                      }}
-                      className={scheduleFieldInputClassName}
-                      required
-                    />
-                  </div>
-                </div>
-              )
-            ) : null}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setView('browse')}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold transition-colors"
-            >
-              Back
-            </button>
-            <button
-              type="button"
-              onClick={continueToReview}
-              disabled={booking || !chosenPetId || !isScheduleStepReady()}
-              className="bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-            >
-              Continue to summary
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
+        <SchedulePackagePanel
+          name={selectedPackage.name}
+          totalSessions={selectedPackage.totalSessions}
+          totalPrice={selectedPackage.totalPrice}
+          vendorService={Boolean(selectedPackage.vendorServiceId)}
+          sessionsPerDay={sessionsPerDay}
+          intervalDays={intervalDays}
+          pets={schedulePets}
+          petsLoading={petsLoading}
+          selectedPetId={chosenPetId}
+          onSelectPet={pickPetAndRemember}
+          date={startingSessionDate}
+          minDate={getMinDate()}
+          onDate={(value) => {
+            setStartingSessionDate(value);
+            setError(null);
+          }}
+          times={perDaySessionTimes}
+          onTime={handlePerDaySlotTimeChange}
+          slotHints={slotFieldHints}
+          singleTime={startingSessionTime}
+          onSingleTime={(value) => {
+            setStartingSessionTime(value);
+            setError(null);
+          }}
+          onBack={() => {
+            setError(null);
+            setView('browse');
+          }}
+          onContinue={continueToReview}
+          canContinue={!booking && Boolean(chosenPetId) && isScheduleStepReady()}
+        />
       )}
 
-      {/* Booking summary — after schedule, before payment */}
       {view === 'review' && selectedPackage && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center gap-2 mb-3">
-              <Receipt className="w-5 h-5 text-orange-500 shrink-0" />
-              <h2 className="text-lg font-bold text-gray-900">Booking summary</h2>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">
-              {isWalletFullyCoveringReview
-                ? 'Review your package and confirm booking. No online payment is required.'
-                : 'Review your package and charges, then proceed to secure payment.'}
-            </p>
-
-            <div className="space-y-3 text-sm border-t border-gray-100 pt-3">
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-600">Package</span>
-                <span className="font-semibold text-gray-900 text-right">{selectedPackage.name}</span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-600">Pet</span>
-                <span className="font-medium text-gray-900 text-right">
-                  {schedulePets.find((p) => p.id === chosenPetId)?.name || '—'}
-                </span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-600">Sessions</span>
-                <span className="font-medium text-gray-900">{selectedPackage.totalSessions}</span>
-              </div>
-              {selectedPackage.vendorServiceId ? (
-                <>
-                  <div className="flex justify-between gap-2">
-                    <span className="text-gray-600">First day</span>
-                    <span className="font-medium text-gray-900 text-right">
-                      {formatDateLabel(startingSessionDate)}
-                    </span>
-                  </div>
-                  {(Number(selectedPackage.sessionsPerDay) || 1) > 1 ? (
-                    <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-2">
-                      <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                        Times on first day
-                      </div>
-                      {perDaySessionTimes
-                        .slice(0, Number(selectedPackage.sessionsPerDay) || 1)
-                        .map((t, idx) => (
-                          <div key={idx} className="flex justify-between text-sm">
-                            <span className="text-gray-600">Slot {idx + 1}</span>
-                            <span className="font-medium text-gray-900">{formatTimeDisplay(t)}</span>
-                          </div>
-                        ))}
-                      <p className="text-xs text-gray-500 pt-1">
-                        Next sessions use <strong>consecutive calendar days</strong> (same times each day).
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-gray-600">Time (all sessions)</span>
-                      <span className="font-medium text-gray-900">{formatTimeDisplay(startingSessionTime)}</span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="flex justify-between gap-2">
-                  <span className="text-gray-600">First session</span>
-                  <span className="font-medium text-gray-900 text-right">
-                    {formatDateLabel(startingSessionDate)}{' '}
-                    {startingSessionTime.trim()
-                      ? `· ${formatTimeDisplay(startingSessionTime)}`
-                      : ''}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-3">Price breakdown</h3>
-            {selectedPackage.vendorServiceId && quoteLoading ? (
-              <div className="flex items-center gap-2 text-sm text-gray-600 py-4">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-orange-500" />
-                Calculating taxes…
-              </div>
-            ) : selectedPackage.vendorServiceId && priceQuote ? (
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Service amount</span>
-                  <span className="font-medium text-gray-900">₹{Math.round(priceQuote.basePrice).toLocaleString('en-IN')}</span>
-                </div>
-                {(priceQuote.discount ?? 0) > 0 && (
-                  <div className="flex justify-between text-green-700">
-                    <span>Discount</span>
-                    <span>− ₹{Math.round(priceQuote.discount ?? 0).toLocaleString('en-IN')}</span>
-                  </div>
-                )}
-                {(priceQuote.taxBreakdown?.length ?? 0) > 0 ? (
-                  (priceQuote.taxBreakdown ?? []).map((row, i) => (
-                    <div key={i} className="flex justify-between text-gray-700">
-                      <span>
-                        {row.name || 'GST'}
-                        {row.rate != null && Number(row.rate) > 0 ? ` (${Number(row.rate)}%)` : ''}
-                      </span>
-                      <span>₹{Math.round(row.amount || 0).toLocaleString('en-IN')}</span>
-                    </div>
-                  ))
-                ) : priceQuote.tax > 0 ? (
-                  <div className="flex justify-between text-gray-700">
-                    <span>GST / taxes</span>
-                    <span>₹{Math.round(priceQuote.tax).toLocaleString('en-IN')}</span>
-                  </div>
-                ) : (
-                  <div className="flex justify-between text-gray-600">
-                    <span>GST / taxes</span>
-                    <span className="text-gray-500">Included or nil</span>
-                  </div>
-                )}
-                {/* Same fee categories as UniversalPaymentPage / normal bookings. */}
-                {Number(priceQuote.platformFee) > 0 && (
-                  <div className="flex justify-between text-gray-700 pt-2 border-t border-gray-100">
-                    <span>Platform fee</span>
-                    <span>₹{Math.round(priceQuote.platformFee || 0).toLocaleString('en-IN')}</span>
-                  </div>
-                )}
-                {Number(priceQuote.convenienceFee) > 0 && (
-                  <div className="flex justify-between text-gray-700">
-                    <span>Convenience fee</span>
-                    <span>₹{Math.round(priceQuote.convenienceFee || 0).toLocaleString('en-IN')}</span>
-                  </div>
-                )}
-                {Number(priceQuote.deliveryFee) > 0 && (
-                  <div className="flex justify-between text-gray-700">
-                    <span>Delivery fee</span>
-                    <span>₹{Math.round(priceQuote.deliveryFee || 0).toLocaleString('en-IN')}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-baseline pt-2 border-t border-gray-200">
-                  <span className="font-semibold text-gray-900">Total payable</span>
-                  <span className="text-xl font-bold text-orange-600">
-                    ₹{Math.round(priceQuote.finalPrice).toLocaleString('en-IN')}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Package total</span>
-                  <span className="font-semibold text-gray-900">
-                    ₹{selectedPackage.totalPrice.toLocaleString('en-IN')}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500">
-                  Detailed tax lines appear when available for your provider. Final amount is confirmed at payment.
-                </p>
-              </div>
-            )}
-
-            {canUseWalletInReview && (
-              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3">
-                <label className="flex items-start gap-2 cursor-pointer">
+        <ReviewPackagePanel
+          packageName={selectedPackage.name}
+          petName={chosenPet?.name || '—'}
+          petPhoto={chosenPet?.photo_url}
+          sessions={selectedPackage.totalSessions}
+          firstDayLabel={formatDateLabel(startingSessionDate)}
+          slots={
+            selectedPackage.vendorServiceId
+              ? sessionsPerDay > 1
+                ? perDaySessionTimes.slice(0, sessionsPerDay).map((time, idx) => ({
+                    label: `Slot ${idx + 1}`,
+                    time: formatTimeDisplay(time),
+                  }))
+                : [{ label: 'Time', time: formatTimeDisplay(startingSessionTime) }]
+              : []
+          }
+          consecutiveDays={Boolean(selectedPackage.vendorServiceId) && sessionsPerDay > 1}
+          quoteLoading={Boolean(selectedPackage.vendorServiceId) && quoteLoading}
+          lines={reviewLines}
+          totalLabel={`₹${payableAmount.toLocaleString('en-IN')}`}
+          razorpayNote={
+            useWallet
+              ? 'Wallet amount will be used first. Remaining amount will be charged on Razorpay.'
+              : 'This amount will be charged on Razorpay.'
+          }
+          wallet={
+            canUseWalletInReview ? (
+              <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-3">
+                <label className="flex items-start gap-2">
                   <input
                     type="checkbox"
                     className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
@@ -1657,212 +1335,59 @@ export function PackageBookingPage({
                     onChange={(e) => setUseWallet(e.target.checked)}
                     aria-label="Use wallet balance"
                   />
-                  <span className="text-sm text-gray-800">
+                  <span className="text-sm text-[#101B35]">
                     Use wallet balance (available ₹{Math.round(walletBalance).toLocaleString('en-IN')})
                   </span>
                 </label>
-                {useWallet && (
-                  <div className="mt-2 space-y-1 text-sm">
-                    <div className="flex justify-between text-gray-700">
+                {useWallet ? (
+                  <div className="mt-2 space-y-1 text-sm text-[#5C6578]">
+                    <div className="flex justify-between">
                       <span>Wallet applied</span>
-                      <span className="font-medium">− ₹{Math.round(reviewWalletToUse).toLocaleString('en-IN')}</span>
+                      <span>− ₹{Math.round(reviewWalletToUse).toLocaleString('en-IN')}</span>
                     </div>
-                    <div className="flex justify-between font-semibold text-gray-900">
+                    <div className="flex justify-between font-semibold text-[#101B35]">
                       <span>Razorpay payable</span>
                       <span>₹{Math.round(reviewRazorpayPayable).toLocaleString('en-IN')}</span>
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
-            )}
-
-            <p className="text-xs text-gray-500 mt-2">
-              {useWallet
-                ? 'Wallet amount will be used first. Remaining amount will be charged on Razorpay.'
-                : 'This amount will be charged on Razorpay.'}
-            </p>
-          </div>
-
-          {selectedPackage.vendorServiceId && (
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-              <h3 className="font-semibold text-gray-900 mb-2">Cancellation & refund policy</h3>
-              {packagePolicy?.cancellationPolicy || packagePolicy?.refundPolicy ? (
-                <div className="space-y-2 text-sm text-gray-700">
-                  {packagePolicy?.cancellationPolicy && (
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                        Cancellation
-                      </div>
-                      <p className="whitespace-pre-wrap leading-snug">
-                        {packagePolicy.cancellationPolicy}
-                      </p>
-                    </div>
-                  )}
-                  {packagePolicy?.refundPolicy && (
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                        Refund
-                      </div>
-                      <p className="whitespace-pre-wrap leading-snug">
-                        {packagePolicy.refundPolicy}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-600">
-                  Standard Warmpawz cancellation and refund terms apply for this package.
-                </p>
-              )}
-              <label className="mt-3 flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-                  checked={policyAccepted}
-                  onChange={(e) => setPolicyAccepted(e.target.checked)}
-                  aria-label="I have read and accept the cancellation and refund policy"
-                />
-                <span>
-                  I have read and agree to the cancellation and refund policy for this package.
-                </span>
-              </label>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setView('schedule');
-                setError(null);
-              }}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold transition-colors"
-            >
-              Back
-            </button>
-            <button
-              type="button"
-              onClick={createPackageBooking}
-              disabled={
-                booking ||
-                (Boolean(selectedPackage.vendorServiceId) && !policyAccepted)
-              }
-              title={
-                Boolean(selectedPackage.vendorServiceId) && !policyAccepted
-                  ? 'Accept the cancellation & refund policy to continue'
-                  : undefined
-              }
-              className="bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-            >
-              {booking ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-                  Processing…
-                </>
-              ) : (
-                <>
-                  {isWalletFullyCoveringReview
-                    ? 'Confirm booking'
-                    : reviewRazorpayPayable > 0.01
-                      ? `Proceed to payment (₹${Math.round(reviewRazorpayPayable).toLocaleString('en-IN')})`
-                      : 'Proceed to payment'}
-                  <ChevronRight className="w-5 h-5" />
-                </>
-              )}
-            </button>
-          </div>
-        </div>
+            ) : null
+          }
+          policyText={
+            policyBody || 'Standard Warmpawz cancellation and refund terms apply for this package.'
+          }
+          policyRequired={Boolean(selectedPackage.vendorServiceId)}
+          policyAccepted={policyAccepted}
+          onPolicy={setPolicyAccepted}
+          onBack={() => {
+            setView('schedule');
+            setError(null);
+          }}
+          onPay={createPackageBooking}
+          paying={booking}
+          payLabel={
+            isWalletFullyCoveringReview
+              ? 'Confirm booking'
+              : reviewRazorpayPayable > 0.01
+                ? `Proceed to payment (₹${Math.round(reviewRazorpayPayable).toLocaleString('en-IN')})`
+                : 'Proceed to payment'
+          }
+          payDisabled={Boolean(selectedPackage.vendorServiceId) && !policyAccepted}
+        />
       )}
 
-      {/* My Packages View */}
       {view === 'my-packages' && (
-        <div className="space-y-4">
-          {myPackages.length === 0 ? (
-            <div className="bg-white rounded-xl p-8 shadow-sm text-center">
-              <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="font-semibold text-gray-900 mb-2">No Active Packages</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                You don't have any active packages yet. Browse and book packages to get started!
-              </p>
-              <button
-                onClick={() => setView('browse')}
-                className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-              >
-                Browse Packages
-              </button>
-            </div>
-          ) : (
-            myPackages.map((pkg) => (
-              <div key={pkg.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-bold text-gray-900 mb-1">{pkg.packageName}</h3>
-                    <div className="text-sm text-gray-600">
-                      {pkg.completedSessions} of {pkg.totalSessions} sessions completed
-                    </div>
-                  </div>
-                  <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                    pkg.status === 'active' 
-                      ? 'bg-green-100 text-green-700'
-                      : pkg.status === 'cancelled'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-gray-100 text-gray-700'
-                  }`}>
-                    {pkg.status === 'active' ? 'In Progress' : pkg.status === 'cancelled' ? 'Cancelled' : 'Completed'}
-                  </div>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="mb-4">
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-orange-500 h-2 rounded-full transition-all"
-                      style={{
-                        width: `${(pkg.completedSessions / pkg.totalSessions) * 100}%`
-                      }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Sessions */}
-                <div className="space-y-2">
-                  {pkg.sessions.map((session) => (
-                    <div
-                      key={session.id}
-                      className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                          session.status === 'completed'
-                            ? 'bg-green-500'
-                            : session.status === 'scheduled'
-                            ? 'bg-blue-500'
-                            : 'bg-gray-300'
-                        }`}>
-                          {session.status === 'completed' && (
-                            <Check className="w-4 h-4 text-white" />
-                          )}
-                        </div>
-                        <span className="text-sm font-medium text-gray-900">
-                          Session {session.sessionNumber}
-                        </span>
-                      </div>
-                      
-                      {session.scheduledDate && (
-                        <span className="text-xs text-gray-600">
-                          {new Date(session.scheduledDate).toLocaleDateString('en-IN')}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        <MyPackagesPanel
+          packages={ownedCards}
+          notice={purchaseNotice}
+          onDismissNotice={() => setPurchaseNotice(null)}
+          onViewDetails={(id) => router.push(`/packages/${encodeURIComponent(id)}`)}
+        />
       )}
-    </div>
+    </ServicePackagesShell>
   );
 }
+
 
 export default PackageBookingPage;

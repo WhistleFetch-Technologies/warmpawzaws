@@ -48,9 +48,27 @@ export async function executecustomerPhonePackagesGet(c: Context) {
           v.business_name as vendor_name,
           v.phone as vendor_phone,
           (pp.total_sessions - pp.remaining_sessions) as sessions_used,
-          ${sqlPackagePurchaseComputedStatus('pp')} as computed_status
+          ${sqlPackagePurchaseComputedStatus('pp')} as computed_status,
+          pkg_pet.name as pet_name,
+          pkg_pet.breed as pet_breed,
+          pkg_pet.species as pet_species,
+          pkg_pet.profile_photo_url as pet_photo
         FROM package_purchases pp
         LEFT JOIN vendors v ON pp.vendor_id = v.id
+        LEFT JOIN LATERAL (
+          SELECT b.pet_id
+          FROM bookings b
+          WHERE b.package_purchase_id = pp.id
+            AND b.pet_id IS NOT NULL
+          ORDER BY
+            CASE
+              WHEN COALESCE(b.is_package_session, false) = false AND b.parent_booking_id IS NULL THEN 0
+              ELSE 1
+            END,
+            b.created_at ASC NULLS LAST
+          LIMIT 1
+        ) pkg_booking ON true
+        LEFT JOIN pets pkg_pet ON pkg_pet.id = pkg_booking.pet_id
         WHERE pp.customer_id = $1
         AND pp.status NOT IN ('cancelled')
         AND (
@@ -118,9 +136,14 @@ export async function executecustomerPhonePackagesGet(c: Context) {
           remainingSessions: pkg.unlimited_usage ? 'unlimited' : pkg.remaining_sessions,
           sessionsUsed: pkg.sessions_used || 0,
           expiresAt: pkg.expires_at,
+          purchasedAt: pkg.purchased_at || pkg.created_at || null,
           isUnlimited: pkg.unlimited_usage,
           packageType: pkg.package_type,
           status: pkg.computed_status,
+          petName: pkg.pet_name || null,
+          petBreed: pkg.pet_breed || null,
+          petSpecies: pkg.pet_species || null,
+          petPhoto: pkg.pet_photo || null,
           includedServices,
         };
       }));

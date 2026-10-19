@@ -62,8 +62,8 @@ function MyPackagesPageInner() {
   const header = (
     <ServiceDashboardHeader
       className="sticky top-0 z-40 shrink-0"
-      serviceName="My packages"
-      serviceSubtitle="Track your sessions, benefits and usage"
+      serviceName="Service Packages"
+      serviceSubtitle="Save more with multi-session packages"
       serviceIcon={Package2}
       stats={[]}
       onCloseToHome={() => router.push('/')}
