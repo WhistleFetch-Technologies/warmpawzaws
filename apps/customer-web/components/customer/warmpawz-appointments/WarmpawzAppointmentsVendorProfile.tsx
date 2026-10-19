@@ -55,6 +55,7 @@ import {
   partitionWapptListedServices,
   toWapptRequestedServices,
   toggleWapptOneOffSelection,
+  wapptProfileFooterCtas,
   wapptServiceSelectionKey,
 } from '@/lib/wappt-requested-services';
 import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
@@ -230,6 +231,11 @@ export function WarmpawzAppointmentsVendorProfile({
   );
 
   const isTeleMarketplace = serviceStyle === 'tele';
+  const footerCtas = wapptProfileFooterCtas({
+    isTeleMarketplace,
+    hasPackages: cataloguePackages.length > 0,
+    activeTab,
+  });
   const isHomeMenu = isWapptHomeStyle(serviceStyle);
   const { appointmentFee } = useWapptAppointmentBooking({
     appointmentsMode: !isTeleMarketplace,
@@ -495,7 +501,7 @@ export function WarmpawzAppointmentsVendorProfile({
           </div>
         )}
 
-        <div className={`px-4 ${cataloguePackages.length > 0 && !isTeleMarketplace ? 'pb-44' : 'pb-32'}`}>
+        <div className={`px-4 ${footerCtas.showSlot && footerCtas.showPackages ? 'pb-44' : 'pb-32'}`}>
           <div className="relative z-10 -mt-6 mb-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="mb-4">
               <h1 className="mb-2 text-2xl font-bold text-gray-900">{providerName}</h1>
@@ -906,11 +912,11 @@ export function WarmpawzAppointmentsVendorProfile({
         </div>
       </div>
 
-      {!isTeleMarketplace || cataloguePackages.length > 0 ? (
+      {footerCtas.showSlot || footerCtas.showPackages ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
           <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] shadow-lg">
             <div className="space-y-2 p-4">
-              {!isTeleMarketplace && appointmentFee != null && appointmentFee > 0 ? (
+              {footerCtas.showSlot && appointmentFee != null && appointmentFee > 0 ? (
                 <p className="text-center text-sm text-gray-700">
                   Appointment fee{' '}
                   <span className="font-semibold text-[#FF8C42]">
@@ -921,7 +927,7 @@ export function WarmpawzAppointmentsVendorProfile({
                   ) : null}
                 </p>
               ) : null}
-              {!isTeleMarketplace ? (
+              {footerCtas.showSlot ? (
                 <Button
                   onClick={handleBookAppointment}
                   className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] sm:text-lg"
@@ -932,7 +938,7 @@ export function WarmpawzAppointmentsVendorProfile({
                     : 'Select Slot for Appointment'}
                 </Button>
               ) : null}
-              {cataloguePackages.length > 0 ? (
+              {footerCtas.showPackages ? (
                 <Button
                   onClick={handleBookPackages}
                   variant="outline"

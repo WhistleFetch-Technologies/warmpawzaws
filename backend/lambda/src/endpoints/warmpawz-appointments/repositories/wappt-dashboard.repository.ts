@@ -2,6 +2,7 @@ import { query } from '../../../database/rds-connection';
 import { PUBLISHED } from '../constants/publish-status';
 import { resolveMerchantDisplayName } from '../shared/merchant/merchant-display-name.resolver';
 import { WAPPT_BOOKING_MODE } from '../shared/wappt-booking-preflight';
+import { WAPPT_SETTLED_PAYMENT_SQL } from '../shared/wappt-settled-booking';
 
 /** SQL fragment: bookings that belong to Warmpawz Appointments (tagged or catalogue fee match). */
 const WAPPT_BOOKING_FILTER_SQL = `
@@ -85,10 +86,7 @@ async function fetchWapptAppointmentRevenue(): Promise<number> {
        FROM bookings b
        ${WAPPT_CATALOGUE_JOIN_SQL}
        WHERE ${WAPPT_BOOKING_FILTER_SQL}
-         AND (
-           LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed')
-           OR LOWER(COALESCE(b.status, '')) IN ('confirmed', 'completed', 'in_progress')
-         )`,
+         ${WAPPT_SETTLED_PAYMENT_SQL}`,
     );
     return Number(revenueRes.rows[0]?.total_revenue ?? 0);
   } catch (err: unknown) {
@@ -141,7 +139,8 @@ export async function listWapptAdminBookings(params: {
         `SELECT COUNT(*)::int AS total
          FROM bookings b
          ${WAPPT_CATALOGUE_JOIN_SQL}
-         WHERE ${WAPPT_BOOKING_FILTER_SQL}`,
+         WHERE ${WAPPT_BOOKING_FILTER_SQL}
+           ${WAPPT_SETTLED_PAYMENT_SQL}`,
       ),
       query(
         `SELECT
@@ -170,6 +169,7 @@ export async function listWapptAdminBookings(params: {
            LIMIT 1
          ) p ON true
          WHERE ${WAPPT_BOOKING_FILTER_SQL}
+           ${WAPPT_SETTLED_PAYMENT_SQL}
          ORDER BY b.created_at DESC
          LIMIT $1 OFFSET $2`,
         [pageSize, offset],

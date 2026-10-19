@@ -5,6 +5,7 @@ import {
   partitionWapptListedServices,
   toWapptRequestedServices,
   toggleWapptOneOffSelection,
+  wapptProfileFooterCtas,
   wapptShowsServicePrice,
 } from '@/lib/wappt-requested-services';
 
@@ -71,6 +72,30 @@ describe('wappt requested services', () => {
     expect(next.has('pkg-1')).toBe(false);
     const selected = toggleWapptOneOffSelection(new Set(), 'svc-bath', [oneOff]);
     expect(selected.has('svc-bath')).toBe(true);
+  });
+
+  it('keeps one footer action after the customer picks packages or a slot', () => {
+    expect(
+      wapptProfileFooterCtas({
+        isTeleMarketplace: false,
+        hasPackages: true,
+        activeTab: 'overview',
+      }),
+    ).toEqual({ showSlot: true, showPackages: true });
+    expect(
+      wapptProfileFooterCtas({
+        isTeleMarketplace: false,
+        hasPackages: true,
+        activeTab: 'packages',
+      }),
+    ).toEqual({ showSlot: false, showPackages: true });
+    expect(
+      wapptProfileFooterCtas({
+        isTeleMarketplace: false,
+        hasPackages: true,
+        activeTab: 'services',
+      }),
+    ).toEqual({ showSlot: true, showPackages: false });
   });
 
   it('Select Slot nav includes selectedServices and appointmentsMode', () => {

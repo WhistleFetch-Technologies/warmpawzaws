@@ -102,3 +102,15 @@ export function toggleWapptOneOffSelection(
   else next.add(tid);
   return next;
 }
+
+/** Overview keeps both actions. Packages hides Select Slot. Services hides Book Packages. */
+export function wapptProfileFooterCtas(opts: {
+  isTeleMarketplace: boolean;
+  hasPackages: boolean;
+  activeTab: string;
+}): { showSlot: boolean; showPackages: boolean } {
+  return {
+    showSlot: !opts.isTeleMarketplace && opts.activeTab !== 'packages',
+    showPackages: opts.hasPackages && opts.activeTab !== 'services',
+  };
+}
