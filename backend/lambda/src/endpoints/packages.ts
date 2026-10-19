@@ -25,6 +25,7 @@ import {
   type SqlClient,
 } from '../utils/package-session-sync';
 import { sqlPackagePurchaseHasBookableSlot } from '../utils/package-session-eligibility';
+import { soloPackageCreateBlockReason } from '../utils/solo-vendor-package-access';
 
 export function registerPackageEndpoints(app: Hono) {
   /**
@@ -560,11 +561,8 @@ export function registerPackageEndpoints(app: Hono) {
         return c.json({ error: 'Vendor ID, name, and price are required' }, 400);
       }
 
-      // ✅ SOLO VENDOR RESTRICTION: Solo vendors cannot create packages
-      // ✅ EXCEPTION: Solo trainers, walkers, and sitters CAN create SESSION packages only
       const vendorCheck = await select('vendors', { id: vendorId });
       if (vendorCheck.length > 0 && vendorCheck[0].vendor_type === 'solo') {
-        // Get vendor role to check if trainer/walker/sitter
         let roleName = '';
         if (vendorCheck[0].role_id) {
           const roles = await select('roles', { id: vendorCheck[0].role_id });
@@ -572,17 +570,11 @@ export function registerPackageEndpoints(app: Hono) {
             roleName = (roles[0].name || '').toLowerCase();
           }
         }
-        
-        // Only trainers, walkers, sitters, and groomers can create session packages as solo providers (solo trainer, solo groomer)
-        const allowedSoloRoles = ['pet_trainer', 'trainer', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer'];
-        const isAllowedSoloRole = allowedSoloRoles.some(role => roleName.includes(role.replace('pet_', '')));
-        
-        if (!isAllowedSoloRole) {
-          return c.json({ error: 'Solo vendors cannot create packages. Only solo trainers, walkers, sitters, and groomers can create session packages.' }, 403);
+        const blockReason = soloPackageCreateBlockReason(roleName);
+        if (blockReason) {
+          return c.json({ error: blockReason }, 403);
         }
-        
-        // Solo trainers/walkers/sitters can only create 'session' type packages
-        console.log(`[Packages] Solo ${roleName} creating session package`);
+        console.log(`[Packages] Solo ${roleName || 'vendor'} creating package`);
       }
 
       const newPackage = await insert('service_packages', {
@@ -696,8 +688,6 @@ export function registerPackageEndpoints(app: Hono) {
         return c.json({ error: 'Invalid vendor ID format' }, 400);
       }
 
-      // ✅ SOLO VENDOR RESTRICTION: Solo vendors cannot create packages
-      // ✅ EXCEPTION: Solo trainers, walkers, and sitters CAN create SESSION packages only
       const vendorCheck = await select('vendors', { id: vendorId });
       if (vendorCheck.length === 0) {
         return c.json({ error: 'Vendor not found' }, 404);
@@ -707,7 +697,6 @@ export function registerPackageEndpoints(app: Hono) {
                            vendorCheck[0].vendor_configuration === 'solo';
       
       if (isSoloVendor) {
-        // Get vendor role to check if trainer/walker/sitter
         let roleName = '';
         if (vendorCheck[0].role_id) {
           const roles = await select('roles', { id: vendorCheck[0].role_id });
@@ -715,28 +704,12 @@ export function registerPackageEndpoints(app: Hono) {
             roleName = (roles[0].name || '').toLowerCase();
           }
         }
-        
-        // Only trainers, walkers, sitters, and groomers can create session packages as solo providers (solo trainer, solo groomer)
-        const allowedSoloRoles = ['trainer', 'walker', 'sitter', 'groomer'];
-        const isAllowedSoloRole = allowedSoloRoles.some(role => roleName.includes(role));
-        
-        if (!isAllowedSoloRole) {
-          return c.json({ 
-            error: 'Solo vendors cannot create packages. Only solo trainers, walkers, sitters, and groomers can create session packages.',
-            hint: 'Business accounts can create all package types.'
-          }, 403);
-        }
-        
-        // Validate that solo trainers/walkers/sitters can only create 'session' type packages
         const requestedPackageType = packageType || serviceType || 'session';
-        if (requestedPackageType !== 'session') {
-          return c.json({ 
-            error: `Solo trainers/walkers/sitters can only create session packages. Requested type: ${requestedPackageType}`,
-            allowedType: 'session'
-          }, 403);
+        const blockReason = soloPackageCreateBlockReason(roleName, requestedPackageType);
+        if (blockReason) {
+          return c.json({ error: blockReason }, 403);
         }
-        
-        console.log(`[Packages] Solo ${roleName} creating session package: ${finalName}`);
+        console.log(`[Packages] Solo ${roleName || 'vendor'} creating package: ${finalName}`);
       }
 
       // Extract service IDs from includedServices array if provided

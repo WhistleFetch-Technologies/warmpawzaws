@@ -22,6 +22,7 @@
 
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { vendorCanCreatePackages } from '@/lib/vendor-package-access';
 import { 
   Plus, Save, X, AlertCircle, Clock, IndianRupee, Package, FileText,
   CheckCircle, Tag, Info, ArrowLeft, Sparkles, Calendar, Users, Percent,
@@ -434,22 +435,17 @@ export function VendorCustomServiceCreationEnhanced({
     return roleName.includes('trainer') || roleName.includes('walker') || roleName.includes('sitter') || roleName.includes('groomer');
   }, [vendorData]);
   
-  // ✅ Solo trainers/walkers/sitters CAN create session packages
-  // Other solo providers cannot create any packages
-  const canCreateSessionPackage = !isSoloProvider || isTrainerWalkerSitter;
+  // Solo and business vendors can create packages (vet, nutritionist, groomer, and the rest).
+  const canCreateSessionPackage = vendorCanCreatePackages(isSoloProvider);
   
   // ✅ Refetch specializations when create modal opens (to get latest from Catalog > Categories)
   useEffect(() => {
     if (showCreateDialog) setSpecRefreshKey((k) => k + 1);
   }, [showCreateDialog]);
 
-  // ✅ FIX: Ensure non-trainer/walker/sitter solo providers cannot create packages
+  // Solo trainers/walkers/sitters/groomers stay on session packages. Other solos can use the same package types as a business account.
   useEffect(() => {
     if (editingServiceId) return;
-    if (isSoloProvider && !isTrainerWalkerSitter && isPackage) {
-      setIsPackage(false);
-    }
-    // Force session package type for solo trainers/walkers/sitters
     if (isSoloProvider && isTrainerWalkerSitter && isPackage && packageType !== 'session') {
       setPackageType('session');
     }
@@ -1454,8 +1450,7 @@ export function VendorCustomServiceCreationEnhanced({
             )}
 
             {/* Is Package Toggle */}
-            {/* ✅ Solo trainers/walkers/sitters CAN create session packages */}
-            {/* ✅ Other solo providers cannot create packages - only custom services */}
+            {/* Package toggle is available for solo and business vendors. */}
             {canCreateSessionPackage && (
               <div className="flex items-center justify-between py-2 border-y border-gray-200">
                 <div>
@@ -1477,16 +1472,6 @@ export function VendorCustomServiceCreationEnhanced({
                   onCheckedChange={setIsPackage}
                   disabled={Boolean(editingServiceId)}
                 />
-              </div>
-            )}
-            
-            {/* Solo Provider Info - For non-trainer/walker/sitter */}
-            {isSoloProvider && !isTrainerWalkerSitter && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 my-2">
-                <p className="text-xs text-blue-800">
-                  <span className="font-semibold">💡 Note:</span> As a solo provider, you can create custom services. 
-                  Package creation is available for business accounts only.
-                </p>
               </div>
             )}
             

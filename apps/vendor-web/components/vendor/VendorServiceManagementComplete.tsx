@@ -10,6 +10,7 @@ import { VendorServiceConfigurationScreen } from './VendorServiceConfigurationSc
 import { VendorCustomServiceCreationEnhanced as VendorCustomServiceCreation } from './VendorCustomServiceCreationEnhanced'; // ✅ ENHANCED: Role-based custom services
 import { VendorServiceCatalogView } from './VendorServiceCatalogView';
 import { getVendorRoleId, hasVendorRole, filterTeleForBehavioristCenterSoloVendorWeb } from '@/lib/vendor-utils';
+import { vendorCanCreatePackages } from '@/lib/vendor-package-access';
 import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 import CapabilityHelper from '@/lib/capability-helper';
@@ -84,15 +85,8 @@ export function VendorServiceManagementComplete({
   const finalizeAllowedStyles = (styles: ServiceStyle[]): ServiceStyle[] =>
     restrictPetInsuranceToTeleOnly(filterTeleForBehavioristCenterSoloVendorWeb(vendorData, styles));
   
-  // ✅ NEW: Check if trainer/walker/sitter who can create session packages even as solo (NOT groomer/vet)
-  const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter']);
   const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
-  // Solo groomer and solo vet: custom services YES, custom packages NO
-  const isSoloGroomer = isSoloProvider && hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);
-  const isSoloVet = isSoloProvider && hasVendorRole(vendorData, ['veterinarian', 'vet', 'vet_solo']);
-  
-  // ✅ Solo trainers/walkers/sitters CAN create session packages; solo groomer/vet cannot
-  const canCreatePackages = (!isSoloProvider || (isTrainerWalkerSitter && !isSoloGroomer && !isSoloVet));
+  const canCreatePackages = vendorCanCreatePackages(isSoloProvider);
 
   // ✅ FIX: Add ref to prevent multiple simultaneous calls
   const loadingRef = useRef(false);
@@ -433,13 +427,11 @@ export function VendorServiceManagementComplete({
     );
   }
 
-  // ✅ NEW: Check if vendor can create custom services (capability-based + solo groomer/vet always)
-  // Solo groomer and solo vet always get custom services (packages remain disabled for them)
+  // Custom services for capability roles and every solo vendor. The package toggle lives on that screen.
   const canCreateCustomServices =
     capabilities.custom_services ||
     capabilities.customServices ||
-    isSoloGroomer ||
-    isSoloVet ||
+    isSoloProvider ||
     isPetInsurance ||
     false;
 
@@ -580,7 +572,7 @@ export function VendorServiceManagementComplete({
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
               <p className="text-xs text-blue-800 leading-relaxed">
                 <span className="font-semibold">💡 Tip:</span> Tap a service type above to enable, configure pricing, and publish services. 
-                {canCreateCustomServices && ' You can also create custom services tailored to your expertise.'}
+                {canCreateCustomServices && canCreatePackages && ' You can also create custom services and packages tailored to your expertise.'}
               </p>
             </div>
           </div>

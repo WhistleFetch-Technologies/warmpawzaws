@@ -10,6 +10,7 @@ import { Card } from '../../ui/card';
 import { Switch } from '../../ui/switch';
 import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
 import { hasVendorRole } from '@/lib/vendor-utils';
+import { vendorCanCreatePackages } from '@/lib/vendor-package-access';
 import { toast } from 'sonner';
 
 interface Service {
@@ -97,15 +98,9 @@ export function CreatePackageFlow({
   // ✅ Check if this is a trainer/walker/sitter/groomer who CAN create session packages as solo (solo trainer, solo groomer)
   const isTrainerWalkerSitter = vendorData ? hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']) : false;
   
-  // ✅ Solo trainers/walkers/sitters CAN create session packages
-  // Business accounts with package capability CAN create all packages
-  const canCreatePackages = hasPackageCapability || isTrainerWalkerSitter || !isSoloVendor;
+  const canCreatePackages = vendorCanCreatePackages(isSoloVendor) && (isSoloVendor || hasPackageCapability || isTrainerWalkerSitter);
   
-  // ✅ Block if: solo vendor AND NOT a trainer/walker/sitter
-  const shouldBlockAccess = isSoloVendor && !isTrainerWalkerSitter;
-  
-  // ✅ Show access denied if no capability and not a trainer/walker/sitter, OR blocked solo vendor
-  if (!capsLoading && (shouldBlockAccess || (!hasPackageCapability && !isTrainerWalkerSitter))) {
+  if (!capsLoading && !canCreatePackages) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white flex flex-col items-center justify-center p-6">
         <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
@@ -114,10 +109,7 @@ export function CreatePackageFlow({
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Package Creation Not Available</h2>
           <p className="text-gray-600 mb-6">
-            {shouldBlockAccess
-              ? 'Solo providers can create custom services but not packages. Solo trainers, walkers, sitters, and groomers can create session packages.'
-              : 'Package creation is only available for business accounts with package management capability enabled.'
-            }
+            Package creation is only available for accounts with package management enabled.
           </p>
           <Button onClick={onBack} className="w-full bg-orange-500 hover:bg-orange-600 text-white">
             <ArrowLeft className="w-4 h-4 mr-2" />
