@@ -27,8 +27,26 @@ export interface InsuranceVendorOption {
 }
 
 export interface InsuranceBookingChoice {
+  planId: string;
   vendor: InsuranceVendorOption;
   slot: TeleSlot;
+}
+
+interface PlanChoice {
+  id: string;
+  companyName: string;
+  name: string;
+}
+
+function formatNextAvailability(label: string | null): string {
+  if (!label) return 'Next: check availability';
+  const match = /^(.*)\s(\d{1,2}):(\d{2})$/.exec(label.trim());
+  if (!match) return `Next: ${label}`;
+  let hour = Number(match[2]);
+  const suffix = hour >= 12 ? 'pm' : 'am';
+  hour = hour % 12 || 12;
+  const clock = match[3] === '00' ? String(hour) : `${hour}:${match[3]}`;
+  return `Next: ${match[1]} ${clock} ${suffix}`;
 }
 
 function optionLabel(value: unknown): string {
@@ -78,16 +96,27 @@ export function PlanDetail({
   onBack: () => void;
   onBookTele: (choice: InsuranceBookingChoice) => void;
 }) {
-  const [planName, setPlanName] = useState('');
+  const [plans, setPlans] = useState<PlanChoice[]>([]);
+  const [activePlanId, setActivePlanId] = useState(planId);
   const [companyName, setCompanyName] = useState('');
   const [vendors, setVendors] = useState<InsuranceVendorOption[]>([]);
-  const [coverOptions, setCoverOptions] = useState<string[]>([]);
   const [sumInsuredOptions, setSumInsuredOptions] = useState<string[]>([]);
   const [copayOptions, setCopayOptions] = useState<string[]>([]);
   const [coverType, setCoverType] = useState('');
   const [sumInsured, setSumInsured] = useState('');
   const [copay, setCopay] = useState('');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    apiClient
+      .get<{ data?: { plans?: PlanChoice[] } }>('/customer/insurance/plans')
+      .then((res) => setPlans(res.data?.plans || []))
+      .catch(() => setPlans([]));
+  }, []);
+
+  useEffect(() => {
+    setActivePlanId(planId);
+  }, [planId]);
 
   useEffect(() => {
     apiClient
@@ -99,36 +128,39 @@ export function PlanDetail({
           sumInsuredOptions?: unknown[];
           copayOptions?: unknown[];
         };
-      }>(`/customer/insurance/plans/${planId}`)
+      }>(`/customer/insurance/plans/${activePlanId}`)
       .then((res) => {
         const covers = (res.data?.coverOptions || []).map(optionLabel).filter(Boolean);
         const sums = (res.data?.sumInsuredOptions || []).map(optionLabel).filter(Boolean);
         const copays = (res.data?.copayOptions || []).map(optionLabel).filter(Boolean);
-        setPlanName(res.data?.plan?.name || 'Policy');
         setCompanyName(res.data?.plan?.companyName || '');
         setVendors(res.data?.vendors || []);
-        setCoverOptions(covers);
         setSumInsuredOptions(sums);
         setCopayOptions(copays);
-        setCoverType(covers.length === 1 ? covers[0] : '');
+        setCoverType(covers[0] || '');
         setSumInsured(sums.length === 1 ? sums[0] : '');
         setCopay(copays.length === 1 ? copays[0] : '');
       })
       .catch(() => setError('This policy is not available.'));
-  }, [planId]);
+  }, [activePlanId]);
 
+  const companies = [...new Set(plans.map((plan) => plan.companyName).filter(Boolean))];
+  const companyPlans = plans.filter((plan) => plan.companyName === companyName);
   const choicesReady =
-    (coverOptions.length === 0 || Boolean(coverType)) &&
+    Boolean(activePlanId) &&
+    Boolean(companyName) &&
     (sumInsuredOptions.length === 0 || Boolean(sumInsured)) &&
     (copayOptions.length === 0 || Boolean(copay));
 
-  const book = (vendor: InsuranceVendorOption, slot: TeleSlot) => {
-    if (!choicesReady || !vendor.teleService) return;
+  const book = (vendor: InsuranceVendorOption) => {
+    const slot = vendor.slots[0];
+    if (!choicesReady || !vendor.teleService || !slot) return;
+    const typeName = companyPlans.find((plan) => plan.id === activePlanId)?.name || coverType;
     window.sessionStorage.setItem(
       'warmpawz-insurance-consult',
-      JSON.stringify({ planId, companyName, coverType, sumInsured, copay }),
+      JSON.stringify({ planId: activePlanId, companyName, coverType: typeName || coverType, sumInsured, copay }),
     );
-    onBookTele({ vendor, slot });
+    onBookTele({ planId: activePlanId, vendor, slot });
   };
 
   return (
@@ -142,13 +174,40 @@ export function PlanDetail({
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Company</p>
-        <h1 className="text-xl font-bold">{companyName || 'Insurance company'}</h1>
-        <p className="mt-0.5 text-sm text-white/90">{planName}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Consultation</p>
+        <h1 className="text-xl font-bold">{companyName || 'Choose a company'}</h1>
       </header>
       <div className="space-y-4 px-4 py-4 pb-28">
         {error ? <p className="text-sm text-gray-600">{error}</p> : null}
-        <ChoiceSelect label="Type of insurance" options={coverOptions} value={coverType} onChange={setCoverType} />
+        <label className="block text-sm font-medium text-gray-800">
+          Company
+          <select
+            className="mt-1 w-full rounded-xl border border-orange-100 bg-white px-3 py-2"
+            value={companyName}
+            onChange={(event) => {
+              const nextCompany = event.target.value;
+              const nextPlan = plans.find((plan) => plan.companyName === nextCompany);
+              setCompanyName(nextCompany);
+              if (nextPlan) setActivePlanId(nextPlan.id);
+            }}
+          >
+            {companies.map((company) => (
+              <option key={company} value={company}>{company}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm font-medium text-gray-800">
+          Type of insurance
+          <select
+            className="mt-1 w-full rounded-xl border border-orange-100 bg-white px-3 py-2"
+            value={activePlanId}
+            onChange={(event) => setActivePlanId(event.target.value)}
+          >
+            {companyPlans.map((plan) => (
+              <option key={plan.id} value={plan.id}>{plan.name}</option>
+            ))}
+          </select>
+        </label>
         <ChoiceSelect label="Sum insured" options={sumInsuredOptions} value={sumInsured} onChange={setSumInsured} />
         <ChoiceSelect label="Copay" options={copayOptions} value={copay} onChange={setCopay} />
 
@@ -163,23 +222,15 @@ export function PlanDetail({
               <article key={vendor.vendorId} className="rounded-2xl border border-orange-100 bg-white p-4">
                 <h3 className="text-sm font-semibold text-gray-900">{vendor.name}</h3>
                 <p className="text-xs text-gray-500">{vendor.teleService?.name || 'Tele Consultation'}</p>
-                {vendor.slots.length === 0 ? (
-                  <p className="mt-2 text-xs text-gray-500">No upcoming tele slot.</p>
-                ) : (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {vendor.slots.map((slot) => (
-                      <button
-                        key={`${vendor.vendorId}-${slot.date}-${slot.time}`}
-                        type="button"
-                        disabled={!choicesReady || !vendor.teleService}
-                        className="rounded-full border border-orange-200 px-3 py-1.5 text-xs font-semibold text-[#FF8C42] disabled:border-slate-200 disabled:text-slate-400"
-                        onClick={() => book(vendor, slot)}
-                      >
-                        {slot.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <p className="mt-2 text-sm font-semibold text-[#FF8C42]">{formatNextAvailability(vendor.nextTeleSlot || vendor.slots[0]?.label || null)}</p>
+                <button
+                  type="button"
+                  disabled={!choicesReady || !vendor.teleService || vendor.slots.length === 0}
+                  className="mt-3 flex h-11 w-full items-center justify-center rounded-2xl bg-[#FF8C42] text-sm font-bold text-white disabled:bg-slate-300"
+                  onClick={() => book(vendor)}
+                >
+                  Book tele consultation
+                </button>
                 {!vendor.teleService ? (
                   <p className="mt-2 text-xs text-gray-500">Tele Consultation is not enabled for this provider.</p>
                 ) : null}

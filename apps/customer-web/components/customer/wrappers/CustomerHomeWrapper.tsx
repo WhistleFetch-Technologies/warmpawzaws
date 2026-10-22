@@ -4822,7 +4822,7 @@ export function CustomerHomeWrapper({
             bookingDate: choice.slot.date,
             bookingTime: choice.slot.time,
             category: 'insurance',
-            insurancePlanId: planId,
+            insurancePlanId: choice.planId,
             appointmentsMode: false,
             profileBackScreen: 'insurance_plan',
           });

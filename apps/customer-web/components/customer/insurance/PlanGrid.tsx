@@ -43,6 +43,7 @@ export function PlanGrid({
   const [plans, setPlans] = useState<InsurancePlanCard[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState<PolicyDetailData | null>(null);
   const [detailError, setDetailError] = useState('');
 
@@ -50,7 +51,9 @@ export function PlanGrid({
     apiClient
       .get<{ data?: { plans?: InsurancePlanCard[] } }>('/customer/insurance/plans')
       .then((res) => {
-        setPlans(res.data?.plans || []);
+        const next = res.data?.plans || [];
+        setPlans(next);
+        setSelectedId((current) => current || next[0]?.id || '');
       })
       .catch(() => setError('Plans are not available right now.'))
       .finally(() => setLoading(false));
@@ -88,7 +91,6 @@ export function PlanGrid({
       <PolicyDetailPanel
         detail={detail}
         onBack={() => setDetail(null)}
-        onSelect={() => onOpen(detail.plan.id)}
       />
     );
   }
@@ -118,10 +120,23 @@ export function PlanGrid({
         <div className="grid grid-cols-2 gap-3">
           {plans.map((plan, index) => {
             const tone = CARD_TONES[index % CARD_TONES.length];
+            const selected = plan.id === selectedId;
             return (
               <div
                 key={plan.id}
-                className={`flex flex-col rounded-2xl border border-orange-100 p-3 text-left shadow-sm ${tone.wash}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedId(plan.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setSelectedId(plan.id);
+                  }
+                }}
+                aria-pressed={selected}
+                className={`flex flex-col rounded-2xl border p-3 text-left shadow-sm ${tone.wash} ${
+                  selected ? 'border-[#FF8C42] ring-2 ring-[#FF8C42]/30' : 'border-orange-100'
+                }`}
               >
                 <span className="mb-2 flex items-start justify-between gap-2">
                   <span className={`relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl ${tone.icon}`}>
@@ -167,9 +182,19 @@ export function PlanGrid({
         </div>
       </div>
 
-      <p className="px-4 pb-28 text-center text-[11px] text-gray-500">
-        Coverage and pricing are confirmed by the insurer/vendor.
-      </p>
+      <div className="sticky bottom-[var(--customer-tabbed-nav-offset,0px)] bg-[#FFF8F3] px-4 pb-3 pt-2">
+        <button
+          type="button"
+          disabled={!selectedId}
+          onClick={() => selectedId && onOpen(selectedId)}
+          className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#FF8C42] text-sm font-bold text-white disabled:bg-slate-300"
+        >
+          Continue to Consultation
+        </button>
+        <p className="mt-2 text-center text-[11px] text-gray-500">
+          Coverage and pricing are confirmed by the insurer/vendor.
+        </p>
+      </div>
     </div>
   );
 }

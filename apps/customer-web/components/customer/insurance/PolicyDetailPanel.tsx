@@ -29,11 +29,9 @@ function asText(value: unknown): string {
 export function PolicyDetailPanel({
   detail,
   onBack,
-  onSelect,
 }: {
   detail: PolicyDetailData;
   onBack: () => void;
-  onSelect: () => void;
 }) {
   const { plan } = detail;
   const covers = (detail.coverOptions || []).map(asText).filter(Boolean);
@@ -102,15 +100,6 @@ export function PolicyDetailPanel({
           </section>
         ) : null}
         <p className="text-center text-[11px] text-gray-500">{plan.disclaimer}</p>
-      </div>
-      <div className="sticky bottom-[var(--customer-tabbed-nav-offset,0px)] bg-[#FFF8F3] px-4 pb-3 pt-2">
-        <button
-          type="button"
-          onClick={onSelect}
-          className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#FF8C42] text-sm font-bold text-white"
-        >
-          Continue to Consultation
-        </button>
       </div>
     </div>
   );
