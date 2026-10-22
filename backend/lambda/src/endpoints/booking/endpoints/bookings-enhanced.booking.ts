@@ -2556,12 +2556,13 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       const summaryDescription = (service?.custom_description as string | null | undefined) ?? null;
       const summaryCatalogServiceId = (service?.service_id as string | undefined) || lookupServiceId;
 
+      let insuranceApplicationId: string | null = null;
       try {
         const { attachInsuranceApplicationOnBooking } = await import(
           '../../customer/insurance/services/customer_insurance_applications_post.service'
         );
         const bookingBody = body as Record<string, unknown>;
-        await attachInsuranceApplicationOnBooking({
+        insuranceApplicationId = await attachInsuranceApplicationOnBooking({
           bookingId: String(booking.id),
           customerId: String(customerId),
           vendorId: String(booking.vendor_id || ''),
@@ -2594,6 +2595,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           category: (service?.category as string | null | undefined) ?? null,
         },
         ...(otpCode && { otp: otpCode }), // Include OTP in response if generated
+        ...(insuranceApplicationId ? { insuranceApplicationId } : {}),
       };
 
       // Store idempotency key

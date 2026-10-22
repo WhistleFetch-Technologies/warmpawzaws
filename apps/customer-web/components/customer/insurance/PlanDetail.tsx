@@ -4,35 +4,69 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
-interface VendorOption {
+interface TeleService {
+  vendorServiceId: string;
+  name: string;
+  price: number;
+  duration: number;
+}
+
+interface TeleSlot {
+  date: string;
+  time: string;
+  label: string;
+}
+
+export interface InsuranceVendorOption {
   vendorId: string;
   name: string;
   rating: number | null;
   nextTeleSlot: string | null;
+  slots: TeleSlot[];
+  teleService: TeleService | null;
 }
 
-function readCustomerPhone(): string {
-  const stored = ['customerPhone', 'customer_phone', 'phone']
-    .map((key) => window.localStorage.getItem(key)?.trim() || '')
-    .find(Boolean);
-  if (stored) return stored;
-  try {
-    const data = JSON.parse(window.localStorage.getItem('customerData') || '{}') as { phone?: string; mobile?: string };
-    return String(data.phone || data.mobile || '').trim();
-  } catch {
-    return '';
+export interface InsuranceBookingChoice {
+  vendor: InsuranceVendorOption;
+  slot: TeleSlot;
+}
+
+function optionLabel(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value === 'object') {
+    const row = value as { label?: string; name?: string; key?: string };
+    return String(row.label || row.name || row.key || '').trim();
   }
+  return '';
 }
 
-function petsFromResponse(res: unknown): Array<{ id: string; name: string }> {
-  const body = res as { pets?: unknown; data?: { pets?: unknown } };
-  const raw = Array.isArray(body?.pets) ? body.pets : Array.isArray(body?.data?.pets) ? body.data.pets : [];
-  return raw
-    .map((pet) => {
-      const row = pet as { id?: string; name?: string };
-      return { id: String(row.id || ''), name: String(row.name || '').trim() || 'Unnamed' };
-    })
-    .filter((pet) => pet.id);
+function ChoiceSelect({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (options.length === 0) return null;
+  return (
+    <label className="block text-sm font-medium text-gray-800">
+      {label}
+      <select
+        className="mt-1 w-full rounded-xl border border-orange-100 bg-white px-3 py-2"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">Select {label.toLowerCase()}</option>
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 export function PlanDetail({
@@ -42,47 +76,60 @@ export function PlanDetail({
 }: {
   planId: string;
   onBack: () => void;
-  onBookTele: (vendor: VendorOption) => void;
+  onBookTele: (choice: InsuranceBookingChoice) => void;
 }) {
   const [planName, setPlanName] = useState('');
   const [companyName, setCompanyName] = useState('');
-  const [vendors, setVendors] = useState<VendorOption[]>([]);
-  const [petId, setPetId] = useState('');
-  const [pets, setPets] = useState<Array<{ id: string; name: string }>>([]);
+  const [vendors, setVendors] = useState<InsuranceVendorOption[]>([]);
+  const [coverOptions, setCoverOptions] = useState<string[]>([]);
+  const [sumInsuredOptions, setSumInsuredOptions] = useState<string[]>([]);
+  const [copayOptions, setCopayOptions] = useState<string[]>([]);
+  const [coverType, setCoverType] = useState('');
+  const [sumInsured, setSumInsured] = useState('');
+  const [copay, setCopay] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     apiClient
-      .get<{ data?: { plan?: { name?: string; companyName?: string }; vendors?: VendorOption[] } }>(
-        `/customer/insurance/plans/${planId}`,
-      )
+      .get<{
+        data?: {
+          plan?: { name?: string; companyName?: string };
+          vendors?: InsuranceVendorOption[];
+          coverOptions?: unknown[];
+          sumInsuredOptions?: unknown[];
+          copayOptions?: unknown[];
+        };
+      }>(`/customer/insurance/plans/${planId}`)
       .then((res) => {
+        const covers = (res.data?.coverOptions || []).map(optionLabel).filter(Boolean);
+        const sums = (res.data?.sumInsuredOptions || []).map(optionLabel).filter(Boolean);
+        const copays = (res.data?.copayOptions || []).map(optionLabel).filter(Boolean);
         setPlanName(res.data?.plan?.name || 'Policy');
         setCompanyName(res.data?.plan?.companyName || '');
         setVendors(res.data?.vendors || []);
+        setCoverOptions(covers);
+        setSumInsuredOptions(sums);
+        setCopayOptions(copays);
+        setCoverType(covers.length === 1 ? covers[0] : '');
+        setSumInsured(sums.length === 1 ? sums[0] : '');
+        setCopay(copays.length === 1 ? copays[0] : '');
       })
       .catch(() => setError('This policy is not available.'));
-
-    const phone = readCustomerPhone();
-    const customerId = window.localStorage.getItem('customerId') || '';
-    const petsUrl = phone
-      ? `/customer/pets/${encodeURIComponent(phone)}`
-      : customerId
-        ? `/customer/${customerId}/pets`
-        : '';
-    if (!petsUrl) return;
-    apiClient
-      .get<unknown>(petsUrl)
-      .then((res) => setPets(petsFromResponse(res)))
-      .catch(() => setPets([]));
   }, [planId]);
 
-  const book = (vendor: VendorOption) => {
-    window.sessionStorage.setItem('warmpawz-insurance-consult', JSON.stringify({ planId, petId, companyName }));
-    onBookTele(vendor);
-  };
+  const choicesReady =
+    (coverOptions.length === 0 || Boolean(coverType)) &&
+    (sumInsuredOptions.length === 0 || Boolean(sumInsured)) &&
+    (copayOptions.length === 0 || Boolean(copay));
 
-  const onlyVendor = vendors.length === 1 ? vendors[0] : null;
+  const book = (vendor: InsuranceVendorOption, slot: TeleSlot) => {
+    if (!choicesReady || !vendor.teleService) return;
+    window.sessionStorage.setItem(
+      'warmpawz-insurance-consult',
+      JSON.stringify({ planId, companyName, coverType, sumInsured, copay }),
+    );
+    onBookTele({ vendor, slot });
+  };
 
   return (
     <div className="min-h-screen bg-[#FFF8F3]">
@@ -99,65 +146,47 @@ export function PlanDetail({
         <h1 className="text-xl font-bold">{companyName || 'Insurance company'}</h1>
         <p className="mt-0.5 text-sm text-white/90">{planName}</p>
       </header>
-      <div className="px-4 py-4">
+      <div className="space-y-4 px-4 py-4 pb-28">
         {error ? <p className="text-sm text-gray-600">{error}</p> : null}
-        <label className="block text-sm font-medium text-gray-800">
-          Pet
-          <select className="mt-1 w-full rounded-xl border border-orange-100 bg-white px-3 py-2" value={petId} onChange={(e) => setPetId(e.target.value)}>
-            <option value="">{pets.length === 0 ? 'No pets on this account' : 'Select a pet'}</option>
-            {pets.map((pet) => (
-              <option key={pet.id} value={pet.id}>{pet.name}</option>
+        <ChoiceSelect label="Type of insurance" options={coverOptions} value={coverType} onChange={setCoverType} />
+        <ChoiceSelect label="Sum insured" options={sumInsuredOptions} value={sumInsured} onChange={setSumInsured} />
+        <ChoiceSelect label="Copay" options={copayOptions} value={copay} onChange={setCopay} />
+
+        <section>
+          <h2 className="text-sm font-semibold text-gray-800">Insurance providers</h2>
+          <p className="mt-1 text-xs text-gray-500">Slots follow each provider’s tele availability.</p>
+          {vendors.length === 0 && !error ? (
+            <p className="mt-3 text-sm text-gray-600">No provider is available for this company yet.</p>
+          ) : null}
+          <div className="mt-3 space-y-3">
+            {vendors.map((vendor) => (
+              <article key={vendor.vendorId} className="rounded-2xl border border-orange-100 bg-white p-4">
+                <h3 className="text-sm font-semibold text-gray-900">{vendor.name}</h3>
+                <p className="text-xs text-gray-500">{vendor.teleService?.name || 'Tele Consultation'}</p>
+                {vendor.slots.length === 0 ? (
+                  <p className="mt-2 text-xs text-gray-500">No upcoming tele slot.</p>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {vendor.slots.map((slot) => (
+                      <button
+                        key={`${vendor.vendorId}-${slot.date}-${slot.time}`}
+                        type="button"
+                        disabled={!choicesReady || !vendor.teleService}
+                        className="rounded-full border border-orange-200 px-3 py-1.5 text-xs font-semibold text-[#FF8C42] disabled:border-slate-200 disabled:text-slate-400"
+                        onClick={() => book(vendor, slot)}
+                      >
+                        {slot.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!vendor.teleService ? (
+                  <p className="mt-2 text-xs text-gray-500">Tele Consultation is not enabled for this provider.</p>
+                ) : null}
+              </article>
             ))}
-          </select>
-        </label>
-        {pets.length === 0 ? (
-          <p className="mt-2 text-xs text-gray-500">Add a pet from your profile, then come back to book.</p>
-        ) : null}
-
-        {vendors.length === 0 && !error ? (
-          <p className="mt-6 text-sm text-gray-600">No advisor is available for this company yet.</p>
-        ) : null}
-
-        {onlyVendor ? (
-          <div className="mt-6 rounded-2xl border border-orange-100 bg-white p-4">
-            <h2 className="text-sm font-semibold text-gray-800">Teleconsultation</h2>
-            <p className="mt-1 text-sm text-gray-700">{onlyVendor.name}</p>
-            <p className="text-xs text-gray-500">
-              {onlyVendor.nextTeleSlot ? `Next slot ${onlyVendor.nextTeleSlot}` : 'Uses this advisor’s tele availability'}
-            </p>
-            <button
-              type="button"
-              disabled={!petId}
-              className="mt-4 flex h-12 w-full items-center justify-center rounded-2xl bg-[#FF8C42] text-sm font-bold text-white disabled:bg-slate-300"
-              onClick={() => book(onlyVendor)}
-            >
-              Book with {onlyVendor.name}
-            </button>
           </div>
-        ) : null}
-
-        {vendors.length > 1 ? (
-          <div className="mt-6">
-            <h2 className="text-sm font-semibold text-gray-800">Choose an advisor</h2>
-            <p className="mt-1 text-xs text-gray-500">Each advisor uses the tele times set on their own profile.</p>
-            <div className="mt-2 space-y-2">
-              {vendors.map((vendor) => (
-                <button
-                  key={vendor.vendorId}
-                  type="button"
-                  disabled={!petId}
-                  className="w-full rounded-xl border border-orange-100 bg-white px-3 py-3 text-left disabled:opacity-50"
-                  onClick={() => book(vendor)}
-                >
-                  <span className="block font-semibold text-gray-900">{vendor.name}</span>
-                  <span className="text-xs text-gray-500">
-                    {vendor.nextTeleSlot ? `Next slot ${vendor.nextTeleSlot}` : 'Teleconsultation'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        </section>
       </div>
     </div>
   );

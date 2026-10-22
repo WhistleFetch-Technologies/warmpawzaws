@@ -59,6 +59,22 @@ import { requestGuestAuthForBooking } from '@/lib/guest-auth-gate';
 import { isSelectedSlotStillAvailable } from '@/lib/guest-slot-revalidate';
 
 
+function insuranceConsultNote(notes: string, insurancePlanId?: string): string | undefined {
+  if (!insurancePlanId) return notes || undefined;
+  let cover = '';
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem('warmpawz-insurance-consult') || '{}') as {
+      coverType?: string;
+      sumInsured?: string;
+      copay?: string;
+    };
+    cover = [saved.coverType, saved.sumInsured, saved.copay].filter(Boolean).join(' · ');
+  } catch {
+    cover = '';
+  }
+  return [notes, cover ? `Insurance selection: ${cover}` : ''].filter(Boolean).join('\n') || undefined;
+}
+
 interface VetBookingRouterProps {
   phone: string;
   doctorId?: string;
@@ -217,6 +233,7 @@ export function VetBookingRouter({
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [insuranceApplicationId, setInsuranceApplicationId] = useState<string | null>(null);
   const [paymentSummary, setPaymentSummary] = useState<{
     paymentSources?: PaymentSource[];
     totalPaid?: number;
@@ -411,7 +428,7 @@ export function VetBookingRouter({
       return {
         id: svc.id || svc.serviceId || selectedServiceType,
         name: svc.name || svc.serviceName || serviceName || 'Clinic Visit',
-        price: svc.price || price || 399,
+        price: insurancePlanId ? Number(svc.price ?? price ?? 0) : (svc.price || price || 399),
         duration: svc.duration || duration || 20,
         desc: svc.description || 'Visit the clinic',
         icon: Building2,
@@ -1128,7 +1145,7 @@ export function VetBookingRouter({
           petId: selectedPet?.id || undefined,
           petName: selectedPet?.name,
           amount: usePackageSession ? 0 : selectedServiceOption?.price,
-          notes: notes || undefined,
+          notes: insuranceConsultNote(notes, insurancePlanId),
           serviceName: selectedServiceOption?.name,
           customerPhone: phone,
           ...(addressPayload && { address: addressPayload }),
@@ -1142,6 +1159,7 @@ export function VetBookingRouter({
           const res = response?.data ?? response;
           const newBookingId = res?.bookingId || res?.booking?.id || res?.id || 'BK-' + Date.now();
           setBookingId(newBookingId);
+          if (res?.insuranceApplicationId) setInsuranceApplicationId(String(res.insuranceApplicationId));
           // Generate OTP for at_home/at_center so customer can share with vendor (skip if they will go through payment step)
           if (selectedServiceType !== 'tele' && newBookingId) {
             apiClient.post('/bookings/generate-otp', {
@@ -2028,7 +2046,7 @@ export function VetBookingRouter({
             )}
 
             {/* Package upsell offer - show if this was a single booking (not using package) */}
-            {!usePackageSession && !showPackageOffer && (
+            {!insurancePlanId && !usePackageSession && !showPackageOffer && (
               <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 border border-purple-100">
                 <div className="flex items-center gap-2 sm:gap-3 mb-3">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -2098,6 +2116,14 @@ export function VetBookingRouter({
             )}
 
             <div className="mx-auto w-full max-w-xs sm:max-w-sm space-y-2 sm:space-y-3">
+              {insuranceApplicationId ? (
+                <Button
+                  onClick={() => onNavigate('insurance_form', { applicationId: insuranceApplicationId })}
+                  className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 text-sm min-h-12 px-4 py-2.5 shadow-md sm:h-12 sm:text-base sm:py-0"
+                >
+                  Fill insurance form
+                </Button>
+              ) : null}
               <Button 
                 onClick={() => onViewBooking?.(bookingId || '')}
                 className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 text-sm min-h-12 px-4 py-2.5 shadow-md sm:h-12 sm:text-base sm:py-0"

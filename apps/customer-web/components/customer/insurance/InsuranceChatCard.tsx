@@ -15,14 +15,25 @@ export function InsuranceChatCard({ metadata }: { metadata: Record<string, unkno
       </div>
     );
   }
-  if (card === 'form_request') {
-    return <div className="rounded-xl border p-3 text-sm">Please complete the information form.</div>;
+  if (card === 'form_request' || card === 'change_request') {
+    const applicationId = String(metadata.applicationId || '');
+    return (
+      <div className={`rounded-xl border p-3 text-sm ${card === 'change_request' ? 'border-amber-200 bg-amber-50' : ''}`}>
+        <p>{card === 'change_request' ? 'Corrections requested' : 'Please complete the information form.'}</p>
+        {applicationId ? (
+          <button
+            type="button"
+            className="mt-2 font-semibold text-[#FF8C42]"
+            onClick={() => window.dispatchEvent(new CustomEvent('warmpawz-insurance-form', { detail: { applicationId } }))}
+          >
+            Open form
+          </button>
+        ) : null}
+      </div>
+    );
   }
   if (card === 'form_submission') {
     return <div className="rounded-xl border p-3 text-sm">Form submitted · revision {String(metadata.revision || '')}</div>;
-  }
-  if (card === 'change_request') {
-    return <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">Corrections requested</div>;
   }
   if (card === 'status_update') {
     return <div className="rounded-xl border p-3 text-sm">Status: {String(metadata.toStatus || '').replaceAll('_', ' ')}</div>;
@@ -36,8 +47,12 @@ export function InsuranceChatCard({ metadata }: { metadata: Record<string, unkno
           type="button"
           className="mt-2 block text-left font-semibold"
           onClick={() => {
-            const customerId = window.localStorage.getItem('customerId') || '';
-            void apiClient.post(`/customer/insurance/applications/${String(metadata.applicationId)}/payment-reported`, { customerId })
+            void import('@/lib/insurance-customer')
+              .then(({ resolveCustomerId }) => resolveCustomerId())
+              .then((customerId) => {
+                if (!customerId) throw new Error('customer');
+                return apiClient.post(`/customer/insurance/applications/${String(metadata.applicationId)}/payment-reported`, { customerId });
+              })
               .then(() => toast.success('Payment reported'))
               .catch(() => toast.error('Payment could not be reported'));
           }}

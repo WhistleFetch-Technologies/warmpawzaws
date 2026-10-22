@@ -109,7 +109,7 @@ export function PolicyDetailPanel({
           onClick={onSelect}
           className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#FF8C42] text-sm font-bold text-white"
         >
-          Select this policy
+          Continue to Consultation
         </button>
       </div>
     </div>

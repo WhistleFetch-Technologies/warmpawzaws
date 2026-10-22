@@ -4,7 +4,7 @@ import { validateDynamicForm, validateDynamicFormField } from '@warmpawz/shared-
 import { FORM_FIELD_TYPES, type FormFieldType, type FormSchema } from '@warmpawz/shared-types';
 import { INSURANCE_SLUGS } from '@warmpawz/shared-types';
 import { isCustomerVisiblePlan, openApplicationBlocksAnother } from '../shared/customer-plans';
-import { consultStep, nextTeleSlotLabel } from '../shared/next-tele-slot';
+import { consultStep, nextTeleSlotLabel, upcomingTeleSlots } from '../shared/next-tele-slot';
 import { formSchemaIssues, nextSubmissionRevision, nextTemplateVersion, parseFormSchema } from '../shared/form-library';
 import { resolveSlugValues } from '../shared/slug-resolver';
 import { evaluateAgainstSnapshot, type EvaluateSnapshot } from '../../../discount-engine/promo-engine/services/evaluate-snapshot';
@@ -39,6 +39,16 @@ describe('P3 customer plans and applications', () => {
     ).toBe('Tomorrow 09:00');
     expect(nextTeleSlotLabel([{ dayOfWeek: 4, startTime: '10:00' }], thursdayMorning)).toBe('Today 10:00');
     expect(nextTeleSlotLabel([], thursdayMorning)).toBeNull();
+    expect(
+      upcomingTeleSlots(
+        [
+          { dayOfWeek: 4, startTime: '09:00' },
+          { dayOfWeek: 5, startTime: '09:00' },
+        ],
+        thursdayMorning,
+        1,
+      ),
+    ).toEqual([{ date: '2026-10-16', time: '09:00', label: 'Tomorrow 09:00' }]);
     expect(consultStep(0)).toBe('unavailable');
     expect(consultStep(1)).toBe('direct');
     expect(consultStep(3)).toBe('choose-advisor');

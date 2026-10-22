@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerId } from '@/lib/insurance-customer';
 import { toast } from 'sonner';
 
 type PolicyRow = {
@@ -25,7 +26,11 @@ export function MyInsuranceList({
   const [message, setMessage] = useState('');
 
   async function load() {
-    const customerId = window.localStorage.getItem('customerId') || '';
+    const customerId = await resolveCustomerId();
+    if (!customerId) {
+      setMessage('Sign in again to see your policies.');
+      return;
+    }
     const res = await apiClient.get<{ data?: { policies?: PolicyRow[] } }>(
       `/customer/insurance/policies?customerId=${customerId}`,
     );
@@ -37,7 +42,11 @@ export function MyInsuranceList({
   }, []);
 
   async function confirm(applicationId: string) {
-    const customerId = window.localStorage.getItem('customerId') || '';
+    const customerId = await resolveCustomerId();
+    if (!customerId) {
+      toast.error('Sign in again to confirm this policy.');
+      return;
+    }
     await apiClient.post(`/customer/insurance/applications/${applicationId}/confirm-policy`, { customerId });
     toast.success('Policy confirmed');
     await load();

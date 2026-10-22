@@ -819,6 +819,24 @@ export function CustomerHomeWrapper({
     [shellNav],
   );
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const planId = params.get('insurancePlan');
+    if (planId) {
+      params.delete('insurancePlan');
+      const next = params.toString();
+      window.history.replaceState(null, '', next ? `/?${next}` : '/');
+      navigateToScreen('insurance_plan', routeKey.insurancePlan(planId));
+    }
+    const openForm = (event: Event) => {
+      const applicationId = String((event as CustomEvent<{ applicationId?: string }>).detail?.applicationId || '');
+      if (!applicationId) return;
+      navigateToScreen('insurance_form', routeKey.insuranceApplication(applicationId));
+    };
+    window.addEventListener('warmpawz-insurance-form', openForm);
+    return () => window.removeEventListener('warmpawz-insurance-form', openForm);
+  }, [navigateToScreen]);
+
   const openEmbeddedPetBoardingProfile = useCallback(
     (vendorId: string, slug: string | null) => {
       const bid = String(vendorId || '').trim();
@@ -2028,6 +2046,10 @@ export function CustomerHomeWrapper({
     captureBannerNavigationOrigin(data);
     if (process.env.NODE_ENV === 'development') {
       console.log('🔵 [handleVetNavigate] Navigating to:', screen, data);
+    }
+    if (screen === 'insurance_form' && data?.applicationId) {
+      navigateToScreen('insurance_form', routeKey.insuranceApplication(String(data.applicationId)));
+      return;
     }
     if (screen === 'vet-vendor-profile' && data) {
       const legacy = normalizeLegacyVetVendorProfilePayload(data as Record<string, unknown>);
@@ -4786,13 +4808,22 @@ export function CustomerHomeWrapper({
       <InsurancePlanDetail
         planId={planId}
         onBack={handleBack}
-        onBookTele={(vendor) => {
-          handleVetNavigate('wappt-vendor-profile', {
-            vendorId: vendor.vendorId,
-            vendorName: vendor.name,
-            category: 'insurance',
+        onBookTele={(choice) => {
+          const service = choice.vendor.teleService;
+          handleVetNavigate('vet-booking', {
+            vendorId: choice.vendor.vendorId,
+            vendorName: choice.vendor.name,
+            serviceType: 'tele',
             serviceStyle: 'tele',
+            serviceId: service?.vendorServiceId,
+            serviceName: service?.name || 'Tele Consultation',
+            price: service?.price ?? 0,
+            duration: service?.duration ?? 30,
+            bookingDate: choice.slot.date,
+            bookingTime: choice.slot.time,
+            category: 'insurance',
             insurancePlanId: planId,
+            appointmentsMode: false,
             profileBackScreen: 'insurance_plan',
           });
         }}

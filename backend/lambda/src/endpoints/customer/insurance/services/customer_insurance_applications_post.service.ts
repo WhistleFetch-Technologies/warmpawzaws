@@ -54,17 +54,22 @@ export async function attachInsuranceApplicationOnBooking(input: {
   planId: string;
   petId: string | null;
   category: string;
-}): Promise<void> {
-  if (!isWarmpawzInsuranceEnabled()) return;
+}): Promise<string | null> {
+  if (!isWarmpawzInsuranceEnabled()) return null;
   const category = input.category.toLowerCase();
-  if (category !== 'insurance' && category !== 'pet_insurance' && !input.planId) return;
-  if (!input.planId || !input.petId) return;
-  await createInsuranceApplication({
+  if (category !== 'insurance' && category !== 'pet_insurance' && !input.planId) return null;
+  if (!input.planId || !input.petId) return null;
+  const result = await createInsuranceApplication({
     bookingId: input.bookingId,
     planId: input.planId,
     petId: input.petId,
     customerId: input.customerId,
   });
+  if ('code' in result) {
+    console.warn('[insurance] application was not created:', result.code, result.message);
+    return null;
+  }
+  return String(result.application.id || '') || null;
 }
 
 export async function executecustomerInsuranceApplicationsPost(c: Context) {

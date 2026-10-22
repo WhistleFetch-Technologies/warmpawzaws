@@ -16,7 +16,7 @@ export default function InsurancePage() {
     return (
       <PlanGrid
         onBack={() => { window.location.href = '/'; }}
-        onOpen={() => { window.location.href = '/'; }}
+        onOpen={(planId) => { window.location.href = `/?insurancePlan=${encodeURIComponent(planId)}`; }}
       />
     );
   }

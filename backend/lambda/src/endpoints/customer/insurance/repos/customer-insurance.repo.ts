@@ -61,7 +61,22 @@ export async function dbGetCustomerPlan(planId: string, requireForm: boolean): P
     `SELECT v.id AS vendor_id,
             COALESCE(NULLIF(v.business_name, ''), NULLIF(v.owner_name, ''), 'Insurance advisor') AS vendor_name,
             va.day_of_week,
-            to_char(COALESCE(va.time_window_start, va.start_time), 'HH24:MI') AS start_time
+            to_char(COALESCE(va.time_window_start, va.start_time), 'HH24:MI') AS start_time,
+            (
+              SELECT json_build_object(
+                'vendorServiceId', vs.id,
+                'name', vs.service_name,
+                'price', COALESCE(vs.custom_price, vs.price, 0),
+                'duration', COALESCE(vs.custom_duration, vs.duration_minutes, 30)
+              )
+              FROM vendor_services vs
+              WHERE vs.vendor_id = v.id
+                AND vs.service_style = 'tele'
+                AND COALESCE(vs.is_enabled, false) = true
+                AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+              ORDER BY CASE WHEN lower(vs.service_name) = 'tele consultation' THEN 0 ELSE 1 END
+              LIMIT 1
+            ) AS tele_service
      FROM insurance_vendor_companies l
      JOIN vendors v ON v.id = l.vendor_id
      JOIN insurance_company_plans p ON p.company_id = l.company_id AND p.id = $1::uuid
@@ -109,8 +124,21 @@ export async function dbInsertApplication(input: {
   return withTransaction(async (client) => {
     const inserted = await client.query(
       `INSERT INTO insurance_applications
-         (booking_id, customer_id, vendor_id, company_id, plan_id, pet_id, status)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::uuid, 'consultation_booked')
+         (booking_id, customer_id, vendor_id, company_id, plan_id, pet_id, status, template_version_id)
+       VALUES (
+         $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::uuid, 'consultation_booked',
+         (
+           SELECT t.current_version_id
+           FROM insurance_form_templates t
+           WHERE t.vendor_id = $3::uuid
+             AND t.company_id = $4::uuid
+             AND t.status = 'published'
+             AND t.current_version_id IS NOT NULL
+             AND (t.plan_id IS NULL OR t.plan_id = $5::uuid)
+           ORDER BY (t.plan_id IS NOT NULL) DESC
+           LIMIT 1
+         )
+       )
        RETURNING *`,
       [input.bookingId, input.customerId, input.vendorId, input.companyId, input.planId, input.petId],
     );

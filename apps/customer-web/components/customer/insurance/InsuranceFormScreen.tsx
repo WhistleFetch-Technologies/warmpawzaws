@@ -5,6 +5,7 @@ import { DynamicFormRenderer } from '@warmpawz/ui';
 import type { FormSchema } from '@warmpawz/shared-types';
 import { validateDynamicForm } from '@warmpawz/shared-types';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerId } from '@/lib/insurance-customer';
 import { registerLeaveGuard } from '@/lib/navigation/leave-guard';
 
 export function InsuranceFormScreen({
@@ -24,7 +25,11 @@ export function InsuranceFormScreen({
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    const customerId = window.localStorage.getItem('customerId') || '';
+    void resolveCustomerId().then((customerId) => {
+      if (!customerId) {
+        setMessage('Sign in again to open this form.');
+        return;
+      }
     apiClient
       .get<{ data?: { schema?: FormSchema; prefilled?: Record<string, string>; answers?: Record<string, unknown>; changeNotes?: Record<string, string> } }>(
         `/customer/insurance/applications/${applicationId}/form?customerId=${customerId}`,
@@ -39,6 +44,7 @@ export function InsuranceFormScreen({
         setNotes(data?.changeNotes || {});
       })
       .catch(() => setMessage('This form is not ready yet.'));
+    });
   }, [applicationId]);
 
   useEffect(() => {
@@ -54,14 +60,22 @@ export function InsuranceFormScreen({
     const nextErrors = validateDynamicForm(schema, values);
     setErrors(nextErrors);
     if (!consent || Object.keys(nextErrors).length) return;
-    const customerId = window.localStorage.getItem('customerId') || '';
-    await apiClient.post(`/customer/insurance/applications/${applicationId}/form`, {
-      customerId,
-      consent: true,
-      answers: values,
-    });
-    setDirty(false);
-    setMessage('Submitted');
+    const customerId = await resolveCustomerId();
+    if (!customerId) {
+      setMessage('Sign in again to submit this form.');
+      return;
+    }
+    try {
+      await apiClient.post(`/customer/insurance/applications/${applicationId}/form`, {
+        customerId,
+        consent: true,
+        answers: values,
+      });
+      setDirty(false);
+      setMessage('Submitted');
+    } catch {
+      setMessage('The form could not be submitted.');
+    }
   }
 
   return (
