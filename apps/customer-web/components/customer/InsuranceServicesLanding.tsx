@@ -22,7 +22,7 @@ export function InsuranceServicesLanding({ phone: _phone, onBack, onNavigate }: 
     return (
       <PlanGrid
         onBack={onBack}
-        onOpen={(planId) => onNavigate?.('insurance_plan', { planId })}
+        onOpen={() => onNavigate?.('insurance_plan', { planId: 'consult' })}
       />
     );
   }

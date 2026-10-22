@@ -4787,8 +4787,8 @@ export function CustomerHomeWrapper({
           } else {
             navigateToScreen('insurance_provider');
           }
-        } else if (screen === 'insurance_plan' && data?.planId) {
-          navigateToScreen('insurance_plan', routeKey.insurancePlan(String(data.planId)));
+        } else if (screen === 'insurance_plan') {
+          navigateToScreen('insurance_plan', routeKey.insurancePlan(String(data?.planId || 'consult')));
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           navigateToScreen('create-booking');

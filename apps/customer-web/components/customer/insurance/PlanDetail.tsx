@@ -49,42 +49,8 @@ function formatNextAvailability(label: string | null): string {
   return `Next: ${match[1]} ${clock} ${suffix}`;
 }
 
-function optionLabel(value: unknown): string {
-  if (typeof value === 'string') return value.trim();
-  if (value && typeof value === 'object') {
-    const row = value as { label?: string; name?: string; key?: string };
-    return String(row.label || row.name || row.key || '').trim();
-  }
-  return '';
-}
-
-function ChoiceSelect({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: string[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  if (options.length === 0) return null;
-  return (
-    <label className="block text-sm font-medium text-gray-800">
-      {label}
-      <select
-        className="mt-1 w-full rounded-xl border border-orange-100 bg-white px-3 py-2"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">Select {label.toLowerCase()}</option>
-        {options.map((option) => (
-          <option key={option} value={option}>{option}</option>
-        ))}
-      </select>
-    </label>
-  );
+function isPlanId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 export function PlanDetail({
@@ -97,68 +63,56 @@ export function PlanDetail({
   onBookTele: (choice: InsuranceBookingChoice) => void;
 }) {
   const [plans, setPlans] = useState<PlanChoice[]>([]);
-  const [activePlanId, setActivePlanId] = useState(planId);
+  const [activePlanId, setActivePlanId] = useState(isPlanId(planId) ? planId : '');
   const [companyName, setCompanyName] = useState('');
   const [vendors, setVendors] = useState<InsuranceVendorOption[]>([]);
-  const [sumInsuredOptions, setSumInsuredOptions] = useState<string[]>([]);
-  const [copayOptions, setCopayOptions] = useState<string[]>([]);
-  const [coverType, setCoverType] = useState('');
-  const [sumInsured, setSumInsured] = useState('');
-  const [copay, setCopay] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     apiClient
       .get<{ data?: { plans?: PlanChoice[] } }>('/customer/insurance/plans')
-      .then((res) => setPlans(res.data?.plans || []))
+      .then((res) => {
+        const next = res.data?.plans || [];
+        setPlans(next);
+        if (isPlanId(planId)) {
+          const match = next.find((plan) => plan.id === planId);
+          if (match) setCompanyName(match.companyName);
+        }
+      })
       .catch(() => setPlans([]));
-  }, []);
-
-  useEffect(() => {
-    setActivePlanId(planId);
   }, [planId]);
 
   useEffect(() => {
+    if (!isPlanId(activePlanId)) {
+      setVendors([]);
+      return;
+    }
     apiClient
       .get<{
         data?: {
           plan?: { name?: string; companyName?: string };
           vendors?: InsuranceVendorOption[];
-          coverOptions?: unknown[];
-          sumInsuredOptions?: unknown[];
-          copayOptions?: unknown[];
         };
       }>(`/customer/insurance/plans/${activePlanId}`)
       .then((res) => {
-        const covers = (res.data?.coverOptions || []).map(optionLabel).filter(Boolean);
-        const sums = (res.data?.sumInsuredOptions || []).map(optionLabel).filter(Boolean);
-        const copays = (res.data?.copayOptions || []).map(optionLabel).filter(Boolean);
-        setCompanyName(res.data?.plan?.companyName || '');
+        setCompanyName((current) => current || res.data?.plan?.companyName || '');
         setVendors(res.data?.vendors || []);
-        setSumInsuredOptions(sums);
-        setCopayOptions(copays);
-        setCoverType(covers[0] || '');
-        setSumInsured(sums.length === 1 ? sums[0] : '');
-        setCopay(copays.length === 1 ? copays[0] : '');
+        setError('');
       })
       .catch(() => setError('This policy is not available.'));
   }, [activePlanId]);
 
   const companies = [...new Set(plans.map((plan) => plan.companyName).filter(Boolean))];
   const companyPlans = plans.filter((plan) => plan.companyName === companyName);
-  const choicesReady =
-    Boolean(activePlanId) &&
-    Boolean(companyName) &&
-    (sumInsuredOptions.length === 0 || Boolean(sumInsured)) &&
-    (copayOptions.length === 0 || Boolean(copay));
+  const choicesReady = Boolean(companyName) && isPlanId(activePlanId);
 
   const book = (vendor: InsuranceVendorOption) => {
     const slot = vendor.slots[0];
     if (!choicesReady || !vendor.teleService || !slot) return;
-    const typeName = companyPlans.find((plan) => plan.id === activePlanId)?.name || coverType;
+    const typeName = companyPlans.find((plan) => plan.id === activePlanId)?.name || '';
     window.sessionStorage.setItem(
       'warmpawz-insurance-consult',
-      JSON.stringify({ planId: activePlanId, companyName, coverType: typeName || coverType, sumInsured, copay }),
+      JSON.stringify({ planId: activePlanId, companyName, coverType: typeName }),
     );
     onBookTele({ planId: activePlanId, vendor, slot });
   };
@@ -185,12 +139,13 @@ export function PlanDetail({
             className="mt-1 w-full rounded-xl border border-orange-100 bg-white px-3 py-2"
             value={companyName}
             onChange={(event) => {
-              const nextCompany = event.target.value;
-              const nextPlan = plans.find((plan) => plan.companyName === nextCompany);
-              setCompanyName(nextCompany);
-              if (nextPlan) setActivePlanId(nextPlan.id);
+              setCompanyName(event.target.value);
+              setActivePlanId('');
+              setVendors([]);
+              setError('');
             }}
           >
+            <option value="">Select company</option>
             {companies.map((company) => (
               <option key={company} value={company}>{company}</option>
             ))}
@@ -200,17 +155,18 @@ export function PlanDetail({
           Type of insurance
           <select
             className="mt-1 w-full rounded-xl border border-orange-100 bg-white px-3 py-2"
-            value={activePlanId}
+            value={companyPlans.some((plan) => plan.id === activePlanId) ? activePlanId : ''}
+            disabled={!companyName}
             onChange={(event) => setActivePlanId(event.target.value)}
           >
+            <option value="">Select type of insurance</option>
             {companyPlans.map((plan) => (
               <option key={plan.id} value={plan.id}>{plan.name}</option>
             ))}
           </select>
         </label>
-        <ChoiceSelect label="Sum insured" options={sumInsuredOptions} value={sumInsured} onChange={setSumInsured} />
-        <ChoiceSelect label="Copay" options={copayOptions} value={copay} onChange={setCopay} />
 
+        {choicesReady ? (
         <section>
           <h2 className="text-sm font-semibold text-gray-800">Insurance providers</h2>
           <p className="mt-1 text-xs text-gray-500">Slots follow each provider’s tele availability.</p>
@@ -238,6 +194,7 @@ export function PlanDetail({
             ))}
           </div>
         </section>
+        ) : null}
       </div>
     </div>
   );
