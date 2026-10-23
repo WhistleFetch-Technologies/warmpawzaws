@@ -2,16 +2,18 @@
 
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { parseInsuranceChatMetadata } from './insurance-chat-metadata';
 
 export function InsuranceChatCard({
-  metadata,
+  metadata: rawMetadata,
   onOpenForm,
 }: {
-  metadata: Record<string, unknown> | null | undefined;
+  metadata: unknown;
   onOpenForm?: (applicationId: string) => void;
 }) {
-  if (!metadata || typeof metadata.card !== 'string') return null;
-  const card = metadata.card;
+  const metadata = parseInsuranceChatMetadata(rawMetadata);
+  if (!metadata) return null;
+  const card = String(metadata.card);
   if (card === 'plan_quote') {
     return (
       <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">

@@ -20,6 +20,7 @@ import { X, Send, Loader2, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { InsuranceChatCard } from './insurance/InsuranceChatCard';
+import { parseInsuranceChatMetadata } from './insurance/insurance-chat-metadata';
 import { toast } from 'sonner';
 
 interface ChatInterfaceFromNotificationProps {
@@ -237,7 +238,7 @@ export function ChatInterfaceFromNotification({
                       : 'bg-gray-100 text-gray-900'
                   }`}
                 >
-                  {message.metadata ? (
+                  {parseInsuranceChatMetadata(message.metadata) ? (
                     <InsuranceChatCard
                       metadata={message.metadata}
                       onOpenForm={(applicationId) => {

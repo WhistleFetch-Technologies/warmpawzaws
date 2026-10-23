@@ -8,6 +8,8 @@ import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { ApiError } from '@/lib/error-handling';
 import { toast } from 'sonner';
 import { ChatAttachmentActions } from '@/components/shared/ChatAttachmentActions';
+import { InsuranceChatCard } from '@/components/customer/insurance/InsuranceChatCard';
+import { parseInsuranceChatMetadata } from '@/components/customer/insurance/insurance-chat-metadata';
 
 // ============================================================================
 // TYPES
@@ -20,7 +22,8 @@ interface ChatMessage {
   sender_name: string;
   sender_type: 'customer' | 'vendor' | 'system';
   message: string;
-  message_type: 'text' | 'image' | 'file' | 'system' | 'prescription';
+  message_type: 'text' | 'image' | 'file' | 'system' | 'prescription' | 'card';
+  metadata?: unknown;
   file_id?: string;
   file_name?: string;
   file_url?: string;
@@ -665,7 +668,7 @@ export function CommunicationHub({
                                 />
                               </a>
                             )}
-                            {message.message_type !== 'text' && message.message_type !== 'prescription' && message.message_type !== 'image' && (message.file_name || message.file_id) && (
+                            {message.message_type !== 'text' && message.message_type !== 'prescription' && message.message_type !== 'image' && message.message_type !== 'card' && (message.file_name || message.file_id) && (
                               <div
                                 className={`flex items-center gap-2 p-2 rounded-lg mb-2 ${
                                   message.sender_type === 'customer'
@@ -694,11 +697,16 @@ export function CommunicationHub({
                               </div>
                             )}
                             
-                            {/* Message text - hide generic "Sent a document/photo" if we have a file */}
-                            {!(message.message_type !== 'text' && (message.file_url || message.file_id) && 
-                              /^Sent a (document|photo|video)$/i.test(message.message || '')) && (
+                            {/* Insurance form and payment cards are stored as message_type=card */}
+                            {parseInsuranceChatMetadata(message.metadata) ? (
+                              <InsuranceChatCard
+                                metadata={message.metadata}
+                                onOpenForm={() => onClose()}
+                              />
+                            ) : !(message.message_type !== 'text' && (message.file_url || message.file_id) &&
+                              /^Sent a (document|photo|video)$/i.test(message.message || '')) ? (
                               <p className="whitespace-pre-wrap break-words">{message.message}</p>
-                            )}
+                            ) : null}
                             
                             {/* Prescription action button - file_id or parse message JSON */}
                             {message.message_type === 'prescription' && (() => {
