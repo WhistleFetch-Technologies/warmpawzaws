@@ -46,7 +46,7 @@ export const INSURANCE_STATUS_LABELS: Readonly<Record<InsuranceApplicationStatus
 
 export const INSURANCE_KANBAN_COLUMN: Readonly<Record<InsuranceApplicationStatus, InsuranceKanbanColumn>> = {
   consultation_booked: 'new',
-  consulted: 'new',
+  consulted: 'in_progress',
   quote_shared: 'in_progress',
   form_sent: 'in_progress',
   form_submitted: 'in_progress',

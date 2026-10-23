@@ -1,4 +1,5 @@
 import {
+  applicationColumn,
   filterApplications,
   isBookingCompleted,
   kanbanStats,
@@ -30,9 +31,14 @@ describe('vendor insurance kanban view', () => {
     expect(resolveDropTransition('consulted', 'closed')).toBe('dropped');
     expect(resolveDropTransition('quote_shared', 'closed')).toBe('dropped');
     expect(resolveDropTransition('consultation_booked', 'new')).toBeNull();
-    expect(resolveDropTransition('consultation_booked', 'in_progress')).toBeNull();
+    expect(resolveDropTransition('consultation_booked', 'in_progress')).toBe('consulted');
     // form_submitted and form_confirmed share the in_progress lane — same-lane drop is a no-op
     expect(resolveDropTransition('form_submitted', 'in_progress')).toBeNull();
+  });
+
+  it('puts consulted cards in the in-progress lane', () => {
+    expect(applicationColumn({ id: 'c', status: 'consultation_booked' })).toBe('new');
+    expect(applicationColumn({ id: 'c', status: 'consulted' })).toBe('in_progress');
   });
 
   it('detects booking completion for mark consulted', () => {

@@ -109,8 +109,57 @@ export async function dbFindOpenApplication(petId: string, planId: string): Prom
 }
 
 export async function dbGetBooking(bookingId: string): Promise<Row | null> {
-  const res = await query(`SELECT id, customer_id, vendor_id, pet_id FROM bookings WHERE id = $1::uuid`, [bookingId]);
+  const res = await query(
+    `SELECT id, customer_id, vendor_id, pet_id, notes, service_type, service_style,
+            service_category, status
+     FROM bookings WHERE id = $1::uuid`,
+    [bookingId],
+  );
   return (res.rows as Row[])[0] || null;
+}
+
+export async function dbVendorDefaultPlan(vendorId: string): Promise<Row | null> {
+  const res = await query(
+    `SELECT p.id, p.company_id, p.status, c.status AS company_status
+     FROM insurance_vendor_companies l
+     JOIN insurance_company_plans p ON p.company_id = l.company_id AND p.status = 'published'
+     JOIN insurance_companies c ON c.id = p.company_id AND c.status = 'active'
+     WHERE l.vendor_id = $1::uuid AND l.status = 'active'
+     ORDER BY p.sort_order ASC NULLS LAST, p.name ASC
+     LIMIT 1`,
+    [vendorId],
+  );
+  return (res.rows as Row[])[0] || null;
+}
+
+export async function dbFirstCustomerPet(customerId: string): Promise<Row | null> {
+  const res = await query(
+    `SELECT id FROM pets
+     WHERE customer_id = $1::uuid
+     ORDER BY created_at ASC NULLS LAST
+     LIMIT 1`,
+    [customerId],
+  );
+  return (res.rows as Row[])[0] || null;
+}
+
+export async function dbPromoteConsultationBooked(applicationId: string): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const updated = await client.query(
+      `UPDATE insurance_applications
+       SET status = 'consulted', updated_at = NOW()
+       WHERE id = $1::uuid AND status = 'consultation_booked'
+       RETURNING id`,
+      [applicationId],
+    );
+    if (!updated.rows[0]) return false;
+    await client.query(
+      `INSERT INTO insurance_application_events (application_id, from_status, to_status, actor_type, note)
+       VALUES ($1::uuid, 'consultation_booked', 'consulted', 'system', 'Tele marked complete')`,
+      [applicationId],
+    );
+    return true;
+  });
 }
 
 export async function dbInsertApplication(input: {
@@ -118,8 +167,8 @@ export async function dbInsertApplication(input: {
   customerId: string;
   vendorId: string;
   companyId: string;
-  planId: string;
-  petId: string;
+  planId: string | null;
+  petId: string | null;
 }): Promise<Row> {
   return withTransaction(async (client) => {
     const inserted = await client.query(

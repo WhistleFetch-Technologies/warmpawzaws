@@ -5,6 +5,7 @@ import { INSURANCE_STATUS_LABELS, type InsuranceApplicationStatus } from '@warmp
 import { apiClient } from '@/lib/api-client';
 import {
   KANBAN_COLUMNS,
+  applicationColumn,
   filterApplications,
   isBookingCompleted,
   kanbanStats,
@@ -162,7 +163,7 @@ export function InsuranceKanban({
 
       <div className="grid gap-3 xl:grid-cols-5">
         {KANBAN_COLUMNS.map((column) => {
-          const cards = visible.filter((row) => row.column === column.id);
+          const cards = visible.filter((row) => applicationColumn(row) === column.id);
           return (
             <section
               key={column.id}

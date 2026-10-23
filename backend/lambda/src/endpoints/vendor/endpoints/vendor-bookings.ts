@@ -542,6 +542,14 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         const row = (updated[0] || { ...booking, ...updateData }) as Record<string, unknown>;
         await ensureVendorEarningsForCompletedBooking(row, bookingId, '[VENDOR-STATUS-COMPLETE]');
         await syncPackageSessionEarningsAfterBookingComplete(bookingId, '[VENDOR-STATUS-COMPLETE]');
+        try {
+          const { promoteInsuranceOnBookingComplete } = await import(
+            '../../customer/insurance/services/customer_insurance_applications_post.service'
+          );
+          await promoteInsuranceOnBookingComplete(bookingId);
+        } catch (err) {
+          console.warn('[VENDOR-STATUS-COMPLETE] insurance promote failed:', err);
+        }
       }
 
       // Log status change if status actually changed

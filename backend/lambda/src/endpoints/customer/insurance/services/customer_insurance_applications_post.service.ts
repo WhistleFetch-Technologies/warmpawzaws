@@ -5,9 +5,12 @@ import { openApplicationBlocksAnother } from '../../../warmpawz-insurance/shared
 import {
   dbFindApplicationByBooking,
   dbFindOpenApplication,
+  dbFirstCustomerPet,
   dbGetBooking,
   dbInsertApplication,
   dbPlanCompany,
+  dbPromoteConsultationBooked,
+  dbVendorDefaultPlan,
   dbVendorReadyForPlan,
 } from '../repos/customer-insurance.repo';
 
@@ -47,6 +50,11 @@ export async function createInsuranceApplication(input: z.infer<typeof bodySchem
   return { status: 201 as const, application };
 }
 
+function isInsuranceCategory(category: string): boolean {
+  const value = category.toLowerCase();
+  return value === 'insurance' || value === 'pet_insurance';
+}
+
 export async function attachInsuranceApplicationOnBooking(input: {
   bookingId: string;
   customerId: string;
@@ -56,20 +64,90 @@ export async function attachInsuranceApplicationOnBooking(input: {
   category: string;
 }): Promise<string | null> {
   if (!isWarmpawzInsuranceEnabled()) return null;
-  const category = input.category.toLowerCase();
-  if (category !== 'insurance' && category !== 'pet_insurance' && !input.planId) return null;
-  if (!input.planId || !input.petId) return null;
-  const result = await createInsuranceApplication({
-    bookingId: input.bookingId,
-    planId: input.planId,
-    petId: input.petId,
-    customerId: input.customerId,
-  });
-  if ('code' in result) {
-    console.warn('[insurance] application was not created:', result.code, result.message);
+  const existing = await dbFindApplicationByBooking(input.bookingId);
+  if (existing) return String(existing.id || '') || null;
+
+  const booking = await dbGetBooking(input.bookingId);
+  if (!booking || String(booking.customer_id) !== input.customerId) {
+    console.warn('[insurance] attach skipped: booking not found');
     return null;
   }
-  return String(result.application.id || '') || null;
+
+  const vendorId = String(booking.vendor_id || input.vendorId || '');
+  let planId = input.planId || '';
+  let petId = input.petId || (booking.pet_id ? String(booking.pet_id) : '');
+  const defaultPlan = !planId ? await dbVendorDefaultPlan(vendorId) : null;
+  if (!planId && defaultPlan) planId = String(defaultPlan.id);
+
+  if (!isInsuranceCategory(input.category) && !input.planId && !defaultPlan) return null;
+  if (!planId) {
+    console.warn('[insurance] attach skipped: no published plan for vendor');
+    return null;
+  }
+  if (!petId) {
+    const pet = await dbFirstCustomerPet(input.customerId);
+    if (pet) petId = String(pet.id);
+  }
+
+  const plan = await dbPlanCompany(planId);
+  if (!plan || String(plan.status) !== 'published' || String(plan.company_status) !== 'active') {
+    console.warn('[insurance] attach skipped: PLAN_NOT_AVAILABLE');
+    return null;
+  }
+
+  try {
+    const application = await dbInsertApplication({
+      bookingId: input.bookingId,
+      customerId: input.customerId,
+      vendorId,
+      companyId: String(plan.company_id),
+      planId,
+      petId: petId || null,
+    });
+    return String(application.id || '') || null;
+  } catch (error) {
+    const raced = await dbFindApplicationByBooking(input.bookingId);
+    if (raced) return String(raced.id || '') || null;
+    if (petId) {
+      const open = await dbFindOpenApplication(petId, planId);
+      if (open) return String(open.id || '') || null;
+    }
+    console.warn('[insurance] application was not created:', error);
+    return null;
+  }
+}
+
+export async function promoteInsuranceOnBookingComplete(bookingId: string): Promise<void> {
+  if (!isWarmpawzInsuranceEnabled()) return;
+  let application = await dbFindApplicationByBooking(bookingId);
+  if (!application) {
+    const booking = await dbGetBooking(bookingId);
+    if (!booking) return;
+    const blob = [
+      booking.notes,
+      booking.service_type,
+      booking.service_category,
+      booking.service_style,
+    ]
+      .map((value) => String(value || '').toLowerCase())
+      .join(' ');
+    const isTele = blob.includes('tele');
+    const looksLikeInsurance = blob.includes('insurance');
+    const vendorId = String(booking.vendor_id || '');
+    const linkedPlan = !looksLikeInsurance && isTele ? await dbVendorDefaultPlan(vendorId) : null;
+    if (!looksLikeInsurance && !linkedPlan) return;
+    await attachInsuranceApplicationOnBooking({
+      bookingId,
+      customerId: String(booking.customer_id),
+      vendorId,
+      planId: '',
+      petId: booking.pet_id ? String(booking.pet_id) : null,
+      category: looksLikeInsurance ? 'insurance' : '',
+    });
+    application = await dbFindApplicationByBooking(bookingId);
+  }
+  if (!application || String(application.status) !== 'consultation_booked') return;
+  await dbPromoteConsultationBooked(String(application.id));
 }
 
 export async function executecustomerInsuranceApplicationsPost(c: Context) {

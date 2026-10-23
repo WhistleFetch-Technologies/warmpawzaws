@@ -41,6 +41,11 @@ export const KANBAN_COLUMNS = [
 
 export type KanbanColumnId = (typeof KANBAN_COLUMNS)[number]['id'];
 
+export function applicationColumn(row: BoardApplication): InsuranceKanbanColumn {
+  const status = normalizeInsuranceStatus(row.status) || 'consultation_booked';
+  return INSURANCE_KANBAN_COLUMN[status];
+}
+
 export function applicationSearchText(row: BoardApplication): string {
   return [row.customer_name, row.pet_name, row.pet_breed, row.company_name, row.plan_name, row.status, row.id]
     .filter(Boolean)
@@ -72,10 +77,10 @@ export function kanbanStats(rows: BoardApplication[], now = new Date()) {
     return date.getMonth() === month && date.getFullYear() === year;
   };
   return {
-    active: rows.filter((row) => row.column !== 'closed').length,
+    active: rows.filter((row) => applicationColumn(row) !== 'closed').length,
     awaitingCustomer: rows.filter((row) => row.status === 'form_sent' || row.status === 'changes_requested').length,
-    paymentPending: rows.filter((row) => row.column === 'awaiting_payment').length,
-    completedThisPeriod: rows.filter((row) => row.column === 'policy_issued' && inMonth(row.updated_at)).length,
+    paymentPending: rows.filter((row) => applicationColumn(row) === 'awaiting_payment').length,
+    completedThisPeriod: rows.filter((row) => applicationColumn(row) === 'policy_issued' && inMonth(row.updated_at)).length,
   };
 }
 

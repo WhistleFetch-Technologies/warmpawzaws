@@ -394,6 +394,17 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       const updated = await update('bookings', { id: bookingId }, updateData);
 
+      if (status === 'completed' && oldStatus !== 'completed') {
+        try {
+          const { promoteInsuranceOnBookingComplete } = await import(
+            './customer/insurance/services/customer_insurance_applications_post.service'
+          );
+          await promoteInsuranceOnBookingComplete(bookingId);
+        } catch (err) {
+          console.warn('[VENDOR-STATUS] insurance promote failed:', err);
+        }
+      }
+
       // Log status change if status actually changed
       if (oldStatus !== status) {
         await logBookingStatusChange(
