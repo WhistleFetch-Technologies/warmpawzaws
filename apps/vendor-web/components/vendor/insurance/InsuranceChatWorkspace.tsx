@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { InsuranceChatCard } from './InsuranceChatCard';
+import { isPdfPolicy, policyUploadBody } from './policy-upload';
 import type { BoardApplication } from './kanban-view';
 
 type PlanRow = {
@@ -20,6 +21,7 @@ type FormRow = { id?: string; name?: string; status?: string };
 type ChatMessage = { id?: string; message?: string; sender_type?: string; metadata?: Record<string, unknown> | null };
 
 const PAYMENT_STATUSES = new Set(['form_submitted', 'form_confirmed', 'payment_link_sent', 'payment_link_expired']);
+const POLICY_STATUSES = new Set(['payment_link_sent', 'payment_link_expired', 'payment_reported', 'policy_uploaded']);
 const QUOTE_STATUSES = new Set(['consulted', 'quote_shared']);
 
 function lastPaymentUrl(messages: ChatMessage[]): string {
@@ -60,12 +62,15 @@ export function InsuranceChatWorkspace({
   const [summaryReady, setSummaryReady] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState('https://');
   const [amount, setAmount] = useState('999');
+  const [policyNumber, setPolicyNumber] = useState('');
+  const [policyFile, setPolicyFile] = useState<File | null>(null);
   const selected = applications.find((row) => row.id === applicationId) || applications[0];
   const plan = plans.find((row) => String(row.id) === planId) || plans[0];
   const covers = plan?.coverOptions || [];
   const sums = plan?.sumInsuredOptions || [];
   const published = forms.filter((form) => form.status === 'published');
   const canPay = selected ? PAYMENT_STATUSES.has(selected.status) : false;
+  const canIssue = selected ? POLICY_STATUSES.has(selected.status) : false;
   const canQuote = selected ? QUOTE_STATUSES.has(selected.status) : false;
   const sentPayUrl = lastPaymentUrl(messages);
 
@@ -146,6 +151,45 @@ export function InsuranceChatWorkspace({
       await loadMessages(selected.booking_id);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Message could not be sent');
+    }
+  }
+
+  async function sendPolicy() {
+    if (!selected || !policyNumber.trim() || !policyFile) {
+      setNotice('Add the policy number and a PDF.');
+      return;
+    }
+    if (!isPdfPolicy(policyFile)) {
+      setNotice('Upload the policy as a PDF.');
+      return;
+    }
+    try {
+      const presigned = await apiClient.post<{ presignedUrl?: string; fileKey?: string; error?: string }>('/upload/presigned-url', {
+        fileName: policyFile.name,
+        fileType: 'application/pdf',
+        folder: `insurance-policies/${selected.id}`,
+      });
+      if (!presigned.presignedUrl || !presigned.fileKey) throw new Error(presigned.error || 'Upload could not start');
+      const uploaded = await fetch(presigned.presignedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: policyFile,
+      });
+      if (!uploaded.ok) throw new Error('The PDF could not be uploaded');
+      await apiClient.post(`/vendor/${vendorId}/insurance/applications/${selected.id}/policy`, policyUploadBody({
+        policyNumber,
+        amount,
+        fileName: policyFile.name,
+        fileType: 'application/pdf',
+        fileSize: policyFile.size,
+        s3Key: presigned.fileKey,
+      }));
+      setNotice('Policy number and file sent in chat');
+      setPolicyFile(null);
+      onSent();
+      await loadMessages(selected.booking_id);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Send the payment link before uploading the policy');
     }
   }
 
@@ -263,6 +307,16 @@ export function InsuranceChatWorkspace({
         ) : (
           <p className="text-xs text-gray-500">Payment button appears after the customer submits the information form.</p>
         )}
+
+        {canIssue ? (
+          <div className="space-y-2 border-t pt-3">
+            <h3 className="font-bold">Issue policy</h3>
+            <p className="text-xs text-gray-500">Add the policy number and PDF. The customer sees both in chat, My Insurance, and the active policy tab. The kanban moves to Policy Issued.</p>
+            <input className="w-full rounded-lg border px-2 py-2 text-sm" value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} placeholder="Policy number" />
+            <input className="w-full text-xs" type="file" accept="application/pdf,.pdf" onChange={(e) => setPolicyFile(e.target.files?.[0] || null)} />
+            <button type="button" className="w-full rounded-xl bg-[#FF8C42] px-3 py-2 font-semibold text-white" onClick={() => void sendPolicy()}>Send policy in chat</button>
+          </div>
+        ) : null}
       </aside>
 
       {sentPayUrl ? (

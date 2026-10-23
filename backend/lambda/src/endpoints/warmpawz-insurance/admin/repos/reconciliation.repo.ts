@@ -16,7 +16,7 @@ const POLICY_DATE = `((a.policy_issued_at AT TIME ZONE 'Asia/Kolkata')::date)`;
 export async function dbListCompletedPolicies(filter: CompletedPolicyFilter): Promise<CompletedPolicyRecord[]> {
   const params: unknown[] = [filter.from, filter.to];
   const where = [
-    `a.status IN ('policy_confirmed', 'policy_issued', 'free_look_cancelled')`,
+    `a.status IN ('policy_uploaded', 'policy_confirmed', 'policy_issued', 'free_look_cancelled')`,
     `a.policy_number IS NOT NULL`,
     `a.policy_issued_at IS NOT NULL`,
     `${POLICY_DATE} BETWEEN $1::date AND $2::date`,

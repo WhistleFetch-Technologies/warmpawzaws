@@ -60,7 +60,11 @@ export async function dbSavePolicy(input: {
   );
   await query(
     `UPDATE insurance_applications
-     SET policy_number = $2, issued_premium = $3, premium_amount = $3, updated_at = NOW()
+     SET policy_number = $2,
+         issued_premium = $3,
+         premium_amount = $3,
+         policy_issued_at = COALESCE(policy_issued_at, NOW()),
+         updated_at = NOW()
      WHERE id = $1::uuid`,
     [input.applicationId, input.policyNumber, input.issuedPremium],
   );

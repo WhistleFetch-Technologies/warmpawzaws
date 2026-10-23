@@ -128,7 +128,14 @@ describe('P5 cards, submissions, and the renderer contract', () => {
     };
     expect(chatCardSchema.safeParse(quote).success).toBe(true);
     expect(chatCardSchema.safeParse({ ...quote, coverType: '' }).success).toBe(false);
-    expect(quote.applicationId).not.toBe('44444444-4444-4444-4444-444444444444');
+    expect(chatCardSchema.safeParse({
+      card: 'policy_documents',
+      applicationId: '22222222-2222-4222-8222-222222222222',
+      version: 1,
+      policyNumber: 'OR-100',
+      documentCount: 1,
+      documents: [{ name: 'policy.pdf', s3Key: 'insurance-policies/app/policy.pdf' }],
+    }).success).toBe(true);
   });
 
   it('resubmit creates revision N+1 and supersedes the previous one', () => {
@@ -140,6 +147,7 @@ describe('P5 cards, submissions, and the renderer contract', () => {
     expect(canTransitionInsuranceStatus('form_sent', 'form_submitted')).toBe(true);
     expect(canTransitionInsuranceStatus('form_submitted', 'form_confirmed')).toBe(true);
     expect(canTransitionInsuranceStatus('form_submitted', 'payment_link_sent')).toBe(true);
+    expect(canTransitionInsuranceStatus('payment_link_sent', 'policy_uploaded')).toBe(true);
     expect(canTransitionInsuranceStatus('consulted', 'quote_shared')).toBe(true);
     expect(canTransitionInsuranceStatus('consulted', 'form_sent')).toBe(true);
     expect(canTransitionInsuranceStatus('consultation_booked', 'form_confirmed')).toBe(false);

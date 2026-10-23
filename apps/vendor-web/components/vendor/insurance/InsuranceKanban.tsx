@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { INSURANCE_STATUS_LABELS, type InsuranceApplicationStatus } from '@warmpawz/shared-types';
 import { apiClient } from '@/lib/api-client';
+import { isPdfPolicy, policyUploadBody } from './policy-upload';
 import {
   KANBAN_COLUMNS,
   applicationColumn,
@@ -45,6 +46,7 @@ export function InsuranceKanban({
   const [paymentUrl, setPaymentUrl] = useState('https://');
   const [amount, setAmount] = useState('999');
   const [policyNumber, setPolicyNumber] = useState('');
+  const [policyFileName, setPolicyFileName] = useState('');
   const [dragId, setDragId] = useState<string | null>(null);
   const visible = useMemo(
     () => filterApplications(applications, query, company, status),
@@ -60,6 +62,43 @@ export function InsuranceKanban({
       onChanged();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'That step could not be saved');
+    }
+  }
+
+  async function sendPolicy(id: string, file: File | undefined) {
+    if (!policyNumber.trim() || !file) {
+      setNotice('Add the policy number and a PDF.');
+      return;
+    }
+    if (!isPdfPolicy(file)) {
+      setNotice('Upload the policy as a PDF.');
+      return;
+    }
+    try {
+      const presigned = await apiClient.post<{ presignedUrl?: string; fileKey?: string; error?: string }>('/upload/presigned-url', {
+        fileName: file.name,
+        fileType: 'application/pdf',
+        folder: `insurance-policies/${id}`,
+      });
+      if (!presigned.presignedUrl || !presigned.fileKey) throw new Error(presigned.error || 'Upload could not start');
+      const uploaded = await fetch(presigned.presignedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: file,
+      });
+      if (!uploaded.ok) throw new Error('The PDF could not be uploaded');
+      await post(id, 'policy', policyUploadBody({
+        policyNumber,
+        amount,
+        fileName: file.name,
+        fileType: 'application/pdf',
+        fileSize: file.size,
+        s3Key: presigned.fileKey,
+      }));
+      setPolicyFileName(file.name);
+      setNotice('Policy sent in chat');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Policy could not be sent');
     }
   }
 
@@ -189,6 +228,12 @@ export function InsuranceKanban({
                     <p className="mt-2 text-xs font-semibold text-[#FF8C42]">{row.company_name || 'Insurer'}</p>
                     <p className="text-xs text-gray-600">{row.plan_name || 'Plan'}</p>
                     <span className="mt-2 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700">{label(row.status)}</span>
+                    {row.policy_number ? <p className="mt-2 text-xs font-semibold text-gray-800">Policy {row.policy_number}</p> : null}
+                    {(row.documents || []).map((doc) => (
+                      doc.url ? (
+                        <a key={doc.url} className="mt-1 block truncate text-xs font-semibold text-[#FF8C42]" href={doc.url} target="_blank" rel="noreferrer">{doc.name || 'Policy file'}</a>
+                      ) : null
+                    ))}
                     <p className="mt-2 text-[11px] text-gray-400">Updated {when(row.updated_at)}</p>
                     {row.status === 'consultation_booked' && isBookingCompleted(row.booking_status) ? (
                       <button type="button" className="mt-2 rounded-lg bg-[#FF8C42] px-2 py-1 text-xs font-semibold text-white" onClick={() => void transitionTo(row.id, 'consulted')}>Mark consulted</button>
@@ -208,16 +253,29 @@ export function InsuranceKanban({
                         <button type="button" className="rounded-lg bg-[#FF8C42] px-2 py-1 text-xs font-semibold text-white" onClick={() => void post(row.id, 'payment-link', { url: paymentUrl, amount: Number(amount) })}>Send payment link</button>
                       </div>
                     ) : null}
-                    {row.status === 'payment_reported' || row.status === 'policy_uploaded' ? (
+                    {row.status === 'payment_link_sent' || row.status === 'payment_link_expired' || row.status === 'payment_reported' || row.status === 'policy_uploaded' ? (
                       <div className="mt-2 space-y-1">
                         <input className="w-full rounded border px-2 py-1 text-xs" value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} placeholder="Policy number" />
-                        <button type="button" className="rounded-lg bg-[#FF8C42] px-2 py-1 text-xs font-semibold text-white" onClick={() => void post(row.id, 'policy', {
-                          policyNumber,
-                          issuedPremium: Number(amount),
-                          startDate: new Date().toISOString().slice(0, 10),
-                          endDate: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
-                          documents: [{ s3Key: `insurance/${row.id}.pdf`, name: 'policy.pdf', mime: 'application/pdf', size: 1024 }],
-                        })}>Upload policy</button>
+                        <label className="block text-[11px] text-gray-500">
+                          Policy PDF
+                          <input
+                            className="mt-1 block w-full text-xs"
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            onChange={(e) => setPolicyFileName(e.target.files?.[0]?.name || '')}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="rounded-lg bg-[#FF8C42] px-2 py-1 text-xs font-semibold text-white"
+                          onClick={(event) => {
+                            const input = event.currentTarget.parentElement?.querySelector('input[type="file"]') as HTMLInputElement | null;
+                            void sendPolicy(row.id, input?.files?.[0]);
+                          }}
+                        >
+                          Send policy
+                        </button>
+                        {policyFileName ? <p className="text-[11px] text-gray-500">{policyFileName}</p> : null}
                       </div>
                     ) : null}
                     {row.status === 'policy_confirmed' ? (

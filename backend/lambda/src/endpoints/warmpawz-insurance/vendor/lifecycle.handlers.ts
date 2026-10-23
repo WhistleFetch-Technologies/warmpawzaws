@@ -1,9 +1,12 @@
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { INSURANCE_KANBAN_COLUMN, normalizeInsuranceStatus, paymentLinkCardSchema, policyDocumentsCardSchema } from '@warmpawz/shared-types';
 import { termsInForce } from '../admin/domain/commission';
 import { InsuranceAdminError, insuranceAdminError, insuranceAdminOk } from '../admin/shared/insurance-admin-response';
 import { dbGetVendorApplication, dbInsertChatCard, dbListVendorApplications } from './cards.repo';
+import { s3BrowserUploadClient } from '../../../utils/s3-presign-upload';
 import {
   buildCommissionSnapshot,
   clawbackSnapshot,
@@ -39,13 +42,40 @@ async function loadOwned(c: Context) {
   return application;
 }
 
+function documentRows(value: unknown): Array<{ name: string; s3Key: string }> {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? (() => { try { return JSON.parse(value); } catch { return []; } })()
+      : [];
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      return { name: String(row.name || 'Policy document'), s3Key: String(row.s3Key || '') };
+    })
+    .filter((row) => row.s3Key);
+}
+
+async function signedPolicyDocuments(value: unknown): Promise<Array<{ name: string; url: string }>> {
+  const bucket = process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || '';
+  const docs = documentRows(value);
+  if (!bucket) return docs.map((doc) => ({ name: doc.name, url: '' }));
+  return Promise.all(docs.map(async (doc) => ({
+    name: doc.name,
+    url: await getSignedUrl(s3BrowserUploadClient, new GetObjectCommand({ Bucket: bucket, Key: doc.s3Key }), { expiresIn: 3600 }),
+  })));
+}
+
 export async function listApplicationsBoardHandler(c: Context) {
   try {
     const rows = await dbListVendorApplications(c.req.param('vendorId'));
-    const applications = rows.map((row) => {
+    const applications = await Promise.all(rows.map(async (row) => {
       const status = normalizeInsuranceStatus(row.status) || 'consultation_booked';
-      return { ...row, status, column: INSURANCE_KANBAN_COLUMN[status] };
-    });
+      const documents = await signedPolicyDocuments(row.policy_documents);
+      return { ...row, status, column: INSURANCE_KANBAN_COLUMN[status], documents };
+    }));
     const counts = applications.reduce<Record<string, number>>((acc, row) => {
       acc[row.column] = (acc[row.column] || 0) + 1;
       return acc;
@@ -141,11 +171,12 @@ export async function policyUploadHandler(c: Context) {
       version: 1,
       policyNumber: body.policyNumber.trim(),
       documentCount: body.documents.length,
+      documents: body.documents.map((doc) => ({ name: doc.name || 'Policy document', s3Key: doc.s3Key })),
     });
     const saved = await dbInsertChatCard({
       bookingId: String(application.booking_id),
       senderPhone: c.req.param('vendorId'),
-      message: 'Policy documents',
+      message: `Policy ${body.policyNumber.trim()}`,
       card,
       fromStatus: normalizeInsuranceStatus(application.status),
       toStatus: 'policy_uploaded',

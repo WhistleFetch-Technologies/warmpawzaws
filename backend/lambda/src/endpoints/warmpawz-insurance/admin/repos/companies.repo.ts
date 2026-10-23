@@ -8,7 +8,7 @@ const COMPANY_SELECT = `
     (SELECT COUNT(*)::int FROM insurance_vendor_companies l
       WHERE l.company_id = ic.id AND l.status = 'active') AS active_vendor_count,
     (SELECT COUNT(*)::int FROM insurance_applications a
-      WHERE a.company_id = ic.id AND a.status IN ('policy_confirmed', 'policy_issued')) AS issued_policy_count
+      WHERE a.company_id = ic.id AND a.status IN ('policy_uploaded', 'policy_confirmed', 'policy_issued')) AS issued_policy_count
   FROM insurance_companies ic`;
 
 function mapCompany(r: Row): InsuranceCompanyDTO {

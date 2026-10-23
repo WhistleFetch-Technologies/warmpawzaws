@@ -16,6 +16,8 @@ export async function dbListVendorApplications(vendorId: string): Promise<Row[]>
   const res = await query(
     `SELECT a.id, a.booking_id, a.status, a.plan_id, a.pet_id, a.customer_id, a.company_id, a.updated_at,
             a.payment_link_expires_at,
+            COALESCE(issued.policy_number, a.policy_number) AS policy_number,
+            issued.documents AS policy_documents,
             b.status AS booking_status,
             p.name AS plan_name,
             co.name AS company_name,
@@ -29,6 +31,7 @@ export async function dbListVendorApplications(vendorId: string): Promise<Row[]>
      LEFT JOIN insurance_companies co ON co.id = a.company_id
      LEFT JOIN customers cu ON cu.id = a.customer_id
      LEFT JOIN pets pet ON pet.id = a.pet_id
+     LEFT JOIN insurance_policies_issued issued ON issued.application_id = a.id
      WHERE a.vendor_id = $1::uuid
      ORDER BY a.updated_at DESC`,
     [vendorId],

@@ -21,6 +21,8 @@ export type BoardApplication = {
   pet_breed?: string;
   updated_at?: string;
   payment_link_expires_at?: string | null;
+  policy_number?: string | null;
+  documents?: Array<{ name?: string; url?: string }>;
 };
 
 /** Status-only transitions that DnD / transition endpoint can perform without payloads. */

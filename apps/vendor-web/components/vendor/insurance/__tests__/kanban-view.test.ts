@@ -37,7 +37,9 @@ describe('vendor insurance kanban view', () => {
   });
 
   it('puts consulted cards in the in-progress lane', () => {
-    expect(applicationColumn({ id: 'c', status: 'consultation_booked' })).toBe('new');
+    expect(applicationColumn({ id: 'n', status: 'consultation_booked' })).toBe('new');
+    expect(applicationColumn({ id: 'p', status: 'payment_link_sent' })).toBe('awaiting_payment');
+    expect(applicationColumn({ id: 'i', status: 'policy_uploaded' })).toBe('policy_issued');
     expect(applicationColumn({ id: 'c', status: 'consulted' })).toBe('in_progress');
   });
 

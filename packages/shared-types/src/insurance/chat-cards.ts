@@ -51,6 +51,10 @@ export const policyDocumentsCardSchema = z.object({
   ...cardBase,
   policyNumber: z.string().min(1),
   documentCount: z.number().int().positive(),
+  documents: z.array(z.object({
+    name: z.string().min(1),
+    s3Key: z.string().min(1),
+  })).optional(),
 });
 
 export const statusUpdateCardSchema = z.object({

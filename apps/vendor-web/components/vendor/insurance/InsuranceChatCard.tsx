@@ -57,7 +57,17 @@ export function InsuranceChatCard({
     return <div className="rounded-xl border p-3 text-sm">Status: {String(metadata.toStatus || '').replaceAll('_', ' ')}</div>;
   }
   if (card === 'policy_documents') {
-    return <div className="rounded-xl border p-3 text-sm">Policy {String(metadata.policyNumber || '')} uploaded</div>;
+    const documents = Array.isArray(metadata.documents) ? metadata.documents as Array<{ name?: string }> : [];
+    return (
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
+        <p className="font-semibold">Policy {String(metadata.policyNumber || '')} issued</p>
+        {documents.length > 0 ? (
+          <ul className="mt-2 space-y-1 text-xs text-gray-700">
+            {documents.map((doc) => <li key={String(doc.name)}>{String(doc.name || 'Policy file')}</li>)}
+          </ul>
+        ) : null}
+      </div>
+    );
   }
   return <div className="rounded-xl border p-3 text-sm">{card}</div>;
 }

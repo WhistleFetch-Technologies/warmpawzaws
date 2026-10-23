@@ -1,8 +1,55 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { parseInsuranceChatMetadata } from './insurance-chat-metadata';
+
+function PolicyDocumentsCard({ metadata }: { metadata: Record<string, unknown> }) {
+  const [files, setFiles] = useState<Array<{ name?: string; url?: string }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void import('@/lib/insurance-customer')
+      .then(({ resolveCustomerId }) => resolveCustomerId())
+      .then(async (customerId) => {
+        if (!customerId) return [];
+        const res = await apiClient.get<{ data?: { policies?: Array<{ application_id?: string; documents?: Array<{ name?: string; url?: string }> }> } }>(
+          `/customer/insurance/policies?customerId=${encodeURIComponent(customerId)}`,
+        );
+        const match = (res.data?.policies || []).find((row) => row.application_id === String(metadata.applicationId));
+        return match?.documents || [];
+      })
+      .then((docs) => {
+        if (!cancelled) setFiles(docs);
+      })
+      .catch(() => {
+        if (!cancelled) setFiles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [metadata.applicationId]);
+
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
+      <p className="font-semibold">Policy {String(metadata.policyNumber || '')}</p>
+      <p className="mt-1 text-xs text-gray-600">The number and file are also in My Insurance and Your active policy.</p>
+      {files.length > 0 ? (
+        <ul className="mt-2 space-y-1">
+          {files.map((file, index) => (
+            <li key={`${file.name || 'policy'}-${index}`}>
+              {file.url ? (
+                <a className="font-semibold text-[#FF8C42]" href={file.url} target="_blank" rel="noreferrer">{file.name || 'Open policy file'}</a>
+              ) : (
+                <span>{file.name || 'Policy file'}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 export function InsuranceChatCard({
   metadata: rawMetadata,
@@ -75,7 +122,7 @@ export function InsuranceChatCard({
     );
   }
   if (card === 'policy_documents') {
-    return <div className="rounded-xl border p-3 text-sm">Policy {String(metadata.policyNumber || '')} is ready to review in My Insurance.</div>;
+    return <PolicyDocumentsCard metadata={metadata} />;
   }
   return <div className="rounded-xl border p-3 text-sm">{card}</div>;
 }
