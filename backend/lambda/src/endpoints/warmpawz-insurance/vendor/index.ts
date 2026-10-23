@@ -15,6 +15,7 @@ import {
   listVersionsHandler,
   publishFormHandler,
   quoteHandler,
+  unpublishFormHandler,
   updateFormHandler,
 } from './library.handlers';
 import {
@@ -51,6 +52,7 @@ export function registerWarmpawzInsuranceVendorRoutes(app: Hono): void {
   app.post('/vendor/:vendorId/insurance/forms', gate, createFormHandler);
   app.put('/vendor/:vendorId/insurance/forms/:id', gate, updateFormHandler);
   app.post('/vendor/:vendorId/insurance/forms/:id/publish', gate, publishFormHandler);
+  app.post('/vendor/:vendorId/insurance/forms/:id/unpublish', gate, unpublishFormHandler);
   app.get('/vendor/:vendorId/insurance/forms/:id/versions', gate, listVersionsHandler);
   app.get('/vendor/:vendorId/insurance/slugs', gate, listSlugsHandler);
   app.get('/vendor/:vendorId/insurance/applications', gate, listApplicationsBoardHandler);

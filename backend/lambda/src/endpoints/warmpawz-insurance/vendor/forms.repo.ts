@@ -90,6 +90,17 @@ export async function dbPublishForm(vendorId: string, templateId: string, actor:
   });
 }
 
+export async function dbUnpublishForm(vendorId: string, templateId: string): Promise<Row | null> {
+  const res = await query(
+    `UPDATE insurance_form_templates
+     SET status = 'draft', updated_at = NOW()
+     WHERE id = $1::uuid AND vendor_id = $2::uuid
+     RETURNING *`,
+    [templateId, vendorId],
+  );
+  return (res.rows as Row[])[0] || null;
+}
+
 export async function dbListVersions(vendorId: string, templateId: string): Promise<Row[]> {
   const res = await query(
     `SELECT v.*

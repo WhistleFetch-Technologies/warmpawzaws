@@ -3775,6 +3775,10 @@ export function CustomerHomeComplete({
           vendorName={chatFromNotification.vendorName}
           vendorPhoto={chatFromNotification.vendorPhoto}
           onClose={() => setChatFromNotification(null)}
+          onOpenInsuranceForm={(applicationId) => {
+            setChatFromNotification(null);
+            onNavigate?.('insurance_form', { applicationId });
+          }}
         />
       )}
 

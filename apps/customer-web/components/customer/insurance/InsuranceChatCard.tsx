@@ -3,7 +3,13 @@
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
-export function InsuranceChatCard({ metadata }: { metadata: Record<string, unknown> | null | undefined }) {
+export function InsuranceChatCard({
+  metadata,
+  onOpenForm,
+}: {
+  metadata: Record<string, unknown> | null | undefined;
+  onOpenForm?: (applicationId: string) => void;
+}) {
   if (!metadata || typeof metadata.card !== 'string') return null;
   const card = metadata.card;
   if (card === 'plan_quote') {
@@ -16,15 +22,19 @@ export function InsuranceChatCard({ metadata }: { metadata: Record<string, unkno
     );
   }
   if (card === 'form_request' || card === 'change_request') {
-    const applicationId = String(metadata.applicationId || '');
+    const applicationId = String(metadata.applicationId || metadata.application_id || '');
     return (
-      <div className={`rounded-xl border p-3 text-sm ${card === 'change_request' ? 'border-amber-200 bg-amber-50' : ''}`}>
+      <div className={`rounded-xl border p-3 text-sm ${card === 'change_request' ? 'border-amber-200 bg-amber-50' : 'border-sky-200 bg-sky-50'}`}>
         <p>{card === 'change_request' ? 'Corrections requested' : 'Please complete the information form.'}</p>
         {applicationId ? (
           <button
             type="button"
             className="mt-2 font-semibold text-[#FF8C42]"
-            onClick={() => window.dispatchEvent(new CustomEvent('warmpawz-insurance-form', { detail: { applicationId } }))}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenForm?.(applicationId);
+              window.dispatchEvent(new CustomEvent('warmpawz-insurance-form', { detail: { applicationId } }));
+            }}
           >
             Open form
           </button>
@@ -41,8 +51,8 @@ export function InsuranceChatCard({ metadata }: { metadata: Record<string, unkno
   if (card === 'payment_link') {
     return (
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
-        <p className="font-semibold">Pay ₹{String(metadata.amount || '')}</p>
-        <a className="mt-2 inline-block font-semibold text-[#FF8C42]" href={String(metadata.url || '')} target="_blank" rel="noreferrer">Open payment link</a>
+        <p className="font-semibold">Make payment · ₹{String(metadata.amount || '')}</p>
+        <a className="mt-2 inline-block font-semibold text-[#FF8C42]" href={String(metadata.url || '')} target="_blank" rel="noreferrer">Make payment</a>
         <button
           type="button"
           className="mt-2 block text-left font-semibold"

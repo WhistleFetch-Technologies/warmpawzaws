@@ -20,6 +20,7 @@ import {
   dbListForms,
   dbListVersions,
   dbPublishForm,
+  dbUnpublishForm,
   dbUpdateDraft,
   dbVendorLinkedToCompany,
 } from './forms.repo';
@@ -131,6 +132,16 @@ export async function publishFormHandler(c: Context) {
     checkedSchema(existing.draft_schema);
     const version = await dbPublishForm(c.req.param('vendorId'), c.req.param('id'), c.req.param('vendorId'));
     return insuranceAdminOk(c, { version });
+  } catch (error) {
+    return insuranceAdminError(c, error);
+  }
+}
+
+export async function unpublishFormHandler(c: Context) {
+  try {
+    const form = await dbUnpublishForm(c.req.param('vendorId'), c.req.param('id'));
+    if (!form) throw new InsuranceAdminError(404, 'NOT_FOUND', 'Form not found');
+    return insuranceAdminOk(c, { form });
   } catch (error) {
     return insuranceAdminError(c, error);
   }

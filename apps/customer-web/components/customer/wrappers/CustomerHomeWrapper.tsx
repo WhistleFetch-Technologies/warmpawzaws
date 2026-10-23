@@ -1820,6 +1820,11 @@ export function CustomerHomeWrapper({
     else if (service === 'adoption_questionnaire') navigateToScreen('adoption_questionnaire');
     else if (service === 'sunset') navigateToScreen('sunset');
     else if (service === 'insurance') navigateToScreen('insurance');
+    else if (service === 'insurance_form') {
+      const applicationId = String(data?.applicationId || '').trim();
+      if (applicationId) navigateToScreen('insurance_form', routeKey.insuranceApplication(applicationId));
+    }
+    else if (service === 'my_insurance') navigateToScreen('my_insurance');
     else if (service === 'cafes') navigateToScreen('cafes');
     else if (service === 'shop') {
       const raw =

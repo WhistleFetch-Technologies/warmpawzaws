@@ -28,6 +28,7 @@ interface ChatInterfaceFromNotificationProps {
   vendorName: string;
   vendorPhoto?: string;
   onClose: () => void;
+  onOpenInsuranceForm?: (applicationId: string) => void;
 }
 
 interface Message {
@@ -38,12 +39,23 @@ interface Message {
   metadata?: Record<string, unknown> | null;
 }
 
+function lastPaymentLink(messages: Message[]): { url: string; amount?: string } | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const meta = messages[i]?.metadata;
+    if (meta?.card === 'payment_link' && meta.url) {
+      return { url: String(meta.url), amount: meta.amount != null ? String(meta.amount) : undefined };
+    }
+  }
+  return null;
+}
+
 export function ChatInterfaceFromNotification({
   isOpen,
   bookingId,
   vendorName,
   vendorPhoto,
   onClose,
+  onOpenInsuranceForm,
 }: ChatInterfaceFromNotificationProps) {
   useVisualViewport();
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -86,6 +98,13 @@ export function ChatInterfaceFromNotification({
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeForForm = () => onClose();
+    window.addEventListener('warmpawz-insurance-form', closeForForm);
+    return () => window.removeEventListener('warmpawz-insurance-form', closeForForm);
+  }, [isOpen, onClose]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -161,6 +180,8 @@ export function ChatInterfaceFromNotification({
 
   if (!isOpen) return null;
 
+  const payment = lastPaymentLink(messages);
+
   return (
     <div ref={overlayRef} className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-customer flex flex-col shadow-2xl" style={{ height: 'min(600px, calc(var(--vvh, 100dvh) - 2rem))' }}>
@@ -216,7 +237,17 @@ export function ChatInterfaceFromNotification({
                       : 'bg-gray-100 text-gray-900'
                   }`}
                 >
-                  {message.metadata ? <InsuranceChatCard metadata={message.metadata} /> : <div className="text-sm">{message.message}</div>}
+                  {message.metadata ? (
+                    <InsuranceChatCard
+                      metadata={message.metadata}
+                      onOpenForm={(applicationId) => {
+                        onClose();
+                        onOpenInsuranceForm?.(applicationId);
+                      }}
+                    />
+                  ) : (
+                    <div className="text-sm">{message.message}</div>
+                  )}
                   <div
                     className={`text-xs mt-1 ${
                       message.sender === 'customer' ? 'text-white/70' : 'text-gray-500'
@@ -236,6 +267,16 @@ export function ChatInterfaceFromNotification({
 
         {/* Input */}
         <div className="p-4 border-t border-gray-200">
+          {payment ? (
+            <a
+              href={payment.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mb-3 flex w-full items-center justify-center rounded-xl bg-[#FF8C42] px-4 py-3 text-sm font-semibold text-white"
+            >
+              Make payment{payment.amount ? ` · ₹${payment.amount}` : ''}
+            </a>
+          ) : null}
           <div className="flex items-center gap-2">
             <input
               ref={inputRef}
