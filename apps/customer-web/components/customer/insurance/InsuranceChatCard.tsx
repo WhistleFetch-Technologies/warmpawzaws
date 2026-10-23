@@ -45,7 +45,7 @@ export function InsuranceChatCard({
     );
   }
   if (card === 'form_submission') {
-    return <div className="rounded-xl border p-3 text-sm">Form submitted · revision {String(metadata.revision || '')}</div>;
+    return <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">Information form submitted · revision {String(metadata.revision || '')}</div>;
   }
   if (card === 'status_update') {
     return <div className="rounded-xl border p-3 text-sm">Status: {String(metadata.toStatus || '').replaceAll('_', ' ')}</div>;

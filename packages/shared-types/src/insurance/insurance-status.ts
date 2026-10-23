@@ -82,7 +82,7 @@ export const INSURANCE_STATUS_TRANSITIONS: Readonly<
   consulted: ['quote_shared', 'form_sent', 'dropped'],
   quote_shared: ['quote_shared', 'form_sent', 'dropped'],
   form_sent: ['form_submitted', 'dropped'],
-  form_submitted: ['changes_requested', 'form_confirmed'],
+  form_submitted: ['changes_requested', 'form_confirmed', 'payment_link_sent'],
   changes_requested: ['form_submitted', 'dropped'],
   form_confirmed: ['payment_link_sent'],
   payment_link_sent: ['payment_reported', 'payment_link_expired', 'payment_link_sent'],

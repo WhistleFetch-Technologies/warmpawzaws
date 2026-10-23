@@ -268,6 +268,18 @@ export async function dbLatestSubmission(applicationId: string): Promise<Row | n
   return (res.rows as Row[])[0] || null;
 }
 
+function answerLines(answers: unknown): string[] {
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return [];
+  return Object.entries(answers as Record<string, unknown>)
+    .slice(0, 8)
+    .map(([key, value]) => {
+      const text = Array.isArray(value) ? value.map(String).join(', ') : String(value ?? '');
+      const trimmed = text.trim();
+      return trimmed ? `${key}: ${trimmed.slice(0, 80)}` : '';
+    })
+    .filter(Boolean);
+}
+
 export async function dbInsertSubmission(input: {
   applicationId: string;
   templateVersionId: string;
@@ -308,6 +320,23 @@ export async function dbInsertSubmission(input: {
        VALUES ($1::uuid, NULL, 'form_submitted', 'customer', $2)`,
       [input.applicationId, `Revision ${input.revision}`],
     );
-    return inserted.rows[0] as Row;
+    const row = inserted.rows[0] as Row;
+    const summary = answerLines(input.answers);
+    await client.query(
+      `INSERT INTO chat_messages
+         (booking_id, sender_phone, sender_type, message, message_type, metadata, is_read)
+       SELECT a.booking_id, a.customer_id::text, 'customer', 'Information form submitted', 'card', $2::jsonb, false
+       FROM insurance_applications a
+       WHERE a.id = $1::uuid AND a.booking_id IS NOT NULL`,
+      [input.applicationId, JSON.stringify({
+        card: 'form_submission',
+        applicationId: input.applicationId,
+        version: 1,
+        submissionId: String(row.id),
+        revision: input.revision,
+        summary,
+      })],
+    );
+    return row;
   });
 }

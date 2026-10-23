@@ -19,7 +19,7 @@ type PlanRow = {
 type FormRow = { id?: string; name?: string; status?: string };
 type ChatMessage = { id?: string; message?: string; sender_type?: string; metadata?: Record<string, unknown> | null };
 
-const PAYMENT_STATUSES = new Set(['form_confirmed', 'payment_link_sent', 'payment_link_expired']);
+const PAYMENT_STATUSES = new Set(['form_submitted', 'form_confirmed', 'payment_link_sent', 'payment_link_expired']);
 const QUOTE_STATUSES = new Set(['consulted', 'quote_shared']);
 
 function lastPaymentUrl(messages: ChatMessage[]): string {
@@ -261,7 +261,7 @@ export function InsuranceChatWorkspace({
             <button type="button" className="w-full rounded-xl bg-[#FF8C42] px-3 py-2 font-semibold text-white" onClick={() => void sendPayment()}>Send payment button</button>
           </div>
         ) : (
-          <p className="text-xs text-gray-500">Payment button appears after you confirm the customer form.</p>
+          <p className="text-xs text-gray-500">Payment button appears after the customer submits the information form.</p>
         )}
       </aside>
 

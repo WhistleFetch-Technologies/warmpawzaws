@@ -202,7 +202,7 @@ export function InsuranceKanban({
                     {row.status === 'consultation_booked' ? (
                       <button type="button" className="mt-1 block text-xs font-semibold text-gray-600 underline" onClick={() => void transitionTo(row.id, 'cancelled')}>Cancel application</button>
                     ) : null}
-                    {row.status === 'form_confirmed' || row.status === 'payment_link_sent' || row.status === 'payment_link_expired' ? (
+                    {row.status === 'form_submitted' || row.status === 'form_confirmed' || row.status === 'payment_link_sent' || row.status === 'payment_link_expired' ? (
                       <div className="mt-2 space-y-1">
                         <input className="w-full rounded border px-2 py-1 text-xs" value={paymentUrl} onChange={(e) => setPaymentUrl(e.target.value)} placeholder="https:// payment link" />
                         <button type="button" className="rounded-lg bg-[#FF8C42] px-2 py-1 text-xs font-semibold text-white" onClick={() => void post(row.id, 'payment-link', { url: paymentUrl, amount: Number(amount) })}>Send payment link</button>

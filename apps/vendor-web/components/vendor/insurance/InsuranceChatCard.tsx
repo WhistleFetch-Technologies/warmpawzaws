@@ -40,7 +40,18 @@ export function InsuranceChatCard({
     );
   }
   if (card === 'form_submission') {
-    return <div className="rounded-xl border p-3 text-sm">Form submitted · revision {String(metadata.revision || '')}</div>;
+    const summary = Array.isArray(metadata.summary) ? metadata.summary.map(String) : [];
+    return (
+      <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">
+        <p className="font-semibold">Customer submitted the information form</p>
+        <p className="text-xs text-gray-600">Revision {String(metadata.revision || '')}</p>
+        {summary.length > 0 ? (
+          <ul className="mt-2 space-y-1 text-xs text-gray-700">
+            {summary.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        ) : null}
+      </div>
+    );
   }
   if (card === 'status_update') {
     return <div className="rounded-xl border p-3 text-sm">Status: {String(metadata.toStatus || '').replaceAll('_', ' ')}</div>;
