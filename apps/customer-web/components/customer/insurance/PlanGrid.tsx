@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronRight, FileText, Heart, PawPrint, Shield } from 'luci
 import { CachedImage } from '@/components/shared/CachedImage';
 import { apiClient } from '@/lib/api-client';
 import { PolicyDetailPanel, type PolicyDetailData } from './PolicyDetailPanel';
+import { CustomerPolicyCards } from './CustomerPolicyCards';
 
 export interface InsurancePlanCard {
   id: string;
@@ -45,6 +46,7 @@ export function PlanGrid({
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<PolicyDetailData | null>(null);
   const [detailError, setDetailError] = useState('');
+  const [tab, setTab] = useState<'plans' | 'active'>('plans');
 
   useEffect(() => {
     apiClient
@@ -101,11 +103,32 @@ export function PlanGrid({
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <h1 className="text-xl font-bold">Pet Insurance Plans</h1>
-        <p className="mt-0.5 text-sm text-white/90">Compare top plans for your pet</p>
+        <h1 className="text-xl font-bold">Pet Insurance</h1>
+        <p className="mt-0.5 text-sm text-white/90">
+          {tab === 'plans' ? 'Compare top plans for your pet' : 'Policies that have been issued for you'}
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-1 rounded-full bg-white/20 p-1">
+          <button
+            type="button"
+            className={`h-9 rounded-full text-sm font-semibold ${tab === 'plans' ? 'bg-white text-[#FF8C42]' : 'text-white'}`}
+            onClick={() => setTab('plans')}
+          >
+            Plans
+          </button>
+          <button
+            type="button"
+            className={`min-h-9 rounded-full px-2 text-xs font-semibold leading-tight sm:text-sm ${tab === 'active' ? 'bg-white text-[#FF8C42]' : 'text-white'}`}
+            onClick={() => setTab('active')}
+          >
+            Your active policy
+          </button>
+        </div>
       </header>
 
-      <div className="flex-1 px-4 py-4">
+      <div className="mx-auto w-full max-w-lg flex-1 px-4 py-4">
+        {tab === 'active' ? <CustomerPolicyCards scope="active" /> : null}
+        {tab === 'plans' ? (
+        <>
         {loading ? <p className="py-8 text-center text-sm text-gray-500">Loading plans…</p> : null}
         {error || detailError ? <p className="py-8 text-center text-sm text-gray-600">{error || detailError}</p> : null}
         {!loading && !error && plans.length === 0 ? (
@@ -162,8 +185,11 @@ export function PlanGrid({
             );
           })}
         </div>
+        </>
+        ) : null}
       </div>
 
+      {tab === 'plans' ? (
       <div className="sticky bottom-[var(--customer-tabbed-nav-offset,0px)] bg-[#FFF8F3] px-4 pb-3 pt-2">
         <button
           type="button"
@@ -177,6 +203,7 @@ export function PlanGrid({
           Coverage and pricing are confirmed by the insurer/vendor.
         </p>
       </div>
+      ) : null}
     </div>
   );
 }

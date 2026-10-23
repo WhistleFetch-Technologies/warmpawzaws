@@ -162,11 +162,40 @@ export async function dbPolicy(applicationId: string): Promise<Row | null> {
 
 export async function dbCustomerPolicies(customerId: string): Promise<Row[]> {
   const res = await query(
-    `SELECT a.id AS application_id, a.status, p.policy_number, p.issued_premium, p.start_date, p.end_date, p.documents, p.confirmed_at
+    `SELECT a.id AS application_id,
+            a.status,
+            COALESCE(p.policy_number, a.policy_number) AS policy_number,
+            COALESCE(p.issued_premium, a.issued_premium) AS issued_premium,
+            p.start_date,
+            p.end_date,
+            p.documents,
+            p.confirmed_at,
+            co.name AS company_name,
+            co.logo_url AS company_logo_url,
+            pl.name AS plan_name,
+            pet.name AS pet_name
      FROM insurance_applications a
-     JOIN insurance_policies_issued p ON p.application_id = a.id
-     WHERE a.customer_id = $1::uuid AND a.status IN ('policy_uploaded', 'policy_confirmed', 'free_look_cancelled')
-     ORDER BY p.uploaded_at DESC`,
+     LEFT JOIN insurance_policies_issued p ON p.application_id = a.id
+     LEFT JOIN insurance_companies co ON co.id = a.company_id
+     LEFT JOIN insurance_company_plans pl ON pl.id = a.plan_id
+     LEFT JOIN pets pet ON pet.id = a.pet_id
+     WHERE a.status IN (
+             'policy_uploaded', 'policy_confirmed', 'free_look_cancelled',
+             'documents_uploaded', 'policy_issued'
+           )
+       AND (p.application_id IS NOT NULL OR NULLIF(BTRIM(COALESCE(a.policy_number, '')), '') IS NOT NULL)
+       AND (
+         a.customer_id = $1::uuid
+         OR EXISTS (
+           SELECT 1
+           FROM customers me
+           JOIN customers same ON same.phone = me.phone
+           WHERE me.id = $1::uuid
+             AND NULLIF(BTRIM(me.phone), '') IS NOT NULL
+             AND same.id = a.customer_id
+         )
+       )
+     ORDER BY COALESCE(p.uploaded_at, a.updated_at) DESC`,
     [customerId],
   );
   return res.rows as Row[];
