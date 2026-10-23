@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { DynamicFormRenderer } from '@warmpawz/ui';
 import type { FormSchema } from '@warmpawz/shared-types';
 import { validateDynamicForm } from '@warmpawz/shared-types';
@@ -78,31 +79,65 @@ export function InsuranceFormScreen({
     }
   }
 
+  const submitted = message === 'Submitted';
+
   return (
-    <div className="min-h-screen bg-white px-4 py-4">
-      <button type="button" className="text-sm font-semibold" onClick={onBack}>Back</button>
-      <h1 className="mt-2 text-xl font-bold">Insurance form</h1>
-      {schema ? (
-        <DynamicFormRenderer
-          schema={schema}
-          values={values}
-          prefilled={prefilled}
-          fieldNotes={notes}
-          errors={errors}
-          onChange={(key, value) => {
-            setDirty(true);
-            setValues((prev) => ({ ...prev, [key]: value }));
-          }}
-        />
+    <div className="flex min-h-[100dvh] flex-col bg-[#FFF8F3]">
+      <header className="bg-gradient-to-br from-[#FF8C42] to-[#FF7A2F] px-4 pb-5 text-white cw-header-safe-top">
+        <button
+          type="button"
+          onClick={onBack}
+          className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/15"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Insurance</p>
+        <h1 className="text-xl font-bold">Information form</h1>
+      </header>
+      <div className="mx-auto w-full max-w-lg flex-1 space-y-3 px-4 py-4 pb-28">
+        {message && !schema ? <p className="rounded-2xl border border-orange-100 bg-white px-4 py-3 text-sm text-gray-600">{message}</p> : null}
+        {schema ? (
+          <DynamicFormRenderer
+            schema={schema}
+            values={values}
+            prefilled={prefilled}
+            fieldNotes={notes}
+            errors={errors}
+            suppressUnverifiedHelp
+            onChange={(key, value) => {
+              setDirty(true);
+              setValues((prev) => ({ ...prev, [key]: value }));
+            }}
+          />
+        ) : null}
+        {schema ? (
+          <label className="flex items-start gap-3 rounded-2xl border border-orange-100 bg-white p-4 text-sm text-gray-800 shadow-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-[#FF8C42]"
+              checked={consent}
+              onChange={(e) => { setConsent(e.target.checked); setDirty(true); }}
+            />
+            I confirm these details are correct
+          </label>
+        ) : null}
+        {message && schema ? (
+          <p className={`rounded-2xl px-4 py-3 text-sm ${submitted ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{message}</p>
+        ) : null}
+      </div>
+      {schema && !submitted ? (
+        <div className="sticky bottom-0 bg-[#FFF8F3] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
+          <button
+            type="button"
+            className="mx-auto flex h-12 w-full max-w-lg items-center justify-center rounded-2xl bg-[#FF8C42] text-sm font-bold text-white disabled:bg-slate-300"
+            disabled={!consent}
+            onClick={() => void submit()}
+          >
+            Submit
+          </button>
+        </div>
       ) : null}
-      <label className="mt-4 flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setDirty(true); }} />
-        I confirm these details are correct
-      </label>
-      <button type="button" className="mt-4 w-full rounded-xl bg-[#FF8C42] py-3 font-bold text-white" onClick={() => void submit()}>
-        Submit
-      </button>
-      {message ? <p className="mt-3 text-sm">{message}</p> : null}
     </div>
   );
 }
