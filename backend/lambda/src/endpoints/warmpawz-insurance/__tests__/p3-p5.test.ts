@@ -139,6 +139,8 @@ describe('P5 cards, submissions, and the renderer contract', () => {
   it('only follows allowed status edges', () => {
     expect(canTransitionInsuranceStatus('form_sent', 'form_submitted')).toBe(true);
     expect(canTransitionInsuranceStatus('form_submitted', 'form_confirmed')).toBe(true);
+    expect(canTransitionInsuranceStatus('consulted', 'quote_shared')).toBe(true);
+    expect(canTransitionInsuranceStatus('consulted', 'form_sent')).toBe(true);
     expect(canTransitionInsuranceStatus('consultation_booked', 'form_confirmed')).toBe(false);
     expect(canTransitionInsuranceStatus('cancelled', 'consulted')).toBe(false);
   });

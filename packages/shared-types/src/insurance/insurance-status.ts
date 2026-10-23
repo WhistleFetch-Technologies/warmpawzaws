@@ -79,7 +79,7 @@ export const INSURANCE_STATUS_TRANSITIONS: Readonly<
   Record<InsuranceApplicationStatus, readonly InsuranceApplicationStatus[]>
 > = {
   consultation_booked: ['consulted', 'cancelled'],
-  consulted: ['quote_shared', 'dropped'],
+  consulted: ['quote_shared', 'form_sent', 'dropped'],
   quote_shared: ['quote_shared', 'form_sent', 'dropped'],
   form_sent: ['form_submitted', 'dropped'],
   form_submitted: ['changes_requested', 'form_confirmed'],
