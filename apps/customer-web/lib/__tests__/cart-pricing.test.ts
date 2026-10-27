@@ -25,30 +25,36 @@ describe('computeCartPricing', () => {
     expect(result.byVendor[0].subtotal).toBe(324);
   });
 
-  it('charges standard delivery on all order values', () => {
+  it('does not charge delivery', () => {
     const cart = [line({ id: 'a', name: 'A', price: 100, quantity: 1 })];
     const result = computeCartPricing(cart);
-    expect(result.deliveryFees).toBe(150);
+    expect(result.deliveryFees).toBe(0);
     expect(result.freeDeliveryGap).toBe(0);
+    expect(result.total).toBe(100);
   });
 
-  it('charges delivery fee even when subtotal is high', () => {
+  it('adds the quoted platform fee and its GST after the discount', () => {
     const cart = [line({ id: 'a', name: 'A', price: 1000, quantity: 1 })];
-    const result = computeCartPricing(cart);
-    expect(result.deliveryFees).toBe(150);
-    expect(result.freeDeliveryGap).toBe(0);
-    expect(result.total).toBe(1150);
+    const result = computeCartPricing(cart, {
+      sellerPromotion: { autoDiscount: 150, source: 'admin' },
+      platformFee: 20,
+      platformFeeGstAmount: 3.6,
+    });
+    expect(result.subtotalAfterDiscount).toBe(850);
+    expect(result.deliveryFees).toBe(0);
+    expect(result.platformFee).toBe(20);
+    expect(result.platformFeeGstAmount).toBe(3.6);
+    expect(result.total).toBe(873.6);
   });
 
-  it('groups multi-vendor carts but charges one order-level delivery fee (never per-vendor)', () => {
+  it('groups multi-vendor carts without a delivery charge', () => {
     const cart = [
       line({ id: 'a', name: 'A', price: 100, quantity: 1, vendorId: 'vendor1' }),
       line({ id: 'b', name: 'B', price: 100, quantity: 1, vendorId: 'vendor2' }),
     ];
     const result = computeCartPricing(cart);
     expect(result.byVendor).toHaveLength(2);
-    // Order-level rule: flat ₹150 delivery on all cart values.
-    expect(result.deliveryFees).toBe(150);
+    expect(result.deliveryFees).toBe(0);
   });
 
   it('applies percentage coupon with max cap', () => {
@@ -86,13 +92,12 @@ describe('computeCartPricing', () => {
     expect(result.freeDeliveryGap).toBe(0);
   });
 
-  it('total = subtotalAfterDiscount + deliveryFees + giftWrapFee + protectionFee (GST is informational, never added on top)', () => {
+  it('total = subtotalAfterDiscount + platform fee + fee GST (product GST is informational, never added on top)', () => {
     const cart = [line({ id: 'a', name: 'A', price: 1180, quantity: 1 })];
-    const result = computeCartPricing(cart);
+    const result = computeCartPricing(cart, { platformFee: 10, platformFeeGstAmount: 1.8 });
     expect(result.subtotalAfterDiscount).toBe(1180);
-    expect(result.deliveryFees).toBe(150);
-    expect(result.total).toBe(1330);
-    // taxAmount is informational only and must not have been added into total.
+    expect(result.deliveryFees).toBe(0);
+    expect(result.total).toBe(1191.8);
     expect(result.total).not.toBe(1180 + result.taxAmount);
   });
 
@@ -138,7 +143,7 @@ describe('calculateVendorDeliveryFee', () => {
   it('uses express fee when selected', () => {
     expect(
       calculateVendorDeliveryFee('default', 100, { deliverySpeed: 'express' }, 100)
-    ).toBe(150);
+    ).toBe(0);
   });
 });
 

@@ -416,6 +416,8 @@ export class GetCustomerOrdersHandler extends BaseHandler {
           o.discount_amount,
           o.wallet_amount_applied,
           o.shipping_amount,
+          COALESCE(NULLIF(o.metadata #>> '{checkoutSnapshot,platform_fee}', '')::numeric, 0) AS platform_fee,
+          COALESCE(NULLIF(o.metadata #>> '{checkoutSnapshot,platform_fee_gst_amount}', '')::numeric, 0) AS platform_fee_gst_amount,
           o.tax_amount,
           o.payment_method,
           o.delivered_at,

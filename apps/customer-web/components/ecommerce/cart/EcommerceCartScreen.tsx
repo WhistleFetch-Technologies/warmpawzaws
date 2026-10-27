@@ -86,6 +86,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     label?: string;
     source?: 'vendor' | 'admin';
   } | null>(null);
+  const [platformCharge, setPlatformCharge] = useState({ platformFee: 0, platformFeeGstAmount: 0 });
   const [addresses, setAddresses] = useState<DeliveryAddress[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<DeliveryAddress | null>(null);
   const [addressesLoading, setAddressesLoading] = useState(true);
@@ -113,8 +114,10 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       deliverySpeed: 'standard',
       itemCount,
       sellerPromotion: sellerPromotionPricing,
+      platformFee: platformCharge.platformFee,
+      platformFeeGstAmount: platformCharge.platformFeeGstAmount,
     });
-  }, [cart, itemCount, sellerPromotionPricing]);
+  }, [cart, itemCount, sellerPromotionPricing, platformCharge]);
 
 
   const undeliverableItems = useMemo(
@@ -154,6 +157,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     if (cart.length === 0) {
       setAutoPromo(null);
       setLineDiscounts(null);
+      setPlatformCharge({ platformFee: 0, platformFeeGstAmount: 0 });
       writePromoLineDiscounts([]);
       return;
     }
@@ -178,6 +182,8 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             expiryDays?: number | null;
           } | null;
           lineDiscounts?: PromoLineDiscount[];
+          platformFee?: number;
+          platformFeeGstAmount?: number;
         }>('/promotions/calculate-cart', {
           ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
           customerId: getResolvedCustomerId() || undefined,
@@ -187,6 +193,10 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
         const nextLines = Array.isArray(res?.lineDiscounts) ? res.lineDiscounts : [];
         setLineDiscounts(nextLines);
         writePromoLineDiscounts(nextLines);
+        setPlatformCharge({
+          platformFee: Math.max(0, Number(res?.platformFee) || 0),
+          platformFeeGstAmount: Math.max(0, Number(res?.platformFeeGstAmount) || 0),
+        });
         const best = res?.bestPromotion;
         const amount = Math.max(
           Number(best?.calculatedDiscount ?? 0) || 0,
@@ -212,10 +222,11 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             /* ignore */
           }
         }
-      } catch {
+      }       catch {
         if (!cancelled) {
           setAutoPromo(null);
           setLineDiscounts(null);
+          setPlatformCharge({ platformFee: 0, platformFeeGstAmount: 0 });
         }
       }
     })();
@@ -315,8 +326,10 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               source: autoPromo?.source ?? 'admin',
             }
           : undefined,
+      platformFee: platformCharge.platformFee,
+      platformFeeGstAmount: platformCharge.platformFeeGstAmount,
     });
-  }, [autoPromo, itemCount]);
+  }, [autoPromo, itemCount, platformCharge]);
 
   const handleProceedCheckout = () => {
     if (!selectedAddress?.id) {
@@ -344,6 +357,8 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       itemCount,
       deliverySpeed: 'standard',
       sellerPromotion: sellerPromotionPricing,
+      platformFee: platformCharge.platformFee,
+      platformFeeGstAmount: platformCharge.platformFeeGstAmount,
     });
     nav.goToCheckout({ step: 'payment' });
   };

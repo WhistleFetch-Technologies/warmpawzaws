@@ -947,7 +947,7 @@ export function registerEcommerceEndpoints(app: Hono) {
             : 0;
       const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount);
 
-      // Fix C: delivery fee is always server-computed; reject if client supplied a different value.
+      // Delivery is not charged. Reject a client that still sends the old fee.
       const serverShipping = computeEcommerceDeliveryFee(subtotalAfterDiscount);
       if (bodyShipping != null && Number.isFinite(Number(bodyShipping))) {
         if (Math.abs(Number(bodyShipping) - serverShipping) > 0.01) {
@@ -958,6 +958,9 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
       const shippingAmount = serverShipping;
+
+      const { quoteEcommercePlatformFee } = await import('../shared/quote-ecommerce-platform-fee');
+      const platformFeeQuote = await quoteEcommercePlatformFee(subtotalAfterDiscount);
 
       // Fix B: tax is backend-authoritative via taxCalculationService (CGST/SGST/IGST, place-of-supply aware).
       // Load vendor address for inter-state vs intra-state determination.
@@ -1026,9 +1029,9 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       // Fix A: total is always server-computed; reject if client supplied a value that differs by more than ₹1.
-      // Formula: (original subtotal - discount) + shipping. GST is already inside the
-      // GST-inclusive subtotal, so it is never added a second time.
-      const recomputedTotal = Math.round((subtotalAfterDiscount + shippingAmount) * 100) / 100;
+      // Formula: (original subtotal - discount) + platform fee + platform-fee GST.
+      // Product GST is already inside the GST-inclusive subtotal, so it is never added a second time.
+      const recomputedTotal = Math.round((subtotalAfterDiscount + shippingAmount + platformFeeQuote.platformFeeGross) * 100) / 100;
       if (bodyTotal != null && Number.isFinite(Number(bodyTotal))) {
         const diff = Math.abs(Number(bodyTotal) - recomputedTotal);
         if (diff > 1) {
@@ -1092,6 +1095,10 @@ export function registerEcommerceEndpoints(app: Hono) {
           shipping_amount: shippingAmount,
           tax_amount: taxAmount,
           discount_amount: discountAmount,
+          platform_fee: platformFeeQuote.platformFee,
+          platform_fee_mode: platformFeeQuote.platformFeeMode,
+          platform_fee_gst_rate: platformFeeQuote.platformFeeGstRate,
+          platform_fee_gst_amount: platformFeeQuote.platformFeeGstAmount,
           total_amount: totalAmount,
         },
         shippingAddress: normalizedAddress,
@@ -1717,7 +1724,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
-      const shippingAmount = shippingAddress ? 50 : 0; // Should be calculated
+      const shippingAmount = 0;
       const totalAmount = subtotal + taxAmount + shippingAmount;
 
       let priorOrderCount = 0;

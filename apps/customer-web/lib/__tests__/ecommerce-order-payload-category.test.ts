@@ -47,7 +47,7 @@ describe('buildEcommerceOrderPayload category fields (Step A test 6)', () => {
     expect(payload.shippingFee).toBe(pricing.deliveryFees);
     expect(payload.subtotal).toBe(pricing.lineSubtotal);
     expect(payload.discountAmount).toBe(2849.85);
-    expect(payload.shippingFee).toBe(150);
-    expect(payload.totalAmount).toBe(18999 - 2849.85 + 150);
+    expect(payload.shippingFee).toBe(0);
+    expect(payload.totalAmount).toBe(18999 - 2849.85);
   });
 });

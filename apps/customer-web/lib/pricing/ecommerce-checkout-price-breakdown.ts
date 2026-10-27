@@ -54,6 +54,22 @@ export function buildEcommerceCheckoutPriceLines(
     });
   }
 
+  if (pricing.platformFee > 0) {
+    lines.push({
+      kind: 'platform_fee',
+      label: 'Platform fee',
+      amount: pricing.platformFee,
+    });
+  }
+
+  if (pricing.platformFeeGstAmount > 0) {
+    lines.push({
+      kind: 'platform_fee',
+      label: 'Platform fee GST',
+      amount: pricing.platformFeeGstAmount,
+    });
+  }
+
   if (pricing.taxAmount > 0) {
     lines.push({
       kind: 'tax',

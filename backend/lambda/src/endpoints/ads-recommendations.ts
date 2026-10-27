@@ -592,6 +592,24 @@ app.post('/promotions/calculate-cart', async (c) => {
     }
 
     const discountedTotal = Math.max(0, originalTotal - winningDiscount);
+    let platformFeeQuote = {
+      platformFee: 0,
+      platformFeeMode: 'fixed' as const,
+      platformFeeGstRate: 0,
+      platformFeeGstAmount: 0,
+      platformFeeGross: 0,
+    };
+    try {
+      const { quoteEcommercePlatformFee } = await import(
+        './ecommerce/shared/quote-ecommerce-platform-fee'
+      );
+      platformFeeQuote = await quoteEcommercePlatformFee(discountedTotal);
+    } catch (feeErr) {
+      console.warn(
+        '[promotions/calculate-cart] platform fee quote skipped:',
+        feeErr instanceof Error ? feeErr.message : feeErr,
+      );
+    }
     const best =
       winningDiscount > 0
         ? {
@@ -614,6 +632,11 @@ app.post('/promotions/calculate-cart', async (c) => {
       promotionSource: winningDiscount > 0 ? 'admin' : null,
       promoEngine: promoEngine ?? null,
       lineDiscounts,
+      platformFee: platformFeeQuote.platformFee,
+      platformFeeMode: platformFeeQuote.platformFeeMode,
+      platformFeeGstRate: platformFeeQuote.platformFeeGstRate,
+      platformFeeGstAmount: platformFeeQuote.platformFeeGstAmount,
+      platformFeeGross: platformFeeQuote.platformFeeGross,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);

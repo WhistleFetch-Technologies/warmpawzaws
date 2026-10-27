@@ -20,6 +20,7 @@ import { extractAndVerifyAuthToken } from '../utils/jwt-verification';
 import { resolveVendorId } from '../utils/vendor-resolve';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { resolveOrderShippingAddress } from '../utils/logistics/shipment-pincodes';
+import { readStoredEcommercePlatformFee } from '../utils/ecommerce/platform-fee';
 import {
   buildMealOrderInvoicePayload,
   isMealOrderInvoiceEligible,
@@ -795,6 +796,7 @@ interface InvoiceData {
   shipping: number;
   discount: number;
   platformFee?: number;
+  platformFeeGst?: number;
   convenienceFee?: number;
   total: number;
   isInterState: boolean;
@@ -899,9 +901,16 @@ function buildInvoiceData(params: {
   // Fix A: orders table stores shipping_amount (Phase 5); shipping_fee is legacy fallback.
   const shipping = parseFloat(order.shipping_amount) || parseFloat(order.shipping_fee) || 0;
   const discount = parseFloat(order.discount_amount) || 0;
-  // subtotal (T) + totalTax (G) + shipping (S) - discount (D) = (P - D) + S, matching
-  // exactly what the customer paid (never re-derives tax from the discounted amount).
-  const total = subtotal + totalTax + shipping - discount;
+  const storedPlatformFee = readStoredEcommercePlatformFee(order.metadata);
+  // subtotal (T) + totalTax (G) + shipping (S) - discount (D) + platform fee + fee GST
+  // matches what the customer paid. Product GST stays on the original MRP.
+  const total =
+    subtotal +
+    totalTax +
+    shipping -
+    discount +
+    storedPlatformFee.platformFee +
+    storedPlatformFee.platformFeeGstAmount;
 
   const promotionSourceLabel =
     order.promotion_source === 'admin'
@@ -942,6 +951,8 @@ function buildInvoiceData(params: {
     totalTax,
     shipping,
     discount,
+    platformFee: storedPlatformFee.platformFee,
+    platformFeeGst: storedPlatformFee.platformFeeGstAmount,
     total,
     isInterState,
     placeOfSupply: shippingAddress.state || order.vendor_state,
@@ -1486,6 +1497,12 @@ function generateInvoiceHTML(data: InvoiceData): string {
           <tr>
             <td>Platform fee</td>
             <td class="text-right">₹${data.platformFee.toFixed(2)}</td>
+          </tr>
+        ` : ''}
+        ${data.platformFeeGst && data.platformFeeGst > 0 ? `
+          <tr>
+            <td>Platform fee GST</td>
+            <td class="text-right">₹${data.platformFeeGst.toFixed(2)}</td>
           </tr>
         ` : ''}
         ${data.convenienceFee && data.convenienceFee > 0 ? `

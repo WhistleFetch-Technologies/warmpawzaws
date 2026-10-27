@@ -30,6 +30,20 @@ describe('ecommerce checkout wallet line', () => {
     });
   });
 
+  test('shows platform fee and its GST, and hides a zero delivery charge', () => {
+    const lines = buildEcommerceCheckoutPriceLines({
+      ...pricing,
+      deliveryFees: 0,
+      platformFee: 20,
+      platformFeeGstAmount: 3.6,
+      total: 923.6,
+    });
+    expect(lines.some((l) => l.kind === 'delivery_fee')).toBe(false);
+    expect(lines.find((l) => l.label === 'Platform fee')).toMatchObject({ amount: 20 });
+    expect(lines.find((l) => l.label === 'Platform fee GST')).toMatchObject({ amount: 3.6 });
+    expect(lines.find((l) => l.kind === 'final')).toMatchObject({ amount: 923.6 });
+  });
+
   test('keeps Total when wallet is unused', () => {
     const lines = buildEcommerceCheckoutPriceLines(pricing);
     expect(lines.some((l) => l.kind === 'wallet')).toBe(false);

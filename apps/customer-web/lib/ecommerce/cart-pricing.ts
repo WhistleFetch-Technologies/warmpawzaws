@@ -1,6 +1,6 @@
 /**
  * Shared marketplace cart pricing for `/cart` and checkout routes.
- * Business rules: per-vendor delivery, single customer-chosen promotion, GST via tax-system.
+ * Business rules: no delivery charge, single customer-chosen promotion, GST via tax-system.
  *
  * GST decision (locked — see Ecommerce Settlement Engine plan): product prices are
  * GST-inclusive MRP. GST is ALWAYS computed informationally from the ORIGINAL per-line
@@ -54,6 +54,9 @@ export type CartPricingOptions = {
   itemCount?: number;
   /** Optional seller promotion; does not change coupon behavior when omitted. */
   sellerPromotion?: SellerPromotionPricing;
+  /** Server quote from the Pay Bill platform-fee settings. */
+  platformFee?: number;
+  platformFeeGstAmount?: number;
 };
 
 export type VendorPricingRow = {
@@ -76,6 +79,8 @@ export type CartPricingBreakdown = {
   promotionSource?: 'vendor' | 'admin';
   subtotalAfterDiscount: number;
   deliveryFees: number;
+  platformFee: number;
+  platformFeeGstAmount: number;
   giftWrapFee: number;
   protectionFee: number;
   /** Informational only — already included inside lineSubtotal/subtotalAfterDiscount (GST-inclusive MRP). Never added to `total`. */
@@ -103,12 +108,12 @@ export const VENDOR_DELIVERY_CONFIG: Record<
 // These constants are intentionally duplicated from backend/lambda/src/utils/ecommerce/delivery-fee.ts
 // because the two packages cannot share source. If you change the delivery policy here,
 // you MUST update the backend file to match (and vice versa) to prevent cart↔order fee mismatches.
-export const ECOMMERCE_DEFAULT_DELIVERY_FEE = 150;
+export const ECOMMERCE_DEFAULT_DELIVERY_FEE = 0;
 
 const GIFT_WRAP_PER_ITEM = 25;
 const PROTECTION_RATE = 0.02;
 
-/** Order-level delivery: flat ₹150 on all order values (delivery coupons may waive). */
+/** Shop delivery is not charged. */
 export function computeEcommerceDeliveryFee(_subtotalAfterDiscount?: number): number {
   void _subtotalAfterDiscount;
   return ECOMMERCE_DEFAULT_DELIVERY_FEE;
@@ -228,11 +233,11 @@ export function computeCartPricing(
       ? options.sellerPromotion?.source
       : undefined;
   const subtotalAfterDiscount = Math.max(0, lineSubtotal - discount);
-  const hasFreeDeliveryCoupon = appliedCoupons.some(
-    (c) => c.type === 'delivery' && lineSubtotal >= (c.minOrder ?? 0)
-  );
-  const deliveryFees = hasFreeDeliveryCoupon ? 0 : computeEcommerceDeliveryFee(subtotalAfterDiscount);
+  const deliveryFees = computeEcommerceDeliveryFee(subtotalAfterDiscount);
   const freeDeliveryGap = 0;
+  const platformFee = Math.round(Math.max(0, Number(options.platformFee) || 0) * 100) / 100;
+  const platformFeeGstAmount =
+    Math.round(Math.max(0, Number(options.platformFeeGstAmount) || 0) * 100) / 100;
 
   const byVendor: VendorPricingRow[] = Object.keys(itemsByVendor).map((vendorId) => {
     const vendorItems = itemsByVendor[vendorId];
@@ -260,7 +265,8 @@ export function computeCartPricing(
   const taxResult = toInclusiveTaxResult(calculateTax(taxableItems));
   const taxAmount = taxResult.total;
 
-  const total = subtotalAfterDiscount + deliveryFees + giftWrapFee + protectionFee;
+  const total =
+    subtotalAfterDiscount + deliveryFees + platformFee + platformFeeGstAmount + giftWrapFee + protectionFee;
 
   return {
     lineSubtotal,
@@ -270,6 +276,8 @@ export function computeCartPricing(
     promotionSource,
     subtotalAfterDiscount,
     deliveryFees,
+    platformFee,
+    platformFeeGstAmount,
     giftWrapFee,
     protectionFee,
     taxAmount,

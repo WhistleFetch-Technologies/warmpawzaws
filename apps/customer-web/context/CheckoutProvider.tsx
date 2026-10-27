@@ -40,6 +40,9 @@ import {
 import { navigateToCheckoutSuccessPage } from '@/lib/navigation/navigation-coordinator';
 import { requestLeave } from '@/lib/navigation/leave-guard';
 import { createCustomerNavigation } from '@/lib/navigation/navigation-service';
+import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { parseCartLineKey } from '@/lib/product-sku-client';
 import { computeCartMrpTotal } from '@/lib/ecommerce/cart-product-helpers';
 import { resolveCheckoutGoBackAction } from '@/lib/ecommerce/checkout-go-back';
 
@@ -151,6 +154,66 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
     return id;
   }, [cart]);
 
+  const [platformCharge, setPlatformCharge] = useState(() => {
+    const saved = readPricingOptionsForCheckout();
+    return {
+      platformFee: Math.max(0, Number(saved.platformFee) || 0),
+      platformFeeGstAmount: Math.max(0, Number(saved.platformFeeGstAmount) || 0),
+    };
+  });
+
+  useEffect(() => {
+    if (!cart.length) {
+      setPlatformCharge({ platformFee: 0, platformFeeGstAmount: 0 });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.post<{
+          platformFee?: number;
+          platformFeeGstAmount?: number;
+        }>('/promotions/calculate-cart', {
+          ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
+          customerId: getResolvedCustomerId() || undefined,
+          items: cart.map((item) => {
+            const productId =
+              parseCartLineKey(item.id).productId ||
+              (item.warmpawzLine?.product?.id != null
+                ? String(item.warmpawzLine.product.id)
+                : item.id);
+            return {
+              productId,
+              id: productId,
+              quantity: item.quantity,
+              price: item.price,
+              categoryId: item.categoryId || item.category,
+              category: item.categoryId || item.category,
+              vendorId: item.vendorId && item.vendorId !== 'default' ? item.vendorId : undefined,
+              lineKey: item.id,
+            };
+          }),
+        });
+        if (cancelled) return;
+        const next = {
+          platformFee: Math.max(0, Number(res?.platformFee) || 0),
+          platformFeeGstAmount: Math.max(0, Number(res?.platformFeeGstAmount) || 0),
+        };
+        setPlatformCharge(next);
+        persistPricingOptionsForCheckout({
+          ...readPricingOptionsForCheckout(),
+          platformFee: next.platformFee,
+          platformFeeGstAmount: next.platformFeeGstAmount,
+        });
+      } catch {
+        /* Keep the fee the cart already stored. */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cart, primaryVendorId]);
+
   const pricing = useMemo(() => {
     const persisted = readPricingOptionsForCheckout();
     const codeDiscount = coupon?.discountAmount ?? persisted.sellerPromotion?.codeDiscount ?? 0;
@@ -166,8 +229,10 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         promotionId: coupon?.promotionId ?? persisted.sellerPromotion?.promotionId,
         source: coupon?.source ?? persisted.sellerPromotion?.source,
       },
+      platformFee: platformCharge.platformFee,
+      platformFeeGstAmount: platformCharge.platformFeeGstAmount,
     });
-  }, [cart, coupon, shippingMethod]);
+  }, [cart, coupon, shippingMethod, platformCharge]);
 
   const mrpTotal = useMemo(() => computeCartMrpTotal(cart), [cart]);
   const savingsAmount = useMemo(() => Math.max(0, pricing.discount), [pricing.discount]);

@@ -84,6 +84,8 @@ interface Order {
   };
   subtotal: number;
   shipping_fee: number;
+  platform_fee: number;
+  platform_fee_gst_amount: number;
   discount: number;
   wallet_amount_applied: number;
   total: number;
@@ -209,6 +211,8 @@ function normalizeOrder(raw: any): Order {
 
   const discount = Number(raw.discount_amount ?? raw.discount ?? 0) || 0;
   const shippingFee = Number(raw.shipping_amount ?? raw.shipping_fee ?? 0) || 0;
+  const platformFee = Number(raw.platform_fee ?? raw.platformFee ?? 0) || 0;
+  const platformFeeGst = Number(raw.platform_fee_gst_amount ?? raw.platformFeeGstAmount ?? 0) || 0;
   const total = Number(raw.final_amount ?? raw.total_amount ?? raw.total ?? 0) || 0;
   const walletApplied =
     Number(raw.wallet_amount_applied ?? raw.walletAmountApplied ?? 0) || 0;
@@ -223,6 +227,8 @@ function normalizeOrder(raw: any): Order {
     shipping_address: parseShippingAddress(raw),
     subtotal,
     shipping_fee: shippingFee,
+    platform_fee: platformFee,
+    platform_fee_gst_amount: platformFeeGst,
     discount,
     wallet_amount_applied: walletApplied,
     total,
@@ -1006,12 +1012,26 @@ export function CustomerShopOrdersScreen({
                               <span className="text-emerald-600">-{formatPriceWithSymbol(order.discount)}</span>
                             </div>
                           )}
-                          <div className="flex justify-between">
-                            <span className="text-slate-600">Shipping</span>
-                            <span className={order.shipping_fee === 0 ? 'text-emerald-600' : 'text-slate-900'}>
-                              {order.shipping_fee === 0 ? 'FREE' : formatPriceWithSymbol(order.shipping_fee)}
-                            </span>
-                          </div>
+                          {order.shipping_fee > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Shipping</span>
+                              <span className="text-slate-900">{formatPriceWithSymbol(order.shipping_fee)}</span>
+                            </div>
+                          )}
+                          {order.platform_fee > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Platform fee</span>
+                              <span className="text-slate-900">{formatPriceWithSymbol(order.platform_fee)}</span>
+                            </div>
+                          )}
+                          {order.platform_fee_gst_amount > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Platform fee GST</span>
+                              <span className="text-slate-900">
+                                {formatPriceWithSymbol(order.platform_fee_gst_amount)}
+                              </span>
+                            </div>
+                          )}
                           {order.wallet_amount_applied > 0.009 && (
                             <div className="flex justify-between">
                               <span className="text-slate-600">Wallet</span>
