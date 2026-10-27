@@ -1,14 +1,26 @@
 import type { ShopProduct } from '@/components/shop/shop-types';
 import type { CartItem } from '@/context/CartContext';
+import { cartLineKey } from '@/lib/product-sku-client';
 import type { WarmpawzCartLine } from '@/lib/warmpawz-cart-storage';
 
 /** Build a cart line + CartItem from a catalog product (also-bought, recommendations). */
 export function shopProductToCartItem(product: ShopProduct, quantity = 1): CartItem {
   const catalogPrice = product.price;
   const mrp = product.original_price ?? catalogPrice;
+  const skuId =
+    product.has_variants && product.listing_sku_id ? product.listing_sku_id : undefined;
+  const selectedVariations =
+    skuId &&
+    product.listing_option_values &&
+    Object.keys(product.listing_option_values).length > 0
+      ? product.listing_option_values
+      : undefined;
+  const lineId = cartLineKey(product.id, skuId);
   const line: WarmpawzCartLine = {
-    product_id: product.id,
+    product_id: lineId,
     quantity,
+    ...(skuId ? { product_sku_id: skuId } : {}),
+    ...(selectedVariations ? { selected_variations: selectedVariations } : {}),
     product: {
       id: product.id,
       name: product.name,
@@ -38,7 +50,7 @@ export function shopProductToCartItem(product: ShopProduct, quantity = 1): CartI
   };
 
   return {
-    id: product.id,
+    id: lineId,
     name: product.name,
     price: catalogPrice,
     originalPrice: mrp,
@@ -47,6 +59,8 @@ export function shopProductToCartItem(product: ShopProduct, quantity = 1): CartI
     vendorId: product.vendor_id,
     vendorName: product.vendor_name,
     categoryId: product.category_id,
+    ...(selectedVariations ? { selectedVariations } : {}),
+    ...(skuId ? { productSkuId: skuId } : {}),
     warmpawzLine: line,
   };
 }

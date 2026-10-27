@@ -960,7 +960,10 @@ export function registerEcommerceEndpoints(app: Hono) {
       const shippingAmount = serverShipping;
 
       const { quoteEcommercePlatformFee } = await import('../shared/quote-ecommerce-platform-fee');
-      const platformFeeQuote = await quoteEcommercePlatformFee(subtotalAfterDiscount);
+      const platformFeeQuote = await quoteEcommercePlatformFee(
+        subtotalAfterDiscount,
+        discountAmount,
+      );
 
       // Fix B: tax is backend-authoritative via taxCalculationService (CGST/SGST/IGST, place-of-supply aware).
       // Load vendor address for inter-state vs intra-state determination.

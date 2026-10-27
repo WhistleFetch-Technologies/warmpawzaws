@@ -23,19 +23,30 @@ export function computeEcommercePlatformFee(input: {
   platformFee: number;
   platformFeeMode?: WpayFeeMode | null;
   platformFeeGstRate?: number | null;
+  /** Promo discount in rupees. Fees are dropped when they would cancel this discount. */
+  discountAmount?: number | null;
 }): EcommercePlatformFeeQuote {
   const base = round2(Math.max(0, Number(input.subtotalAfterDiscount) || 0));
   const mode: WpayFeeMode = input.platformFeeMode === 'percent' ? 'percent' : 'fixed';
-  const platformFee = resolveWpayConfiguredFeeAmount({
+  let platformFee = resolveWpayConfiguredFeeAmount({
     servicePayableAmount: base,
     configuredValue: Number(input.platformFee) || 0,
     mode,
   });
   const platformFeeGstRate = round2(Math.max(0, Number(input.platformFeeGstRate) || 0));
-  const platformFeeGstAmount =
+  let platformFeeGstAmount =
     platformFee > 0 && platformFeeGstRate > 0
       ? round2((platformFee * platformFeeGstRate) / 100)
       : 0;
+
+  const discountAmount = round2(Math.max(0, Number(input.discountAmount) || 0));
+  // Same Pay Bill guardrail: if fee + GST is at least the promo discount, the
+  // checkout total would be back at (or above) the pre-discount amount. Drop both.
+  if (discountAmount > 0.009 && round2(platformFee + platformFeeGstAmount) >= discountAmount) {
+    platformFee = 0;
+    platformFeeGstAmount = 0;
+  }
+
   return {
     platformFee,
     platformFeeMode: mode,

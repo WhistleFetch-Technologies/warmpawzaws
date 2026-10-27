@@ -90,6 +90,77 @@ describe('resolveEcommerceOrderLine', () => {
     expect(line?.total).toBe(900);
   });
 
+  it('uses the only active variant when the cart line has no sku id', async () => {
+    (query as jest.Mock).mockResolvedValueOnce({
+      rows: [
+        {
+          id: PRODUCT_ID,
+          name: 'Glenand Medium Bone 6 inch',
+          price: 100,
+          vendor_id: 'vendor-1',
+        },
+      ],
+    });
+    (loadProductSkus as jest.Mock).mockResolvedValue([
+      {
+        id: SKU_ID,
+        sku: 'BONE-75',
+        option_values: { size: '75g' },
+        price: 100,
+        stock: 100,
+        is_active: true,
+      },
+    ]);
+
+    const line = await resolveEcommerceOrderLine({
+      product_id: PRODUCT_ID,
+      quantity: 1,
+    });
+
+    expect(line?.product_sku_id).toBe(SKU_ID);
+    expect(line?.unit_price).toBe(100);
+  });
+
+  it('uses the listing variant when several sizes were added without a sku id', async () => {
+    const cheapId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    (query as jest.Mock).mockResolvedValueOnce({
+      rows: [
+        {
+          id: PRODUCT_ID,
+          name: 'Chappi Chicken',
+          price: 200,
+          vendor_id: 'vendor-1',
+        },
+      ],
+    });
+    (loadProductSkus as jest.Mock).mockResolvedValue([
+      {
+        id: SKU_ID,
+        option_values: { size: '7kg' },
+        price: 700,
+        stock: 4,
+        is_active: true,
+        sort_order: 1,
+      },
+      {
+        id: cheapId,
+        option_values: { size: '1kg' },
+        price: 200,
+        stock: 8,
+        is_active: true,
+        sort_order: 0,
+      },
+    ]);
+
+    const line = await resolveEcommerceOrderLine({
+      product_id: PRODUCT_ID,
+      quantity: 1,
+    });
+
+    expect(line?.product_sku_id).toBe(cheapId);
+    expect(line?.unit_price).toBe(200);
+  });
+
   it('throws when multi-variant product has invalid selection', async () => {
     (query as jest.Mock).mockResolvedValueOnce({
       rows: [

@@ -33,6 +33,51 @@ describe('computeEcommercePlatformFee', () => {
     });
   });
 
+  it('keeps the fee when it is smaller than the promo discount', () => {
+    expect(
+      computeEcommercePlatformFee({
+        subtotalAfterDiscount: 900,
+        discountAmount: 100,
+        platformFee: 20,
+        platformFeeMode: 'fixed',
+        platformFeeGstRate: 18,
+      }),
+    ).toMatchObject({
+      platformFee: 20,
+      platformFeeGstAmount: 3.6,
+      platformFeeGross: 23.6,
+    });
+  });
+
+  it('drops the fee and its GST when they are at least the promo discount', () => {
+    expect(
+      computeEcommercePlatformFee({
+        subtotalAfterDiscount: 980,
+        discountAmount: 20,
+        platformFee: 20,
+        platformFeeMode: 'fixed',
+        platformFeeGstRate: 18,
+      }),
+    ).toMatchObject({
+      platformFee: 0,
+      platformFeeGstAmount: 0,
+      platformFeeGross: 0,
+      platformFeeGstRate: 18,
+    });
+  });
+
+  it('keeps the fee when there is no promo discount', () => {
+    expect(
+      computeEcommercePlatformFee({
+        subtotalAfterDiscount: 1000,
+        discountAmount: 0,
+        platformFee: 20,
+        platformFeeMode: 'fixed',
+        platformFeeGstRate: 18,
+      }).platformFeeGross,
+    ).toBe(23.6);
+  });
+
   it('charges nothing when the admin fee is zero', () => {
     expect(
       computeEcommercePlatformFee({

@@ -6,6 +6,7 @@ import { query } from '../database/rds-connection';
 import { loadProductSkus } from './product-sku-service';
 import {
   resolveSkuFromSelection,
+  getListingProductSku,
   normalizeImagesArray,
   normalizeOptionValues,
   type ProductSkuRow,
@@ -64,6 +65,20 @@ export async function resolveEcommerceOrderLine(
     if (sk.rows.length) skuRow = sk.rows[0] as ProductSkuRow;
   } else if (selectedVariations && Object.keys(selectedVariations).length > 0) {
     skuRow = resolveSkuFromSelection(allSkus, selectedVariations) ?? null;
+  }
+
+  const sentSkuId = Boolean(productSkuId);
+  const sentSelection =
+    selectedVariations != null &&
+    Object.keys(normalizeOptionValues(selectedVariations as Record<string, unknown>)).length > 0;
+  // A line with only the product id still needs a variant. Use the same listing
+  // SKU the shop card shows (one size, or the lowest in-stock price).
+  if (requiresVariantSku && !skuRow && !sentSkuId && !sentSelection) {
+    const variantSkus = allSkus.filter((s) => {
+      if (s.is_active === false) return false;
+      return Object.keys(normalizeOptionValues(s.option_values as Record<string, unknown>)).length > 0;
+    });
+    skuRow = getListingProductSku(variantSkus);
   }
 
   if (requiresVariantSku && !skuRow) {

@@ -7,10 +7,12 @@ import {
 /** Reads the Pay Bill admin fee settings and prices them for one shop cart. */
 export async function quoteEcommercePlatformFee(
   subtotalAfterDiscount: number,
+  discountAmount = 0,
 ): Promise<EcommercePlatformFeeQuote> {
   const settings = await wpayConvenienceSettingsRepository.getConvenienceSettings();
   return computeEcommercePlatformFee({
     subtotalAfterDiscount,
+    discountAmount,
     platformFee: settings.platformFee,
     platformFeeMode: settings.platformFeeMode,
     platformFeeGstRate: settings.platformFeeGstRate,

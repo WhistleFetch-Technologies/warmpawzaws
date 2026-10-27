@@ -604,7 +604,7 @@ app.post('/promotions/calculate-cart', async (c) => {
       const { quoteEcommercePlatformFee } = await import(
         './ecommerce/shared/quote-ecommerce-platform-fee'
       );
-      platformFeeQuote = await quoteEcommercePlatformFee(discountedTotal);
+      platformFeeQuote = await quoteEcommercePlatformFee(discountedTotal, winningDiscount);
     } catch (feeErr) {
       console.warn(
         '[promotions/calculate-cart] platform fee quote skipped:',
