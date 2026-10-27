@@ -549,46 +549,47 @@ app.post('/promotions/calculate-cart', async (c) => {
     let promoEngine: Record<string, unknown> | undefined;
     let winningDiscount = 0;
     let lineDiscounts: Array<{ productId: string; lineKey?: string; discount: number }> = [];
-    if (customerId) {
-      try {
-        const { evaluateEcommerceCartPromos } = await import(
-          './ecommerce/shared/evaluate-ecommerce-cart-promos'
-        );
-        const fallbackVendor = vendorId ? String(vendorId) : undefined;
-        const engineResult = await evaluateEcommerceCartPromos({
-          userId: String(customerId),
-          persist: false,
-          lines: cartLines.map((line) => ({
-            id: line.productId || line.id,
-            lineKey: line.lineKey,
-            vendorId: line.vendorId || fallbackVendor || null,
-            amount: (Number(line.price) || 0) * (Number(line.quantity) || 1),
-          })),
-        });
-        const cashbackBenefit = (engineResult.benefits || []).find(
-          (b) => b.benefit_type === 'CASHBACK'
-        );
-        winningDiscount = Math.max(0, Number(engineResult.summary.discount) || 0);
-        lineDiscounts = (engineResult.lineDiscounts || []).map((row) => ({
-          productId: row.id,
-          ...(row.lineKey ? { lineKey: row.lineKey } : {}),
-          discount: row.discount,
-        }));
-        promoEngine = {
-          evaluationId: engineResult.evaluation_id,
-          pendingCashback: engineResult.summary.cashback,
-          engineDiscount: engineResult.summary.discount,
-          eligible: engineResult.eligible,
-          redeemScope: cashbackBenefit?.redeem_scope || [],
-          expiryDays: cashbackBenefit?.expiry_days ?? null,
-          ...(engineResult.benefit_cap ? { benefitCap: engineResult.benefit_cap } : {}),
-        };
-      } catch (engineErr) {
-        console.warn(
-          '[promotions/calculate-cart] promo-engine evaluate skipped:',
-          engineErr instanceof Error ? engineErr.message : engineErr
-        );
-      }
+    try {
+      const { evaluateEcommerceCartPromos } = await import(
+        './ecommerce/shared/evaluate-ecommerce-cart-promos'
+      );
+      const fallbackVendor = vendorId ? String(vendorId) : undefined;
+      // Guests have no customer id. Preview with a sentinel so the cart can show
+      // the discount. persist stays false; the order re-checks the real customer.
+      const promoUserId = String(customerId || '').trim() || 'guest-preview';
+      const engineResult = await evaluateEcommerceCartPromos({
+        userId: promoUserId,
+        persist: false,
+        lines: cartLines.map((line) => ({
+          id: line.productId || line.id,
+          lineKey: line.lineKey,
+          vendorId: line.vendorId || fallbackVendor || null,
+          amount: (Number(line.price) || 0) * (Number(line.quantity) || 1),
+        })),
+      });
+      const cashbackBenefit = (engineResult.benefits || []).find(
+        (b) => b.benefit_type === 'CASHBACK'
+      );
+      winningDiscount = Math.max(0, Number(engineResult.summary.discount) || 0);
+      lineDiscounts = (engineResult.lineDiscounts || []).map((row) => ({
+        productId: row.id,
+        ...(row.lineKey ? { lineKey: row.lineKey } : {}),
+        discount: row.discount,
+      }));
+      promoEngine = {
+        evaluationId: engineResult.evaluation_id,
+        pendingCashback: engineResult.summary.cashback,
+        engineDiscount: engineResult.summary.discount,
+        eligible: engineResult.eligible,
+        redeemScope: cashbackBenefit?.redeem_scope || [],
+        expiryDays: cashbackBenefit?.expiry_days ?? null,
+        ...(engineResult.benefit_cap ? { benefitCap: engineResult.benefit_cap } : {}),
+      };
+    } catch (engineErr) {
+      console.warn(
+        '[promotions/calculate-cart] promo-engine evaluate skipped:',
+        engineErr instanceof Error ? engineErr.message : engineErr
+      );
     }
 
     const discountedTotal = Math.max(0, originalTotal - winningDiscount);

@@ -43,7 +43,11 @@ import { createCustomerNavigation } from '@/lib/navigation/navigation-service';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { parseCartLineKey } from '@/lib/product-sku-client';
-import { computeCartMrpTotal } from '@/lib/ecommerce/cart-product-helpers';
+import {
+  computeCartMrpTotal,
+  writePromoLineDiscounts,
+  type PromoLineDiscount,
+} from '@/lib/ecommerce/cart-product-helpers';
 import { resolveCheckoutGoBackAction } from '@/lib/ecommerce/checkout-go-back';
 
 export type CheckoutStep = 'payment' | 'review';
@@ -153,6 +157,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
     const id = cart.find((i) => i.vendorId && i.vendorId !== 'default')?.vendorId;
     return id;
   }, [cart]);
+  const customerId = getResolvedCustomerId();
 
   const [platformCharge, setPlatformCharge] = useState(() => {
     const saved = readPricingOptionsForCheckout();
@@ -161,21 +166,52 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       platformFeeGstAmount: Math.max(0, Number(saved.platformFeeGstAmount) || 0),
     };
   });
+  const [autoPromo, setAutoPromo] = useState<{
+    discountAmount: number;
+    promotionId?: string;
+    label?: string;
+    source?: 'vendor' | 'admin';
+  } | null>(() => {
+    const saved = readPricingOptionsForCheckout().sellerPromotion;
+    const amount = Math.max(0, Number(saved?.autoDiscount) || 0);
+    if (amount <= 0) return null;
+    return {
+      discountAmount: amount,
+      promotionId: saved?.promotionId,
+      label: saved?.label,
+      source: saved?.source,
+    };
+  });
 
   useEffect(() => {
     if (!cart.length) {
       setPlatformCharge({ platformFee: 0, platformFeeGstAmount: 0 });
+      setAutoPromo(null);
+      writePromoLineDiscounts([]);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
         const res = await apiClient.post<{
+          bestPromotion?: {
+            id?: string;
+            name?: string;
+            description?: string;
+            calculatedDiscount?: number;
+          };
+          promoEngine?: {
+            evaluationId?: string;
+            engineDiscount?: number;
+            pendingCashback?: number;
+            eligible?: boolean;
+          } | null;
+          lineDiscounts?: PromoLineDiscount[];
           platformFee?: number;
           platformFeeGstAmount?: number;
         }>('/promotions/calculate-cart', {
           ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
-          customerId: getResolvedCustomerId() || undefined,
+          customerId: customerId || undefined,
           items: cart.map((item) => {
             const productId =
               parseCartLineKey(item.id).productId ||
@@ -195,24 +231,56 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
           }),
         });
         if (cancelled) return;
-        const next = {
+        const nextLines = Array.isArray(res?.lineDiscounts) ? res.lineDiscounts : [];
+        writePromoLineDiscounts(nextLines);
+        const nextFee = {
           platformFee: Math.max(0, Number(res?.platformFee) || 0),
           platformFeeGstAmount: Math.max(0, Number(res?.platformFeeGstAmount) || 0),
         };
-        setPlatformCharge(next);
+        const amount = Math.max(
+          Number(res?.bestPromotion?.calculatedDiscount ?? 0) || 0,
+          Number(res?.promoEngine?.engineDiscount ?? 0) || 0,
+        );
+        const nextPromo =
+          amount > 0
+            ? {
+                discountAmount: amount,
+                promotionId: res?.bestPromotion?.id || res?.promoEngine?.evaluationId,
+                label: res?.bestPromotion?.description || res?.bestPromotion?.name || 'Promotion applied',
+                source: 'admin' as const,
+              }
+            : null;
+        setPlatformCharge(nextFee);
+        setAutoPromo(nextPromo);
+        if (res?.promoEngine?.evaluationId) {
+          try {
+            sessionStorage.setItem('promo_engine_ecom_preview', JSON.stringify(res.promoEngine));
+          } catch {
+            /* ignore */
+          }
+        }
         persistPricingOptionsForCheckout({
           ...readPricingOptionsForCheckout(),
-          platformFee: next.platformFee,
-          platformFeeGstAmount: next.platformFeeGstAmount,
+          platformFee: nextFee.platformFee,
+          platformFeeGstAmount: nextFee.platformFeeGstAmount,
+          sellerPromotion: nextPromo
+            ? {
+                autoDiscount: nextPromo.discountAmount,
+                codeDiscount: 0,
+                label: nextPromo.label,
+                promotionId: nextPromo.promotionId,
+                source: nextPromo.source,
+              }
+            : undefined,
         });
       } catch {
-        /* Keep the fee the cart already stored. */
+        /* Keep the quote the cart already stored. */
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [cart, primaryVendorId]);
+  }, [cart, primaryVendorId, customerId]);
 
   const pricing = useMemo(() => {
     const persisted = readPricingOptionsForCheckout();
@@ -222,28 +290,23 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       deliverySpeed: shippingMethod,
       itemCount: cart.reduce((s, i) => s + i.quantity, 0),
       sellerPromotion: {
-        autoDiscount: persisted.sellerPromotion?.autoDiscount ?? 0,
+        autoDiscount: autoPromo?.discountAmount ?? 0,
         codeDiscount,
-        label: persisted.sellerPromotion?.label,
+        label: autoPromo?.label ?? persisted.sellerPromotion?.label,
         code: coupon?.code ?? persisted.sellerPromotion?.code,
-        promotionId: coupon?.promotionId ?? persisted.sellerPromotion?.promotionId,
-        source: coupon?.source ?? persisted.sellerPromotion?.source,
+        promotionId: coupon?.promotionId ?? autoPromo?.promotionId ?? persisted.sellerPromotion?.promotionId,
+        source: coupon?.source ?? autoPromo?.source ?? persisted.sellerPromotion?.source,
       },
       platformFee: platformCharge.platformFee,
       platformFeeGstAmount: platformCharge.platformFeeGstAmount,
     });
-  }, [cart, coupon, shippingMethod, platformCharge]);
+  }, [cart, coupon, shippingMethod, platformCharge, autoPromo]);
 
   const mrpTotal = useMemo(() => computeCartMrpTotal(cart), [cart]);
   const savingsAmount = useMemo(() => Math.max(0, pricing.discount), [pricing.discount]);
   const promotionLabel = useMemo(() => {
-    const persisted = readPricingOptionsForCheckout();
-    return (
-      coupon?.code
-        ? `Coupon ${coupon.code}`
-        : persisted.sellerPromotion?.label
-    );
-  }, [coupon?.code]);
+    return coupon?.code ? `Coupon ${coupon.code}` : autoPromo?.label;
+  }, [coupon?.code, autoPromo?.label]);
 
   const syncStepToUrl = useCallback(
     (next: CheckoutStep, historyMode: 'push' | 'replace' = 'replace') => {
