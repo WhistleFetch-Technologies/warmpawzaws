@@ -11,6 +11,8 @@ export const WPAY_BURN_MODE_KEY = 'wpay_burn_mode';
 export const WPAY_PLATFORM_FEE_MODE_KEY = 'wpay_platform_fee_mode';
 /** How `wpay_convenience_fee` is interpreted: fixed ₹ or % of post-discount amount. */
 export const WPAY_CONVENIENCE_FEE_MODE_KEY = 'wpay_convenience_fee_mode';
+/** When true: vendors may download Bookings → Earnings Excel for the selected window. */
+export const WPAY_ALLOW_VENDOR_DATA_DOWNLOAD_KEY = 'wpay_allow_vendor_data_download';
 
 export type WpayFeeMode = 'fixed' | 'percent';
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
@@ -9,10 +9,15 @@ import {
   vendorWapptCancelPath,
 } from '@/lib/wappt-booking-cancel-api';
 import {
+  currentIstYearMonth,
+  currentIstYmd,
+  fetchVendorEarningsPage,
   fetchVendorEarningsSummary,
   resolveSessionVendorIdForEarnings,
-  schedulePeriodToEarningsApiPeriod,
+  vendorEarningsExportPath,
+  type VendorEarningsVisibility,
 } from '@/lib/load-vendor-earnings-summary';
+import { downloadFromUrl, getAuthHeaders, getDownloadMessage } from '@/lib/download-file';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import {
   VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
@@ -346,6 +351,17 @@ export function VendorBookingManagement({
   } | null>(null);
   const [earningsLoading, setEarningsLoading] = useState(false);
   const [earningsError, setEarningsError] = useState<string | null>(null);
+  const [earningsPeriod, setEarningsPeriod] = useState<VendorEarningsVisibility>('today');
+  const [earningsYearMonth, setEarningsYearMonth] = useState(currentIstYearMonth);
+  const [earningsFrom, setEarningsFrom] = useState(currentIstYmd);
+  const [earningsTo, setEarningsTo] = useState(currentIstYmd);
+  const [earningsNextCursor, setEarningsNextCursor] = useState<string | null>(null);
+  const [earningsHasMore, setEarningsHasMore] = useState(false);
+  const [earningsLoadingMore, setEarningsLoadingMore] = useState(false);
+  const [earningsTotalCount, setEarningsTotalCount] = useState(0);
+  const [earningsAllowDownload, setEarningsAllowDownload] = useState(false);
+  const [earningsExporting, setEarningsExporting] = useState(false);
+  const earningsSentinelRef = useRef<HTMLDivElement | null>(null);
   const [tierInfo, setTierInfo] = useState<{
     name?: string;
     current?: string;
@@ -561,7 +577,7 @@ export function VendorBookingManagement({
     if (activeTab === 'earnings') {
       loadEarningsData(true);
     }
-  }, [activeTab, vendorId, vendorData?.id, schedulePeriod, selectedDate]);
+  }, [activeTab, vendorId, vendorData?.id, earningsPeriod, earningsYearMonth, earningsFrom, earningsTo]);
   
   // Load payouts data when payouts tab is active
   useEffect(() => {
@@ -806,10 +822,16 @@ export function VendorBookingManagement({
       setEarningsError(null);
       const summary = await fetchVendorEarningsSummary(sessionId, {
         forceProfileRefresh,
-        listPeriod: schedulePeriodToEarningsApiPeriod(schedulePeriod),
-        date: selectedDate,
+        visibility: earningsPeriod,
+        yearMonth: earningsPeriod === 'month' ? earningsYearMonth : undefined,
+        from: earningsPeriod === 'range' ? earningsFrom : undefined,
+        to: earningsPeriod === 'range' ? earningsTo : undefined,
       });
       const ledgerVendorId = summary.ledgerVendorId;
+      setEarningsNextCursor(summary.nextCursor);
+      setEarningsHasMore(summary.hasMore);
+      setEarningsTotalCount(summary.totalCount);
+      setEarningsAllowDownload(summary.allowDataDownload);
 
       console.log('💰 [VENDOR-UI] Earnings loaded (ledger)', ledgerVendorId, {
         total: summary.total,
@@ -844,6 +866,88 @@ export function VendorBookingManagement({
       setEarningsData(null);
     } finally {
       setEarningsLoading(false);
+    }
+  };
+
+  const loadMoreEarnings = useCallback(async () => {
+    if (!earningsNextCursor || earningsLoadingMore || earningsLoading || !earningsHasMore) return;
+    const sessionId = resolveSessionVendorIdForEarnings(vendorId, vendorData?.id);
+    if (!sessionId) return;
+    try {
+      setEarningsLoadingMore(true);
+      const page = await fetchVendorEarningsPage(sessionId, {
+        visibility: earningsPeriod,
+        yearMonth: earningsPeriod === 'month' ? earningsYearMonth : undefined,
+        from: earningsPeriod === 'range' ? earningsFrom : undefined,
+        to: earningsPeriod === 'range' ? earningsTo : undefined,
+        cursor: earningsNextCursor,
+      });
+      setEarningsData((current) =>
+        current
+          ? {
+              ...current,
+              transactions: [...current.transactions, ...page.transactions],
+            }
+          : current
+      );
+      setEarningsNextCursor(page.nextCursor);
+      setEarningsHasMore(page.hasMore);
+      setEarningsTotalCount(page.totalCount);
+      setEarningsAllowDownload(page.allowDataDownload);
+    } catch (error) {
+      console.error('❌ Error loading more earnings:', error);
+    } finally {
+      setEarningsLoadingMore(false);
+    }
+  }, [
+    earningsFrom,
+    earningsHasMore,
+    earningsLoading,
+    earningsLoadingMore,
+    earningsNextCursor,
+    earningsPeriod,
+    earningsTo,
+    earningsYearMonth,
+    vendorData?.id,
+    vendorId,
+  ]);
+
+  useEffect(() => {
+    const el = earningsSentinelRef.current;
+    if (!el || !earningsHasMore || earningsLoading || earningsLoadingMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadMoreEarnings();
+        }
+      },
+      { root: null, rootMargin: '200px', threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [earningsHasMore, earningsLoading, earningsLoadingMore, loadMoreEarnings, earningsData?.transactions.length]);
+
+  const downloadEarningsExcel = async () => {
+    const sessionId = resolveSessionVendorIdForEarnings(vendorId, vendorData?.id);
+    if (!sessionId || !earningsAllowDownload) return;
+    setEarningsExporting(true);
+    try {
+      const { fileName, saveResult } = await downloadFromUrl({
+        url: vendorEarningsExportPath(sessionId, {
+          visibility: earningsPeriod,
+          yearMonth: earningsPeriod === 'month' ? earningsYearMonth : undefined,
+          from: earningsPeriod === 'range' ? earningsFrom : undefined,
+          to: earningsPeriod === 'range' ? earningsTo : undefined,
+        }),
+        fileName: 'vendor-earnings.xlsx',
+        headers: getAuthHeaders(),
+        title: 'Vendor earnings',
+      });
+      console.log(getDownloadMessage(saveResult, fileName));
+    } catch (error) {
+      setEarningsError(error instanceof Error ? error.message : 'Could not download earnings.');
+    } finally {
+      setEarningsExporting(false);
     }
   };
 
@@ -1795,11 +1899,11 @@ export function VendorBookingManagement({
         {/* EARNINGS TAB CONTENT */}
         {activeTab === 'earnings' && (
           <>
-            {earningsLoading ? (
+            {earningsLoading && !earningsData ? (
               <div className="p-8 flex items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
               </div>
-            ) : earningsError ? (
+            ) : earningsError && !earningsData ? (
               <div className="p-6 text-center space-y-3">
                 <p className="text-sm text-red-600">{earningsError}</p>
                 <Button type="button" variant="outline" onClick={() => loadEarningsData(true)}>
@@ -1861,12 +1965,88 @@ export function VendorBookingManagement({
 
                 {/* Earnings Summary */}
                 <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
+                  <div className="flex flex-wrap items-end gap-2 mb-3">
+                    <div className="inline-flex rounded-md border border-green-200 bg-white p-0.5">
+                      {([
+                        ['today', 'Today'],
+                        ['week', 'This week'],
+                        ['month', 'This month'],
+                        ['range', 'Range'],
+                      ] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setEarningsPeriod(value)}
+                          className={`rounded px-2.5 py-1.5 text-xs font-medium ${
+                            earningsPeriod === value
+                              ? 'bg-[#FF8C42] text-white'
+                              : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {earningsPeriod === 'month' ? (
+                      <label className="flex flex-col gap-0.5 text-xs text-gray-600">
+                        Month (IST)
+                        <input
+                          type="month"
+                          aria-label="Earnings month"
+                          value={earningsYearMonth}
+                          onChange={(event) => {
+                            setEarningsYearMonth(event.target.value);
+                            setEarningsPeriod('month');
+                          }}
+                          className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                    ) : null}
+                    {earningsPeriod === 'range' ? (
+                      <>
+                        <label className="flex flex-col gap-0.5 text-xs text-gray-600">
+                          From (IST)
+                          <input
+                            type="date"
+                            aria-label="Earnings from date"
+                            value={earningsFrom}
+                            onChange={(event) => setEarningsFrom(event.target.value)}
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-0.5 text-xs text-gray-600">
+                          To (IST)
+                          <input
+                            type="date"
+                            aria-label="Earnings to date"
+                            value={earningsTo}
+                            onChange={(event) => setEarningsTo(event.target.value)}
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                          />
+                        </label>
+                      </>
+                    ) : null}
+                    {earningsAllowDownload ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 px-3 text-xs"
+                        disabled={earningsExporting || (earningsPeriod === 'range' && earningsFrom > earningsTo)}
+                        onClick={() => void downloadEarningsExcel()}
+                      >
+                        {earningsExporting ? 'Downloading…' : 'Download Excel'}
+                      </Button>
+                    ) : null}
+                    {earningsError && earningsData ? (
+                      <p className="text-xs text-red-600">{earningsError}</p>
+                    ) : null}
+                  </div>
                   <div className="grid grid-cols-3 gap-3 mb-3">
                     <button
                       type="button"
-                      onClick={() => setSchedulePeriod('today')}
+                      onClick={() => setEarningsPeriod('today')}
                       className={`p-3 rounded-lg text-center border ${
-                        schedulePeriod === 'today'
+                        earningsPeriod === 'today'
                           ? 'bg-white border-[#FF8C42] ring-2 ring-[#FF8C42]/30'
                           : 'bg-white/80 border-transparent'
                       }`}
@@ -1874,16 +2054,16 @@ export function VendorBookingManagement({
                       <div className="text-2xl font-bold text-green-600">
                         ₹{(earningsData?.today || 0).toLocaleString('en-IN')}
                       </div>
-                      <div className="text-xs text-gray-600">{earningsAnchorIsToday ? 'Today' : selectedDayShort}</div>
+                      <div className="text-xs text-gray-600">Today</div>
                       <div className="text-[10px] text-gray-500 mt-1 leading-tight">
-                        {earningsAnchorIsToday ? 'Credited today' : 'Credited this day'}
+                        Credited today
                       </div>
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSchedulePeriod('week')}
+                      onClick={() => setEarningsPeriod('week')}
                       className={`p-3 rounded-lg text-center border ${
-                        schedulePeriod === 'week'
+                        earningsPeriod === 'week'
                           ? 'bg-white border-[#FF8C42] ring-2 ring-[#FF8C42]/30'
                           : 'bg-white/80 border-transparent'
                       }`}
@@ -1895,9 +2075,9 @@ export function VendorBookingManagement({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSchedulePeriod('month')}
+                      onClick={() => setEarningsPeriod('month')}
                       className={`p-3 rounded-lg text-center border ${
-                        schedulePeriod === 'month'
+                        earningsPeriod === 'month'
                           ? 'bg-white border-[#FF8C42] ring-2 ring-[#FF8C42]/30'
                           : 'bg-white/80 border-transparent'
                       }`}
@@ -1905,7 +2085,9 @@ export function VendorBookingManagement({
                       <div className="text-2xl font-bold text-green-600">
                         ₹{(earningsData?.thisMonth || 0).toLocaleString('en-IN')}
                       </div>
-                      <div className="text-xs text-gray-600">This Month</div>
+                      <div className="text-xs text-gray-600">
+                        {earningsYearMonth === currentIstYearMonth() ? 'This Month' : earningsYearMonth}
+                      </div>
                     </button>
                   </div>
                   <div className="bg-white p-3 rounded-lg">
@@ -1928,12 +2110,17 @@ export function VendorBookingManagement({
                 <div className="p-4">
                   <h3 className="font-semibold text-gray-900 mb-1">Recent Transactions</h3>
                   <p className="text-xs text-gray-500 mb-3">
-                    {schedulePeriod === 'today'
-                      ? (earningsAnchorIsToday ? 'Credited today (IST).' : `Credited on ${selectedDayShort} (IST).`)
-                      : schedulePeriod === 'week'
-                        ? (earningsAnchorIsToday ? 'Credited this week (IST).' : `Credited in the 7 days ending ${selectedDayShort} (IST).`)
-                        : (earningsAnchorIsToday ? 'Credited this month (IST).' : `Credited from month start through ${selectedDayShort} (IST).`)}{' '}
+                    {earningsPeriod === 'today'
+                      ? 'Credited today (IST).'
+                      : earningsPeriod === 'week'
+                        ? 'Credited this week (IST).'
+                        : earningsPeriod === 'month'
+                          ? `Credited in ${earningsYearMonth} (IST).`
+                          : `Credited from ${earningsFrom} to ${earningsTo} (IST).`}{' '}
                     Amount payable to you, customer, status, and payment time.
+                    {earningsTotalCount > 0
+                      ? ` Showing ${earningsData?.transactions.length || 0} of ${earningsTotalCount}.`
+                      : ''}
                   </p>
                   {(!earningsData?.transactions || earningsData.transactions.length === 0) ? (
                     <div className="text-center py-8 text-gray-500 text-sm space-y-1">
@@ -1987,6 +2174,13 @@ export function VendorBookingManagement({
                           )}
                         </div>
                       ))}
+                      <div ref={earningsSentinelRef} className="h-4" aria-hidden="true" />
+                      {earningsLoadingMore ? (
+                        <p className="text-center text-xs text-gray-500 py-2">Loading more…</p>
+                      ) : null}
+                      {!earningsHasMore && earningsData.transactions.length > 0 ? (
+                        <p className="text-center text-xs text-gray-400 py-1">End of this window</p>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -1994,9 +2188,7 @@ export function VendorBookingManagement({
                 {/* Earnings Chart */}
                 <div className="p-4 bg-white border-t border-gray-100">
                   <h3 className="font-semibold text-gray-900 mb-3">
-                    {earningsAnchorIsToday
-                      ? 'Earnings Trend (Last 7 Days)'
-                      : `Earnings Trend (7 days ending ${selectedDayShort})`}
+                    Earnings Trend (Last 7 Days)
                   </h3>
                   <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-4">
                     {(!earningsData?.dailyTrend || earningsData.dailyTrend.length === 0) ? (

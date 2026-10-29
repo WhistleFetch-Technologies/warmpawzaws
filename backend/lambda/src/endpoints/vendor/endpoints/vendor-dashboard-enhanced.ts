@@ -55,8 +55,20 @@ import {
   earningsAnchorNoonIst,
   formatYmdInTimeZone,
   resolveEarningsAnchorYmd,
+  resolveVendorEarningsWindow,
   sqlTimestampInEarningsPeriod,
 } from '../../../utils/vendor-earnings-period-sql';
+import {
+  EARNINGS_EXPORT_MAX_ROWS,
+  parseEarningsPageLimit,
+  sliceEarningsByCursor,
+} from '../shared/vendor-earnings-cursor';
+import { collectVendorEarningsWindow } from '../shared/vendor-earnings-ledger';
+import {
+  buildVendorEarningsExportFilename,
+  buildVendorEarningsExportXlsx,
+} from '../shared/vendor-earnings-export.xlsx';
+import { wpayVendorExportSettingsRepository } from '../../warmpawz-pay/repositories/wpay-vendor-export-settings.repository';
 
 const DASHBOARD_SERVICE_NAME_SQL = `CASE
   WHEN LOWER(COALESCE(b.commerce_mode, '')) = 'warmpawz_appointments'
@@ -723,6 +735,78 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
   });
 
   /**
+   * GET /vendor/:vendorId/earnings/export.xlsx
+   * Same on-screen earnings columns for the selected window. 403 when admin toggle is off.
+   */
+  app.get("/vendor/:vendorId/earnings/export.xlsx", async (c) => {
+    try {
+      const { vendorId: paramVendorId } = c.req.param();
+      const allowed = await wpayVendorExportSettingsRepository.getAllowVendorDataDownload();
+      if (!allowed) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'EXPORT_DISABLED',
+              message: 'Vendor data download is disabled.',
+            },
+          },
+          403,
+        );
+      }
+
+      const resolvedWindow = resolveVendorEarningsWindow({
+        period: c.req.query('period'),
+        date: c.req.query('date') || c.req.query('anchorDate'),
+        from: c.req.query('from'),
+        to: c.req.query('to'),
+        yearMonth: c.req.query('yearMonth'),
+      });
+      if ('error' in resolvedWindow) {
+        return c.json(
+          { success: false, error: { code: resolvedWindow.error.code, message: resolvedWindow.error.message } },
+          resolvedWindow.error.status,
+        );
+      }
+
+      if (paramVendorId === 'test-vendor-id' || !VENDOR_UUID_RE.test(paramVendorId)) {
+        const empty = await buildVendorEarningsExportXlsx([]);
+        return new Response(empty, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': `attachment; filename="${buildVendorEarningsExportFilename(resolvedWindow.window.period)}"`,
+          },
+        });
+      }
+
+      const vendorId = await resolveVendorId(paramVendorId);
+      let vendorIdsForEarnings = await expandVendorIdsForEarningsContext(paramVendorId);
+      if (vendorIdsForEarnings.length === 0) vendorIdsForEarnings = [vendorId];
+
+      const ledger = await collectVendorEarningsWindow({
+        vendorIds: vendorIdsForEarnings,
+        window: resolvedWindow.window,
+      });
+      const rows = ledger.transactions.slice(0, EARNINGS_EXPORT_MAX_ROWS);
+      const buffer = await buildVendorEarningsExportXlsx(rows);
+      const rangeLabel = [c.req.query('from'), c.req.query('to'), c.req.query('yearMonth')]
+        .filter(Boolean)
+        .join('-');
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="${buildVendorEarningsExportFilename(resolvedWindow.window.period, rangeLabel)}"`,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error exporting vendor earnings:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /vendor/:vendorId/earnings
    * Get vendor earnings from vendor_earnings table with settlement status
    * ✅ NEW: Dedicated endpoint that reads from vendor_earnings table
@@ -730,13 +814,30 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
   app.get("/vendor/:vendorId/earnings", async (c) => {
     try {
       const { vendorId: paramVendorId } = c.req.param();
-      const period = c.req.query('period') || 'month'; // day, week, month, year, lifetime
+      const resolvedWindow = resolveVendorEarningsWindow({
+        period: c.req.query('period'),
+        date: c.req.query('date') || c.req.query('anchorDate'),
+        from: c.req.query('from'),
+        to: c.req.query('to'),
+        yearMonth: c.req.query('yearMonth'),
+      });
+      if ('error' in resolvedWindow) {
+        return c.json(
+          { success: false, error: { code: resolvedWindow.error.code, message: resolvedWindow.error.message } },
+          resolvedWindow.error.status,
+        );
+      }
+      const period = resolvedWindow.window.period;
       const earningsAnchor = resolveEarningsAnchorYmd(c.req.query('date') || c.req.query('anchorDate'));
+      const pageLimit = parseEarningsPageLimit(c.req.query('limit'));
+      const includeTransactions =
+        pageLimit > 0 && c.req.query('includeTransactions') !== '0';
 
       // Handle test IDs
       if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
+          allowDataDownload: false,
           earnings: {
             totalEarnings: 0,
             pendingSettlement: 0,
@@ -744,6 +845,10 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
             paidOut: 0,
             thisPeriod: 0,
             transactions: [],
+            totalCount: 0,
+            nextCursor: null,
+            hasMore: false,
+            pageSize: pageLimit,
           },
         });
       }
@@ -770,9 +875,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         '[EARNINGS-MEAL-SETTLEMENT-BACKFILL]',
       );
 
-      const periodScoped = period !== 'lifetime';
+      const periodScoped = resolvedWindow.window.scoped;
       const vePeriodSql = periodScoped
-        ? ` AND ${sqlTimestampInEarningsPeriod(period, 've.realized_at', earningsAnchor)}`
+        ? ` AND ${resolvedWindow.window.periodSql('ve.realized_at')}`
         : '';
       const dsDeliveredCol = 'COALESCE(ds.order_delivered_at, ds.created_at)';
 
@@ -851,7 +956,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const earnings = earningsResult.rows || [];
 
       const dsPeriodSql = periodScoped
-        ? ` AND ${sqlTimestampInEarningsPeriod(period, dsDeliveredCol, earningsAnchor)}`
+        ? ` AND ${resolvedWindow.window.periodSql(dsDeliveredCol)}`
         : '';
       const settlementsSql = `SELECT id, vendor_id, meal_order_id, pharmacy_order_id, order_amount, commission_amount, commission_rate,
                     net_payout, status, order_delivered_at, created_at, actual_payout_date
@@ -865,7 +970,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const wpayRealizedCol = 'COALESCE(p.completed_at, s.settlement_date::timestamptz, s.created_at)';
       const wpayPeriodSql = periodScoped
-        ? ` AND ${sqlTimestampInEarningsPeriod(period, wpayRealizedCol, earningsAnchor)}`
+        ? ` AND ${resolvedWindow.window.periodSql(wpayRealizedCol)}`
         : '';
       const wpaySettlementsSql = `SELECT s.id,
                     s.vendor_id,
@@ -1091,6 +1196,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         (a: any, b: any) =>
           new Date(b.realizedAt || 0).getTime() - new Date(a.realizedAt || 0).getTime(),
       );
+      const paged = includeTransactions
+        ? sliceEarningsByCursor(transactions, c.req.query('cursor'), pageLimit)
+        : { page: [] as typeof transactions, nextCursor: null, hasMore: false, totalCount: transactions.length };
+      const allowDataDownload = await wpayVendorExportSettingsRepository
+        .getAllowVendorDataDownload()
+        .catch(() => false);
 
       // ✅ Get pending tier deductions
       const deductionsResult = await query(
@@ -1137,11 +1248,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         canonicalVendorId: vendorId,
         ledgerVendorIds: vendorIdsForEarnings,
         earningsBackfilled,
+        allowDataDownload,
         dailyBreakdown,
         dailyEarnings: dailyBreakdown,
         earnings: {
           ...summary,
-          transactions,
+          transactions: paged.page,
+          totalCount: paged.totalCount,
+          nextCursor: paged.nextCursor,
+          hasMore: paged.hasMore,
+          pageSize: pageLimit,
           dailyBreakdown,
           dailyEarnings: dailyBreakdown,
           totalBookings,

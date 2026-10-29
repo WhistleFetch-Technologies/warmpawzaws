@@ -18,6 +18,7 @@ import { MetricsGrid } from './MetricsGrid';
 import { PaymentsFilterBar } from './PaymentsFilterBar';
 import { PaymentsTable } from './PaymentsTable';
 import { ConvenienceSettingsPanel } from './ConvenienceSettingsPanel';
+import { VendorExportToggle } from './VendorExportToggle';
 
 const PAYMENTS_PAGE_SIZE = 5;
 
@@ -128,6 +129,8 @@ export function DashboardPage() {
           moneyPeriodLabel={wpayMoneyPeriodLabel(paymentsFilters)}
         />
       ) : null}
+
+      <VendorExportToggle />
 
       <ConvenienceSettingsPanel />
 

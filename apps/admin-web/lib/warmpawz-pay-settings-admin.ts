@@ -65,3 +65,35 @@ export async function updateWpayConvenienceSettings(
   >('/admin/warmpawz-pay/settings/convenience', pickSettings(payload));
   return pickSettings(unwrap(data));
 }
+
+export type WpayVendorExportSettings = {
+  allowDataDownload: boolean;
+};
+
+function unwrapVendorExport(
+  data: WpayVendorExportSettings | { data?: WpayVendorExportSettings } | null | undefined,
+): WpayVendorExportSettings {
+  const raw =
+    data && typeof data === 'object' && 'data' in data && data.data
+      ? data.data
+      : (data as WpayVendorExportSettings | undefined);
+  return { allowDataDownload: raw?.allowDataDownload === true };
+}
+
+export async function fetchWpayVendorExportSettings(): Promise<WpayVendorExportSettings> {
+  const data = await apiClient.get<
+    WpayVendorExportSettings | { data?: WpayVendorExportSettings }
+  >('/admin/warmpawz-pay/settings/vendor-export');
+  return unwrapVendorExport(data);
+}
+
+export async function updateWpayVendorExportSettings(
+  payload: WpayVendorExportSettings,
+): Promise<WpayVendorExportSettings> {
+  const data = await apiClient.put<
+    WpayVendorExportSettings | { data?: WpayVendorExportSettings }
+  >('/admin/warmpawz-pay/settings/vendor-export', {
+    allowDataDownload: payload.allowDataDownload === true,
+  });
+  return unwrapVendorExport(data);
+}

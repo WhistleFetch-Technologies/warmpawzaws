@@ -25,6 +25,10 @@ jest.mock('../ConvenienceSettingsPanel', () => ({
   ConvenienceSettingsPanel: () => <div>Global WPay Fee Settings</div>,
 }));
 
+jest.mock('../VendorExportToggle', () => ({
+  VendorExportToggle: () => <div>Allow vendor data download</div>,
+}));
+
 jest.mock('../PaymentsFilterBar', () => ({
   PaymentsFilterBar: () => <div>Payments filters</div>,
 }));

@@ -41,17 +41,27 @@ export type VendorEarningsSummary = {
   completedBookings: number;
   averageBookingValue: number;
   lastMonthEarnings: number;
+  allowDataDownload: boolean;
+  nextCursor: string | null;
+  hasMore: boolean;
+  totalCount: number;
+  pageSize: number;
 };
 
 type EarningsApiResponse = {
   success?: boolean;
   canonicalVendorId?: string;
+  allowDataDownload?: boolean;
   earnings?: {
     totalEarnings?: number;
     pendingSettlement?: number;
     pendingPayout?: number;
     thisPeriod?: number;
     transactions?: unknown[];
+    nextCursor?: string | null;
+    hasMore?: boolean;
+    totalCount?: number;
+    pageSize?: number;
     dailyBreakdown?: Array<{ day?: string; date?: string; amount?: number; earnings?: number }>;
     dailyEarnings?: Array<{ day?: string; date?: string; amount?: number; earnings?: number }>;
     totalBookings?: number;
@@ -153,12 +163,29 @@ function mapTransactionsFromEarningsApi(txSource: unknown[]): VendorEarningsTran
 }
 
 export type VendorEarningsListPeriod = 'day' | 'week' | 'month';
+export type VendorEarningsVisibility = 'today' | 'week' | 'month' | 'range';
+
+export const EARNINGS_CURSOR_PAGE_SIZE = 5;
 
 /** Bookings → Earnings Schedule toggle maps onto GET /vendor/:id/earnings period. */
 export function schedulePeriodToEarningsApiPeriod(
   period: 'today' | 'week' | 'month'
 ): VendorEarningsListPeriod {
   return period === 'today' ? 'day' : period;
+}
+
+export function visibilityToEarningsApiPeriod(
+  period: VendorEarningsVisibility
+): 'day' | 'week' | 'month' | 'range' {
+  return period === 'today' ? 'day' : period;
+}
+
+export function currentIstYmd(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+export function currentIstYearMonth(): string {
+  return currentIstYmd().slice(0, 7);
 }
 
 export function pickEarningsTransactionsForPeriod(
@@ -169,22 +196,60 @@ export function pickEarningsTransactionsForPeriod(
   return Array.isArray(selected) ? selected : [];
 }
 
-export function earningsRequestQuery(period: string, anchorDate?: string): string {
-  const params = new URLSearchParams({ period });
-  if (anchorDate && period !== 'lifetime' && /^\d{4}-\d{2}-\d{2}$/.test(anchorDate)) {
-    params.set('date', anchorDate);
+export type EarningsQueryOpts = {
+  period: string;
+  date?: string;
+  from?: string;
+  to?: string;
+  yearMonth?: string;
+  cursor?: string;
+  limit?: number;
+};
+
+export function earningsRequestQuery(
+  periodOrOpts: string | EarningsQueryOpts,
+  anchorDate?: string
+): string {
+  const opts: EarningsQueryOpts =
+    typeof periodOrOpts === 'string'
+      ? { period: periodOrOpts, date: anchorDate }
+      : periodOrOpts;
+  const params = new URLSearchParams({ period: opts.period });
+  if (opts.date && opts.period !== 'lifetime' && /^\d{4}-\d{2}-\d{2}$/.test(opts.date)) {
+    params.set('date', opts.date);
   }
+  if (opts.yearMonth && /^\d{4}-\d{2}$/.test(opts.yearMonth)) {
+    params.set('yearMonth', opts.yearMonth);
+  }
+  if (opts.from && /^\d{4}-\d{2}-\d{2}$/.test(opts.from)) {
+    params.set('from', opts.from);
+  }
+  if (opts.to && /^\d{4}-\d{2}-\d{2}$/.test(opts.to)) {
+    params.set('to', opts.to);
+  }
+  if (opts.cursor) params.set('cursor', opts.cursor);
+  if (opts.limit != null) params.set('limit', String(opts.limit));
   return params.toString();
 }
 
 async function fetchEarningsPeriod(
   vendorId: string,
-  period: string,
-  anchorDate?: string
+  opts: EarningsQueryOpts
 ): Promise<EarningsApiResponse> {
   return apiClient.get<EarningsApiResponse>(
-    `/vendor/${vendorId}/earnings?${earningsRequestQuery(period, anchorDate)}`
+    `/vendor/${vendorId}/earnings?${earningsRequestQuery(opts)}`
   );
+}
+
+function paginationFrom(res: EarningsApiResponse | null | undefined) {
+  const e = pickEarnings(res);
+  return {
+    nextCursor: e.nextCursor ?? null,
+    hasMore: e.hasMore === true,
+    totalCount: Number(e.totalCount ?? 0) || 0,
+    pageSize: Number(e.pageSize ?? EARNINGS_CURSOR_PAGE_SIZE) || EARNINGS_CURSOR_PAGE_SIZE,
+    allowDataDownload: res?.allowDataDownload === true,
+  };
 }
 
 /** Prefer localStorage (synced from profile) then props. */
@@ -199,14 +264,67 @@ export function resolveSessionVendorIdForEarnings(
   return (propVendorId || vendorDataId || '').trim();
 }
 
+export type FetchVendorEarningsOptions = {
+  forceProfileRefresh?: boolean;
+  listPeriod?: VendorEarningsListPeriod;
+  visibility?: VendorEarningsVisibility;
+  /** IST calendar YYYY-MM-DD; day/week/month windows end on this date. */
+  date?: string;
+  yearMonth?: string;
+  from?: string;
+  to?: string;
+  cursor?: string;
+};
+
+function listQueryFromOptions(options?: FetchVendorEarningsOptions): EarningsQueryOpts {
+  if (options?.visibility === 'range') {
+    return {
+      period: 'range',
+      from: options.from,
+      to: options.to,
+      cursor: options.cursor,
+      limit: EARNINGS_CURSOR_PAGE_SIZE,
+    };
+  }
+  const period = options?.visibility
+    ? visibilityToEarningsApiPeriod(options.visibility)
+    : options?.listPeriod || 'lifetime';
+  return {
+    period,
+    date: options?.date,
+    yearMonth: period === 'month' ? options?.yearMonth : undefined,
+    cursor: options.cursor,
+    limit: EARNINGS_CURSOR_PAGE_SIZE,
+  };
+}
+
+export async function fetchVendorEarningsPage(
+  sessionVendorId: string,
+  options?: FetchVendorEarningsOptions
+): Promise<{
+  ledgerVendorId: string;
+  transactions: VendorEarningsTransaction[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  totalCount: number;
+  pageSize: number;
+  allowDataDownload: boolean;
+}> {
+  const sessionId = resolveSessionVendorIdForEarnings(sessionVendorId) || sessionVendorId;
+  const ledgerVendorId = await resolveLedgerVendorId(sessionId, options);
+  const res = await fetchEarningsPeriod(ledgerVendorId, listQueryFromOptions(options));
+  const page = paginationFrom(res);
+  const tx = Array.isArray(res.earnings?.transactions) ? res.earnings.transactions : [];
+  return {
+    ledgerVendorId,
+    transactions: mapTransactionsFromEarningsApi(tx),
+    ...page,
+  };
+}
+
 export async function fetchVendorEarningsSummary(
   sessionVendorId: string,
-  options?: {
-    forceProfileRefresh?: boolean;
-    listPeriod?: VendorEarningsListPeriod;
-    /** IST calendar YYYY-MM-DD; day/week/month windows end on this date. */
-    date?: string;
-  }
+  options?: FetchVendorEarningsOptions
 ): Promise<VendorEarningsSummary> {
   if (options?.forceProfileRefresh) {
     clearLedgerVendorIdCache();
@@ -214,14 +332,23 @@ export async function fetchVendorEarningsSummary(
 
   const sessionId = resolveSessionVendorIdForEarnings(sessionVendorId) || sessionVendorId;
   let ledgerVendorId = await resolveLedgerVendorId(sessionId, options);
-  const anchorDate = options?.date && /^\d{4}-\d{2}-\d{2}$/.test(options.date) ? options.date : undefined;
+  const listQuery = listQueryFromOptions(options);
+  const cardLimit = 0;
 
-  let [todayRes, weekRes, monthRes, lifetimeRes] = await Promise.all([
-    fetchEarningsPeriod(ledgerVendorId, 'day', anchorDate),
-    fetchEarningsPeriod(ledgerVendorId, 'week', anchorDate),
-    fetchEarningsPeriod(ledgerVendorId, 'month', anchorDate),
-    fetchEarningsPeriod(ledgerVendorId, 'lifetime'),
-  ]);
+  const loadCardsAndList = (vendorId: string) =>
+    Promise.all([
+      fetchEarningsPeriod(vendorId, { period: 'day', limit: cardLimit }),
+      fetchEarningsPeriod(vendorId, { period: 'week', limit: cardLimit }),
+      fetchEarningsPeriod(vendorId, {
+        period: 'month',
+        yearMonth: options?.yearMonth,
+        limit: cardLimit,
+      }),
+      fetchEarningsPeriod(vendorId, { period: 'lifetime', limit: cardLimit }),
+      fetchEarningsPeriod(vendorId, listQuery),
+    ]);
+
+  let [todayRes, weekRes, monthRes, lifetimeRes, listRes] = await loadCardsAndList(ledgerVendorId);
 
   const canonical = lifetimeRes?.canonicalVendorId;
   const lifetimeTotal = periodAmount(lifetimeRes, 'totalEarnings');
@@ -230,32 +357,14 @@ export async function fetchVendorEarningsSummary(
     if (typeof window !== 'undefined') {
       localStorage.setItem('vendorId', canonical);
     }
-    [todayRes, weekRes, monthRes, lifetimeRes] = await Promise.all([
-      fetchEarningsPeriod(ledgerVendorId, 'day', anchorDate),
-      fetchEarningsPeriod(ledgerVendorId, 'week', anchorDate),
-      fetchEarningsPeriod(ledgerVendorId, 'month', anchorDate),
-      fetchEarningsPeriod(ledgerVendorId, 'lifetime'),
-    ]);
+    [todayRes, weekRes, monthRes, lifetimeRes, listRes] = await loadCardsAndList(ledgerVendorId);
   }
 
   const lifetime = pickEarnings(lifetimeRes);
-  const day = pickEarnings(todayRes);
   const week = pickEarnings(weekRes);
-  const month = pickEarnings(monthRes);
-
-  const byPeriod = {
-    day: Array.isArray(day.transactions) ? day.transactions : [],
-    week: Array.isArray(week.transactions) ? week.transactions : [],
-    month: Array.isArray(month.transactions) ? month.transactions : [],
-    lifetime: Array.isArray(lifetime.transactions) ? lifetime.transactions : [],
-  };
-  const txFromLifetime = byPeriod.lifetime;
-  const txFromMonth = byPeriod.month;
-  const txSource = options?.listPeriod
-    ? pickEarningsTransactionsForPeriod(byPeriod, options.listPeriod)
-    : txFromLifetime.length > 0
-      ? txFromLifetime
-      : txFromMonth;
+  const listEarnings = pickEarnings(listRes);
+  const page = paginationFrom(listRes);
+  const txSource = Array.isArray(listEarnings.transactions) ? listEarnings.transactions : [];
 
   const dailyFromApi = week.dailyBreakdown || week.dailyEarnings;
   let dailyTrend: Array<{ day: string; amount: number }>;
@@ -290,11 +399,26 @@ export async function fetchVendorEarningsSummary(
     pending:
       Number(lifetime.pendingSettlement ?? lifetime.pendingPayout ?? 0) || 0,
     total: periodAmount(lifetimeRes, 'totalEarnings'),
-    transactions: mapTransactionsFromEarningsApi(txSource).slice(0, 50),
+    transactions: mapTransactionsFromEarningsApi(txSource),
     dailyTrend,
-    totalBookings: Number(lifetime.totalBookings ?? txSource.length) || 0,
+    totalBookings: Number(listEarnings.totalCount ?? lifetime.totalBookings ?? txSource.length) || 0,
     completedBookings: Number(lifetime.completedBookings ?? 0) || 0,
     averageBookingValue: Number(lifetime.averageBookingValue ?? 0) || 0,
     lastMonthEarnings: Number(lifetime.lastMonthEarnings ?? 0) || 0,
+    allowDataDownload: page.allowDataDownload,
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+    totalCount: page.totalCount,
+    pageSize: page.pageSize,
   };
+}
+
+export function vendorEarningsExportPath(
+  vendorId: string,
+  options?: FetchVendorEarningsOptions
+): string {
+  const query = listQueryFromOptions(options);
+  delete query.cursor;
+  delete query.limit;
+  return `/vendor/${vendorId}/earnings/export.xlsx?${earningsRequestQuery(query)}`;
 }
