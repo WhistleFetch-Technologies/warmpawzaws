@@ -26,9 +26,9 @@ describe('pet-profile-validation onboarding', () => {
     expect(errors.dateOfBirth).toBeDefined();
   });
 
-  it('strict:true requires photo and core fields', () => {
+  it('strict:true requires core fields but not a photo', () => {
     const errors = validateRequiredPetFields(emptyWizard, null, { strict: true });
-    expect(errors.photo).toBeDefined();
+    expect(errors.photo).toBeUndefined();
     expect(errors.name).toBeDefined();
     expect(errors.breed).toBeDefined();
   });

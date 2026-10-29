@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { 
   X, Camera, Upload, ChevronRight, ChevronLeft, Check, AlertCircle,
-  Calendar, Syringe, Heart, Shield, Dog, Cat, Sparkles, Image as ImageIcon,
+  Calendar, Syringe, Heart, Shield, Dog, Cat, Sparkles,
   Info, Plus, Trash2, Clock, Bell, FileText, Star, Zap, CircleDot, HelpCircle, Baby, PawPrint
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,10 @@ import {
   extractPetImageKey,
   keysToAbandon,
 } from '@/lib/pet-photo-upload';
+import {
+  isVaccineCertificateFileValid,
+  VaccinationCertificateField,
+} from '@/components/customer/VaccinationCertificateField';
 import { hasAuthenticatedCustomerSession, emitGuestAuthAnalytics, requestGuestAuth } from '@/lib/guest-auth-gate';
 import {
   isCapacitorNativePlatform,
@@ -60,6 +64,15 @@ interface VaccinationRecord {
   veterinarian?: string;
   batchNumber?: string;
   notes?: string;
+  imageKey?: string;
+  imageUrl?: string;
+}
+
+function newVaccinationRecordId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `vax_${crypto.randomUUID()}`;
+  }
+  return `vax_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 interface PetData {
@@ -299,6 +312,9 @@ export function EnhancedAddPetModal({
   const [uploadProgress, setUploadProgress] = useState(0);
   /** Staged vaccine dates — commit only on explicit confirm (avoids iOS WKWebView auto-select). */
   const [pendingVaxDates, setPendingVaxDates] = useState<Record<string, string>>({});
+  const [customVaxName, setCustomVaxName] = useState('');
+  const [customVaxDate, setCustomVaxDate] = useState('');
+  const [uploadingVaxId, setUploadingVaxId] = useState<string | null>(null);
   
   // Pet data state
   const [petData, setPetData] = useState<PetData>(() => buildInitialPetData(editPet));
@@ -350,6 +366,9 @@ export function EnhancedAddPetModal({
         setUploadingPhoto(false);
         setUploadProgress(0);
         setPendingVaxDates({});
+        setCustomVaxName('');
+        setCustomVaxDate('');
+        setUploadingVaxId(null);
         setNewAllergy('');
         setNewMedication('');
         setNewCondition('');
@@ -370,6 +389,9 @@ export function EnhancedAddPetModal({
     setUploadingPhoto(false);
     setUploadProgress(0);
     setPendingVaxDates({});
+    setCustomVaxName('');
+    setCustomVaxDate('');
+    setUploadingVaxId(null);
     setNewAllergy('');
     setNewMedication('');
     setNewCondition('');
@@ -461,7 +483,7 @@ export function EnhancedAddPetModal({
     const nextDueDate =
       computeNextDueDate(item, petData.dateOfBirth, lastDate) || '';
     const newVax: VaccinationRecord = {
-      id: `vax_${Date.now()}`,
+      id: newVaccinationRecordId(),
       vaccineKey: item.key,
       name: item.payloadName,
       lastDate,
@@ -480,6 +502,79 @@ export function EnhancedAddPetModal({
       vaccinations: prev.vaccinations.filter(v => v.id !== id),
     }));
   };
+
+  const addCustomVaccination = () => {
+    const name = customVaxName.trim();
+    if (!name || !customVaxDate) return;
+    const customKey = `custom:${newVaccinationRecordId().replace(/^vax_/, '')}`;
+    const newVax: VaccinationRecord = {
+      id: newVaccinationRecordId(),
+      vaccineKey: customKey,
+      name,
+      lastDate: customVaxDate,
+      nextDueDate: '',
+    };
+    setPetData((prev) => ({
+      ...prev,
+      vaccinations: [...prev.vaccinations, newVax],
+    }));
+    setCustomVaxName('');
+    setCustomVaxDate('');
+  };
+
+  const handleVaccinationImageUpload = async (vaxId: string, file: File) => {
+    const invalid = isVaccineCertificateFileValid(file);
+    if (invalid) {
+      toast.error(invalid);
+      return;
+    }
+    setUploadingVaxId(vaxId);
+    try {
+      const { uploadPetVaccinationImageWithProgress } = await import('@/lib/photo-upload-enhanced');
+      const result = await uploadPetVaccinationImageWithProgress(file, petData.id, vaxId, phone, {
+        verifyUpload: true,
+        maxRetries: 3,
+      });
+      if (result.success && (result.imageKey || result.publicUrl)) {
+        setPetData((prev) => ({
+          ...prev,
+          vaccinations: prev.vaccinations.map((item) =>
+            item.id === vaxId
+              ? {
+                  ...item,
+                  imageKey: result.imageKey || item.imageKey,
+                  imageUrl: result.publicUrl || result.url || item.imageUrl,
+                }
+              : item
+          ),
+        }));
+        toast.success('Certificate photo uploaded');
+      } else {
+        toast.error(result.error || 'Failed to upload certificate photo');
+      }
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Failed to upload certificate photo');
+    } finally {
+      setUploadingVaxId(null);
+    }
+  };
+
+  const removeVaccinationImage = (vaxId: string) => {
+    setPetData((prev) => ({
+      ...prev,
+      vaccinations: prev.vaccinations.map((item) =>
+        item.id === vaxId ? { ...item, imageKey: '', imageUrl: undefined } : item
+      ),
+    }));
+  };
+
+  const catalogueItems = [...getJuvenileSchedule(petData.type), ...getAdultSchedule(petData.type)];
+  const customVaccinations = petData.vaccinations.filter(
+    (record) =>
+      !catalogueItems.some(
+        (item) => item.key === record.vaccineKey || item.payloadName === record.name
+      )
+  );
 
   const confirmVaccinationDate = (item: VaccinationScheduleItem, dateValue: string) => {
     if (!dateValue) return;
@@ -561,27 +656,36 @@ export function EnhancedAddPetModal({
         )}
 
         {isAdded && record && (
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-700">
-            <span>
-              <span className="text-gray-500">Last given:</span>{' '}
-              <span className="font-medium text-gray-900">{record.lastDate}</span>
-            </span>
-            {record.nextDueDate && (
-              <span className="text-orange-600 font-medium">
-                Next due: {record.nextDueDate}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-700">
+              <span>
+                <span className="text-gray-500">Last given:</span>{' '}
+                <span className="font-medium text-gray-900">{record.lastDate}</span>
               </span>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                const removeId = record.id ?? record.vaccineKey ?? item.key;
-                removeVaccination(removeId);
-              }}
-              className="text-red-500 hover:text-red-600 p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-red-300"
-              aria-label={`Remove ${item.displayName}`}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+              {record.nextDueDate && (
+                <span className="text-orange-600 font-medium">
+                  Next due: {record.nextDueDate}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  const removeId = record.id ?? record.vaccineKey ?? item.key;
+                  removeVaccination(removeId);
+                }}
+                className="text-red-500 hover:text-red-600 p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-red-300"
+                aria-label={`Remove ${item.displayName}`}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+            <VaccinationCertificateField
+              inputId={`vax-cert-${record.id}`}
+              imageUrl={record.imageUrl}
+              uploading={uploadingVaxId === record.id}
+              onSelectFile={(file) => handleVaccinationImageUpload(record.id, file)}
+              onRemove={() => removeVaccinationImage(record.id)}
+            />
           </div>
         )}
       </div>
@@ -726,6 +830,7 @@ export function EnhancedAddPetModal({
         allergies,
         chronicConditions,
         vaccinations: petData.vaccinations.map((v) => ({
+          id: v.id,
           type: v.name,
           name: v.name,
           date: v.lastDate,
@@ -734,6 +839,7 @@ export function EnhancedAddPetModal({
           nextDueDate: v.nextDueDate,
           vaccineKey: v.vaccineKey,
           key: v.vaccineKey,
+          ...(v.imageKey != null ? { imageKey: v.imageKey } : {}),
         })),
         behaviorNotes: petData.specialNeeds || petData.temperament || undefined,
         specialNeeds: petData.specialNeeds || undefined,
@@ -896,7 +1002,7 @@ export function EnhancedAddPetModal({
               <div className="text-center">
                 <h3 className="text-xl font-bold text-gray-900 mb-2">Upload Pet Photo</h3>
                 <p className="text-gray-600 text-sm">
-                  A clear photo helps us identify your pet and provide better service
+                  Optional — you can skip this and add a photo later. A clear photo helps us identify your pet.
                 </p>
               </div>
               
@@ -1433,6 +1539,80 @@ export function EnhancedAddPetModal({
                 <div className="space-y-3">
                   {getAdultSchedule(petData.type).map((item) => renderVaccinationScheduleCard(item))}
                 </div>
+              </div>
+
+              <div className="rounded-xl border-2 border-dashed border-gray-200 bg-white p-4">
+                <h4 className="font-semibold text-gray-900 mb-1">Other vaccine</h4>
+                <p className="text-sm text-gray-600 mb-3">
+                  Add a vaccine that is not in the list, with an optional certificate photo.
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="flex-1 min-w-0">
+                    <label htmlFor="custom-vax-name" className="text-sm font-medium text-gray-700">
+                      Vaccine name
+                    </label>
+                    <input
+                      id="custom-vax-name"
+                      type="text"
+                      value={customVaxName}
+                      onChange={(e) => setCustomVaxName(e.target.value)}
+                      placeholder="e.g. Kennel cough booster"
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none"
+                    />
+                  </div>
+                  <div className="sm:w-44">
+                    <label htmlFor="custom-vax-date" className="text-sm font-medium text-gray-700">
+                      Date last given
+                    </label>
+                    <div className="warmpawz-date-field-wrap mt-1">
+                      <input
+                        id="custom-vax-date"
+                        type="date"
+                        max={new Date().toISOString().split('T')[0]}
+                        value={customVaxDate}
+                        onChange={(e) => setCustomVaxDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!customVaxName.trim() || !customVaxDate}
+                    onClick={addCustomVaccination}
+                    className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-orange-500 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-600"
+                  >
+                    Add record
+                  </button>
+                </div>
+                {customVaccinations.length > 0 && (
+                  <div className="mt-4 space-y-3">
+                    {customVaccinations.map((record) => (
+                      <div key={record.id} className="rounded-lg border border-green-300 bg-green-50 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-gray-900">{record.name}</p>
+                            <p className="text-sm text-gray-700">Last given: {record.lastDate}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeVaccination(record.id)}
+                            className="text-red-500 hover:text-red-600 p-1 rounded-md"
+                            aria-label={`Remove ${record.name}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <VaccinationCertificateField
+                          inputId={`vax-cert-${record.id}`}
+                          imageUrl={record.imageUrl}
+                          uploading={uploadingVaxId === record.id}
+                          onSelectFile={(file) => handleVaccinationImageUpload(record.id, file)}
+                          onRemove={() => removeVaccinationImage(record.id)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">

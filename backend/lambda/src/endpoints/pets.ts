@@ -52,6 +52,14 @@ import {
   validatePetCreatePayload,
 } from '../utils/pet-create-validation';
 import { deletePetProfilePhotoAssets } from '../services/image/delete-pet-profile-photo.service';
+import {
+  mergeVaccinationArrayForUpdate,
+  ownerVaccinationResponseFields,
+  sanitizeVaccinationArrayForStorage,
+  sanitizeVaccinationsForCreate,
+  stripVaccinationImagesFromHistory,
+  stripVaccinationImagesFromPetRow,
+} from '../utils/pet-vaccination-image';
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -79,7 +87,7 @@ export function registerPetEndpoints(app: Hono) {
           gender: pet.gender,
           weight_kg: pet.weight_kg,
           profile_photo_url: pet.profile_photo_url,
-          medical_history: pet.medical_history || {},
+          medical_history: stripVaccinationImagesFromHistory(pet.medical_history || {}),
           createdAt: pet.created_at,
         })),
         count: pets.length,
@@ -120,7 +128,7 @@ export function registerPetEndpoints(app: Hono) {
           weight_kg: pet.weight_kg,
           photo,
           profile_photo_url: photo,
-          medical_history: pet.medical_history || {},
+          medical_history: stripVaccinationImagesFromHistory(pet.medical_history || {}),
           createdAt: pet.created_at,
         },
       });
@@ -155,6 +163,7 @@ export function registerPetEndpoints(app: Hono) {
         (await resolvePetPhotoForDisplay(pet.profile_photo_url, pet.id)) || pet.profile_photo_url;
       const vaccinations = extractVaccinationsForClient(pet);
       const bloodType = normalizeBloodTypeForStorage(pet.medical_history?.bloodType, pet.species);
+      const ownerVaccinations = await ownerVaccinationResponseFields(pet);
 
       // Map to frontend-expected format
       return c.json({
@@ -177,7 +186,7 @@ export function registerPetEndpoints(app: Hono) {
           ...(bloodType ? { bloodType } : {}),
           healthRecords: extractHealthRecordsForClient(pet.medical_history, pet.species),
           vaccinations,
-          medical_history: pet.medical_history || {},
+          ...ownerVaccinations,
           createdAt: pet.created_at,
         },
       });
@@ -225,7 +234,7 @@ export function registerPetEndpoints(app: Hono) {
       return c.json({
         success: true,
         pet: {
-          ...pet,
+          ...stripVaccinationImagesFromPetRow(pet as Record<string, unknown>),
           profile_photo_url: profilePhoto,
           photo: profilePhoto,
           medicalRecordsCount: parseInt(medicalRecords.rows[0]?.count || '0', 10),
@@ -337,7 +346,7 @@ export function registerPetEndpoints(app: Hono) {
         microchipId: microchipId || microchipped || null,
         allergies: allergies || [],
         chronicConditions: chronicConditions || [],
-        vaccinations: vaccinations || [],
+        vaccinations: sanitizeVaccinationsForCreate(vaccinations || []),
         behaviorNotes: behaviorNotes || null,
         feedingSchedule: feedingSchedule || null,
         dietaryRestrictions: dietaryRestrictions || [],
@@ -429,7 +438,9 @@ export function registerPetEndpoints(app: Hono) {
         microchipId: petData.microchipId ?? existingMedicalHistory.microchipId ?? null,
         allergies: petData.allergies ?? existingMedicalHistory.allergies ?? [],
         chronicConditions: petData.chronicConditions ?? existingMedicalHistory.chronicConditions ?? [],
-        vaccinations: petData.vaccinations ?? existingMedicalHistory.vaccinations ?? [],
+        vaccinations: Array.isArray(petData.vaccinations)
+          ? mergeVaccinationArrayForUpdate(existingMedicalHistory.vaccinations, petData.vaccinations)
+          : sanitizeVaccinationArrayForStorage(existingMedicalHistory.vaccinations || []),
         behaviorNotes: petData.behaviorNotes ?? existingMedicalHistory.behaviorNotes ?? null,
         feedingSchedule: petData.feedingSchedule ?? existingMedicalHistory.feedingSchedule ?? null,
         dietaryRestrictions: petData.dietaryRestrictions ?? existingMedicalHistory.dietaryRestrictions ?? [],
@@ -455,6 +466,12 @@ export function registerPetEndpoints(app: Hono) {
         }
       }
 
+      const flatFromWizard = flatMapFromVaccinationEntries(
+        Array.isArray(enhancedMedicalHistory.vaccinations) ? enhancedMedicalHistory.vaccinations : []
+      );
+      const vaccinationStorage = buildVaccinationStorage(enhancedMedicalHistory, flatFromWizard);
+      vaccinationStorage.medical_history.vaccinations = enhancedMedicalHistory.vaccinations;
+
       // Convert age if provided
       const updateData: any = {
         name: petData.name,
@@ -462,7 +479,8 @@ export function registerPetEndpoints(app: Hono) {
         gender: petData.gender,
         weight_kg: petData.weight ? parseFloat(petData.weight) : undefined,
         profile_photo_url: petData.photo || (petData.photos && petData.photos.length > 0 ? petData.photos[0] : undefined),
-        medical_history: enhancedMedicalHistory,
+        medical_history: vaccinationStorage.medical_history,
+        vaccination_records: vaccinationStorage.vaccination_records,
       };
 
       if (petData.age) {
@@ -523,7 +541,7 @@ export function registerPetEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        pet: afterPet,
+        pet: stripVaccinationImagesFromPetRow(afterPet),
         ...loyaltyFields,
         message: 'Pet updated successfully',
       });
@@ -648,19 +666,20 @@ export function registerPetEndpoints(app: Hono) {
         petData.vaccinations != null && !Array.isArray(petData.vaccinations)
           ? (petData.vaccinations as Record<string, string>)
           : {};
+      const vaccinationsArray = incomingVacArray
+        ? mergeVaccinationArrayForUpdate(existingMedicalHistory.vaccinations, incomingVacArray)
+        : sanitizeVaccinationArrayForStorage(existingMedicalHistory.vaccinations || []);
       const mergedVac = sanitizeVaccinationMap({
         ...existingVac,
         ...(incomingVacFromHealth || {}),
         ...incomingVacFlat,
-        ...(incomingVacArray ? flatMapFromVaccinationEntries(incomingVacArray) : {}),
+        ...flatMapFromVaccinationEntries(vaccinationsArray),
       });
       const { vaccination_records, medical_history } = buildVaccinationStorage(
         mergedHealth,
         mergedVac
       );
-      if (incomingVacArray && incomingVacArray.length > 0) {
-        medical_history.vaccinations = incomingVacArray;
-      }
+      medical_history.vaccinations = vaccinationsArray;
 
       const updateData: any = {
         name: petData.name,
@@ -726,6 +745,7 @@ export function registerPetEndpoints(app: Hono) {
         afterPet,
         petData as Record<string, unknown>
       );
+      const ownerVaccinations = await ownerVaccinationResponseFields(pet);
       return c.json({
         success: true,
         pet: {
@@ -743,6 +763,7 @@ export function registerPetEndpoints(app: Hono) {
           ...(bloodType ? { bloodType } : {}),
           healthRecords: extractHealthRecordsForClient(pet.medical_history, pet.species),
           vaccinations,
+          ...ownerVaccinations,
         },
         ...loyaltyFields,
         message: 'Pet updated successfully',

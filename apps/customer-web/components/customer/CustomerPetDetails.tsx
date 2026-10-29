@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Calendar, AlertCircle, Scale, User, Shield, Heart, ChevronRight } from 'lucide-react';
+import { Calendar, AlertCircle, Scale, User, Shield, Heart, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { fetchPetById } from '@/lib/fetch-customer-pet';
 import { apiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/error-handling';
@@ -36,7 +36,23 @@ import {
 import { flatMapFromVaccinationEntries } from '@/lib/vaccine-label-mapping';
 import { BloodTypeSelector } from '@/components/customer/pet-blood-type';
 import { normalizeBloodTypeKey } from '@/lib/pet-blood-types';
-import { normalizePetSpecies } from '@/lib/pet-vaccination-schedule';
+import {
+  computeNextDueDate,
+  getAdultSchedule,
+  getJuvenileSchedule,
+  normalizePetSpecies,
+} from '@/lib/pet-vaccination-schedule';
+import {
+  isVaccineCertificateFileValid,
+  VaccinationCertificateField,
+} from '@/components/customer/VaccinationCertificateField';
+
+function newVaccinationRecordId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `vax_${crypto.randomUUID()}`;
+  }
+  return `vax_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 interface Pet {
   id: string;
@@ -283,6 +299,10 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoadError, setBookingsLoadError] = useState<string | null>(null);
+  const [newVaccineKey, setNewVaccineKey] = useState('');
+  const [newVaccineName, setNewVaccineName] = useState('');
+  const [newVaccineDate, setNewVaccineDate] = useState('');
+  const [uploadingVaxId, setUploadingVaxId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewBookings = useMemo(() => bookings.slice(0, 2), [bookings]);
 
@@ -425,6 +445,78 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
       } finally {
         setSaving(false);
       }
+    }
+  };
+
+  const updateVaccinationEntry = (index: number, patch: Partial<VaccinationEntryDisplay>) => {
+    if (!pet) return;
+    const nextEntries = pet.vaccinationEntries.map((item, i) => (i === index ? { ...item, ...patch } : item));
+    setPet({ ...pet, vaccinationEntries: nextEntries });
+  };
+
+  const addVaccineToPet = () => {
+    if (!pet || !newVaccineDate) return;
+    const species = normalizePetSpecies(pet.type);
+    const catalogue = [...getJuvenileSchedule(species), ...getAdultSchedule(species)];
+    const isOther = newVaccineKey === 'other' || !newVaccineKey;
+    const item = catalogue.find((row) => row.key === newVaccineKey);
+    const name = isOther ? newVaccineName.trim() : item?.payloadName || '';
+    if (!name) return;
+    const id = newVaccinationRecordId();
+    const nextDue = item ? computeNextDueDate(item, pet.dateOfBirth || '', newVaccineDate) || undefined : undefined;
+    setPet({
+      ...pet,
+      vaccinationEntries: [
+        ...pet.vaccinationEntries,
+        {
+          id,
+          key: isOther ? `custom:${id.replace(/^vax_/, '')}` : newVaccineKey,
+          name,
+          date: newVaccineDate,
+          nextDue,
+        },
+      ],
+    });
+    setNewVaccineKey('');
+    setNewVaccineName('');
+    setNewVaccineDate('');
+  };
+
+  const handleVaccinationImageUpload = async (index: number, file: File) => {
+    if (!pet) return;
+    const invalid = isVaccineCertificateFileValid(file);
+    if (invalid) {
+      alert(invalid);
+      return;
+    }
+    const entry = pet.vaccinationEntries[index];
+    const entryId = entry.id || newVaccinationRecordId();
+    setUploadingVaxId(entryId);
+    try {
+      const { uploadPetVaccinationImageWithProgress } = await import('@/lib/photo-upload-enhanced');
+      const result = await uploadPetVaccinationImageWithProgress(file, pet.id, entryId, phone, {
+        verifyUpload: true,
+        maxRetries: 3,
+      });
+      if (result.success && (result.imageKey || result.publicUrl)) {
+        const nextEntries = pet.vaccinationEntries.map((item, i) =>
+          i === index
+            ? {
+                ...item,
+                id: entryId,
+                imageKey: result.imageKey || item.imageKey,
+                imageUrl: result.publicUrl || result.url || item.imageUrl,
+              }
+            : item
+        );
+        setPet({ ...pet, vaccinationEntries: nextEntries });
+      } else {
+        alert(result.error || 'Failed to upload certificate photo');
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to upload certificate photo');
+    } finally {
+      setUploadingVaxId(null);
     }
   };
 
@@ -955,29 +1047,105 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                 <div className="border-t border-stone-100 pt-4">
                   <h4 className="mb-3 text-sm font-semibold text-gray-700">Vaccination Chart</h4>
                   {pet.vaccinationEntries.length === 0 ? (
-                    <p className="text-sm text-gray-500">No vaccinations recorded</p>
+                    <p className="text-sm text-gray-500">No vaccinations recorded yet. Add one below.</p>
                   ) : (
                     <div className="space-y-3">
                       {pet.vaccinationEntries.map((entry, index) => (
-                        <div key={entry.key ?? `${entry.name}-${index}`}>
-                          <ProfileFieldLabel>{entry.name}</ProfileFieldLabel>
+                        <div key={entry.id ?? entry.key ?? `${entry.name}-${index}`}>
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <ProfileFieldLabel>{entry.name}</ProfileFieldLabel>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPet({
+                                  ...pet,
+                                  vaccinationEntries: pet.vaccinationEntries.filter((_, i) => i !== index),
+                                });
+                              }}
+                              className="rounded-md p-1 text-red-500 hover:bg-red-50"
+                              aria-label={`Remove ${entry.name}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                           <div className="warmpawz-date-field-wrap">
                             <input
                               type="date"
                               value={entry.date || ''}
-                              onChange={(e) => {
-                                const nextEntries = pet.vaccinationEntries.map((item, i) =>
-                                  i === index ? { ...item, date: e.target.value } : item
-                                );
-                                setPet({ ...pet, vaccinationEntries: nextEntries });
-                              }}
+                              onChange={(e) => updateVaccinationEntry(index, { date: e.target.value })}
                               className={inputClass}
                             />
                           </div>
+                          <VaccinationCertificateField
+                            inputId={`pet-vax-cert-${entry.id ?? index}`}
+                            imageUrl={entry.imageUrl}
+                            uploading={uploadingVaxId === (entry.id ?? null)}
+                            onSelectFile={(file) => handleVaccinationImageUpload(index, file)}
+                            onRemove={() => updateVaccinationEntry(index, { imageKey: '', imageUrl: undefined })}
+                          />
                         </div>
                       ))}
                     </div>
                   )}
+                  {(() => {
+                    const species = normalizePetSpecies(pet.type);
+                    const catalogue = [...getJuvenileSchedule(species), ...getAdultSchedule(species)];
+                    const remaining = catalogue.filter(
+                      (item) =>
+                        !pet.vaccinationEntries.some(
+                          (entry) => entry.key === item.key || entry.name === item.payloadName || entry.name === item.displayName
+                        )
+                    );
+                    return (
+                      <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-stone-50 p-3">
+                        <p className="mb-2 text-sm font-semibold text-gray-700">Add a vaccine</p>
+                        <select
+                          value={newVaccineKey}
+                          onChange={(e) => setNewVaccineKey(e.target.value)}
+                          className={`${inputClass} mb-2`}
+                        >
+                          <option value="">Choose vaccine</option>
+                          {remaining.map((item) => (
+                            <option key={item.key} value={item.key}>
+                              {item.displayName}
+                            </option>
+                          ))}
+                          <option value="other">Other (custom name)</option>
+                        </select>
+                        {newVaccineKey === 'other' && (
+                          <input
+                            type="text"
+                            value={newVaccineName}
+                            onChange={(e) => setNewVaccineName(e.target.value)}
+                            placeholder="Vaccine name"
+                            className={`${inputClass} mb-2`}
+                          />
+                        )}
+                        <div className="warmpawz-date-field-wrap mb-2">
+                          <input
+                            type="date"
+                            value={newVaccineDate}
+                            max={new Date().toISOString().split('T')[0]}
+                            onChange={(e) => setNewVaccineDate(e.target.value)}
+                            className={inputClass}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={addVaccineToPet}
+                          disabled={
+                            !newVaccineDate ||
+                            !newVaccineKey ||
+                            (newVaccineKey === 'other' && !newVaccineName.trim())
+                          }
+                          className="h-10 w-full rounded-xl bg-[#FF8C42] text-white hover:bg-[#e67a32]"
+                        >
+                          <Plus className="mr-1 h-4 w-4" />
+                          Add vaccine
+                        </Button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ) : (
@@ -996,11 +1164,22 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   value={deriveVaccinationStatus({ ...pet, vaccinationEntries: pet.vaccinationEntries })}
                 />
                 {pet.vaccinationEntries.map((entry, index) => (
-                  <ProfileGridField
-                    key={entry.key ?? `${entry.name}-${index}`}
-                    label={entry.name}
-                    value={formatDisplayDate(entry.date)}
-                  />
+                  <div key={entry.id ?? entry.key ?? `${entry.name}-${index}`} className="space-y-1">
+                    <ProfileGridField
+                      label={entry.name}
+                      value={formatDisplayDate(entry.date)}
+                    />
+                    {entry.imageUrl && (
+                      <a
+                        href={entry.imageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex overflow-hidden rounded-lg border border-gray-200"
+                      >
+                        <img src={entry.imageUrl} alt={`${entry.name} certificate`} className="h-14 w-14 object-cover" />
+                      </a>
+                    )}
+                  </div>
                 ))}
               </ProfileGridFields>
             )}

@@ -52,7 +52,7 @@ const AddPetItemSchema = z
     gender: z.enum(['Male', 'Female', 'male', 'female', 'neutered', 'spayed', 'Neutered', 'Spayed'], {
       errorMap: () => ({ message: 'Gender required' }),
     }),
-    photo: z.string().min(1, 'Profile photo required'),
+    photo: z.string().optional(),
     weight: z.string().max(50, 'Weight too long').optional(),
     color: z.string().max(100, 'Color too long').optional(),
     microchipId: z.string().max(100, 'Microchip ID too long').optional(),

@@ -330,6 +330,30 @@ export async function uploadPetPhotoWithProgress(
   return uploadPhotoWithProgress(file, '/storage/upload-media', formData, options);
 }
 
+const VACCINE_CERTIFICATE_MAX_BYTES = 5 * 1024 * 1024;
+
+/** One optional certificate image per vaccination record (owner-only). */
+export async function uploadPetVaccinationImageWithProgress(
+  file: File,
+  petId: string,
+  vaccinationEntryId: string,
+  customerPhone: string,
+  options: PhotoUploadOptions = {}
+): Promise<PhotoUploadResult> {
+  if (file.size > VACCINE_CERTIFICATE_MAX_BYTES) {
+    return { success: false, error: 'Certificate image must be 5MB or less' };
+  }
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('userId', petId || `pet_${Date.now()}`);
+  formData.append('userType', 'pet_vaccination');
+  formData.append('vaccinationEntryId', vaccinationEntryId);
+  formData.append('folder', 'media');
+  formData.append('customerPhone', customerPhone);
+
+  return uploadPhotoWithProgress(file, '/storage/upload-media', formData, options);
+}
+
 /**
  * Upload staff photo using presigned URL with progress tracking
  */

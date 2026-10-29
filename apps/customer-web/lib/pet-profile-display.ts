@@ -131,10 +131,13 @@ export type PetVaccinationMap = {
 };
 
 export type VaccinationEntryDisplay = {
+  id?: string;
   key?: string;
   name: string;
   date: string;
   nextDue?: string;
+  imageKey?: string;
+  imageUrl?: string;
 };
 
 const LEGACY_SLOT_LABELS: Record<keyof PetVaccinationMap, string> = {
@@ -174,11 +177,17 @@ function entriesFromArray(arr: unknown[]): VaccinationEntryDisplay[] {
     const date = entryDateFromRecord(rec);
     if (!date) continue;
     const key = String(rec.key ?? rec.vaccineKey ?? '').trim();
+    const id = String(rec.id ?? '').trim();
+    const imageKey = String(rec.imageKey ?? rec.image_key ?? '').trim();
+    const imageUrl = String(rec.imageUrl ?? rec.image_url ?? '').trim();
     out.push({
+      id: id || undefined,
       key: key || undefined,
       name: entryLabelFromRecord(rec),
       date,
       nextDue: entryNextDueFromRecord(rec),
+      ...(imageKey ? { imageKey } : {}),
+      ...(imageUrl ? { imageUrl } : {}),
     });
   }
   return out;
@@ -197,6 +206,11 @@ function entriesFromFlatMap(flat: PetVaccinationMap): VaccinationEntryDisplay[] 
 /** One row per entered vaccine (preserves wizard array; does not collapse to 4 slots). */
 export function extractVaccinationEntriesFromApi(raw: any): VaccinationEntryDisplay[] {
   if (!raw) return [];
+
+  if (Array.isArray(raw.vaccinationEntries) && raw.vaccinationEntries.length > 0) {
+    const ownerEntries = entriesFromArray(raw.vaccinationEntries);
+    if (ownerEntries.length > 0) return ownerEntries;
+  }
 
   const mh = raw.healthRecords ?? raw.health_records ?? raw.medical_history ?? {};
   const nested = mh.vaccinations;
@@ -218,14 +232,25 @@ export function extractVaccinationEntriesFromApi(raw: any): VaccinationEntryDisp
 export function vaccinationEntriesToApiPayload(entries: VaccinationEntryDisplay[]): Record<string, string>[] {
   return entries
     .filter((e) => e.date)
-    .map((e) => ({
-      name: e.name,
-      type: e.name,
-      date: e.date,
-      lastDate: e.date,
-      ...(e.key ? { key: e.key, vaccineKey: e.key } : {}),
-      ...(e.nextDue ? { nextDue: e.nextDue, nextDueDate: e.nextDue } : {}),
-    }));
+    .map((e) => {
+      const row: Record<string, string> = {
+        name: e.name,
+        type: e.name,
+        date: e.date,
+        lastDate: e.date,
+      };
+      if (e.id) row.id = e.id;
+      if (e.key) {
+        row.key = e.key;
+        row.vaccineKey = e.key;
+      }
+      if (e.nextDue) {
+        row.nextDue = e.nextDue;
+        row.nextDueDate = e.nextDue;
+      }
+      if (e.imageKey != null) row.imageKey = e.imageKey;
+      return row;
+    });
 }
 
 function mergeFlatVaccinationMap(into: PetVaccinationMap, source: PetVaccinationMap): void {

@@ -100,10 +100,6 @@ export function validateRequiredPetFields(
 
   const errors: PetRequiredFieldErrors = {};
 
-  if (!petData.photo && !photoPreview) {
-    errors.photo = 'Photo is required';
-  }
-
   if (!petData.type?.trim()) {
     errors.type = 'Pet type is required';
   } else {

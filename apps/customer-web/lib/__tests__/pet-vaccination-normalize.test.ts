@@ -83,6 +83,26 @@ describe('extractVaccinationEntriesFromApi', () => {
     expect(entries[0].name).toBe('Rabies Vaccine');
   });
 
+  it('prefers owner vaccinationEntries including certificate URLs', () => {
+    const entries = extractVaccinationEntriesFromApi({
+      vaccinationEntries: [
+        {
+          id: 'vax_1',
+          key: 'dog:rabies',
+          name: 'Rabies Vaccine',
+          date: '2025-06-03',
+          imageUrl: 'https://example.com/cert.webp',
+        },
+      ],
+      medical_history: {
+        vaccinations: [{ name: 'Rabies Vaccine', date: '2024-01-01' }],
+      },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].date).toBe('2025-06-03');
+    expect(entries[0].imageUrl).toBe('https://example.com/cert.webp');
+  });
+
   it('keeps multiple other-slot vaccines as separate rows', () => {
     const entries = extractVaccinationEntriesFromApi({
       medical_history: {

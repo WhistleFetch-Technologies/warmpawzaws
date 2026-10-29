@@ -33,6 +33,7 @@ interface VaccinationRecord {
   veterinarian?: string;
   batchNumber?: string;
   notes?: string;
+  imageUrl?: string;
 }
 
 interface Pet {
@@ -79,11 +80,12 @@ function normalizePetFromApi(raw: Record<string, unknown>): Pet {
   const healthRecords = (raw.healthRecords || raw.medical_history || {}) as Record<string, unknown>;
   const entries = extractVaccinationEntriesFromApi(raw);
   const vaccinations: VaccinationRecord[] = entries.map((entry, index) => ({
-    id: `vax_${index}_${entry.key || entry.name}`,
+    id: entry.id || `vax_${index}_${entry.key || entry.name}`,
     vaccineKey: entry.key,
     name: entry.name,
     lastDate: entry.date,
     nextDueDate: entry.nextDue || '',
+    imageUrl: entry.imageUrl,
   }));
 
   return {
@@ -613,6 +615,16 @@ export function EnhancedPetProfilePage({
                               Next Due: {vax.nextDueDate}
                             </p>
                           </div>
+                          {vax.imageUrl && (
+                            <a
+                              href={vax.imageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-3 inline-flex overflow-hidden rounded-lg border border-white/80"
+                            >
+                              <img src={vax.imageUrl} alt={`${vax.name} certificate`} className="h-14 w-14 object-cover" />
+                            </a>
+                          )}
                         </div>
                         <Badge className={`${
                           isOverdue ? 'bg-red-500 text-white' :
@@ -630,7 +642,7 @@ export function EnhancedPetProfilePage({
                   <Syringe className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">No vaccination records</p>
                   <p className="text-sm text-gray-400 mt-1">
-                    Edit your pet to add vaccination records
+                    Edit health records to add vaccines
                   </p>
                 </div>
               )}

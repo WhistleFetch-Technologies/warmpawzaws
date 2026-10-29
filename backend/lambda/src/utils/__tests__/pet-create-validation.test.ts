@@ -83,11 +83,9 @@ describe('validatePetCreatePayload', () => {
     if (!result.ok) expect(result.error).toContain('Date of birth');
   });
 
-  it('rejects missing photo', () => {
+  it('accepts a payload with no photo', () => {
     const { photo, ...rest } = validPayload;
-    const result = validatePetCreatePayload(rest);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain('photo');
+    expect(validatePetCreatePayload(rest)).toEqual({ ok: true });
   });
 
   it('accepts species and type aliases', () => {

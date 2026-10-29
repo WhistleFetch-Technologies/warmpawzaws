@@ -35,6 +35,11 @@ import { expireMealPaymentHolds } from '../../../../utils/meal-payment-hold';
 import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refund-cases';
 import { validatePetCreatePayload } from '../../../../utils/pet-create-validation';
 import {
+  mergeVaccinationArrayForUpdate,
+  sanitizeVaccinationArrayForStorage,
+  sanitizeVaccinationsForCreate,
+} from '../../../../utils/pet-vaccination-image';
+import {
   buildPetLoyaltyResponseFields,
   createEmptyPetLoyaltyBatchState,
   recordPetInsertLoyalty,
@@ -132,7 +137,16 @@ export async function executecustomerPetsPost(c: Context) {
               microchipId: pet.microchipId || null,
               allergies: pet.allergies || [],
               chronicConditions: pet.chronicConditions || [],
-              vaccinations: pet.vaccinations || [],
+              vaccinations: existingPets.length > 0
+                ? (Array.isArray(pet.vaccinations)
+                    ? mergeVaccinationArrayForUpdate(
+                        (existingPets[0] as { medical_history?: { vaccinations?: unknown } }).medical_history?.vaccinations,
+                        pet.vaccinations,
+                      )
+                    : sanitizeVaccinationArrayForStorage(
+                        (existingPets[0] as { medical_history?: { vaccinations?: unknown } }).medical_history?.vaccinations,
+                      ))
+                : sanitizeVaccinationsForCreate(pet.vaccinations || []),
               behaviorNotes: pet.behaviorNotes || null,
               feedingSchedule: pet.feedingSchedule || null,
               dietaryRestrictions: pet.dietaryRestrictions || [],

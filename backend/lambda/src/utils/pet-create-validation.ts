@@ -19,16 +19,6 @@ function resolvePetType(payload: Record<string, unknown>): string | null {
   return raw.trim();
 }
 
-function resolvePhoto(payload: Record<string, unknown>): string | null {
-  if (nonEmptyString(payload.photo)) return payload.photo.trim();
-  if (nonEmptyString(payload.profile_photo_url)) return payload.profile_photo_url.trim();
-  const photos = payload.photos;
-  if (Array.isArray(photos) && photos.length > 0 && nonEmptyString(photos[0])) {
-    return photos[0].trim();
-  }
-  return null;
-}
-
 function resolveDobOrAge(payload: Record<string, unknown>): boolean {
   const dob = payload.dob ?? payload.dateOfBirth ?? payload.date_of_birth;
   if (nonEmptyString(dob)) {
@@ -138,10 +128,6 @@ export function validatePetCreatePayload(
 
   if (!resolveDobOrAge(payload)) {
     return { ok: false, error: 'Date of birth or age is required' };
-  }
-
-  if (!resolvePhoto(payload)) {
-    return { ok: false, error: 'Profile photo is required' };
   }
 
   return { ok: true };

@@ -55,6 +55,7 @@ import {
   MASTER_ADMIN_ID,
 } from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
+import { stripVaccinationImagesFromValue } from '../../../utils/pet-vaccination-image';
 import {
   putSettlementCalculateDailyCron,
   resolveSettlementCalculateCronRuleName,
@@ -1958,9 +1959,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           age: calculatedAge,
           weight: pet.weight_kg || 0,
           healthConditions: Array.isArray(healthConditions) ? healthConditions : [],
-          vaccinations: pet.medical_history?.vaccinations ||
+          vaccinations: stripVaccinationImagesFromValue(
+            pet.medical_history?.vaccinations ||
             pet.vaccination_records ||
-            [],
+            []
+          ),
           owner: pet.owner_name || '',
           ownerId: pet.customer_id || '',
           lastCheckup: pet.medical_history?.lastCheckup || null,

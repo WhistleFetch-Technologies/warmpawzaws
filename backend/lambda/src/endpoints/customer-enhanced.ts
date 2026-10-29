@@ -35,6 +35,7 @@ import {
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import { stripVaccinationImagesFromHistory } from '../utils/pet-vaccination-image';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -689,7 +690,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           weight: pet.weight_kg?.toString() || '',
           photo: pet.profile_photo_url,
           microchipId: pet.microchip_id,
-          healthRecords: pet.medical_history || {},
+          healthRecords: stripVaccinationImagesFromHistory(pet.medical_history || {}),
           vaccinations: pet.vaccination_records || {},
           createdAt: pet.created_at,
         })),

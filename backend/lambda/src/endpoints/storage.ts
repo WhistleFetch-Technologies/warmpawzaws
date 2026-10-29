@@ -29,6 +29,10 @@ import {
 } from '../services/image';
 import { abandonPetUploadKeys } from '../services/image/abandon-pet-upload.service';
 import { presignedImageUploadRejected } from '../utils/reject-presigned-image-upload';
+import {
+  VACCINE_IMAGE_MAX_BYTES,
+  vaccinationOwnerId,
+} from '../utils/pet-vaccination-image';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 // Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
@@ -474,27 +478,37 @@ export function registerStorageEndpoints(app: Hono) {
       const formData = await c.req.formData();
       const file = formData.get('file') as File;
       const userId = formData.get('userId') as string; // customer phone or pet ID
-      const userType = formData.get('userType') as string; // 'customer' or 'pet'
+      const userType = formData.get('userType') as string; // 'customer', 'pet', or 'pet_vaccination'
+      const vaccinationEntryId = String(formData.get('vaccinationEntryId') || '').trim();
 
       if (!file || !userId || !userType) {
         return c.json({ error: 'Missing required fields: file, userId, userType' }, 400);
       }
 
-      if (userType !== 'customer' && userType !== 'pet') {
-        return c.json({ error: 'userType must be customer or pet' }, 400);
+      if (userType !== 'customer' && userType !== 'pet' && userType !== 'pet_vaccination') {
+        return c.json({ error: 'userType must be customer, pet, or pet_vaccination' }, 400);
+      }
+
+      if (userType === 'pet_vaccination' && !vaccinationEntryId) {
+        return c.json({ error: 'vaccinationEntryId is required for pet_vaccination uploads' }, 400);
       }
 
       console.log(`📤 Uploading ${userType} photo: ${file.name} for ${userId}`);
 
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      const assetType = userType === 'pet' ? 'pet' : 'profile';
+      if (userType === 'pet_vaccination' && buffer.byteLength > VACCINE_IMAGE_MAX_BYTES) {
+        return c.json({ error: 'Certificate image must be 5MB or less' }, 400);
+      }
+      const assetType = userType === 'customer' ? 'profile' : 'pet';
+      const ownerId =
+        userType === 'pet_vaccination' ? vaccinationOwnerId(userId, vaccinationEntryId) : userId;
 
       const asset = await uploadDisplayImage({
         buffer,
         declaredContentType: file.type || undefined,
         assetType,
-        ownerId: userId,
+        ownerId,
       });
 
       return c.json(toUploadJsonResponse(asset));
