@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useMemo, useState, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -83,7 +83,6 @@ export function OvernightBoardingDetailView({
   onNavigate,
 }: OvernightBoardingDetailViewProps) {
   const router = useRouter();
-  const facilitiesRef = useRef<HTMLElement>(null);
   const content = overnightBoardingMetadata;
   const serviceSlug = 'overnight' as const;
 
@@ -177,10 +176,6 @@ export function OvernightBoardingDetailView({
     else router.push('/');
   };
 
-  const scrollToFacilities = useCallback(() => {
-    facilitiesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
-
   const openMarketplaceProfile = useCallback(
     (e: MouseEvent, vendorId: string) => {
       e.stopPropagation();
@@ -249,7 +244,7 @@ export function OvernightBoardingDetailView({
 
   return (
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-customer flex-col overflow-x-hidden bg-white">
-      <div className="flex-1 px-4 cw-header-safe-top cw-scroll-pad-tabbar-sticky-cta">
+      <div className="flex-1 px-4 cw-header-safe-top cw-scroll-pad-tabbar">
         <div className="mb-5 flex items-center gap-3">
           <Button
             variant="ghost"
@@ -321,11 +316,7 @@ export function OvernightBoardingDetailView({
           />
         </div>
 
-        <section
-          id="boarding-facilities-section"
-          ref={facilitiesRef}
-          className="mb-6 scroll-mt-4"
-        >
+        <section id="boarding-facilities-section" className="mb-6">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="mb-1 flex items-center gap-2">
@@ -490,16 +481,6 @@ export function OvernightBoardingDetailView({
           title={content.importantNotesTitle}
           items={content.importantNotes ?? []}
         />
-      </div>
-
-      <div className="cw-fixed-above-customer-tabbar fixed left-0 right-0 z-30 mx-auto max-w-customer px-4 pb-2">
-        <button
-          type="button"
-          onClick={scrollToFacilities}
-          className="w-full rounded-2xl bg-[#FF8C42] py-3.5 text-base font-bold text-white shadow-[0_8px_24px_rgba(255,140,66,0.35)] transition-colors hover:bg-[#FF7A2E]"
-        >
-          Find Overnight Boarding Facilities
-        </button>
       </div>
 
     </div>
