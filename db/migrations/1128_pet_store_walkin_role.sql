@@ -6,6 +6,19 @@
 -- customer_service = store (not shop) so Seller Hub never opens.
 -- ============================================================================
 
+-- 0) Allow customer_service = store (not shop) so Seller Hub never opens
+ALTER TABLE roles
+  DROP CONSTRAINT IF EXISTS roles_customer_service_check;
+
+ALTER TABLE roles
+  ADD CONSTRAINT roles_customer_service_check
+  CHECK (customer_service IS NULL OR customer_service IN (
+    'vet', 'grooming', 'training', 'shop', 'walker', 'boarding',
+    'adoption', 'cafes', 'photography', 'insurance', 'breeder',
+    'ambulance', 'nutritionist', 'relocation', 'resort', 'holiday',
+    'sunset', 'sitter', 'store'
+  ));
+
 -- 1) Role
 INSERT INTO roles (name, display_name, description, is_system_role, is_active, customer_service, config)
 VALUES (
