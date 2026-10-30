@@ -222,7 +222,7 @@ module "lambda" {
     api-handler = {
       handler                 = "handler.handler"
       runtime                 = "nodejs20.x"
-      timeout                 = 60  # Increased from 30s to 60s to handle VPC cold starts and RDS scaling delays
+      timeout                 = 180 # HTTP still returns fast; Event workers (Gemini bill extract) may run ~90s. Billed duration is actual runtime.
       memory_size             = 1024  # Increased from 512 to reduce cold start time
       provisioned_concurrency = 5    # Increased from 2 to 5 to handle burst traffic and eliminate cold starts
       zip_path                = "${path.module}/../../../backend/lambda/api-handler.zip"

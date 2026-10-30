@@ -124,12 +124,22 @@ export interface WpayAdminPaymentsSettleResult {
   }[];
 }
 
+export type WpayAdminBillLineItem = {
+  readonly name: string;
+  readonly quantity: number;
+  readonly lineTotal: number;
+};
+
 export async function fetchWarmpawzPayPaymentBill(paymentId: string): Promise<{
   paymentId: string;
   billImageUrl: string | null;
   billVerified: boolean;
   billVerifiedAt: string | null;
   billVerifiedBy: string | null;
+  billExtract?: {
+    status: 'pending' | 'ok' | 'failed';
+    lineItems?: WpayAdminBillLineItem[];
+  } | null;
 }> {
   const response = await apiClient.get<
     SuccessEnvelope<{
@@ -138,6 +148,10 @@ export async function fetchWarmpawzPayPaymentBill(paymentId: string): Promise<{
       billVerified: boolean;
       billVerifiedAt: string | null;
       billVerifiedBy: string | null;
+      billExtract?: {
+        status: 'pending' | 'ok' | 'failed';
+        lineItems?: WpayAdminBillLineItem[];
+      } | null;
     }>
   >(`${WPAY_PAYMENTS_API_BASE}/${paymentId}/bill`);
   return assertSuccess(response);

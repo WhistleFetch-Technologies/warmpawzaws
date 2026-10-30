@@ -20,6 +20,7 @@ import { select, query } from '../../../database/rds-connection';
 import { resolveVendorId, resolveVendorIdsForLedger } from '../../../utils/vendor-resolve';
 import {
   isPetStoreWalkinRole,
+  readBillExtract,
   readBillImageKey,
   readBillVerifiedAt,
 } from '../../warmpawz-pay/shared/pet-store-walkin';
@@ -1183,6 +1184,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         const realizedAt =
           ws.payment_completed_at || ws.settlement_date || ws.created_at;
         const withholdPercent = safeMoneyAmount(breakup.platformWithholdPercent);
+        const billExtract = readBillExtract(breakup);
         return {
           id: ws.id,
           paymentId: ws.payment_id,
@@ -1204,6 +1206,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           requiresBillProof,
           billImageStatus: readBillImageKey(breakup) ? 'uploaded' : 'missing',
           billVerified: Boolean(readBillVerifiedAt(breakup)),
+          billLineItems: billExtract?.status === 'ok' ? billExtract.lineItems ?? [] : [],
         };
       });
 

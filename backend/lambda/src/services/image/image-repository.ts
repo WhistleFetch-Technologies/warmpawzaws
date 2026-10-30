@@ -5,6 +5,7 @@
 import {
   CopyObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
@@ -67,6 +68,26 @@ export async function moveKeyToCleanup(
     );
   } catch (err: unknown) {
     console.warn('[image-repository] moveKeyToCleanup failed:', (err as Error)?.message || err);
+  }
+}
+
+export async function getObjectBuffer(
+  key: string,
+  bucket: string = getUploadsBucket(),
+): Promise<{ buffer: Buffer; contentType: string | null } | null> {
+  const src = key.replace(/^\/+/, '');
+  if (!src) return null;
+  try {
+    const obj = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: src }));
+    const bytes = await obj.Body?.transformToByteArray();
+    if (!bytes || bytes.length === 0) return null;
+    return {
+      buffer: Buffer.from(bytes),
+      contentType: obj.ContentType ? String(obj.ContentType) : null,
+    };
+  } catch (err: unknown) {
+    console.warn('[image-repository] getObjectBuffer failed:', (err as Error)?.message || err);
+    return null;
   }
 }
 

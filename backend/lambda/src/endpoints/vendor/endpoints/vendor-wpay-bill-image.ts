@@ -5,10 +5,12 @@ import { ImageProcessingError, uploadDisplayImage } from '../../../services/imag
 import { urlForImageKey } from '../../../services/image/image-url-builder';
 import {
   isPetStoreWalkinRole,
+  readBillExtract,
   readBillImageKey,
   readBillVerifiedAt,
   WPAY_BILL_IMAGE_MAX_BYTES,
 } from '../../warmpawz-pay/shared/pet-store-walkin';
+import { invokeWpayBillExtractWorker } from '../../../utils/wpay-bill-extract-invoke';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -52,12 +54,15 @@ async function loadOwnedWpaySettlement(
 }
 
 function billPayload(row: SettlementBillRow, billImageUrl: string | null) {
+  const extract = readBillExtract(row.settlement_breakup);
   return {
     success: true,
     settlementId: row.id,
     billImageStatus: readBillImageKey(row.settlement_breakup) ? 'uploaded' : 'missing',
     billVerified: Boolean(readBillVerifiedAt(row.settlement_breakup)),
     billImageUrl,
+    billExtract: extract,
+    billLineItems: extract?.status === 'ok' ? extract.lineItems ?? [] : [],
   };
 }
 
@@ -131,11 +136,21 @@ export function registerVendorWpayBillImageEndpoints(app: Hono): void {
            || jsonb_build_object(
                 'billImageKey', $2::text,
                 'billVerifiedAt', null,
-                'billVerifiedBy', null
+                'billVerifiedBy', null,
+                'billExtract', jsonb_build_object('status', 'pending')
               )
          WHERE id = $1::uuid`,
         [settlementId, asset.imageKey],
       );
+
+      try {
+        await invokeWpayBillExtractWorker({ settlementId, imageKey: asset.imageKey });
+      } catch (invokeErr) {
+        console.error(
+          '[vendor-wpay-bill-image] extract invoke failed:',
+          invokeErr instanceof Error ? invokeErr.message : invokeErr,
+        );
+      }
 
       const next = await loadOwnedWpaySettlement(settlementId, vendorIds);
       if (!next) return c.json({ success: false, error: 'Settlement not found after upload' }, 404);

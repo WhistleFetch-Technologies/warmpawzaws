@@ -338,6 +338,7 @@ export function VendorBookingManagement({
       requiresBillProof?: boolean;
       billImageStatus?: 'missing' | 'uploaded';
       billVerified?: boolean;
+      billLineItems?: Array<{ name: string; quantity: number; lineTotal: number }>;
       packageBreakdown?: {
         basePrice: number;
         commissionRate: number;
@@ -2175,6 +2176,7 @@ export function VendorBookingManagement({
                               settlementId={transaction.settlementId}
                               billImageStatus={transaction.billImageStatus}
                               billVerified={transaction.billVerified}
+                              billLineItems={transaction.billLineItems}
                               onUploaded={() => void loadEarningsData()}
                             />
                           ) : null}

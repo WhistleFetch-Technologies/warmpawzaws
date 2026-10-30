@@ -1361,6 +1361,26 @@ export const handler = async (
     if (
       event &&
       typeof event === 'object' &&
+      (event as { job?: string }).job === 'wpay-bill-extract' &&
+      typeof (event as { settlementId?: string }).settlementId === 'string'
+    ) {
+      try {
+        const { isWpayBillExtractJobEvent } = await import('../utils/wpay-bill-extract-invoke');
+        const { processWpayBillExtractJob } = await import('../utils/wpay-bill-extract-worker');
+        if (isWpayBillExtractJobEvent(event)) {
+          await processWpayBillExtractJob(event);
+        }
+        // Always 200 so Event invoke does not retry and re-call Gemini.
+        return { statusCode: 200, body: JSON.stringify({ ok: true, job: 'wpay-bill-extract' }) };
+      } catch (jobErr) {
+        console.error('[HANDLER] wpay bill extract job failed:', jobErr);
+        return { statusCode: 200, body: JSON.stringify({ ok: false, job: 'wpay-bill-extract' }) };
+      }
+    }
+
+    if (
+      event &&
+      typeof event === 'object' &&
       (event as { job?: string }).job === 'notification-campaign-delivery' &&
       typeof (event as { campaignId?: string }).campaignId === 'string'
     ) {

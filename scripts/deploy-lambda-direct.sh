@@ -90,6 +90,25 @@ aws lambda wait function-updated \
   --function-name "$LAMBDA_FUNCTION_NAME" \
   --region "$AWS_REGION" || true
 
+# Bill extract Event worker calls Gemini (~90s). Timeout is a cap only — AWS bills actual runtime.
+# HTTP Confirm still returns immediately. Raise, never lower.
+CURRENT_TIMEOUT=$(aws lambda get-function-configuration \
+  --function-name "$LAMBDA_FUNCTION_NAME" \
+  --region "$AWS_REGION" \
+  --query 'Timeout' \
+  --output text 2>/dev/null || echo "0")
+if [ "${CURRENT_TIMEOUT:-0}" -lt 180 ]; then
+  echo -e "${BLUE}⏱️  Raising Lambda timeout ${CURRENT_TIMEOUT}s → 180s for async bill extract${NC}"
+  aws lambda update-function-configuration \
+    --function-name "$LAMBDA_FUNCTION_NAME" \
+    --region "$AWS_REGION" \
+    --timeout 180 \
+    --output text >/dev/null
+  aws lambda wait function-updated \
+    --function-name "$LAMBDA_FUNCTION_NAME" \
+    --region "$AWS_REGION" || true
+fi
+
 echo -e "${BLUE}🔍 Post-deploy verification (HTTP + deployed bundle)...${NC}"
 if [ "$LAMBDA_FUNCTION_NAME" = "warmpawz-dev-api-handler" ]; then
   API_BASE_URL="${API_BASE_URL:-https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com}" \
