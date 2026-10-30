@@ -617,8 +617,8 @@ export const ROLE_LABELS: Record<string, RoleLabels> = {
     atCenterLabel: 'In Store',
     atHomeLabel: 'At Home',
     teleLabel: 'Online',
-  },,
-  
+  },
+
   // =====================
   // SPECIALTY SERVICES
   // =====================

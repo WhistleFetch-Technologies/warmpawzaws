@@ -45,7 +45,6 @@ import {
   VENDOR_CANCELLATION_REASON_OPTIONS,
   type VendorCancellationReasonSlug,
 } from '@/lib/vendor-cancellation-reasons';
-import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
 import { bookingNeedsWalkLiveTracker } from '@/lib/vendor-walk-live-tracker';
 import { WpayBillImageField } from '@/components/vendor/WpayBillImageField';
