@@ -12,6 +12,7 @@ export const LAUNCH_SERVICE_LABELS: Readonly<Record<string, string>> = {
   grooming: 'Grooming',
   training: 'Training',
   shop: 'Shop',
+  store: 'Store',
   walker: 'Walking',
   boarding: 'Boarding',
   adoption: 'Adoption',

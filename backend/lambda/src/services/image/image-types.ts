@@ -8,7 +8,8 @@ export type AssetType =
   | 'product'
   | 'facility'
   | 'banner'
-  | 'staff';
+  | 'staff'
+  | 'wpay_bill';
 
 export type ImageDto = {
   imageKey: string;
@@ -86,6 +87,12 @@ export const BYTE_BUDGETS: Record<
   },
   staff: {
     targetBytes: 150 * 1024,
+    maxEdgePx: 2048,
+    thumbTargetBytes: 20 * 1024,
+    thumbMaxEdgePx: 400,
+  },
+  wpay_bill: {
+    targetBytes: 300 * 1024,
     maxEdgePx: 2048,
     thumbTargetBytes: 20 * 1024,
     thumbMaxEdgePx: 400,

@@ -6,6 +6,21 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { PaymentsTable } from '../PaymentsTable';
 import type { WpayAdminPaymentItem } from '@/lib/warmpawz-pay-payments-admin';
 
+jest.mock('@/lib/warmpawz-pay-payments-admin', () => {
+  const actual = jest.requireActual('@/lib/warmpawz-pay-payments-admin');
+  return {
+    ...actual,
+    fetchWarmpawzPayPaymentBill: jest.fn().mockResolvedValue({
+      paymentId: 'pay-store-1',
+      billImageUrl: null,
+      billVerified: false,
+      billVerifiedAt: null,
+      billVerifiedBy: null,
+    }),
+    verifyWarmpawzPayPaymentBill: jest.fn(),
+  };
+});
+
 jest.mock('@warmpawz/ui', () => ({
   Table: ({ children }: { children: React.ReactNode }) => <table>{children}</table>,
   TableHeader: ({ children }: { children: React.ReactNode }) => <thead>{children}</thead>,
@@ -194,5 +209,32 @@ describe('PaymentsTable', () => {
     fireEvent.click(checkboxes[1]!);
     expect(onSelectedPaymentIdsChange).toHaveBeenCalled();
     expect(checkboxes[2]).toBeDisabled();
+  });
+
+  it('does not allow settle select on a walk-in row until the bill is verified', () => {
+    render(
+      <PaymentsTable
+        items={[
+          {
+            ...burnItem,
+            paymentId: 'pay-store-1',
+            requiresBillProof: true,
+            hasBillImage: true,
+            billVerified: false,
+            burnMode: false,
+          },
+        ]}
+        page={1}
+        pageSize={5}
+        total={1}
+        onPageChange={() => undefined}
+        {...selectionProps}
+      />,
+    );
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes[1]).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '+' }));
+    expect(screen.getByText('Store bill')).toBeInTheDocument();
   });
 });

@@ -17,6 +17,12 @@ describe('normalizePromoCategory', () => {
     expect(normalizePromoCategory('ECOMMERCE')).toBe('ecommerce');
   });
 
+  it('keeps walk-in store off ecommerce', () => {
+    expect(normalizePromoCategory('store')).toBe('store');
+    expect(normalizePromoCategory('pet_store_walkin')).toBe('store');
+    expect(normalizePromoCategory('shop')).not.toBe('store');
+  });
+
   it('does not treat WPAY as a service category', () => {
     expect(normalizePromoCategory('WPAY')).toBe('');
     expect(normalizePromoCategory('wpay')).toBe('');

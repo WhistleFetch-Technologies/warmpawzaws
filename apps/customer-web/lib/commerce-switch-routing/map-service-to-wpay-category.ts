@@ -38,6 +38,9 @@ export function mapServiceKeyToWpayCategory(
     nutrition: 'nutrition',
     nutritionist: 'nutrition',
     pet_nutritionist: 'nutrition',
+    store: 'store',
+    pet_store: 'store',
+    pet_store_walkin: 'store',
   };
 
   return map[token] ?? 'all';

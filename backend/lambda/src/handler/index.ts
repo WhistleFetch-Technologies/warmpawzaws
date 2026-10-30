@@ -106,6 +106,7 @@ import { registerVendorPoliciesEndpoints } from '../endpoints/vendor/endpoints/v
 import { registerVendorBookingsEndpoints } from '../endpoints/vendor/endpoints/vendor-bookings';
 import { registerVendorWapptAppointmentsEndpoints } from '../endpoints/vendor/endpoints/vendor-wappt-appointments';
 import { registerVendorWpayPaymentsEndpoints } from '../endpoints/vendor/endpoints/vendor-wpay-payments';
+import { registerVendorWpayBillImageEndpoints } from '../endpoints/vendor/endpoints/vendor-wpay-bill-image';
 import { registerVendorDashboardEnhancedEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard-enhanced';
 import { registerAppointmentReminderEndpoints } from '../endpoints/appointment-reminders';
 import { registerPetVaccinationReminderEndpoints } from '../endpoints/pet-vaccination-reminders';
@@ -795,6 +796,7 @@ registerVendorPoliciesEndpoints(app);
 registerVendorBookingsEndpoints(app);
 registerVendorWapptAppointmentsEndpoints(app);
 registerVendorWpayPaymentsEndpoints(app);
+registerVendorWpayBillImageEndpoints(app);
 // registerVendorDashboardEnhancedEndpoints already registered above (before legacy dashboard)
 registerAppointmentReminderEndpoints(app);
 registerPetVaccinationReminderEndpoints(app);

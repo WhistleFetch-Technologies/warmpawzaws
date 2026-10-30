@@ -61,6 +61,9 @@ export interface WpayAdminPaymentItem {
   readonly payoutStatus?: WpayAdminPayoutStatus;
   readonly payoutSettledAt?: string | null;
   readonly paidAt: string;
+  readonly requiresBillProof?: boolean;
+  readonly hasBillImage?: boolean;
+  readonly billVerified?: boolean;
 }
 
 export interface WpayAdminPaymentsListData {
@@ -119,6 +122,35 @@ export interface WpayAdminPaymentsSettleResult {
     readonly paymentId: string;
     readonly reason: string;
   }[];
+}
+
+export async function fetchWarmpawzPayPaymentBill(paymentId: string): Promise<{
+  paymentId: string;
+  billImageUrl: string | null;
+  billVerified: boolean;
+  billVerifiedAt: string | null;
+  billVerifiedBy: string | null;
+}> {
+  const response = await apiClient.get<
+    SuccessEnvelope<{
+      paymentId: string;
+      billImageUrl: string | null;
+      billVerified: boolean;
+      billVerifiedAt: string | null;
+      billVerifiedBy: string | null;
+    }>
+  >(`${WPAY_PAYMENTS_API_BASE}/${paymentId}/bill`);
+  return assertSuccess(response);
+}
+
+export async function verifyWarmpawzPayPaymentBill(paymentId: string): Promise<{
+  paymentId: string;
+  billVerified: boolean;
+}> {
+  const response = await apiClient.post<
+    SuccessEnvelope<{ paymentId: string; billVerified: boolean }>
+  >(`${WPAY_PAYMENTS_API_BASE}/${paymentId}/bill/verify`, {});
+  return assertSuccess(response);
 }
 
 export async function settleWarmpawzPayPayments(

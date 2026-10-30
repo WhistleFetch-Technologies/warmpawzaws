@@ -1190,6 +1190,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       ambulance: ['emergency'],
       pet_photographer: ['specialty'],
       photographer: ['specialty'],
+      pet_store_walkin: ['store'],
     };
     return roleToCategories[normalized] || [];
   }

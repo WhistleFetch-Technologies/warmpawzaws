@@ -18,6 +18,11 @@
 import { Hono } from 'hono';
 import { select, query } from '../../../database/rds-connection';
 import { resolveVendorId, resolveVendorIdsForLedger } from '../../../utils/vendor-resolve';
+import {
+  isPetStoreWalkinRole,
+  readBillImageKey,
+  readBillVerifiedAt,
+} from '../../warmpawz-pay/shared/pet-store-walkin';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR } from '../../../lib/constants/vendor-payout';
@@ -856,6 +861,13 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendorId = await resolveVendorId(paramVendorId);
       let vendorIdsForEarnings = await expandVendorIdsForEarningsContext(paramVendorId);
       if (vendorIdsForEarnings.length === 0) vendorIdsForEarnings = [vendorId];
+      const roleNameResult = await query(
+        `SELECT r.name FROM vendors v LEFT JOIN roles r ON r.id = v.role_id WHERE v.id = $1 LIMIT 1`,
+        [vendorId],
+      ).catch(() => ({ rows: [] as Array<{ name?: string }> }));
+      const requiresBillProof = isPetStoreWalkinRole(
+        (Array.isArray(roleNameResult) ? roleNameResult[0] : roleNameResult.rows?.[0])?.name,
+      );
       console.log(
         `💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (canonical: ${vendorId}, ledgerIds: ${vendorIdsForEarnings.join(',')}), period: ${period}, date: ${earningsAnchor}`
       );
@@ -1189,6 +1201,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           realizedAt,
           paidOutAt: ws.settlement_completed_at || null,
           settlementId: ws.id,
+          requiresBillProof,
+          billImageStatus: readBillImageKey(breakup) ? 'uploaded' : 'missing',
+          billVerified: Boolean(readBillVerifiedAt(breakup)),
         };
       });
 

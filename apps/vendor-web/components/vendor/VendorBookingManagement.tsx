@@ -48,6 +48,7 @@ import {
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
 import { bookingNeedsWalkLiveTracker } from '@/lib/vendor-walk-live-tracker';
+import { WpayBillImageField } from '@/components/vendor/WpayBillImageField';
 import { vendorNavigate } from '@/lib/vendor-route-nav';
 import { isPackageSessionOneStarted } from '@/lib/vendor-package-parent-decline';
 import {
@@ -334,6 +335,10 @@ export function VendorBookingManagement({
       amount: number;
       status: string;
       customer: string;
+      settlementId?: string;
+      requiresBillProof?: boolean;
+      billImageStatus?: 'missing' | 'uploaded';
+      billVerified?: boolean;
       packageBreakdown?: {
         basePrice: number;
         commissionRate: number;
@@ -2165,6 +2170,15 @@ export function VendorBookingManagement({
                               </div>
                             </div>
                           </div>
+                          {transaction.requiresBillProof && transaction.settlementId ? (
+                            <WpayBillImageField
+                              vendorId={resolveSessionVendorIdForEarnings(vendorId, vendorData?.id) || vendorId}
+                              settlementId={transaction.settlementId}
+                              billImageStatus={transaction.billImageStatus}
+                              billVerified={transaction.billVerified}
+                              onUploaded={() => void loadEarningsData()}
+                            />
+                          ) : null}
                           {transaction.packageBreakdown && (
                             <div className="mt-2 text-[11px] text-gray-600 bg-gray-50 rounded-lg p-2 space-y-0.5">
                               <p className="font-medium text-gray-800">Package earnings (session 1 of {transaction.packageBreakdown.sessionCount})</p>

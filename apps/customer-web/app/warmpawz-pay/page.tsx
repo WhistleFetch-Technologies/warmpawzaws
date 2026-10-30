@@ -23,6 +23,7 @@ const CATEGORIES = [
   { id: 'boarding', label: 'Boarding' },
   { id: 'sitting', label: 'Pet Sitting' },
   { id: 'nutrition', label: 'Nutrition' },
+  { id: 'store', label: 'Store' },
 ];
 
 const SEARCH_DEBOUNCE_MS = 300;

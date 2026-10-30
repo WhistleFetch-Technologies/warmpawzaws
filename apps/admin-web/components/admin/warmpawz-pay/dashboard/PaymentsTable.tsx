@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Table,
   TableBody,
@@ -15,6 +15,8 @@ import {
   formatWpayPaidAt,
   formatWpayPercent,
   formatWpayPhone,
+  fetchWarmpawzPayPaymentBill,
+  verifyWarmpawzPayPaymentBill,
   type WpayAdminPaymentItem,
   type WpayAdminPayoutStatus,
 } from '@/lib/warmpawz-pay-payments-admin';
@@ -28,6 +30,8 @@ export interface PaymentsTableProps {
   readonly onPageChange: (page: number) => void;
   readonly selectedPaymentIds: ReadonlySet<string>;
   readonly onSelectedPaymentIdsChange: (next: Set<string>) => void;
+  readonly canVerifyBills?: boolean;
+  readonly onBillVerified?: () => void;
 }
 
 function payoutLabel(status: WpayAdminPayoutStatus | undefined): string {
@@ -55,7 +59,104 @@ function razorpayPaidAmount(item: WpayAdminPaymentItem): number {
   );
 }
 
-function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
+function canSelectPayout(item: WpayAdminPaymentItem): boolean {
+  if (item.payoutStatus !== 'pending') return false;
+  if (!item.requiresBillProof) return true;
+  return item.billVerified === true;
+}
+
+function BillProofPanel({
+  item,
+  canVerify,
+  onVerified,
+}: {
+  item: WpayAdminPaymentItem;
+  canVerify?: boolean;
+  onVerified?: () => void;
+}) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!item.requiresBillProof || !item.hasBillImage) {
+      setImageUrl(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    void fetchWarmpawzPayPaymentBill(item.paymentId)
+      .then((data) => {
+        if (!cancelled) setImageUrl(data.billImageUrl);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load bill');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [item.paymentId, item.requiresBillProof, item.hasBillImage]);
+
+  if (!item.requiresBillProof) return null;
+
+  const handleVerify = async () => {
+    setVerifying(true);
+    setError(null);
+    try {
+      await verifyWarmpawzPayPaymentBill(item.paymentId);
+      onVerified?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not verify bill');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
+        Store bill
+      </p>
+      {!item.hasBillImage ? (
+        <p className="text-sm text-amber-700">Vendor has not uploaded a bill yet. Settle is blocked.</p>
+      ) : loading ? (
+        <p className="text-sm text-gray-500">Loading bill…</p>
+      ) : imageUrl ? (
+        <img src={imageUrl} alt="Vendor bill" className="mb-2 max-h-72 rounded-md border bg-white object-contain" />
+      ) : (
+        <p className="text-sm text-gray-500">Bill uploaded.</p>
+      )}
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {item.billVerified ? (
+        <p className="text-sm font-medium text-green-700">Verified</p>
+      ) : item.hasBillImage && canVerify ? (
+        <button
+          type="button"
+          disabled={verifying}
+          onClick={() => void handleVerify()}
+          className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+        >
+          {verifying ? 'Verifying…' : 'Verified'}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function PaymentDetailDrawer({
+  item,
+  canVerifyBills,
+  onBillVerified,
+}: {
+  item: WpayAdminPaymentItem;
+  canVerifyBills?: boolean;
+  onBillVerified?: () => void;
+}) {
   const walletUsed = item.walletAmount ?? 0;
   const razorpayCharge = razorpayPaidAmount(item);
   const appointmentFeeCredit = item.appointmentFeeCredit ?? 0;
@@ -205,6 +306,7 @@ function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
           ) : null}
         </div>
         {reconBlock}
+        <BillProofPanel item={item} canVerify={canVerifyBills} onVerified={onBillVerified} />
       </div>
     );
   }
@@ -234,6 +336,7 @@ function PaymentDetailDrawer({ item }: { item: WpayAdminPaymentItem }) {
         </div>
       </div>
       {reconBlock}
+      <BillProofPanel item={item} canVerify={canVerifyBills} onVerified={onBillVerified} />
     </div>
   );
 }
@@ -246,11 +349,13 @@ export function PaymentsTable({
   onPageChange,
   selectedPaymentIds,
   onSelectedPaymentIdsChange,
+  canVerifyBills,
+  onBillVerified,
 }: PaymentsTableProps) {
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
 
   const pendingOnPage = useMemo(
-    () => items.filter((item) => item.payoutStatus === 'pending'),
+    () => items.filter((item) => canSelectPayout(item)),
     [items],
   );
   const allPendingSelected =
@@ -324,7 +429,7 @@ export function PaymentsTable({
               const expanded = expandedPaymentId === item.paymentId;
               const isTier = item.commercialModel === 'tier_commission';
               const burnOn = isTier && item.burnMode === true;
-              const canSelect = item.payoutStatus === 'pending';
+              const canSelect = canSelectPayout(item);
               return (
                 <Fragment key={item.paymentId}>
                   <TableRow className={rowTintClass(item.payoutStatus)}>
@@ -448,7 +553,11 @@ export function PaymentsTable({
                   {expanded ? (
                     <TableRow>
                       <TableCell colSpan={16} className="bg-gray-50 px-6 py-4">
-                        <PaymentDetailDrawer item={item} />
+                        <PaymentDetailDrawer
+                          item={item}
+                          canVerifyBills={canVerifyBills}
+                          onBillVerified={onBillVerified}
+                        />
                       </TableCell>
                     </TableRow>
                   ) : null}

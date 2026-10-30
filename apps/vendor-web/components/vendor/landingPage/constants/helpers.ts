@@ -160,13 +160,23 @@ export function isNutritionistVendor(vendor: any): boolean {
 }
 
 const PET_PRODUCTS_STORE_ROLE_ID = '5056756d-3b05-457a-9725-3f922800b520';
+const PET_STORE_WALKIN_ROLE = 'pet_store_walkin';
+
+/** Walk-in Pay Bill stores — standard dashboard, never Seller Hub. */
+export function isPetStoreWalkinVendor(vendor: any): boolean {
+    if (!vendor) return false;
+    const info = getNormalizedRoleInfo(vendor);
+    const roleId = String(info.roleId || vendor?.roleId || vendor?.role_id || '').toLowerCase();
+    const roleName = String(info.roleName || '').toLowerCase();
+    return roleId === PET_STORE_WALKIN_ROLE || roleName === PET_STORE_WALKIN_ROLE;
+}
 
 /**
  * True only for pet products store / marketplace seller roles (explicit match).
  * Does not use substring checks on roleId (avoids false positives).
  */
 export function isPetProductsStoreVendor(vendor: any): boolean {
-    if (!vendor || isPharmacyVendor(vendor) || isNutritionistVendor(vendor)) return false;
+    if (!vendor || isPharmacyVendor(vendor) || isNutritionistVendor(vendor) || isPetStoreWalkinVendor(vendor)) return false;
 
     const info = getNormalizedRoleInfo(vendor);
     const roleId = String(info.roleId || vendor?.roleId || vendor?.role_id || '').toLowerCase();
@@ -196,7 +206,7 @@ export function isPetProductsStoreVendor(vendor: any): boolean {
 
 /** Determine if vendor is a marketplace/e-commerce seller. */
 export function isSeller(vendor: any): boolean {
-    if (isNutritionistVendor(vendor)) return false;
+    if (isNutritionistVendor(vendor) || isPetStoreWalkinVendor(vendor)) return false;
     if (isPetProductsStoreVendor(vendor)) return true;
     const info = getNormalizedRoleInfo(vendor);
     const byRole = info.roleName === 'seller' || info.roleName === 'marketplace_seller' || info.roleName === 'store_seller';
@@ -222,7 +232,7 @@ export function isServiceProvider(vendor: any): boolean {
  * Avoids accidental redirects for non-ecommerce roles (e.g., vet_clinic, nutritionist).
  */
 export function isSellerStrict(vendor: any): boolean {
-    if (isPharmacyVendor(vendor) || isNutritionistVendor(vendor)) return false;
+    if (isPharmacyVendor(vendor) || isNutritionistVendor(vendor) || isPetStoreWalkinVendor(vendor)) return false;
     if (isPetProductsStoreVendor(vendor)) return true;
 
     const info = getNormalizedRoleInfo(vendor);

@@ -242,12 +242,21 @@ export async function dbWpayAdminSettlePaymentsByPaymentIds(
          completed_at = COALESCE(s.completed_at, NOW()),
          processed_at = COALESCE(s.processed_at, NOW())
      FROM payments p
+     INNER JOIN vendors v ON v.id = p.vendor_id
+     LEFT JOIN roles r ON r.id = v.role_id
      WHERE s.payment_id = p.id
        AND s.order_type = 'warmpawz_pay'
        AND p.payment_source = 'warmpawz_pay'
        AND p.payment_status = 'completed'
        AND p.id = ANY($1::uuid[])
        AND LOWER(COALESCE(s.settlement_status, '')) NOT IN ('completed', 'processed')
+       AND (
+         LOWER(COALESCE(r.name, '')) <> 'pet_store_walkin'
+         OR (
+           NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') IS NOT NULL
+           AND NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') IS NOT NULL
+         )
+       )
      RETURNING p.id::text AS payment_id`,
     [uniqueIds],
   );
@@ -347,4 +356,161 @@ export async function dbWpayAdminPaymentsDashboardTotals(
     platformFee: asDashboardMoney(row?.platform_fee),
     platformFeeGst: asDashboardMoney(row?.platform_fee_gst),
   };
+}
+
+export type WpayAdminBillGateRow = {
+  readonly paymentId: string;
+  readonly settlementId: string | null;
+  readonly roleName: string | null;
+  readonly billImageKey: string | null;
+  readonly billVerifiedAt: string | null;
+  readonly billVerifiedBy: string | null;
+  readonly settlementStatus: string | null;
+};
+
+export async function dbWpayAdminPaymentBillGates(
+  paymentIds: readonly string[],
+): Promise<WpayAdminBillGateRow[]> {
+  const uniqueIds = [...new Set(paymentIds.map((id) => String(id).trim()).filter(Boolean))];
+  if (uniqueIds.length === 0) return [];
+
+  const result = await query(
+    `SELECT p.id::text AS payment_id,
+            s.id::text AS settlement_id,
+            r.name AS role_name,
+            NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') AS bill_image_key,
+            NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') AS bill_verified_at,
+            NULLIF(TRIM(s.settlement_breakup->>'billVerifiedBy'), '') AS bill_verified_by,
+            s.settlement_status
+     FROM payments p
+     LEFT JOIN vendors v ON v.id = p.vendor_id
+     LEFT JOIN roles r ON r.id = v.role_id
+     LEFT JOIN settlements s
+       ON s.payment_id = p.id
+      AND s.order_type = 'warmpawz_pay'
+     WHERE p.id = ANY($1::uuid[])
+       AND p.payment_source = 'warmpawz_pay'`,
+    [uniqueIds],
+  );
+
+  return (result.rows as Array<Record<string, unknown>>).map((row) => ({
+    paymentId: String(row.payment_id ?? ''),
+    settlementId: row.settlement_id ? String(row.settlement_id) : null,
+    roleName: row.role_name ? String(row.role_name) : null,
+    billImageKey: row.bill_image_key ? String(row.bill_image_key) : null,
+    billVerifiedAt: row.bill_verified_at ? String(row.bill_verified_at) : null,
+    billVerifiedBy: row.bill_verified_by ? String(row.bill_verified_by) : null,
+    settlementStatus: row.settlement_status ? String(row.settlement_status) : null,
+  }));
+}
+
+export async function dbWpayAdminVerifyPaymentBill(opts: {
+  readonly paymentId: string;
+  readonly verifiedBy: string;
+}): Promise<WpayAdminBillGateRow | null> {
+  const result = await query(
+    `UPDATE settlements s
+     SET settlement_breakup = COALESCE(s.settlement_breakup, '{}'::jsonb)
+       || jsonb_build_object(
+            'billVerifiedAt', NOW()::text,
+            'billVerifiedBy', $2::text
+          )
+     FROM payments p
+     INNER JOIN vendors v ON v.id = p.vendor_id
+     LEFT JOIN roles r ON r.id = v.role_id
+     WHERE s.payment_id = p.id
+       AND s.order_type = 'warmpawz_pay'
+       AND p.payment_source = 'warmpawz_pay'
+       AND p.id = $1::uuid
+       AND NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') IS NOT NULL
+     RETURNING p.id::text AS payment_id,
+               s.id::text AS settlement_id,
+               r.name AS role_name,
+               NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') AS bill_image_key,
+               NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') AS bill_verified_at,
+               NULLIF(TRIM(s.settlement_breakup->>'billVerifiedBy'), '') AS bill_verified_by,
+               s.settlement_status`,
+    [opts.paymentId, opts.verifiedBy],
+  );
+
+  const row = (result.rows[0] || null) as Record<string, unknown> | null;
+  if (!row) return null;
+  return {
+    paymentId: String(row.payment_id ?? ''),
+    settlementId: row.settlement_id ? String(row.settlement_id) : null,
+    roleName: row.role_name ? String(row.role_name) : null,
+    billImageKey: row.bill_image_key ? String(row.bill_image_key) : null,
+    billVerifiedAt: row.bill_verified_at ? String(row.bill_verified_at) : null,
+    billVerifiedBy: row.bill_verified_by ? String(row.bill_verified_by) : null,
+    settlementStatus: row.settlement_status ? String(row.settlement_status) : null,
+  };
+}
+
+export type WpayAdminBillGateRow = {
+  readonly paymentId: string;
+  readonly roleName: string | null;
+  readonly billImageKey: string | null;
+  readonly billVerifiedAt: string | null;
+  readonly billVerifiedBy: string | null;
+  readonly settlementStatus: string | null;
+};
+
+export async function dbWpayAdminPaymentBillGates(
+  paymentIds: readonly string[],
+): Promise<WpayAdminBillGateRow[]> {
+  const uniqueIds = [...new Set(paymentIds.map((id) => String(id).trim()).filter(Boolean))];
+  if (uniqueIds.length === 0) return [];
+
+  const result = await query(
+    `SELECT p.id::text AS payment_id,
+            r.name AS role_name,
+            NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') AS bill_image_key,
+            NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') AS bill_verified_at,
+            NULLIF(TRIM(s.settlement_breakup->>'billVerifiedBy'), '') AS bill_verified_by,
+            s.settlement_status
+     FROM payments p
+     INNER JOIN vendors v ON v.id = p.vendor_id
+     LEFT JOIN roles r ON r.id = v.role_id
+     LEFT JOIN settlements s
+       ON s.payment_id = p.id
+      AND s.order_type = 'warmpawz_pay'
+     WHERE p.id = ANY($1::uuid[])
+       AND p.payment_source = 'warmpawz_pay'`,
+    [uniqueIds],
+  );
+
+  return (result.rows as Array<Record<string, unknown>>).map((row) => ({
+    paymentId: String(row.payment_id ?? ''),
+    roleName: row.role_name != null ? String(row.role_name) : null,
+    billImageKey: row.bill_image_key != null ? String(row.bill_image_key) : null,
+    billVerifiedAt: row.bill_verified_at != null ? String(row.bill_verified_at) : null,
+    billVerifiedBy: row.bill_verified_by != null ? String(row.bill_verified_by) : null,
+    settlementStatus: row.settlement_status != null ? String(row.settlement_status) : null,
+  }));
+}
+
+export async function dbWpayAdminVerifyPaymentBill(opts: {
+  readonly paymentId: string;
+  readonly verifiedBy: string;
+}): Promise<boolean> {
+  const result = await query(
+    `UPDATE settlements s
+     SET settlement_breakup = COALESCE(s.settlement_breakup, '{}'::jsonb)
+       || jsonb_build_object(
+            'billVerifiedAt', NOW()::text,
+            'billVerifiedBy', $2::text
+          )
+     FROM payments p
+     INNER JOIN vendors v ON v.id = p.vendor_id
+     LEFT JOIN roles r ON r.id = v.role_id
+     WHERE s.payment_id = p.id
+       AND s.order_type = 'warmpawz_pay'
+       AND p.id = $1::uuid
+       AND p.payment_source = 'warmpawz_pay'
+       AND LOWER(COALESCE(r.name, '')) = 'pet_store_walkin'
+       AND NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') IS NOT NULL
+     RETURNING s.id`,
+    [opts.paymentId, opts.verifiedBy],
+  );
+  return (result.rows?.length ?? 0) > 0;
 }

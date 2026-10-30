@@ -53,7 +53,7 @@ export function DashboardPage() {
     let count = 0;
     for (const id of selectedPaymentIds) {
       const row = items.find((item) => item.paymentId === id);
-      if (row?.payoutStatus === 'pending') count += 1;
+      if (row?.payoutStatus === 'pending' && (!row.requiresBillProof || row.billVerified)) count += 1;
     }
     return count;
   }, [paymentsQuery.data?.items, selectedPaymentIds]);
@@ -162,6 +162,8 @@ export function DashboardPage() {
             onPageChange={handlePageChange}
             selectedPaymentIds={selectedPaymentIds}
             onSelectedPaymentIdsChange={setSelectedPaymentIds}
+            canVerifyBills={canSettle}
+            onBillVerified={() => void paymentsQuery.refresh()}
           />
         ) : null}
       </section>

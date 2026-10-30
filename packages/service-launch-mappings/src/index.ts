@@ -200,6 +200,8 @@ export const CATALOG_SLUG_TO_LAUNCH_SERVICE_ID: Readonly<Record<string, string>>
   nutritionist: 'nutritionist',
   pet_nutritionist: 'nutritionist',
   'pet-nutritionist': 'nutritionist',
+  store: 'store',
+  pet_store_walkin: 'store',
 };
 
 /** Launch ids whose catalog rows should expand customer Search hub slug aliases (multi-launch chips). */

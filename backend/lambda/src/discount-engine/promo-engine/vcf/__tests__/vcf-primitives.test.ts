@@ -57,6 +57,20 @@ describe('category from vendor role', () => {
   it('does not invent a slug when the role matches nothing', () => {
     expect(categoryIdFromVendorRole({ roleId: 'role-unknown', categories: catalogue })).toBeNull();
   });
+  it('maps pet_store_walkin to the store catalogue row only', () => {
+    const withStore = [
+      ...catalogue,
+      { id: 'cat-ecom', vendor_roles: ['seller', 'shop'] },
+      { id: 'cat-store', vendor_roles: ['pet_store_walkin'] },
+    ];
+    expect(
+      categoryIdFromVendorRole({ roleName: 'pet_store_walkin', categories: withStore }),
+    ).toBe('cat-store');
+    expect(categoryIdFromVendorRole({ roleName: 'seller', categories: withStore })).toBe('cat-ecom');
+    expect(
+      categoryIdFromVendorRole({ roleName: 'pet_store_walkin', categories: catalogue }),
+    ).toBeNull();
+  });
 });
 
 describe('payment context', () => {

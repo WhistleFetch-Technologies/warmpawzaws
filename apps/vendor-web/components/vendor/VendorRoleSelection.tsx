@@ -87,7 +87,7 @@ const ROLE_CATEGORIES = {
     icon: ShoppingBag,
     color: 'purple',
     description: 'Pet products, food & supplies',
-    roles: ['pet_products_store', 'product_seller', 'pet_product', 'pet_breeder', 'ecommerce_seller', 'e_commerce_seller'],
+    roles: ['pet_store_walkin', 'pet_products_store', 'product_seller', 'pet_product', 'pet_breeder', 'ecommerce_seller', 'e_commerce_seller'],
   },
   lifestyle: {
     name: 'Lifestyle & Experiences',
@@ -142,6 +142,7 @@ const ROLE_ICONS: Record<string, any> = {
   'pet_boarding': Hotel,
   'pet_resort': TreePalm,
   // Retail
+  'pet_store_walkin': ShoppingBag,
   'pet_products_store': ShoppingBag,
   'product_seller': ShoppingBag,
   'pet_product': Package,
@@ -288,6 +289,7 @@ const ROLE_ENHANCED_INFO: Record<string, { tagline: string; services: string[] }
   'pet_sitter': { tagline: 'In-home pet care & sitting', services: ['Day care', 'Overnight stays', 'Feeding & medication'] },
   'pet_boarding': { tagline: 'Safe boarding & daycare', services: ['Overnight boarding', 'Day care', 'CCTV monitoring'] },
   'pet_resort': { tagline: 'Luxury pet resort experience', services: ['Premium suites', 'Spa services', 'Play areas', 'Live updates'] },
+  'pet_store_walkin': { tagline: 'Walk-in pet store on Warmpawz Pay', services: ['In-store sales', 'Pay Bill', 'Product categories'] },
   'pet_products_store': { tagline: 'Pet food, toys & supplies', services: ['Wide selection', 'Home delivery', 'Store pickup'] },
   'pet_breeder': { tagline: 'Certified pet breeding', services: ['Healthy puppies/kittens', 'Pedigree certification', 'Health guarantee'] },
   'pet_cafe': { tagline: 'Pet-friendly cafe experience', services: ['Table reservations', 'Pet menu', 'Events & meetups'] },

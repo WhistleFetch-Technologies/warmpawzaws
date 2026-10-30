@@ -592,6 +592,32 @@ export const ROLE_LABELS: Record<string, RoleLabels> = {
     atHomeLabel: 'Home Delivery',
     teleLabel: 'Online Support',
   },
+
+  pet_store_walkin: {
+    booking: 'Bill',
+    bookings: 'Bills',
+    bookingVerb: 'Record',
+    customer: 'Customer',
+    customers: 'Customers',
+    pet: 'Pet',
+    pets: 'Pets',
+    service: 'Product',
+    services: 'Products',
+    session: 'Visit',
+    sessions: 'Visits',
+    startAction: 'Record Visit',
+    completeAction: 'Complete',
+    slot: 'Hours',
+    slots: 'Hours',
+    todayLabel: "Today's Visits",
+    upcomingLabel: 'Store Hours',
+    todayStat: 'Visits Today',
+    completedStat: 'Bills Paid',
+    pendingStat: 'Pending Payouts',
+    atCenterLabel: 'In Store',
+    atHomeLabel: 'At Home',
+    teleLabel: 'Online',
+  },,
   
   // =====================
   // SPECIALTY SERVICES

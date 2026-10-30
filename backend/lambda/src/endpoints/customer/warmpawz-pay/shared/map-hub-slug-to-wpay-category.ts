@@ -33,6 +33,9 @@ export function mapHubSlugToWpayCategory(hubSlug: string | null | undefined): st
     nutrition: 'nutrition',
     nutritionist: 'nutrition',
     pet_nutritionist: 'nutrition',
+    store: 'store',
+    pet_store: 'store',
+    pet_store_walkin: 'store',
   };
 
   const mapped = map[token];

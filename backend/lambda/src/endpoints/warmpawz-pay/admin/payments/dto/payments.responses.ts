@@ -53,6 +53,9 @@ export interface WpayAdminPaymentItemDTO {
   readonly payoutStatus: WpayAdminPayoutStatus;
   readonly payoutSettledAt?: string | null;
   readonly paidAt: string;
+  readonly requiresBillProof?: boolean;
+  readonly hasBillImage?: boolean;
+  readonly billVerified?: boolean;
 }
 
 export interface WpayAdminPaymentsSettleDTO {

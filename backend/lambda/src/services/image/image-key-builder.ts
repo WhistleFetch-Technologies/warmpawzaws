@@ -34,6 +34,8 @@ export function buildDisplayWebpKey(opts: {
       return `admin/banners/${sanitizeId(bannerId || ownerId)}_${suffix}.webp`;
     case 'staff':
       return `media/staff/${sanitizeId(vendorId || ownerId)}/${suffix}.webp`;
+    case 'wpay_bill':
+      return `media/vendor/${sanitizeId(vendorId || ownerId)}/wpay-bills/${sanitizeId(ownerId)}_${suffix}.webp`;
     default:
       return `media/misc/${sanitizeId(ownerId)}/${suffix}.webp`;
   }

@@ -6,13 +6,23 @@ import {
 } from '../../../shared/pricing/wpay-vendor-settlement';
 import { mapWpaySettlementLedgerStatus } from '../../../../customer/warmpawz-pay/shared/accrue-wpay-settlement';
 import {
+  dbWpayAdminPaymentBillGates,
   dbWpayAdminPaymentsExport,
   dbWpayAdminPaymentsPage,
   dbWpayAdminSettlePaymentsByPaymentIds,
+  dbWpayAdminVerifyPaymentBill,
   dbWpayPlatformWithholdPercentByVendorIds,
   type WpayAdminPaymentDbRow,
   type WpayAdminPaymentsQueryFilters,
 } from '../../../repositories/wpay-payments-admin.repository';
+import { CatalogueAdminError } from '../../catalogue/services/vendor-catalog-admin.service';
+import { CatalogueErrorCode } from '../../catalogue/dto/catalogue.errors';
+import {
+  isPetStoreWalkinRole,
+  readBillImageKey,
+  readBillVerifiedAt,
+} from '../../../shared/pet-store-walkin';
+import { urlForImageKey } from '../../../../../services/image/image-url-builder';
 import type {
   WpayAdminPaymentItemDTO,
   WpayAdminPaymentsListDTO,
@@ -256,6 +266,9 @@ function mapPaymentRow(
     settlementId: payout.settlementId,
     payoutStatus: payout.payoutStatus,
     payoutSettledAt: payout.payoutSettledAt,
+    requiresBillProof: isPetStoreWalkinRole(row.role_name),
+    hasBillImage: Boolean(readBillImageKey(breakup)),
+    billVerified: Boolean(readBillVerifiedAt(breakup)),
     ...promoWallet,
   };
 
@@ -371,19 +384,77 @@ export class WarmpawzPayPaymentsService {
 
   async settlePayments(body: PaymentsSettleBody): Promise<WpayAdminPaymentsSettleDTO> {
     const requested = [...new Set(body.paymentIds.map((id) => String(id).trim()).filter(Boolean))];
+    const gates = await dbWpayAdminPaymentBillGates(requested);
+    const gateById = new Map(gates.map((row) => [row.paymentId, row]));
     const { settledPaymentIds } = await dbWpayAdminSettlePaymentsByPaymentIds(requested);
     const settledSet = new Set(settledPaymentIds);
     const skipped = requested
       .filter((paymentId) => !settledSet.has(paymentId))
-      .map((paymentId) => ({
-        paymentId,
-        reason: 'Already settled, missing settlement row, or not a completed Warmpawz Pay payment',
-      }));
+      .map((paymentId) => {
+        const gate = gateById.get(paymentId);
+        if (gate && isPetStoreWalkinRole(gate.roleName) && !gate.billVerifiedAt) {
+          return { paymentId, reason: 'BILL_NOT_VERIFIED' };
+        }
+        return {
+          paymentId,
+          reason: 'Already settled, missing settlement row, or not a completed Warmpawz Pay payment',
+        };
+      });
 
     return {
       settledPaymentIds,
       settledCount: settledPaymentIds.length,
       skipped,
+    };
+  }
+
+  async getPaymentBill(paymentId: string): Promise<{
+    paymentId: string;
+    billImageUrl: string | null;
+    billVerified: boolean;
+    billVerifiedAt: string | null;
+    billVerifiedBy: string | null;
+  }> {
+    const [gate] = await dbWpayAdminPaymentBillGates([paymentId]);
+    if (!gate) {
+      throw new CatalogueAdminError(CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND, 'Payment not found');
+    }
+    const billImageUrl = gate.billImageKey ? await urlForImageKey(gate.billImageKey) : null;
+    return {
+      paymentId: gate.paymentId,
+      billImageUrl,
+      billVerified: Boolean(gate.billVerifiedAt),
+      billVerifiedAt: gate.billVerifiedAt,
+      billVerifiedBy: gate.billVerifiedBy,
+    };
+  }
+
+  async verifyPaymentBill(paymentId: string, verifiedBy: string): Promise<{
+    paymentId: string;
+    billVerified: boolean;
+    billVerifiedAt: string | null;
+    billVerifiedBy: string | null;
+  }> {
+    const [gate] = await dbWpayAdminPaymentBillGates([paymentId]);
+    if (!gate) {
+      throw new CatalogueAdminError(CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND, 'Payment not found');
+    }
+    if (!isPetStoreWalkinRole(gate.roleName)) {
+      throw new CatalogueAdminError(CatalogueErrorCode.VALIDATION_ERROR, 'Bill verify applies only to pet store walk-in vendors');
+    }
+    if (!gate.billImageKey) {
+      throw new CatalogueAdminError(CatalogueErrorCode.VALIDATION_ERROR, 'Bill image must be uploaded first');
+    }
+    const updated = await dbWpayAdminVerifyPaymentBill({ paymentId, verifiedBy });
+    if (!updated) {
+      throw new CatalogueAdminError(CatalogueErrorCode.VALIDATION_ERROR, 'Could not verify bill image');
+    }
+    const [next] = await dbWpayAdminPaymentBillGates([paymentId]);
+    return {
+      paymentId,
+      billVerified: Boolean(next?.billVerifiedAt),
+      billVerifiedAt: next?.billVerifiedAt ?? null,
+      billVerifiedBy: next?.billVerifiedBy ?? null,
     };
   }
 }

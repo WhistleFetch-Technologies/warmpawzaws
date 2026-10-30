@@ -25,6 +25,10 @@ export type VendorEarningsTransaction = {
   flowType?: string;
   quotedAmount?: number;
   paidAmount?: number;
+  settlementId?: string;
+  requiresBillProof?: boolean;
+  billImageStatus?: 'missing' | 'uploaded';
+  billVerified?: boolean;
   packageBreakdown?: VendorPackageEarningsBreakdown | null;
 };
 
@@ -157,6 +161,10 @@ function mapTransactionsFromEarningsApi(txSource: unknown[]): VendorEarningsTran
       quotedAmount:
         row.quotedAmount != null ? Number(row.quotedAmount) : undefined,
       paidAmount: row.paidAmount != null ? Number(row.paidAmount) : undefined,
+      settlementId: row.settlementId ? String(row.settlementId) : undefined,
+      requiresBillProof: row.requiresBillProof === true,
+      billImageStatus: row.billImageStatus === 'uploaded' ? 'uploaded' : row.flowType === 'pay_bill' ? 'missing' : undefined,
+      billVerified: row.billVerified === true,
       packageBreakdown: parsePackageBreakdown(row.packageBreakdown ?? row.package_breakdown),
     };
   });

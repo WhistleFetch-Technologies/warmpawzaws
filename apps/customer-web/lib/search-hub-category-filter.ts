@@ -37,6 +37,7 @@ const HUB_QUERY_HINTS: Record<string, string[]> = {
     'feeding',
     'weight',
   ],
+  store: ['walk-in store', 'walkin store', 'pet store walk', 'store'],
 };
 
 function normalizedAllowedTokens(hubId: string): Set<string> {
@@ -76,6 +77,7 @@ const HUB_INFER_ORDER = [
   'resort',
   'cafe',
   'vet',
+  'store',
 ] as const;
 
 /** Infer search hub chip from free-text (e.g. "dog walker" → walker) for discovery parity on /search. */
