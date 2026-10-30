@@ -680,11 +680,15 @@ export function EnhancedAddPetModal({
               </button>
             </div>
             <VaccinationCertificateField
-              inputId={`vax-cert-${record.id}`}
+              inputId={`vax-cert-${record.id ?? record.vaccineKey ?? item.key}`}
               imageUrl={record.imageUrl}
-              uploading={uploadingVaxId === record.id}
-              onSelectFile={(file) => handleVaccinationImageUpload(record.id, file)}
-              onRemove={() => removeVaccinationImage(record.id)}
+              uploading={uploadingVaxId === (record.id ?? record.vaccineKey ?? item.key)}
+              onSelectFile={(file) =>
+                handleVaccinationImageUpload(record.id ?? record.vaccineKey ?? item.key, file)
+              }
+              onRemove={() =>
+                removeVaccinationImage(record.id ?? record.vaccineKey ?? item.key)
+              }
             />
           </div>
         )}

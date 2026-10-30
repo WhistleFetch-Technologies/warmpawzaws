@@ -32,6 +32,8 @@ export type ScheduleVaccinationRecord = {
   name: string;
   lastDate?: string;
   nextDueDate?: string;
+  imageKey?: string;
+  imageUrl?: string;
 };
 
 function startOfDay(d: Date): Date {
