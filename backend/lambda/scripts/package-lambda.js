@@ -131,11 +131,18 @@ function commandExists(cmd) {
   }
 }
 
+function resolveTarBin() {
+  const winTar = 'C:\\Windows\\System32\\tar.exe';
+  if (process.platform === 'win32' && fs.existsSync(winTar)) return winTar;
+  return 'tar';
+}
+
 function zipWithTar(cwd, destinationPath, entries) {
   const dest = path.resolve(destinationPath);
   if (fs.existsSync(dest)) fs.unlinkSync(dest);
+  const tarBin = resolveTarBin();
   const entryArgs = entries.map((e) => `"${e}"`).join(' ');
-  execSync(`tar -a -cf "${dest}" ${entryArgs}`, {
+  execSync(`"${tarBin}" -a -cf "${dest}" ${entryArgs}`, {
     cwd,
     stdio: 'inherit',
     shell: true,
