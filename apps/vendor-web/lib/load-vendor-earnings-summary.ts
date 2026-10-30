@@ -301,7 +301,7 @@ function listQueryFromOptions(options?: FetchVendorEarningsOptions): EarningsQue
     period,
     date: options?.date,
     yearMonth: period === 'month' ? options?.yearMonth : undefined,
-    cursor: options.cursor,
+    cursor: options?.cursor,
     limit: EARNINGS_CURSOR_PAGE_SIZE,
   };
 }
