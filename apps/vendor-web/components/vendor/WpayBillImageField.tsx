@@ -72,7 +72,7 @@ export function WpayBillImageField({
           ? 'Bill verified by admin'
           : billImageStatus === 'uploaded'
             ? 'Bill uploaded — waiting for admin verify'
-            : 'Upload the store bill for this Pay Bill'}
+            : 'Take a photo or upload the store bill'}
       </p>
       {!billVerified && previewUrl ? (
         <img src={previewUrl} alt="Bill preview" className="max-h-40 w-full rounded-md object-contain bg-white" />
@@ -82,12 +82,11 @@ export function WpayBillImageField({
         <div className="flex flex-wrap gap-2">
           <TouchFilePicker
             accept="image/*"
-            capture="environment"
             disabled={saving}
             onFileChange={(event) => pickFile(event.target.files?.[0] ?? null)}
           >
             <span className="inline-flex h-9 items-center rounded-lg bg-white px-3 text-xs font-medium text-orange-800 border border-orange-200">
-              {pendingFile || billImageStatus === 'uploaded' ? 'Retake' : 'Upload bill'}
+              {pendingFile || billImageStatus === 'uploaded' ? 'Retake' : 'Take photo or upload'}
             </span>
           </TouchFilePicker>
           {pendingFile ? (
