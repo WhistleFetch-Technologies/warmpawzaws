@@ -101,6 +101,9 @@ export function registerVendorWpayBillImageEndpoints(app: Hono): void {
       if (!isPetStoreWalkinRole(row.role_name)) {
         return c.json({ success: false, error: 'Bill image is only used by walk-in pet stores' }, 403);
       }
+      if (readBillVerifiedAt(row.settlement_breakup)) {
+        return c.json({ success: false, error: 'Verified bills cannot be replaced' }, 403);
+      }
 
       const formData = await c.req.formData();
       const file = formData.get('file');

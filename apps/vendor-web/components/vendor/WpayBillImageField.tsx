@@ -27,6 +27,7 @@ export function WpayBillImageField({
   const [error, setError] = useState<string | null>(null);
 
   const pickFile = (file: File | null) => {
+    if (billVerified) return;
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setError(null);
     if (!file) {
@@ -45,7 +46,7 @@ export function WpayBillImageField({
   };
 
   const confirmUpload = async () => {
-    if (!pendingFile) return;
+    if (billVerified || !pendingFile) return;
     setSaving(true);
     setError(null);
     try {
@@ -73,32 +74,34 @@ export function WpayBillImageField({
             ? 'Bill uploaded — waiting for admin verify'
             : 'Upload the store bill for this Pay Bill'}
       </p>
-      {previewUrl ? (
+      {!billVerified && previewUrl ? (
         <img src={previewUrl} alt="Bill preview" className="max-h-40 w-full rounded-md object-contain bg-white" />
       ) : null}
       {error ? <p className="text-[11px] text-red-600">{error}</p> : null}
-      <div className="flex flex-wrap gap-2">
-        <TouchFilePicker
-          accept="image/*"
-          capture="environment"
-          disabled={saving}
-          onFileChange={(event) => pickFile(event.target.files?.[0] ?? null)}
-        >
-          <span className="inline-flex h-9 items-center rounded-lg bg-white px-3 text-xs font-medium text-orange-800 border border-orange-200">
-            {pendingFile || billImageStatus === 'uploaded' ? 'Retake' : 'Upload bill'}
-          </span>
-        </TouchFilePicker>
-        {pendingFile ? (
-          <button
-            type="button"
+      {billVerified ? null : (
+        <div className="flex flex-wrap gap-2">
+          <TouchFilePicker
+            accept="image/*"
+            capture="environment"
             disabled={saving}
-            onClick={() => void confirmUpload()}
-            className="h-9 rounded-lg bg-[#FF8C42] px-3 text-xs font-semibold text-white disabled:opacity-60"
+            onFileChange={(event) => pickFile(event.target.files?.[0] ?? null)}
           >
-            {saving ? 'Uploading…' : 'Confirm'}
-          </button>
-        ) : null}
-      </div>
+            <span className="inline-flex h-9 items-center rounded-lg bg-white px-3 text-xs font-medium text-orange-800 border border-orange-200">
+              {pendingFile || billImageStatus === 'uploaded' ? 'Retake' : 'Upload bill'}
+            </span>
+          </TouchFilePicker>
+          {pendingFile ? (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void confirmUpload()}
+              className="h-9 rounded-lg bg-[#FF8C42] px-3 text-xs font-semibold text-white disabled:opacity-60"
+            >
+              {saving ? 'Uploading…' : 'Confirm'}
+            </button>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
