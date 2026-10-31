@@ -6,18 +6,11 @@ import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 const MAX_BILL_BYTES = 5 * 1024 * 1024;
 
-type BillLineItem = {
-  name: string;
-  quantity: number;
-  lineTotal: number;
-};
-
 type Props = {
   vendorId: string;
   settlementId: string;
   billImageStatus?: 'missing' | 'uploaded';
   billVerified?: boolean;
-  billLineItems?: BillLineItem[];
   onUploaded?: () => void;
 };
 
@@ -26,7 +19,6 @@ export function WpayBillImageField({
   settlementId,
   billImageStatus,
   billVerified,
-  billLineItems,
   onUploaded,
 }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -86,29 +78,6 @@ export function WpayBillImageField({
         <img src={previewUrl} alt="Bill preview" className="max-h-40 w-full rounded-md object-contain bg-white" />
       ) : null}
       {error ? <p className="text-[11px] text-red-600">{error}</p> : null}
-      {billLineItems && billLineItems.length > 0 ? (
-        <div className="rounded-md border border-orange-100 bg-white p-2">
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-orange-800">Bill items</p>
-          <table className="w-full text-[11px] text-gray-700">
-            <thead>
-              <tr className="text-left text-gray-500">
-                <th className="font-medium">Item</th>
-                <th className="font-medium text-right">Qty</th>
-                <th className="font-medium text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {billLineItems.map((row, index) => (
-                <tr key={`${row.name}-${index}`}>
-                  <td className="pr-2">{row.name}</td>
-                  <td className="text-right">{row.quantity}</td>
-                  <td className="text-right">₹{row.lineTotal.toLocaleString('en-IN')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
       {billVerified ? null : (
         <div className="flex flex-wrap gap-2">
           <TouchFilePicker

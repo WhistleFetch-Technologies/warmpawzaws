@@ -1,7 +1,6 @@
 import { query } from '../../../database/rds-connection';
 import type { WpayPaymentsDateFilter } from '../admin/payments/dto/payments.requests';
 import { buildWpayPaymentsDateFilterSql } from './wpay-payments-date-filter';
-import { readBillExtract, type WpayBillExtract } from '../shared/pet-store-walkin';
 
 export const WPAY_ADMIN_PAYMENTS_MAX_EXPORT_ROWS = 5000;
 
@@ -366,7 +365,6 @@ export type WpayAdminBillGateRow = {
   readonly billImageKey: string | null;
   readonly billVerifiedAt: string | null;
   readonly billVerifiedBy: string | null;
-  readonly billExtract: WpayBillExtract | null;
   readonly settlementStatus: string | null;
 };
 
@@ -383,7 +381,6 @@ export async function dbWpayAdminPaymentBillGates(
             NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') AS bill_image_key,
             NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') AS bill_verified_at,
             NULLIF(TRIM(s.settlement_breakup->>'billVerifiedBy'), '') AS bill_verified_by,
-            s.settlement_breakup->'billExtract' AS bill_extract,
             s.settlement_status
      FROM payments p
      LEFT JOIN vendors v ON v.id = p.vendor_id
@@ -403,11 +400,6 @@ export async function dbWpayAdminPaymentBillGates(
     billImageKey: row.bill_image_key ? String(row.bill_image_key) : null,
     billVerifiedAt: row.bill_verified_at ? String(row.bill_verified_at) : null,
     billVerifiedBy: row.bill_verified_by ? String(row.bill_verified_by) : null,
-    billExtract: readBillExtract(
-      row.bill_extract && typeof row.bill_extract === 'object'
-        ? { billExtract: row.bill_extract }
-        : null,
-    ),
     settlementStatus: row.settlement_status ? String(row.settlement_status) : null,
   }));
 }
@@ -437,7 +429,6 @@ export async function dbWpayAdminVerifyPaymentBill(opts: {
                NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') AS bill_image_key,
                NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') AS bill_verified_at,
                NULLIF(TRIM(s.settlement_breakup->>'billVerifiedBy'), '') AS bill_verified_by,
-               s.settlement_breakup->'billExtract' AS bill_extract,
                s.settlement_status`,
     [opts.paymentId, opts.verifiedBy],
   );
@@ -451,11 +442,6 @@ export async function dbWpayAdminVerifyPaymentBill(opts: {
     billImageKey: row.bill_image_key ? String(row.bill_image_key) : null,
     billVerifiedAt: row.bill_verified_at ? String(row.bill_verified_at) : null,
     billVerifiedBy: row.bill_verified_by ? String(row.bill_verified_by) : null,
-    billExtract: readBillExtract(
-      row.bill_extract && typeof row.bill_extract === 'object'
-        ? { billExtract: row.bill_extract }
-        : null,
-    ),
     settlementStatus: row.settlement_status ? String(row.settlement_status) : null,
   };
 }

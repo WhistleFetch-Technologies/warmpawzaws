@@ -15,12 +15,6 @@ export type VendorPackageEarningsBreakdown = {
   remainingSessions: number;
 };
 
-export type VendorBillLineItem = {
-  name: string;
-  quantity: number;
-  lineTotal: number;
-};
-
 export type VendorEarningsTransaction = {
   id: string;
   date: string;
@@ -35,7 +29,6 @@ export type VendorEarningsTransaction = {
   requiresBillProof?: boolean;
   billImageStatus?: 'missing' | 'uploaded';
   billVerified?: boolean;
-  billLineItems?: VendorBillLineItem[];
   packageBreakdown?: VendorPackageEarningsBreakdown | null;
 };
 
@@ -117,21 +110,6 @@ function buildDailyTrendFromEarningTransactions(
   return out;
 }
 
-function parseBillLineItems(raw: unknown): VendorBillLineItem[] {
-  if (!Array.isArray(raw)) return [];
-  const items: VendorBillLineItem[] = [];
-  for (const row of raw) {
-    if (!row || typeof row !== 'object') continue;
-    const rec = row as Record<string, unknown>;
-    const name = String(rec.name ?? '').trim();
-    const quantity = Number(rec.quantity);
-    const lineTotal = Number(rec.lineTotal ?? rec.line_total);
-    if (!name || !(quantity > 0) || !Number.isFinite(lineTotal)) continue;
-    items.push({ name, quantity, lineTotal });
-  }
-  return items;
-}
-
 function parsePackageBreakdown(raw: unknown): VendorPackageEarningsBreakdown | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -187,7 +165,6 @@ function mapTransactionsFromEarningsApi(txSource: unknown[]): VendorEarningsTran
       requiresBillProof: row.requiresBillProof === true,
       billImageStatus: row.billImageStatus === 'uploaded' ? 'uploaded' : row.flowType === 'pay_bill' ? 'missing' : undefined,
       billVerified: row.billVerified === true,
-      billLineItems: parseBillLineItems(row.billLineItems),
       packageBreakdown: parsePackageBreakdown(row.packageBreakdown ?? row.package_breakdown),
     };
   });

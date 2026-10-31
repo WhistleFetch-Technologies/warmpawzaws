@@ -75,9 +75,6 @@ function BillProofPanel({
   onVerified?: () => void;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [lineItems, setLineItems] = useState<Array<{ name: string; quantity: number; lineTotal: number }>>(
-    [],
-  );
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +82,6 @@ function BillProofPanel({
   useEffect(() => {
     if (!item.requiresBillProof || !item.hasBillImage) {
       setImageUrl(null);
-      setLineItems([]);
       return;
     }
     let cancelled = false;
@@ -95,7 +91,6 @@ function BillProofPanel({
       .then((data) => {
         if (cancelled) return;
         setImageUrl(data.billImageUrl);
-        setLineItems(data.billExtract?.status === 'ok' ? data.billExtract.lineItems ?? [] : []);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load bill');
@@ -138,26 +133,6 @@ function BillProofPanel({
         <p className="text-sm text-gray-500">Bill uploaded.</p>
       )}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {lineItems.length > 0 ? (
-        <table className="mb-2 w-full text-sm text-slate-700">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="pb-1 font-medium">Item</th>
-              <th className="pb-1 font-medium text-right">Qty</th>
-              <th className="pb-1 font-medium text-right">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lineItems.map((row, index) => (
-              <tr key={`${row.name}-${index}`}>
-                <td className="pr-2">{row.name}</td>
-                <td className="text-right">{row.quantity}</td>
-                <td className="text-right">{formatWpayInr(row.lineTotal)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : null}
       {item.billVerified ? (
         <p className="text-sm font-medium text-green-700">Verified</p>
       ) : item.hasBillImage && canVerify ? (

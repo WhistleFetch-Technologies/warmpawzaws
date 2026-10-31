@@ -414,29 +414,18 @@ export class WarmpawzPayPaymentsService {
     billVerified: boolean;
     billVerifiedAt: string | null;
     billVerifiedBy: string | null;
-    billExtract: {
-      status: 'pending' | 'ok' | 'failed';
-      lineItems?: { name: string; quantity: number; lineTotal: number }[];
-    } | null;
   }> {
     const [gate] = await dbWpayAdminPaymentBillGates([paymentId]);
     if (!gate) {
       throw new CatalogueAdminError(CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND, 'Payment not found');
     }
     const billImageUrl = gate.billImageKey ? await urlForImageKey(gate.billImageKey) : null;
-    const extract = gate.billExtract;
     return {
       paymentId: gate.paymentId,
       billImageUrl,
       billVerified: Boolean(gate.billVerifiedAt),
       billVerifiedAt: gate.billVerifiedAt,
       billVerifiedBy: gate.billVerifiedBy,
-      billExtract: extract
-        ? {
-            status: extract.status,
-            lineItems: extract.status === 'ok' ? extract.lineItems ?? [] : [],
-          }
-        : null,
     };
   }
 
