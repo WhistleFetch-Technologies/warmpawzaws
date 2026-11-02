@@ -9,6 +9,9 @@ jest.mock('../../../repositories/wpay-payments-admin.repository', () => ({
   dbWpayAdminPaymentsExport: jest.fn(),
   dbWpayPlatformWithholdPercentByVendorIds: jest.fn(),
   dbWpayAdminSettlePaymentsByPaymentIds: jest.fn(),
+  dbWpayAdminPaymentBillGates: jest.fn().mockResolvedValue([]),
+  dbWpayAdminVerifyPaymentBill: jest.fn(),
+  dbWpayAdminSavePaymentBillLineItems: jest.fn(),
 }));
 
 import {

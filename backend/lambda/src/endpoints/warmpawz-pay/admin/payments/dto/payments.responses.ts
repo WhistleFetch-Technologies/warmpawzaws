@@ -58,6 +58,21 @@ export interface WpayAdminPaymentItemDTO {
   readonly billVerified?: boolean;
 }
 
+export interface WpayAdminBillLineItemDTO {
+  readonly item: string;
+  readonly quantity: number;
+  readonly total: number;
+}
+
+export interface WpayAdminPaymentBillDTO {
+  readonly paymentId: string;
+  readonly billImageUrl: string | null;
+  readonly billVerified: boolean;
+  readonly billVerifiedAt: string | null;
+  readonly billVerifiedBy: string | null;
+  readonly billLineItems: readonly WpayAdminBillLineItemDTO[];
+}
+
 export interface WpayAdminPaymentsSettleDTO {
   readonly settledPaymentIds: readonly string[];
   readonly settledCount: number;

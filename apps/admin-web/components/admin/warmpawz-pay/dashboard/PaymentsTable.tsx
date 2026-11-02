@@ -17,10 +17,12 @@ import {
   formatWpayPhone,
   fetchWarmpawzPayPaymentBill,
   verifyWarmpawzPayPaymentBill,
+  type WpayAdminBillLineItem,
   type WpayAdminPaymentItem,
   type WpayAdminPayoutStatus,
 } from '@/lib/warmpawz-pay-payments-admin';
 import { Pagination } from '@/components/admin/warmpawz-pay/catalogue/Pagination';
+import { WalkinBillLineItemsPanel } from '@/components/admin/warmpawz-pay/dashboard/WalkinBillLineItemsPanel';
 
 export interface PaymentsTableProps {
   readonly items: readonly WpayAdminPaymentItem[];
@@ -75,13 +77,15 @@ function BillProofPanel({
   onVerified?: () => void;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [lineItems, setLineItems] = useState<readonly WpayAdminBillLineItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!item.requiresBillProof || !item.hasBillImage) {
+    if (!item.requiresBillProof) {
       setImageUrl(null);
+      setLineItems([]);
       return;
     }
     let cancelled = false;
@@ -91,6 +95,7 @@ function BillProofPanel({
       .then((data) => {
         if (cancelled) return;
         setImageUrl(data.billImageUrl);
+        setLineItems(data.billLineItems ?? []);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load bill');
@@ -123,28 +128,37 @@ function BillProofPanel({
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
         Store bill
       </p>
-      {!item.hasBillImage ? (
-        <p className="text-sm text-amber-700">Vendor has not uploaded a bill yet. Settle is blocked.</p>
-      ) : loading ? (
-        <p className="text-sm text-gray-500">Loading bill…</p>
-      ) : imageUrl ? (
-        <img src={imageUrl} alt="Vendor bill" className="mb-2 max-h-72 rounded-md border bg-white object-contain" />
-      ) : (
-        <p className="text-sm text-gray-500">Bill uploaded.</p>
-      )}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {item.billVerified ? (
-        <p className="text-sm font-medium text-green-700">Verified</p>
-      ) : item.hasBillImage && canVerify ? (
-        <button
-          type="button"
-          disabled={verifying}
-          onClick={() => void handleVerify()}
-          className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
-        >
-          {verifying ? 'Verifying…' : 'Verified'}
-        </button>
-      ) : null}
+      <div className="flex flex-col gap-3 md:flex-row md:items-start">
+        <div className="min-w-0 flex-1">
+          {!item.hasBillImage ? (
+            <p className="text-sm text-amber-700">Vendor has not uploaded a bill yet. Settle is blocked.</p>
+          ) : loading ? (
+            <p className="text-sm text-gray-500">Loading bill…</p>
+          ) : imageUrl ? (
+            <img src={imageUrl} alt="Vendor bill" className="mb-2 max-h-72 rounded-md border bg-white object-contain" />
+          ) : (
+            <p className="text-sm text-gray-500">Bill uploaded.</p>
+          )}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {item.billVerified ? (
+            <p className="text-sm font-medium text-green-700">Verified</p>
+          ) : item.hasBillImage && canVerify ? (
+            <button
+              type="button"
+              disabled={verifying}
+              onClick={() => void handleVerify()}
+              className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {verifying ? 'Verifying…' : 'Verified'}
+            </button>
+          ) : null}
+        </div>
+        <WalkinBillLineItemsPanel
+          paymentId={item.paymentId}
+          initialItems={lineItems}
+          canEdit={canVerify}
+        />
+      </div>
     </div>
   );
 }

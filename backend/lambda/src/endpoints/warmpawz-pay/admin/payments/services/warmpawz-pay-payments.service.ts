@@ -9,6 +9,7 @@ import {
   dbWpayAdminPaymentBillGates,
   dbWpayAdminPaymentsExport,
   dbWpayAdminPaymentsPage,
+  dbWpayAdminSavePaymentBillLineItems,
   dbWpayAdminSettlePaymentsByPaymentIds,
   dbWpayAdminVerifyPaymentBill,
   dbWpayPlatformWithholdPercentByVendorIds,
@@ -24,6 +25,7 @@ import {
 } from '../../../shared/pet-store-walkin';
 import { urlForImageKey } from '../../../../../services/image/image-url-builder';
 import type {
+  WpayAdminPaymentBillDTO,
   WpayAdminPaymentItemDTO,
   WpayAdminPaymentsListDTO,
   WpayAdminPaymentsSettleDTO,
@@ -31,6 +33,7 @@ import type {
   WpayCommercialModel,
 } from '../dto/payments.responses';
 import type {
+  PaymentsBillLineItemsBody,
   PaymentsExportQuery,
   PaymentsListQuery,
   PaymentsSettleBody,
@@ -408,13 +411,7 @@ export class WarmpawzPayPaymentsService {
     };
   }
 
-  async getPaymentBill(paymentId: string): Promise<{
-    paymentId: string;
-    billImageUrl: string | null;
-    billVerified: boolean;
-    billVerifiedAt: string | null;
-    billVerifiedBy: string | null;
-  }> {
+  async getPaymentBill(paymentId: string): Promise<WpayAdminPaymentBillDTO> {
     const [gate] = await dbWpayAdminPaymentBillGates([paymentId]);
     if (!gate) {
       throw new CatalogueAdminError(CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND, 'Payment not found');
@@ -426,7 +423,42 @@ export class WarmpawzPayPaymentsService {
       billVerified: Boolean(gate.billVerifiedAt),
       billVerifiedAt: gate.billVerifiedAt,
       billVerifiedBy: gate.billVerifiedBy,
+      billLineItems: isPetStoreWalkinRole(gate.roleName) ? gate.billLineItems : [],
     };
+  }
+
+  async savePaymentBillLineItems(
+    paymentId: string,
+    body: PaymentsBillLineItemsBody,
+    savedBy: string,
+  ): Promise<WpayAdminPaymentBillDTO> {
+    const [gate] = await dbWpayAdminPaymentBillGates([paymentId]);
+    if (!gate) {
+      throw new CatalogueAdminError(CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND, 'Payment not found');
+    }
+    if (!isPetStoreWalkinRole(gate.roleName)) {
+      throw new CatalogueAdminError(
+        CatalogueErrorCode.VALIDATION_ERROR,
+        'Bill line items apply only to pet store walk-in vendors',
+      );
+    }
+    if (!gate.settlementId) {
+      throw new CatalogueAdminError(CatalogueErrorCode.VALIDATION_ERROR, 'Settlement row is missing');
+    }
+    const items = body.items.map((row) => ({
+      item: row.item.trim(),
+      quantity: Math.round(row.quantity * 100) / 100,
+      total: Math.round(row.total * 100) / 100,
+    }));
+    const updated = await dbWpayAdminSavePaymentBillLineItems({
+      paymentId,
+      items,
+      savedBy,
+    });
+    if (!updated) {
+      throw new CatalogueAdminError(CatalogueErrorCode.VALIDATION_ERROR, 'Could not save bill line items');
+    }
+    return this.getPaymentBill(paymentId);
   }
 
   async verifyPaymentBill(paymentId: string, verifiedBy: string): Promise<{

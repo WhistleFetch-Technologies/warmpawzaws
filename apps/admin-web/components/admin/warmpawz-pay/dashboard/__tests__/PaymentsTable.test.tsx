@@ -2,9 +2,12 @@
  * @jest-environment jsdom
  */
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { PaymentsTable } from '../PaymentsTable';
-import type { WpayAdminPaymentItem } from '@/lib/warmpawz-pay-payments-admin';
+import {
+  saveWarmpawzPayPaymentBillLineItems,
+  type WpayAdminPaymentItem,
+} from '@/lib/warmpawz-pay-payments-admin';
 
 jest.mock('@/lib/warmpawz-pay-payments-admin', () => {
   const actual = jest.requireActual('@/lib/warmpawz-pay-payments-admin');
@@ -16,8 +19,17 @@ jest.mock('@/lib/warmpawz-pay-payments-admin', () => {
       billVerified: false,
       billVerifiedAt: null,
       billVerifiedBy: null,
+      billLineItems: [],
     }),
     verifyWarmpawzPayPaymentBill: jest.fn(),
+    saveWarmpawzPayPaymentBillLineItems: jest.fn().mockResolvedValue({
+      paymentId: 'pay-store-1',
+      billImageUrl: null,
+      billVerified: true,
+      billVerifiedAt: null,
+      billVerifiedBy: null,
+      billLineItems: [{ item: 'Pedigree', quantity: 2, total: 499.5 }],
+    }),
   };
 });
 
@@ -236,5 +248,41 @@ describe('PaymentsTable', () => {
     expect(checkboxes[1]).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '+' }));
     expect(screen.getByText('Store bill')).toBeInTheDocument();
+  });
+
+  it('lets admin add walk-in bill line items without verifying', async () => {
+    render(
+      <PaymentsTable
+        items={[
+          {
+            ...burnItem,
+            paymentId: 'pay-store-1',
+            requiresBillProof: true,
+            hasBillImage: true,
+            billVerified: true,
+            burnMode: false,
+          },
+        ]}
+        page={1}
+        pageSize={5}
+        total={1}
+        onPageChange={() => undefined}
+        canVerifyBills
+        {...selectionProps}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add line item' }));
+    fireEvent.change(screen.getByLabelText('Item'), { target: { value: 'Pedigree' } });
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Total'), { target: { value: '499.5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save line items' }));
+
+    await waitFor(() => {
+      expect(saveWarmpawzPayPaymentBillLineItems).toHaveBeenCalledWith('pay-store-1', [
+        { item: 'Pedigree', quantity: 2, total: 499.5 },
+      ]);
+    });
   });
 });

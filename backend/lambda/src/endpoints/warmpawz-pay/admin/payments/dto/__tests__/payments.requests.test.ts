@@ -1,4 +1,5 @@
 import {
+  parsePaymentsBillLineItemsBody,
   parsePaymentsDateFilterFromQuery,
   parsePaymentsExportQuery,
   parsePaymentsListQuery,
@@ -88,4 +89,18 @@ describe('payments.requests', () => {
     });
     expect(parsePaymentsDateFilterFromQuery({})).toEqual({ mode: 'none' });
   });
+
+  it('parses walk-in bill line items and rejects empty item names', () => {
+    expect(
+      parsePaymentsBillLineItemsBody({
+        items: [{ item: ' Pedigree ', quantity: '2', total: 499.5 }],
+      }),
+    ).toEqual({
+      items: [{ item: 'Pedigree', quantity: 2, total: 499.5 }],
+    });
+    expect(() =>
+      parsePaymentsBillLineItemsBody({ items: [{ item: '  ', quantity: 1, total: 10 }] }),
+    ).toThrow();
+  });
 });
+

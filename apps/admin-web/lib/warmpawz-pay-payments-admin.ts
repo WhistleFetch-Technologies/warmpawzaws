@@ -124,23 +124,45 @@ export interface WpayAdminPaymentsSettleResult {
   }[];
 }
 
-export async function fetchWarmpawzPayPaymentBill(paymentId: string): Promise<{
+export interface WpayAdminBillLineItem {
+  item: string;
+  quantity: number;
+  total: number;
+}
+
+export interface WpayAdminPaymentBill {
   paymentId: string;
   billImageUrl: string | null;
   billVerified: boolean;
   billVerifiedAt: string | null;
   billVerifiedBy: string | null;
-}> {
-  const response = await apiClient.get<
-    SuccessEnvelope<{
-      paymentId: string;
-      billImageUrl: string | null;
-      billVerified: boolean;
-      billVerifiedAt: string | null;
-      billVerifiedBy: string | null;
-    }>
-  >(`${WPAY_PAYMENTS_API_BASE}/${paymentId}/bill`);
-  return assertSuccess(response);
+  billLineItems: readonly WpayAdminBillLineItem[];
+}
+
+export async function fetchWarmpawzPayPaymentBill(paymentId: string): Promise<WpayAdminPaymentBill> {
+  const response = await apiClient.get<SuccessEnvelope<WpayAdminPaymentBill>>(
+    `${WPAY_PAYMENTS_API_BASE}/${paymentId}/bill`,
+  );
+  const data = assertSuccess(response);
+  return {
+    ...data,
+    billLineItems: Array.isArray(data.billLineItems) ? data.billLineItems : [],
+  };
+}
+
+export async function saveWarmpawzPayPaymentBillLineItems(
+  paymentId: string,
+  items: readonly WpayAdminBillLineItem[],
+): Promise<WpayAdminPaymentBill> {
+  const response = await apiClient.put<SuccessEnvelope<WpayAdminPaymentBill>>(
+    `${WPAY_PAYMENTS_API_BASE}/${paymentId}/bill/line-items`,
+    { items },
+  );
+  const data = assertSuccess(response);
+  return {
+    ...data,
+    billLineItems: Array.isArray(data.billLineItems) ? data.billLineItems : [],
+  };
 }
 
 export async function verifyWarmpawzPayPaymentBill(paymentId: string): Promise<{

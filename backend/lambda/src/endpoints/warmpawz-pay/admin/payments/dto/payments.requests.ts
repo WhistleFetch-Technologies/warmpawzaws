@@ -84,9 +84,22 @@ export const paymentsSettleBodySchema = z.object({
   paymentIds: z.array(z.string().uuid()).min(1).max(200),
 });
 
+export const paymentsBillLineItemsBodySchema = z.object({
+  items: z
+    .array(
+      z.object({
+        item: z.string().trim().min(1).max(200),
+        quantity: z.coerce.number().positive().max(99_999),
+        total: z.coerce.number().min(0).max(10_000_000),
+      }),
+    )
+    .max(100),
+});
+
 export type PaymentsListQuery = z.infer<typeof paymentsListQuerySchema>;
 export type PaymentsExportQuery = z.infer<typeof paymentsExportQuerySchema>;
 export type PaymentsSettleBody = z.infer<typeof paymentsSettleBodySchema>;
+export type PaymentsBillLineItemsBody = z.infer<typeof paymentsBillLineItemsBodySchema>;
 
 function resolvePaymentsDateFilter(
   value: {
@@ -196,6 +209,10 @@ export function parsePaymentsDateFilterFromQuery(
 
 export function parsePaymentsSettleBody(body: unknown): PaymentsSettleBody {
   return paymentsSettleBodySchema.parse(body);
+}
+
+export function parsePaymentsBillLineItemsBody(body: unknown): PaymentsBillLineItemsBody {
+  return paymentsBillLineItemsBodySchema.parse(body);
 }
 
 export function wpayPaymentsFilterLabel(filter: WpayPaymentsDateFilter): string {

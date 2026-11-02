@@ -12,6 +12,7 @@ import { paymentsExportHandler } from '../handlers/payments-export.handler';
 import { paymentsSettleHandler } from '../handlers/payments-settle.handler';
 import { paymentsBillGetHandler } from '../handlers/payments-bill-get.handler';
 import { paymentsBillVerifyHandler } from '../handlers/payments-bill-verify.handler';
+import { paymentsBillLineItemsHandler } from '../handlers/payments-bill-line-items.handler';
 import type { WarmpawzPayPaymentsService } from '../services/warmpawz-pay-payments.service';
 
 export interface PaymentsAdminRouteDeps {
@@ -49,6 +50,14 @@ export function registerPaymentsAdminRoutes(app: Hono, deps: PaymentsAdminRouteD
     requireWarmpawzPayAdminEnabled,
     requirePaymentsSettleAdminPermission(WPAY_PAYMENTS_SETTLE),
     (c) => paymentsBillVerifyHandler(c, deps),
+  );
+
+  app.put(
+    '/admin/warmpawz-pay/payments/:paymentId/bill/line-items',
+    requireWarmpawzPayEnabled,
+    requireWarmpawzPayAdminEnabled,
+    requirePaymentsSettleAdminPermission(WPAY_PAYMENTS_SETTLE),
+    (c) => paymentsBillLineItemsHandler(c, deps),
   );
 
   app.post(

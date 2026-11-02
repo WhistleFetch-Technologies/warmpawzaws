@@ -85,15 +85,15 @@ WHERE r.name = 'pet_store_walkin'
       AND rp.action = '*'
   );
 
--- 3) Onboarding form — copy seller fields when present (unique on role_id)
-INSERT INTO onboarding_forms (role_id, fields, sections, version, status, is_active, updated_at)
+-- 3) Onboarding form — copy seller fields when present (unique on role_id).
+-- Do not reference is_active: prod onboarding_forms never got that column.
+INSERT INTO onboarding_forms (role_id, fields, sections, version, status, updated_at)
 SELECT
   'pet_store_walkin',
   fields,
   sections,
   version,
   COALESCE(status, 'active'),
-  COALESCE(is_active, true),
   NOW()
 FROM onboarding_forms
 WHERE lower(role_id) IN ('seller', 'pet_products_store')
@@ -104,7 +104,6 @@ ON CONFLICT (role_id) DO UPDATE SET
   sections = EXCLUDED.sections,
   version = EXCLUDED.version,
   status = EXCLUDED.status,
-  is_active = EXCLUDED.is_active,
   updated_at = NOW();
 
 -- 4) Promo / Pay Bill catalogue category (not ecommerce / pet shop)

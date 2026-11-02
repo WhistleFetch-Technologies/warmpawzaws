@@ -17,3 +17,35 @@ export function readBillVerifiedAt(breakup: Record<string, unknown> | null | und
   const at = String(breakup.billVerifiedAt ?? '').trim();
   return at || null;
 }
+
+export const WPAY_BILL_LINE_ITEMS_MAX = 100;
+export const WPAY_BILL_LINE_ITEM_NAME_MAX = 200;
+
+export type WpayBillLineItem = {
+  readonly item: string;
+  readonly quantity: number;
+  readonly total: number;
+};
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** Lenient read of stored JSONB — skips junk rows. */
+export function parseBillLineItems(raw: unknown): WpayBillLineItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: WpayBillLineItem[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue;
+    const rec = row as Record<string, unknown>;
+    const item = String(rec.item ?? '').trim().slice(0, WPAY_BILL_LINE_ITEM_NAME_MAX);
+    const quantity = round2(Number(rec.quantity));
+    const total = round2(Number(rec.total));
+    if (!item) continue;
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+    if (!Number.isFinite(total) || total < 0) continue;
+    out.push({ item, quantity, total });
+    if (out.length >= WPAY_BILL_LINE_ITEMS_MAX) break;
+  }
+  return out;
+}
