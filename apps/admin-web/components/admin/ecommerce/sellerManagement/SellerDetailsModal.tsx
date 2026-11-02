@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import {
   CalendarDays,
   CheckCircle,
+  Eye,
+  EyeOff,
   IndianRupee,
   Mail,
   Package,
@@ -25,6 +27,8 @@ export interface SellerSummary {
   products?: number;
   status?: string;
   sellerStatus?: string;
+  /** When true, all of this vendor's shop products are hidden on the customer storefront. */
+  storefrontHidden?: boolean;
   /** Full row from GET /ecommerce/vendors/list — used when detail route is not deployed yet */
   listVendor?: Record<string, unknown>;
 }
@@ -32,6 +36,7 @@ export interface SellerSummary {
 interface SellerDetailsModalProps {
   seller: SellerSummary;
   onClose: () => void;
+  onVisibilityChange?: (hidden: boolean) => void;
 }
 
 interface SellerDetails extends SellerSummary {
@@ -89,9 +94,17 @@ const toNumber = (value: unknown): number | null => {
   return null;
 };
 
+function isStorefrontHiddenFlag(value: unknown): boolean {
+  return value === true || value === 't' || value === 'true';
+}
+
 function mapVendorToDetails(vendor: Record<string, unknown>, summary: SellerSummary): SellerDetails {
   return {
     ...summary,
+    storefrontHidden:
+      vendor.ecommerce_storefront_hidden === undefined
+        ? summary.storefrontHidden === true
+        : isStorefrontHiddenFlag(vendor.ecommerce_storefront_hidden),
     businessName:
       (vendor.business_name as string) ||
       (vendor.businessName as string) ||
@@ -124,7 +137,7 @@ function mapVendorToDetails(vendor: Record<string, unknown>, summary: SellerSumm
   };
 }
 
-export function SellerDetailsModal({ seller, onClose }: SellerDetailsModalProps) {
+export function SellerDetailsModal({ seller, onClose, onVisibilityChange }: SellerDetailsModalProps) {
   const [details, setDetails] = useState<SellerDetails>(() =>
     seller.listVendor
       ? mapVendorToDetails(seller.listVendor, seller)
@@ -132,6 +145,8 @@ export function SellerDetailsModal({ seller, onClose }: SellerDetailsModalProps)
   );
   const [loading, setLoading] = useState(!seller.listVendor);
   const [error, setError] = useState<string | null>(null);
+  const [savingVisibility, setSavingVisibility] = useState(false);
+  const [visibilityError, setVisibilityError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +192,33 @@ export function SellerDetailsModal({ seller, onClose }: SellerDetailsModalProps)
       cancelled = true;
     };
   }, [seller.id]);
+
+  const setStorefrontPublished = async (published: boolean) => {
+    if (savingVisibility) return;
+    if (!published) {
+      const ok = window.confirm(
+        `Hide all shop products for ${details.businessName || details.ownerName || 'this seller'}? Product rows and categories stay unchanged. Publish will list them again.`
+      );
+      if (!ok) return;
+    }
+    try {
+      setSavingVisibility(true);
+      setVisibilityError(null);
+      const data = await apiClient.put<{
+        ecommerce_storefront_hidden?: boolean;
+        published?: boolean;
+      }>(`/admin/ecommerce/vendors/${seller.id}/storefront-visibility`, { published });
+      const hidden =
+        data?.ecommerce_storefront_hidden === true || data?.published === false;
+      setDetails((prev) => ({ ...prev, storefrontHidden: hidden }));
+      onVisibilityChange?.(hidden);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Could not update shop visibility';
+      setVisibilityError(message);
+    } finally {
+      setSavingVisibility(false);
+    }
+  };
 
   const displayName =
     details.businessName || details.ownerName || 'Unnamed Seller';
@@ -251,6 +293,58 @@ export function SellerDetailsModal({ seller, onClose }: SellerDetailsModalProps)
                   Seller: {details.sellerStatus.replace(/_/g, ' ')}
                 </span>
               )}
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
+                  details.storefrontHidden
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                {details.storefrontHidden ? (
+                  <EyeOff className="h-3 w-3" />
+                ) : (
+                  <Eye className="h-3 w-3" />
+                )}
+                {details.storefrontHidden ? 'Shop hidden' : 'Published on shop'}
+              </span>
+            </div>
+
+            <div
+              className="rounded-2xl border border-slate-200 bg-white p-4"
+              data-testid="sellerStorefrontVisibility"
+            >
+              <p className="text-sm font-semibold text-slate-900">Customer shop catalog</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Hide removes every product from this seller across all shop categories. Publish
+                lists them again with their current categories. Product rows are not changed.
+              </p>
+              {visibilityError && (
+                <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {visibilityError}
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={savingVisibility || details.storefrontHidden === true}
+                  onClick={() => setStorefrontPublished(false)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  data-testid="hideSellerCatalogButton"
+                >
+                  <EyeOff className="h-4 w-4" />
+                  {savingVisibility && details.storefrontHidden !== true ? 'Hiding…' : 'Hide'}
+                </button>
+                <button
+                  type="button"
+                  disabled={savingVisibility || details.storefrontHidden !== true}
+                  onClick={() => setStorefrontPublished(true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  data-testid="publishSellerCatalogButton"
+                >
+                  <Eye className="h-4 w-4" />
+                  {savingVisibility && details.storefrontHidden === true ? 'Publishing…' : 'Publish'}
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">

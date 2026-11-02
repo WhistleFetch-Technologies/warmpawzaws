@@ -9,6 +9,7 @@ import {
   prepareStorefrontProductRow,
 } from '../../utils/s3-media-presign';
 import { STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL } from '../../utils/ecommerce-storefront-product-filter';
+import { STOREFRONT_VENDOR_NOT_HIDDEN_SQL } from '../../utils/storefront-product-where';
 
 export const ECOMMERCE_RECOMMENDATIONS_DEFAULT_LIMIT = 15;
 export const ECOMMERCE_RECOMMENDATIONS_MAX_LIMIT = 15;
@@ -138,6 +139,7 @@ async function fetchAlsoBoughtRows(
     LEFT JOIN vendors v ON p.vendor_id = v.id
     WHERE p.is_active = true AND p.stock > 0
       ${STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL}
+      ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
     ORDER BY cp.purchase_count DESC
   `;
 
@@ -160,6 +162,7 @@ async function fetchAlsoBoughtRows(
         WHERE p.is_active = true
           AND p.stock > 0
           ${STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL}
+          ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
           AND p.category = $1
           AND p.id NOT IN (${existingIds.map((_, i) => `$${i + 2}`).join(',')})
         ORDER BY p.sales_count DESC, p.rating DESC
@@ -204,6 +207,7 @@ async function fetchSimilarProductRows(
     WHERE p.is_active = true
       AND COALESCE(p.stock, 0) > 0
       ${STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL}
+      ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
       AND p.id <> $${paramIdx++}::uuid
   `;
   params.push(productId);
@@ -285,6 +289,7 @@ export async function resolveCartRecommendations(input: {
       WHERE p.is_active = true
         AND p.stock > 0
         ${STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL}
+        ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
         AND (p.category_id::text = $1 OR p.category = $1)
         ${excludeClause}
       ORDER BY COALESCE(p.sales_count, 0) DESC, COALESCE(p.rating, 0) DESC NULLS LAST

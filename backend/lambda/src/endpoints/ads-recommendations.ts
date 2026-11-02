@@ -15,6 +15,7 @@ import {
   resolveProductRecommendations,
 } from '../lib/ecommerce/recommendation-resolver';
 import { STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL } from '../utils/ecommerce-storefront-product-filter';
+import { STOREFRONT_VENDOR_NOT_HIDDEN_SQL } from '../utils/storefront-product-where';
 
 // ============================================================================
 // SPONSORED ADS ENDPOINTS
@@ -426,6 +427,7 @@ app.get('/products/similar', async (c) => {
       WHERE p.is_active = true
         AND COALESCE(p.stock, 0) > 0
         ${STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL}
+        ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
     `;
 
     if (category) {

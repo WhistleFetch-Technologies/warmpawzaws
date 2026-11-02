@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, type ChangeEvent } from 'react';
-import { Store, Search, Eye, CheckCircle, XCircle } from 'lucide-react';
+import { Store, Search, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { SellerDetailsModal, type SellerSummary } from './SellerDetailsModal';
 
@@ -38,6 +38,10 @@ export function SellerManagement() {
             : null) ??
           (typeof vendor.product_count === 'number' ? vendor.product_count : null) ??
           0,
+        storefrontHidden:
+          vendor.ecommerce_storefront_hidden === true ||
+          vendor.ecommerce_storefront_hidden === 't' ||
+          vendor.ecommerce_storefront_hidden === 'true',
         listVendor: vendor,
       }));
       
@@ -127,6 +131,9 @@ export function SellerManagement() {
                   Status
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                  Shop
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">
                   Products
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
@@ -141,7 +148,7 @@ export function SellerManagement() {
               {filteredSellers.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     <Store className="w-12 h-12 mx-auto mb-3 text-gray-300" />
@@ -173,6 +180,22 @@ export function SellerManagement() {
                         {seller.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
+                    <td className="px-6 py-4 text-center">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
+                          seller.storefrontHidden
+                            ? 'bg-slate-800 text-white'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}
+                      >
+                        {seller.storefrontHidden ? (
+                          <EyeOff className="w-3 h-3" />
+                        ) : (
+                          <Eye className="w-3 h-3" />
+                        )}
+                        {seller.storefrontHidden ? 'Hidden' : 'Published'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-center text-gray-800 font-medium">
                       {Number.isFinite(seller.products) ? seller.products : 0}
                     </td>
@@ -201,6 +224,32 @@ export function SellerManagement() {
         <SellerDetailsModal
           seller={selectedSeller}
           onClose={() => setSelectedSeller(null)}
+          onVisibilityChange={(hidden) => {
+            setSellers((prev) =>
+              prev.map((row) =>
+                row.id === selectedSeller.id
+                  ? {
+                      ...row,
+                      storefrontHidden: hidden,
+                      listVendor: row.listVendor
+                        ? { ...row.listVendor, ecommerce_storefront_hidden: hidden }
+                        : row.listVendor,
+                    }
+                  : row
+              )
+            );
+            setSelectedSeller((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    storefrontHidden: hidden,
+                    listVendor: prev.listVendor
+                      ? { ...prev.listVendor, ecommerce_storefront_hidden: hidden }
+                      : prev.listVendor,
+                  }
+                : prev
+            );
+          }}
         />
       )}
     </div>

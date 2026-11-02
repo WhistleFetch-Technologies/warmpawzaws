@@ -23,6 +23,7 @@ import {
   resolveCartRecommendations,
   resolveProductRecommendations,
 } from '../lib/ecommerce/recommendation-resolver';
+import { STOREFRONT_VENDOR_NOT_HIDDEN_SQL } from '../utils/storefront-product-where';
 
 export function registerRecommendationEndpoints(app: Hono) {
   // ============================================================================
@@ -124,6 +125,7 @@ export function registerRecommendationEndpoints(app: Hono) {
         FROM paired_products pp
         JOIN products p ON pp.product_id = p.id
         WHERE p.is_active = true AND p.stock > 0
+          ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
       `;
 
       const results = await query(boughtTogetherQuery, [productId, limit]);
@@ -223,6 +225,7 @@ export function registerRecommendationEndpoints(app: Hono) {
         JOIN products p ON pv.product_id = p.id
         WHERE pv.customer_id = $1
           AND p.is_active = true
+          ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
         ORDER BY pv.last_viewed_at DESC
         LIMIT $2
       `;
@@ -265,7 +268,7 @@ export function registerRecommendationEndpoints(app: Hono) {
       if (period === 'day') periodInterval = "INTERVAL '1 day'";
       if (period === 'month') periodInterval = "INTERVAL '30 days'";
 
-      let whereClause = `WHERE p.is_active = true AND p.stock > 0`;
+      let whereClause = `WHERE p.is_active = true AND p.stock > 0 ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}`;
       const params: unknown[] = [];
       let paramIdx = 1;
 
@@ -421,6 +424,7 @@ export function registerRecommendationEndpoints(app: Hono) {
           LEFT JOIN vendors v ON p.vendor_id = v.id
           WHERE p.is_active = true 
             AND p.stock > 0
+            ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
             ${excludeClause}
           ORDER BY category_match DESC, p.rating DESC, p.sales_count DESC
           LIMIT $1
@@ -448,6 +452,7 @@ export function registerRecommendationEndpoints(app: Hono) {
           LEFT JOIN vendors v ON p.vendor_id = v.id
           WHERE p.is_active = true 
             AND p.stock > 0
+            ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
             ${excludeClause}
           ORDER BY p.rating DESC, p.sales_count DESC
           LIMIT $1
@@ -485,7 +490,7 @@ export function registerRecommendationEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '12');
       const days = parseInt(c.req.query('days') || '30');
 
-      let whereClause = `WHERE p.is_active = true AND p.stock > 0 AND p.created_at > NOW() - INTERVAL '${days} days'`;
+      let whereClause = `WHERE p.is_active = true AND p.stock > 0 AND p.created_at > NOW() - INTERVAL '${days} days' ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}`;
       const params: unknown[] = [];
       let paramIdx = 1;
 

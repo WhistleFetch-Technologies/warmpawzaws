@@ -24,6 +24,7 @@ import {
 } from '../utils/search-category-aliases';
 import { getVendorListingPhotoUrl } from '../utils/vendor-listing-photo';
 import { haversineKm } from '../lib/utils/vendor-customer-distance';
+import { STOREFRONT_VENDOR_NOT_HIDDEN_SQL } from '../utils/storefront-product-where';
 import {
   acceptableStylesForService,
   applySearchDiscoveryParity,
@@ -184,6 +185,7 @@ async function queryProductsForSearch(
     FROM products p
     LEFT JOIN vendors v ON p.vendor_id = v.id
     WHERE p.is_active = true
+      ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
   `;
   const productParams: any[] = [];
   let productParamIndex = 1;

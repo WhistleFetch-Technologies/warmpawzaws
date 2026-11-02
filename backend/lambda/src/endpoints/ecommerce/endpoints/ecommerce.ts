@@ -119,8 +119,10 @@ import { buildStorefrontCategoryFilter } from '../../../utils/storefront-categor
 import {
   storefrontProductWhereSql,
   storefrontProductBaseWhereSql,
+  parseEcommerceStorefrontVisibilityBody,
   STOREFRONT_ACTIVE_CATEGORY_SQL,
   STOREFRONT_ACTIVE_STATUS_SQL,
+  STOREFRONT_VENDOR_NOT_HIDDEN_SQL,
 } from '../../../utils/storefront-product-where';
 import {
   sliceStorefrontListPage,
@@ -1373,6 +1375,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         ${linksClause}
       )
         AND ${STOREFRONT_ACTIVE_STATUS_SQL}
+        ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
         ${exclude}
     ) pc ON true`;
   }
@@ -3213,6 +3216,54 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching e-commerce vendor details:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /admin/ecommerce/vendors/:vendorId/storefront-visibility
+   * Hide or publish all of a vendor's shop products via vendors.ecommerce_storefront_hidden.
+   * Does not rewrite product status or category membership.
+   * Body: { published: boolean } or { hidden: boolean }
+   */
+  app.put('/admin/ecommerce/vendors/:vendorId/storefront-visibility', async (c) => {
+    try {
+      const vendorId = String(c.req.param('vendorId') || '').trim();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendorId' }, 400);
+      }
+
+      const body = await c.req.json().catch(() => null);
+      const visibility = parseEcommerceStorefrontVisibilityBody(body);
+      if (!visibility) {
+        return c.json(
+          { error: 'Body must include published or hidden as a boolean' },
+          400
+        );
+      }
+
+      const result = await query(
+        `UPDATE vendors
+         SET ecommerce_storefront_hidden = $2
+         WHERE id = $1
+           AND (is_deleted IS NULL OR is_deleted = false)
+         RETURNING id, ecommerce_storefront_hidden`,
+        [vendorId, visibility.hidden]
+      );
+
+      if (!result.rows.length) {
+        return c.json({ error: 'Seller not found' }, 404);
+      }
+
+      const hidden = result.rows[0].ecommerce_storefront_hidden === true;
+      return c.json({
+        success: true,
+        vendorId: result.rows[0].id,
+        ecommerce_storefront_hidden: hidden,
+        published: !hidden,
+      });
+    } catch (error: any) {
+      console.error('Error updating ecommerce storefront visibility:', error);
       return c.json({ error: error.message }, 500);
     }
   });

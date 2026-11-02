@@ -28,11 +28,39 @@ export const STOREFRONT_ACTIVE_CATEGORY_SQL = `
   )
 `;
 
-/** Full storefront visibility WHERE (status + meal exclusion), without category EXISTS. */
+/**
+ * Hide all products for vendors with ecommerce_storefront_hidden = true.
+ * Does not rewrite product rows or category membership. Alias `p` required.
+ */
+export const STOREFRONT_VENDOR_NOT_HIDDEN_SQL = `
+  AND NOT EXISTS (
+    SELECT 1 FROM vendors vh
+    WHERE vh.id = p.vendor_id
+      AND COALESCE(vh.ecommerce_storefront_hidden, false) = true
+  )
+`;
+
+/** Parse admin Hide / Publish body. Prefer `published` when both keys are sent. */
+export function parseEcommerceStorefrontVisibilityBody(
+  body: unknown
+): { hidden: boolean; published: boolean } | null {
+  if (body == null || typeof body !== 'object' || Array.isArray(body)) return null;
+  const rec = body as Record<string, unknown>;
+  if (typeof rec.published === 'boolean') {
+    return { published: rec.published, hidden: !rec.published };
+  }
+  if (typeof rec.hidden === 'boolean') {
+    return { hidden: rec.hidden, published: !rec.hidden };
+  }
+  return null;
+}
+
+/** Full storefront visibility WHERE (status + vendor hide + meal exclusion), without category EXISTS. */
 export async function storefrontProductWhereSql(): Promise<string> {
   const exclude = await storefrontExcludeMealProductsSql();
   return `
   ${STOREFRONT_ACTIVE_STATUS_SQL}
+  ${STOREFRONT_VENDOR_NOT_HIDDEN_SQL}
   ${exclude}`;
 }
 
