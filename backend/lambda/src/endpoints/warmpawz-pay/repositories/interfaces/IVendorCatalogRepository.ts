@@ -14,6 +14,7 @@ export interface CatalogueRow {
   readonly createdBy: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+  readonly requireBill: boolean;
 }
 
 /** Admin unified list row — approved vendor with optional catalogue entry. */
@@ -26,6 +27,7 @@ export interface CatalogueAdminListRow {
   readonly createdBy: string | null;
   readonly createdAt: Date | null;
   readonly updatedAt: Date | null;
+  readonly requireBill: boolean;
   readonly vendorUpdatedAt: Date;
   readonly businessName: string;
   readonly ownerName: string | null;
@@ -123,10 +125,17 @@ export interface UpdatePublishStatusParams {
   readonly publishedAt: Date | null;
 }
 
+export interface UpdateRequireBillParams {
+  readonly catalogueId: string;
+  readonly requireBill: boolean;
+}
+
 export interface IVendorCatalogRepository {
   insertDraft(vendorId: string, createdBy: string | null): Promise<CatalogueRow>;
 
   updatePublishStatus(params: UpdatePublishStatusParams): Promise<CatalogueRow | null>;
+
+  updateRequireBill(params: UpdateRequireBillParams): Promise<CatalogueRow | null>;
 
   deleteById(catalogueId: string): Promise<boolean>;
 

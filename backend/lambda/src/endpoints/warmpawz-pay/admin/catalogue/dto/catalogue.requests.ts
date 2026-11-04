@@ -24,6 +24,16 @@ export const createCatalogueRequestSchema = z
 
 export type CreateCatalogueRequest = z.infer<typeof createCatalogueRequestSchema>;
 
+export const patchCatalogueRequireBillRequestSchema = z
+  .object({
+    requireBill: z.boolean(),
+  })
+  .strict();
+
+export type PatchCatalogueRequireBillRequest = z.infer<
+  typeof patchCatalogueRequireBillRequestSchema
+>;
+
 export const bulkCatalogueRequestSchema = z
   .object({
     catalogueIds: z
@@ -82,6 +92,12 @@ export type VendorCandidatesQuery = z.infer<typeof vendorCandidatesQuerySchema>;
 
 export function parseCreateCatalogueRequest(input: unknown): CreateCatalogueRequest {
   return createCatalogueRequestSchema.parse(input);
+}
+
+export function parsePatchCatalogueRequireBillRequest(
+  input: unknown,
+): PatchCatalogueRequireBillRequest {
+  return patchCatalogueRequireBillRequestSchema.parse(input);
 }
 
 export function parseBulkCatalogueRequest(input: unknown): BulkCatalogueRequest {

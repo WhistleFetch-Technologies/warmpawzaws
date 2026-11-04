@@ -4,9 +4,9 @@ import { resolveVendorId, resolveVendorIdsForLedger } from '../../../utils/vendo
 import { ImageProcessingError, uploadDisplayImage } from '../../../services/image';
 import { urlForImageKey } from '../../../services/image/image-url-builder';
 import {
-  isPetStoreWalkinRole,
   readBillImageKey,
   readBillVerifiedAt,
+  requiresBillProof,
   WPAY_BILL_IMAGE_MAX_BYTES,
 } from '../../warmpawz-pay/shared/pet-store-walkin';
 
@@ -17,6 +17,7 @@ type SettlementBillRow = {
   vendor_id: string;
   settlement_breakup: Record<string, unknown> | null;
   role_name: string | null;
+  require_bill: boolean;
 };
 
 async function loadOwnedWpaySettlement(
@@ -27,10 +28,12 @@ async function loadOwnedWpaySettlement(
     `SELECT s.id::text AS id,
             s.vendor_id::text AS vendor_id,
             s.settlement_breakup,
-            r.name AS role_name
+            r.name AS role_name,
+            COALESCE(wvc.require_bill, false) AS require_bill
      FROM settlements s
      INNER JOIN vendors v ON v.id = s.vendor_id
      LEFT JOIN roles r ON r.id = v.role_id
+     LEFT JOIN warmpawz_pay_vendor_catalog wvc ON wvc.vendor_id = v.id
      WHERE s.id = $1::uuid
        AND s.vendor_id = ANY($2::uuid[])
        AND s.order_type = 'warmpawz_pay'
@@ -48,6 +51,7 @@ async function loadOwnedWpaySettlement(
     vendor_id: String(row.vendor_id),
     settlement_breakup: breakup,
     role_name: row.role_name ? String(row.role_name) : null,
+    require_bill: row.require_bill === true,
   };
 }
 
@@ -74,8 +78,8 @@ export function registerVendorWpayBillImageEndpoints(app: Hono): void {
       if (vendorIds.length === 0) vendorIds = [vendorId];
       const row = await loadOwnedWpaySettlement(settlementId, vendorIds);
       if (!row) return c.json({ success: false, error: 'Settlement not found' }, 404);
-      if (!isPetStoreWalkinRole(row.role_name)) {
-        return c.json({ success: false, error: 'Bill image is only used by walk-in pet stores' }, 403);
+      if (!requiresBillProof({ requireBill: row.require_bill, roleName: row.role_name })) {
+        return c.json({ success: false, error: 'Bill image is not required for this vendor' }, 403);
       }
       const key = readBillImageKey(row.settlement_breakup);
       const billImageUrl = key ? await urlForImageKey(key) : null;
@@ -98,8 +102,8 @@ export function registerVendorWpayBillImageEndpoints(app: Hono): void {
       if (vendorIds.length === 0) vendorIds = [vendorId];
       const row = await loadOwnedWpaySettlement(settlementId, vendorIds);
       if (!row) return c.json({ success: false, error: 'Settlement not found' }, 404);
-      if (!isPetStoreWalkinRole(row.role_name)) {
-        return c.json({ success: false, error: 'Bill image is only used by walk-in pet stores' }, 403);
+      if (!requiresBillProof({ requireBill: row.require_bill, roleName: row.role_name })) {
+        return c.json({ success: false, error: 'Bill image is not required for this vendor' }, 403);
       }
       if (readBillVerifiedAt(row.settlement_breakup)) {
         return c.json({ success: false, error: 'Verified bills cannot be replaced' }, 403);

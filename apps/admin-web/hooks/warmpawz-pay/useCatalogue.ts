@@ -7,6 +7,7 @@ import {
   fetchCatalogueList,
   fetchServiceCategories,
   fetchVendorCandidates,
+  patchCatalogueRequireBill,
   publishCatalogueEntry,
   unpublishCatalogueEntry,
   type CatalogueDetail,
@@ -126,6 +127,26 @@ export function useUnpublishCatalogueEntry() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to unpublish catalogue entry');
+    },
+  });
+}
+
+export function usePatchCatalogueRequireBill() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (params: { catalogueId: string; requireBill: boolean }) =>
+      patchCatalogueRequireBill(params.catalogueId, params.requireBill),
+    onSuccess: (data) => {
+      invalidateCatalogueQueries(queryClient, data.catalogueId ?? undefined);
+      toast.success(
+        data.requireBill
+          ? `${data.businessName}: bill required before settle.`
+          : `${data.businessName}: bill not required.`,
+      );
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to update Require bill');
     },
   });
 }

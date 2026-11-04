@@ -29,6 +29,7 @@ import { PlatformStatusBadge } from './PlatformStatusBadge';
 import { PricingStatusBadge } from './PricingStatusBadge';
 import { ReadinessDetailPanel } from './ReadinessDetailPanel';
 import { ReadinessIndicator } from './ReadinessIndicator';
+import { RequireBillCheckbox } from './RequireBillCheckbox';
 import { StatusBadge } from './StatusBadge';
 import { WarmpawzPayStatusBadge } from './WarmpawzPayStatusBadge';
 
@@ -46,6 +47,7 @@ export interface CatalogueTableProps {
   ) => Promise<void>;
   readonly onUnpublish: (item: CatalogueListItem) => void;
   readonly onDelete: (item: CatalogueListItem) => void;
+  readonly onRequireBillChange: (item: CatalogueListItem, requireBill: boolean) => void;
 }
 
 function initialTierId(item: CatalogueListItem): string {
@@ -72,6 +74,7 @@ export function CatalogueTable({
   onPublish,
   onUnpublish,
   onDelete,
+  onRequireBillChange,
 }: CatalogueTableProps) {
   const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
   const [tierByVendor, setTierByVendor] = useState<Record<string, string>>({});
@@ -233,6 +236,14 @@ export function CatalogueTable({
                         <ReadinessDetailPanel readiness={item.readiness} />
                         <div className="flex flex-col gap-4 border-t border-gray-200 pt-4 lg:flex-row lg:items-end lg:justify-between">
                           <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap">
+                            <RequireBillCheckbox
+                              vendorId={item.vendorId}
+                              checked={item.requireBill === true}
+                              disabled={rowDisabled}
+                              onChange={(requireBill) =>
+                                onRequireBillChange(item, requireBill)
+                              }
+                            />
                             <div className="max-w-xs space-y-2">
                               <Label htmlFor={`tier-${item.vendorId}`}>WPay Tier</Label>
                               <select

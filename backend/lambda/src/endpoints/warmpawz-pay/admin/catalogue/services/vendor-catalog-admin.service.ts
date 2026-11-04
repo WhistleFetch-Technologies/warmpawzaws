@@ -186,6 +186,35 @@ export class VendorCatalogAdminService {
     return this.eligibilityRepository.listServiceCategories();
   }
 
+  async setRequireBill(
+    catalogueId: string,
+    requireBill: boolean,
+    _adminUserId: string,
+  ): Promise<CatalogueDetail | null> {
+    const entry = await this.catalogRepository.findById(catalogueId);
+    if (!entry) {
+      return null;
+    }
+    if (entry.requireBill === requireBill) {
+      return this.buildCatalogueDetail(entry, this.resolveEligibility(entry));
+    }
+
+    let refreshed;
+    try {
+      refreshed = await this.catalogRepository.updateRequireBill({
+        catalogueId,
+        requireBill,
+      });
+    } catch (error) {
+      throw this.mapMutationError(error);
+    }
+    if (!refreshed) {
+      return null;
+    }
+    const row = this.mergeCatalogueWithVendor(refreshed, entry);
+    return this.buildCatalogueDetail(row, this.resolveEligibility(row));
+  }
+
   async publish(catalogueId: string, adminUserId: string): Promise<CatalogueDetail | null> {
     const entry = await this.catalogRepository.findById(catalogueId);
     if (!entry) {
@@ -575,6 +604,7 @@ export class VendorCatalogAdminService {
       customerVisible: row.inCatalogue ? enrichment.customerVisible : false,
       readiness: enrichment.readiness,
       pricing: enrichment.pricing,
+      requireBill: row.requireBill === true,
     };
   }
 
@@ -663,6 +693,7 @@ export class VendorCatalogAdminService {
       customerVisible: enrichment.customerVisible,
       readiness: enrichment.readiness,
       pricing: enrichment.pricing,
+      requireBill: row.requireBill === true,
     };
   }
 

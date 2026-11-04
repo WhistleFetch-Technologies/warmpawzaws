@@ -27,7 +27,7 @@ const CATALOGUE_TABLE = 'warmpawz_pay_vendor_catalog';
 const PRICING_TABLE = 'warmpawz_pay_merchant_pricing';
 
 const CATALOGUE_COLUMNS =
-  'id, vendor_id, publish_status, published_at, created_by, created_at, updated_at';
+  'id, vendor_id, publish_status, published_at, created_by, created_at, updated_at, require_bill';
 
 const CATALOGUE_SELECT = `
   c.id,
@@ -36,7 +36,8 @@ const CATALOGUE_SELECT = `
   c.published_at,
   c.created_by,
   c.created_at,
-  c.updated_at
+  c.updated_at,
+  COALESCE(c.require_bill, false) AS require_bill
 `;
 
 const VENDOR_JOIN_SELECT = `
@@ -77,6 +78,7 @@ const ADMIN_LIST_SELECT = `
   c.created_by,
   c.created_at,
   c.updated_at,
+  COALESCE(c.require_bill, false) AS require_bill,
   v.updated_at AS vendor_updated_at,
   v.business_name,
   v.owner_name,
@@ -158,6 +160,7 @@ interface CatalogueDbRow {
   readonly created_by: string | null;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
+  readonly require_bill?: boolean | null;
 }
 
 interface AdminListDbRow {
@@ -168,6 +171,7 @@ interface AdminListDbRow {
   readonly created_by: string | null;
   readonly created_at: Date | string | null;
   readonly updated_at: Date | string | null;
+  readonly require_bill?: boolean | null;
   readonly vendor_updated_at: Date | string;
   readonly business_name: string;
   readonly owner_name: string | null;
@@ -298,6 +302,7 @@ function mapCatalogueRow(row: CatalogueDbRow): CatalogueRow {
     createdBy: row.created_by,
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
+    requireBill: row.require_bill === true,
   };
 }
 
@@ -313,6 +318,7 @@ function mapAdminListRow(row: AdminListDbRow): CatalogueAdminListRow {
     createdBy: row.created_by,
     createdAt: row.created_at ? toDate(row.created_at) : null,
     updatedAt: row.updated_at ? toDate(row.updated_at) : null,
+    requireBill: row.require_bill === true,
     vendorUpdatedAt: toDate(row.vendor_updated_at),
     businessName: resolveMerchantDisplayName({
       businessName: row.business_name,
@@ -541,6 +547,23 @@ export class VendorCatalogRepository implements IVendorCatalogRepository {
     return row ? mapCatalogueRow(row) : null;
   }
 
+  async updateRequireBill(params: {
+    readonly catalogueId: string;
+    readonly requireBill: boolean;
+  }): Promise<CatalogueRow | null> {
+    const sql = `
+      UPDATE ${CATALOGUE_TABLE}
+      SET
+        require_bill = $2,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING ${CATALOGUE_COLUMNS}
+    `;
+    const result = await this.db.query(sql, [params.catalogueId, params.requireBill]);
+    const row = result.rows[0] as CatalogueDbRow | undefined;
+    return row ? mapCatalogueRow(row) : null;
+  }
+
   async deleteById(catalogueId: string): Promise<boolean> {
     const result = await this.db.query(
       `DELETE FROM ${CATALOGUE_TABLE} WHERE id = $1`,
@@ -572,7 +595,8 @@ export class VendorCatalogRepository implements IVendorCatalogRepository {
         published_at,
         created_by,
         created_at,
-        updated_at
+        updated_at,
+        COALESCE(require_bill, false) AS require_bill
       FROM ${CATALOGUE_TABLE}
       WHERE vendor_id = $1
     `;

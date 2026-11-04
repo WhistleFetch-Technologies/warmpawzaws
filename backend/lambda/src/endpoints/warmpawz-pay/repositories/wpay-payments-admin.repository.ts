@@ -1,7 +1,6 @@
 import { query } from '../../../database/rds-connection';
 import type { WpayPaymentsDateFilter } from '../admin/payments/dto/payments.requests';
 import {
-  PET_STORE_WALKIN_ROLE,
   parseBillLineItems,
   type WpayBillLineItem,
 } from '../shared/pet-store-walkin';
@@ -32,6 +31,7 @@ export type WpayAdminPaymentDbRow = {
   role_config: unknown;
   role_name: string | null;
   role_display_name: string | null;
+  require_bill: boolean | null;
   original_amount: string | number;
   discount_amount: string | number;
   payable_amount: string | number;
@@ -74,6 +74,7 @@ const WPAY_PAYMENTS_SELECT = `
   r.config AS role_config,
   r.name AS role_name,
   r.display_name AS role_display_name,
+  COALESCE(wvc.require_bill, false) AS require_bill,
   p.original_amount,
   p.discount_amount,
   p.amount AS payable_amount,
@@ -94,6 +95,7 @@ const WPAY_PAYMENTS_FROM = `
   INNER JOIN customers c ON c.id = p.customer_id
   INNER JOIN vendors v ON v.id = p.vendor_id
   LEFT JOIN roles r ON r.id = v.role_id
+  LEFT JOIN warmpawz_pay_vendor_catalog wvc ON wvc.vendor_id = v.id
   LEFT JOIN settlements s
     ON s.payment_id = p.id
    AND s.order_type = 'warmpawz_pay'
@@ -248,7 +250,7 @@ export async function dbWpayAdminSettlePaymentsByPaymentIds(
          processed_at = COALESCE(s.processed_at, NOW())
      FROM payments p
      INNER JOIN vendors v ON v.id = p.vendor_id
-     LEFT JOIN roles r ON r.id = v.role_id
+     LEFT JOIN warmpawz_pay_vendor_catalog wvc ON wvc.vendor_id = v.id
      WHERE s.payment_id = p.id
        AND s.order_type = 'warmpawz_pay'
        AND p.payment_source = 'warmpawz_pay'
@@ -256,7 +258,7 @@ export async function dbWpayAdminSettlePaymentsByPaymentIds(
        AND p.id = ANY($1::uuid[])
        AND LOWER(COALESCE(s.settlement_status, '')) NOT IN ('completed', 'processed')
        AND (
-         LOWER(COALESCE(r.name, '')) <> 'pet_store_walkin'
+         COALESCE(wvc.require_bill, false) = false
          OR (
            NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') IS NOT NULL
            AND NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') IS NOT NULL
@@ -367,6 +369,7 @@ export type WpayAdminBillGateRow = {
   readonly paymentId: string;
   readonly settlementId: string | null;
   readonly roleName: string | null;
+  readonly requireBill: boolean;
   readonly billImageKey: string | null;
   readonly billVerifiedAt: string | null;
   readonly billVerifiedBy: string | null;
@@ -379,6 +382,7 @@ function mapBillGateRow(row: Record<string, unknown>): WpayAdminBillGateRow {
     paymentId: String(row.payment_id ?? ''),
     settlementId: row.settlement_id ? String(row.settlement_id) : null,
     roleName: row.role_name ? String(row.role_name) : null,
+    requireBill: row.require_bill === true,
     billImageKey: row.bill_image_key ? String(row.bill_image_key) : null,
     billVerifiedAt: row.bill_verified_at ? String(row.bill_verified_at) : null,
     billVerifiedBy: row.bill_verified_by ? String(row.bill_verified_by) : null,
@@ -397,6 +401,7 @@ export async function dbWpayAdminPaymentBillGates(
     `SELECT p.id::text AS payment_id,
             s.id::text AS settlement_id,
             r.name AS role_name,
+            COALESCE(wvc.require_bill, false) AS require_bill,
             NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') AS bill_image_key,
             NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') AS bill_verified_at,
             NULLIF(TRIM(s.settlement_breakup->>'billVerifiedBy'), '') AS bill_verified_by,
@@ -405,6 +410,7 @@ export async function dbWpayAdminPaymentBillGates(
      FROM payments p
      LEFT JOIN vendors v ON v.id = p.vendor_id
      LEFT JOIN roles r ON r.id = v.role_id
+     LEFT JOIN warmpawz_pay_vendor_catalog wvc ON wvc.vendor_id = v.id
      LEFT JOIN settlements s
        ON s.payment_id = p.id
       AND s.order_type = 'warmpawz_pay'
@@ -438,6 +444,10 @@ export async function dbWpayAdminVerifyPaymentBill(opts: {
      RETURNING p.id::text AS payment_id,
                s.id::text AS settlement_id,
                r.name AS role_name,
+               COALESCE(
+                 (SELECT wvc.require_bill FROM warmpawz_pay_vendor_catalog wvc WHERE wvc.vendor_id = v.id LIMIT 1),
+                 false
+               ) AS require_bill,
                NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') AS bill_image_key,
                NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') AS bill_verified_at,
                NULLIF(TRIM(s.settlement_breakup->>'billVerifiedBy'), '') AS bill_verified_by,
@@ -465,21 +475,23 @@ export async function dbWpayAdminSavePaymentBillLineItems(opts: {
           )
      FROM payments p
      INNER JOIN vendors v ON v.id = p.vendor_id
-     INNER JOIN roles r ON r.id = v.role_id
+     LEFT JOIN roles r ON r.id = v.role_id
+     INNER JOIN warmpawz_pay_vendor_catalog wvc ON wvc.vendor_id = v.id
      WHERE s.payment_id = p.id
        AND s.order_type = 'warmpawz_pay'
        AND p.payment_source = 'warmpawz_pay'
        AND p.id = $1::uuid
-       AND r.name = $4
+       AND COALESCE(wvc.require_bill, false) = true
      RETURNING p.id::text AS payment_id,
                s.id::text AS settlement_id,
                r.name AS role_name,
+               COALESCE(wvc.require_bill, false) AS require_bill,
                NULLIF(TRIM(s.settlement_breakup->>'billImageKey'), '') AS bill_image_key,
                NULLIF(TRIM(s.settlement_breakup->>'billVerifiedAt'), '') AS bill_verified_at,
                NULLIF(TRIM(s.settlement_breakup->>'billVerifiedBy'), '') AS bill_verified_by,
                s.settlement_breakup->'billLineItems' AS bill_line_items,
                s.settlement_status`,
-    [opts.paymentId, JSON.stringify(opts.items), opts.savedBy, PET_STORE_WALKIN_ROLE],
+    [opts.paymentId, JSON.stringify(opts.items), opts.savedBy],
   );
 
   const row = (result.rows[0] || null) as Record<string, unknown> | null;

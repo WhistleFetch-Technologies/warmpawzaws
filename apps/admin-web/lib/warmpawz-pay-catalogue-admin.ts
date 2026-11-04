@@ -69,6 +69,8 @@ export interface CatalogueListItem {
   readonly customerVisible: boolean;
   readonly readiness: MerchantReadiness;
   readonly pricing: CataloguePricingSummary;
+  /** When true, settle requires bill upload + admin verify. */
+  readonly requireBill: boolean;
 }
 
 export interface CatalogueDetail extends CatalogueListItem {
@@ -281,6 +283,17 @@ export async function publishCatalogueEntry(catalogueId: string): Promise<Catalo
 export async function unpublishCatalogueEntry(catalogueId: string): Promise<CatalogueDetail> {
   const response = await apiClient.post<SuccessEnvelope<CatalogueDetail> | CatalogueDetail>(
     `${WPAY_CATALOGUE_API_BASE}/${catalogueId}/unpublish`,
+  );
+  return assertSuccess(response);
+}
+
+export async function patchCatalogueRequireBill(
+  catalogueId: string,
+  requireBill: boolean,
+): Promise<CatalogueDetail> {
+  const response = await apiClient.patch<SuccessEnvelope<CatalogueDetail> | CatalogueDetail>(
+    `${WPAY_CATALOGUE_API_BASE}/${catalogueId}`,
+    { requireBill },
   );
   return assertSuccess(response);
 }

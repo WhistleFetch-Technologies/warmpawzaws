@@ -6,6 +6,16 @@ export function isPetStoreWalkinRole(roleName?: string | null): boolean {
   return String(roleName || '').trim().toLowerCase() === PET_STORE_WALKIN_ROLE;
 }
 
+/** Catalogue / payment gate: prefer require_bill; walk-in role is legacy fallback. */
+export function requiresBillProof(opts: {
+  readonly requireBill?: boolean | null;
+  readonly roleName?: string | null;
+}): boolean {
+  if (opts.requireBill === true) return true;
+  if (opts.requireBill === false) return false;
+  return isPetStoreWalkinRole(opts.roleName);
+}
+
 export function readBillImageKey(breakup: Record<string, unknown> | null | undefined): string | null {
   if (!breakup) return null;
   const key = String(breakup.billImageKey ?? '').trim();

@@ -19,9 +19,9 @@ import { Hono } from 'hono';
 import { select, query } from '../../../database/rds-connection';
 import { resolveVendorId, resolveVendorIdsForLedger } from '../../../utils/vendor-resolve';
 import {
-  isPetStoreWalkinRole,
   readBillImageKey,
   readBillVerifiedAt,
+  requiresBillProof as requiresBillProofFn,
 } from '../../warmpawz-pay/shared/pet-store-walkin';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -862,12 +862,20 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       let vendorIdsForEarnings = await expandVendorIdsForEarningsContext(paramVendorId);
       if (vendorIdsForEarnings.length === 0) vendorIdsForEarnings = [vendorId];
       const roleNameResult = await query(
-        `SELECT r.name FROM vendors v LEFT JOIN roles r ON r.id = v.role_id WHERE v.id = $1 LIMIT 1`,
+        `SELECT r.name AS role_name, COALESCE(wvc.require_bill, false) AS require_bill
+         FROM vendors v
+         LEFT JOIN roles r ON r.id = v.role_id
+         LEFT JOIN warmpawz_pay_vendor_catalog wvc ON wvc.vendor_id = v.id
+         WHERE v.id = $1 LIMIT 1`,
         [vendorId],
-      ).catch(() => ({ rows: [] as Array<{ name?: string }> }));
-      const requiresBillProof = isPetStoreWalkinRole(
-        (Array.isArray(roleNameResult) ? roleNameResult[0] : roleNameResult.rows?.[0])?.name,
-      );
+      ).catch(() => ({ rows: [] as Array<{ role_name?: string; require_bill?: boolean }> }));
+      const roleRow = (Array.isArray(roleNameResult) ? roleNameResult[0] : roleNameResult.rows?.[0]) as
+        | { role_name?: string; require_bill?: boolean }
+        | undefined;
+      const requiresBillProof = requiresBillProofFn({
+        requireBill: roleRow?.require_bill === true,
+        roleName: roleRow?.role_name,
+      });
       console.log(
         `💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (canonical: ${vendorId}, ledgerIds: ${vendorIdsForEarnings.join(',')}), period: ${period}, date: ${earningsAnchor}`
       );

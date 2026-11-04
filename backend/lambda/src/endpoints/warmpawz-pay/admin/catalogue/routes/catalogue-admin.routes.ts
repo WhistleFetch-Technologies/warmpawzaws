@@ -22,6 +22,7 @@ import { catalogueDeleteHandler } from '../handlers/catalogue-delete.handler';
 import { catalogueDetailHandler } from '../handlers/catalogue-detail.handler';
 import { catalogueListHandler } from '../handlers/catalogue-list.handler';
 import { catalogueServiceCategoriesHandler } from '../handlers/catalogue-service-categories.handler';
+import { cataloguePatchRequireBillHandler } from '../handlers/catalogue-patch-require-bill.handler';
 import { cataloguePublishHandler } from '../handlers/catalogue-publish.handler';
 import { catalogueUnpublishHandler } from '../handlers/catalogue-unpublish.handler';
 import { vendorCandidatesHandler } from '../handlers/vendor-candidates.handler';
@@ -87,6 +88,13 @@ export function registerCatalogueAdminRoutes(app: Hono, deps: CatalogueAdminRout
     requireWarmpawzPayAdminEnabled,
     requireAdminPermission(WPAY_CATALOGUE_CREATE),
     (c) => catalogueCreateHandler(c, deps),
+  );
+  app.patch(
+    '/admin/warmpawz-pay/catalogue/:catalogueId',
+    requireWarmpawzPayEnabled,
+    requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_PUBLISH),
+    (c) => cataloguePatchRequireBillHandler(c, deps),
   );
   app.post(
     '/admin/warmpawz-pay/catalogue/:catalogueId/publish',

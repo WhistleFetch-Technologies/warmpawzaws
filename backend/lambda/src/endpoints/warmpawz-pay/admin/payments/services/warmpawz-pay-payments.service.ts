@@ -19,7 +19,7 @@ import {
 import { CatalogueAdminError } from '../../catalogue/services/vendor-catalog-admin.service';
 import { CatalogueErrorCode } from '../../catalogue/dto/catalogue.errors';
 import {
-  isPetStoreWalkinRole,
+  requiresBillProof,
   readBillImageKey,
   readBillVerifiedAt,
 } from '../../../shared/pet-store-walkin';
@@ -269,7 +269,10 @@ function mapPaymentRow(
     settlementId: payout.settlementId,
     payoutStatus: payout.payoutStatus,
     payoutSettledAt: payout.payoutSettledAt,
-    requiresBillProof: isPetStoreWalkinRole(row.role_name),
+    requiresBillProof: requiresBillProof({
+      requireBill: row.require_bill === true,
+      roleName: row.role_name,
+    }),
     hasBillImage: Boolean(readBillImageKey(breakup)),
     billVerified: Boolean(readBillVerifiedAt(breakup)),
     ...promoWallet,
@@ -395,7 +398,11 @@ export class WarmpawzPayPaymentsService {
       .filter((paymentId) => !settledSet.has(paymentId))
       .map((paymentId) => {
         const gate = gateById.get(paymentId);
-        if (gate && isPetStoreWalkinRole(gate.roleName) && !gate.billVerifiedAt) {
+        if (
+          gate &&
+          requiresBillProof({ requireBill: gate.requireBill, roleName: gate.roleName }) &&
+          !gate.billVerifiedAt
+        ) {
           return { paymentId, reason: 'BILL_NOT_VERIFIED' };
         }
         return {
@@ -423,7 +430,12 @@ export class WarmpawzPayPaymentsService {
       billVerified: Boolean(gate.billVerifiedAt),
       billVerifiedAt: gate.billVerifiedAt,
       billVerifiedBy: gate.billVerifiedBy,
-      billLineItems: isPetStoreWalkinRole(gate.roleName) ? gate.billLineItems : [],
+      billLineItems: requiresBillProof({
+        requireBill: gate.requireBill,
+        roleName: gate.roleName,
+      })
+        ? gate.billLineItems
+        : [],
     };
   }
 
@@ -436,10 +448,10 @@ export class WarmpawzPayPaymentsService {
     if (!gate) {
       throw new CatalogueAdminError(CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND, 'Payment not found');
     }
-    if (!isPetStoreWalkinRole(gate.roleName)) {
+    if (!requiresBillProof({ requireBill: gate.requireBill, roleName: gate.roleName })) {
       throw new CatalogueAdminError(
         CatalogueErrorCode.VALIDATION_ERROR,
-        'Bill line items apply only to pet store walk-in vendors',
+        'Bill line items apply only when Require bill is enabled for this vendor',
       );
     }
     if (!gate.settlementId) {
@@ -471,8 +483,11 @@ export class WarmpawzPayPaymentsService {
     if (!gate) {
       throw new CatalogueAdminError(CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND, 'Payment not found');
     }
-    if (!isPetStoreWalkinRole(gate.roleName)) {
-      throw new CatalogueAdminError(CatalogueErrorCode.VALIDATION_ERROR, 'Bill verify applies only to pet store walk-in vendors');
+    if (!requiresBillProof({ requireBill: gate.requireBill, roleName: gate.roleName })) {
+      throw new CatalogueAdminError(
+        CatalogueErrorCode.VALIDATION_ERROR,
+        'Bill verify applies only when Require bill is enabled for this vendor',
+      );
     }
     if (!gate.billImageKey) {
       throw new CatalogueAdminError(CatalogueErrorCode.VALIDATION_ERROR, 'Bill image must be uploaded first');

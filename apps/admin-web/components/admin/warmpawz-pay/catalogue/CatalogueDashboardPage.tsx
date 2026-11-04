@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import {
   useCatalogueList,
   useDeleteCatalogueEntry,
+  usePatchCatalogueRequireBill,
   usePublishCatalogueEntry,
   useServiceCategories,
   useUnpublishCatalogueEntry,
@@ -105,6 +106,7 @@ export function CatalogueDashboardPage() {
   const publishMutation = usePublishCatalogueEntry();
   const unpublishMutation = useUnpublishCatalogueEntry();
   const deleteMutation = useDeleteCatalogueEntry();
+  const requireBillMutation = usePatchCatalogueRequireBill();
 
   const items = data?.items ?? [];
   const pagination = data?.pagination ?? {
@@ -118,6 +120,7 @@ export function CatalogueDashboardPage() {
     publishMutation.isPending ||
     unpublishMutation.isPending ||
     deleteMutation.isPending ||
+    requireBillMutation.isPending ||
     createPricingMutation.isPending ||
     updatePricingMutation.isPending ||
     rowBusyVendorId !== null;
@@ -178,6 +181,21 @@ export function CatalogueDashboardPage() {
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : 'Failed to publish catalogue entry';
+      toast.error(message);
+    } finally {
+      setRowBusyVendorId(null);
+    }
+  };
+
+  const handleRequireBillChange = async (item: CatalogueListItem, requireBill: boolean) => {
+    setRowBusyVendorId(item.vendorId);
+    try {
+      const catalogueId = await ensureCatalogueId(item);
+      await requireBillMutation.mutateAsync({ catalogueId, requireBill });
+      await refetch();
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : 'Failed to update Require bill';
       toast.error(message);
     } finally {
       setRowBusyVendorId(null);
@@ -285,6 +303,9 @@ export function CatalogueDashboardPage() {
               onPublish={handlePublish}
               onUnpublish={(item) => setPendingAction({ type: 'unpublish', item })}
               onDelete={(item) => setPendingAction({ type: 'delete', item })}
+              onRequireBillChange={(item, requireBill) => {
+                void handleRequireBillChange(item, requireBill);
+              }}
             />
             <Pagination
               pagination={pagination}

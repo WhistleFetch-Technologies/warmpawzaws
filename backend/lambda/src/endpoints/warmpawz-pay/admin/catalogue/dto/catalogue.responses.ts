@@ -52,6 +52,8 @@ export interface CatalogueListItem {
   readonly customerVisible: boolean;
   readonly readiness: MerchantReadinessDTO;
   readonly pricing: CataloguePricingSummary;
+  /** When true, settle requires bill upload + admin verify. */
+  readonly requireBill: boolean;
 }
 
 export interface CatalogueAuditSummaryItem {
