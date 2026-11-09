@@ -1213,8 +1213,17 @@ export function TeleConsultationRouter({
             .then(() => {
               console.log('[TeleRouter] Booking cancelled successfully');
             })
-            .catch((err) => {
-              console.error('[TeleRouter] Failed to cancel booking:', err);
+            .catch((err: any) => {
+              const status = err?.status ?? err?.statusCode ?? err?.response?.status;
+              if (status === 401) {
+                console.error('[TeleRouter] Cancel unauthorized — please sign in again');
+              } else if (status === 403 || status === 404) {
+                console.error('[TeleRouter] Cancel forbidden or booking not found');
+              } else if (status === 405) {
+                console.error('[TeleRouter] Cancel method rejected — use POST only');
+              } else {
+                console.error('[TeleRouter] Failed to cancel booking:', err);
+              }
             });
         }
         setCallingBookingId(null);

@@ -2,7 +2,6 @@ import type { Context } from 'hono';
 import * as customer_customerid_bookings_getRepo from '../repos/customer_customerid_bookings_get.repo';
 import { Hono } from 'hono';
 import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '../../../../utils/entity-extractor';
-import { reconcileBookingPayments } from '../../../../utils/payments/payment-reconciliation';
 import { resolveBookingPaymentSources, resolveBookingPaymentSourcesBatch } from '../../../../utils/payments/booking-payment-sources';
 import { normalizeBooking, isValidUUID } from '../../../../types/entities';
 import { getDiscoveryRules } from '../../../../lib/rule-engine';
@@ -81,10 +80,7 @@ export async function executecustomerCustomeridBookingsGet(c: Context) {
 
       const bookings = await customer_customerid_bookings_getRepo.dbCustomerCustomeridBookingsGet1(bookingQuery, params)
 
-      // ✅ PAYMENT RECONCILIATION (2 tiers):
-      //   Tier 1 – DB: pending booking with completed payment → mark paid
-      //   Tier 2 – Razorpay API: pending payment with razorpay_order_id → check Razorpay if actually paid
-      await reconcileBookingPayments(bookings.rows);
+      // SECURITY: GET bookings list is read-only — reconciliation via POST/webhooks/jobs.
 
       const paymentSourcesByBooking = await resolveBookingPaymentSourcesBatch(
         bookings.rows.map((b: any) => ({ id: b.id, total_amount: b.total_amount }))

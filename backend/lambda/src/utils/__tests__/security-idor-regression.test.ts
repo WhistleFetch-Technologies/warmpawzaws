@@ -16,6 +16,7 @@ import { createOrdersApiGatewayEvent } from '../../endpoints/customer/shared/hon
 import {
   requireAuthenticatedCustomer,
   requireBookingOwnedByAuthCustomer,
+  requireBookingActorAccess,
   requireCustomerPhoneMatch,
   requirePetOwnedByAuthCustomer,
   requirePathVendorMatchesAuth,
@@ -135,5 +136,28 @@ describe('IDOR regression matrix', () => {
     const contract = { method: 'GET', path: '/customer/tele/instant-cancel/:bookingId', status: 405 };
     expect(contract.status).toBe(405);
     expect(contract.method).toBe('GET');
+  });
+
+  it('TM-write: customer A cannot cancel booking B via actor access', async () => {
+    mockedAuth.mockResolvedValue('cust-a');
+    mockedQuery.mockResolvedValue({ rows: [] } as any);
+    const r = await requireBookingActorAccess(ctx('customer', 'cust-a'), 'booking-b');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect([403, 404]).toContain(r.status);
+  });
+
+  it('TM-write: owning customer can cancel own booking', async () => {
+    mockedAuth.mockResolvedValue('cust-a');
+    mockedQuery.mockResolvedValue({ rows: [{ '?column?': 1 }] } as any);
+    const r = await requireBookingActorAccess(ctx('customer', 'cust-a'), 'booking-a');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.actor).toBe('customer');
+  });
+
+  it('TM-write: vendor A cannot mutate vendor B booking', async () => {
+    mockedAuth.mockResolvedValue(null);
+    mockedQuery.mockResolvedValue({ rows: [] } as any);
+    const r = await requireBookingActorAccess(ctx('vendor', 'vendor-a'), 'booking-b');
+    expect(r.ok).toBe(false);
   });
 });

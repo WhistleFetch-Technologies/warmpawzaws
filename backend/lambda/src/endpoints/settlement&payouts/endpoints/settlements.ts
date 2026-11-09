@@ -1332,6 +1332,16 @@ export function registerSettlementEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
+      const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+        '../../../utils/security-ownership'
+      );
+      if (!isAdminRole(c)) {
+        const authz = await requirePathVendorMatchesAuth(c, vendorId);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+      }
+
       // Handle test IDs - return empty settlements
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return c.json({

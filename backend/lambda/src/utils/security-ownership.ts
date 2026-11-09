@@ -177,6 +177,57 @@ export async function requirePathVendorMatchesAuth(
   return { ok: true, vendorId: pathResolved, vendorIds: pathIds };
 }
 
+/**
+ * Booking cancel/reschedule/status: allow owning customer OR booking's vendor.
+ */
+export async function requireBookingActorAccess(
+  c: Context,
+  bookingId: string,
+): Promise<(AuthzCustomerOk & { actor: 'customer' }) | (AuthzVendorOk & { actor: 'vendor' }) | AuthzFail> {
+  const id = String(bookingId || '').trim();
+  if (!id) {
+    return { ok: false, status: 400, error: 'Booking ID is required' };
+  }
+
+  const authCustomerId = await resolveCustomerIdFromHonoContext(c);
+  if (authCustomerId) {
+    const owned = await assertBookingOwnedByCustomer(id, authCustomerId);
+    if (owned) {
+      return { ok: true, customerId: authCustomerId, actor: 'customer' };
+    }
+  }
+
+  const role = String(c.get('userRole') || '');
+  const groups = (c.get('userGroups') as string[] | undefined) || [];
+  const isVendor =
+    role === 'vendor' || role === 'staff' || groups.includes('vendor') || groups.includes('staff');
+  if (isVendor) {
+    const authUserId = String(c.get('userId') || '').trim();
+    if (!authUserId) {
+      return { ok: false, status: 401, error: 'Authentication required' };
+    }
+    const vendorResolved = await resolveVendorId(authUserId);
+    const result = await query(
+      `SELECT 1 FROM bookings WHERE id = $1::uuid AND vendor_id = $2::uuid LIMIT 1`,
+      [id, vendorResolved],
+    );
+    if ((result.rows?.length ?? 0) > 0) {
+      return { ok: true, vendorId: vendorResolved, vendorIds: [vendorResolved], actor: 'vendor' };
+    }
+  }
+
+  if (!authCustomerId && !isVendor) {
+    return { ok: false, status: 401, error: 'Authentication required' };
+  }
+  return { ok: false, status: 404, error: 'Booking not found' };
+}
+
+export function isAdminRole(c: Context): boolean {
+  const role = String(c.get('userRole') || '');
+  const groups = (c.get('userGroups') as string[] | undefined) || [];
+  return role === 'admin' || groups.includes('admin');
+}
+
 /** Strip sensitive customer columns before API responses. */
 export function projectPublicCustomer(row: Record<string, unknown> | null | undefined) {
   if (!row) return row;

@@ -1281,7 +1281,22 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /customer/wallet?phone=... - Get wallet by phone number
   app.get('/customer/wallet', async (c) => {
+    const { requireCustomerPhoneMatch, requireAuthenticatedCustomer } = await import(
+      '../utils/security-ownership'
+    );
+    const phone = c.req.query('phone');
+    const authz = phone
+      ? await requireCustomerPhoneMatch(c, String(phone))
+      : await requireAuthenticatedCustomer(c);
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
     const event = createApiGatewayEvent(c);
+    event.queryStringParameters = { ...(event.queryStringParameters || {}), phone: phone || undefined };
+    event.requestContext = {
+      ...(event.requestContext || {}),
+      authorizer: { claims: { sub: authz.customerId } },
+    };
     const context = createLambdaContext();
     const result = await getWalletByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1289,7 +1304,17 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /customer/wallet/transactions?phone=... - Get transactions by phone number
   app.get('/customer/wallet/transactions', async (c) => {
+    const { requireCustomerPhoneMatch } = await import('../utils/security-ownership');
+    const phone = String(c.req.query('phone') || '');
+    const authz = await requireCustomerPhoneMatch(c, phone);
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
     const event = createApiGatewayEvent(c);
+    event.requestContext = {
+      ...(event.requestContext || {}),
+      authorizer: { claims: { sub: authz.customerId } },
+    };
     const context = createLambdaContext();
     const result = await getTransactionsByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1297,7 +1322,20 @@ export function registerWalletEndpoints(app: Hono) {
 
   // POST /customer/wallet/add-funds - Add funds by phone number
   app.post('/customer/wallet/add-funds', async (c) => {
+    const { requireCustomerPhoneMatch, isAdminRole } = await import('../utils/security-ownership');
     const event = createApiGatewayEvent(c);
+    let body: any = {};
+    try {
+      body = event.body ? JSON.parse(event.body) : {};
+    } catch {
+      body = {};
+    }
+    if (!isAdminRole(c)) {
+      const authz = await requireCustomerPhoneMatch(c, String(body.phone || ''));
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+    }
     const context = createLambdaContext();
     const result = await addFundsByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1305,7 +1343,18 @@ export function registerWalletEndpoints(app: Hono) {
 
   // POST /customer/wallet/use - Use wallet balance by phone number
   app.post('/customer/wallet/use', async (c) => {
+    const { requireCustomerPhoneMatch } = await import('../utils/security-ownership');
     const event = createApiGatewayEvent(c);
+    let body: any = {};
+    try {
+      body = event.body ? JSON.parse(event.body) : {};
+    } catch {
+      body = {};
+    }
+    const authz = await requireCustomerPhoneMatch(c, String(body.phone || ''));
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
     const context = createLambdaContext();
     const result = await useWalletByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1317,8 +1366,17 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /wallet/:customerId - Get wallet by customer UUID
   app.get('/wallet/:customerId', async (c) => {
+    const { requireCustomerIdentifierMatch } = await import('../utils/security-ownership');
+    const authz = await requireCustomerIdentifierMatch(c, c.req.param('customerId'));
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
     const event = createApiGatewayEvent(c);
-    event.pathParameters = { customerId: c.req.param('customerId') };
+    event.pathParameters = { customerId: authz.customerId };
+    event.requestContext = {
+      ...(event.requestContext || {}),
+      authorizer: { claims: { sub: authz.customerId } },
+    };
     const context = createLambdaContext();
     const result = await getWalletHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1326,8 +1384,18 @@ export function registerWalletEndpoints(app: Hono) {
 
   // POST /wallet/:customerId/credit - Credit wallet by customer UUID
   app.post('/wallet/:customerId/credit', async (c) => {
+    const { requireCustomerIdentifierMatch, isAdminRole } = await import(
+      '../utils/security-ownership'
+    );
+    const pathId = c.req.param('customerId');
+    if (!isAdminRole(c)) {
+      const authz = await requireCustomerIdentifierMatch(c, pathId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+    }
     const event = createApiGatewayEvent(c);
-    event.pathParameters = { customerId: c.req.param('customerId') };
+    event.pathParameters = { customerId: pathId };
     const context = createLambdaContext();
     const result = await creditWalletHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1335,8 +1403,17 @@ export function registerWalletEndpoints(app: Hono) {
 
   // POST /wallet/:customerId/debit - Debit wallet by customer UUID
   app.post('/wallet/:customerId/debit', async (c) => {
+    const { requireCustomerIdentifierMatch } = await import('../utils/security-ownership');
+    const authz = await requireCustomerIdentifierMatch(c, c.req.param('customerId'));
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
     const event = createApiGatewayEvent(c);
-    event.pathParameters = { customerId: c.req.param('customerId') };
+    event.pathParameters = { customerId: authz.customerId };
+    event.requestContext = {
+      ...(event.requestContext || {}),
+      authorizer: { claims: { sub: authz.customerId } },
+    };
     const context = createLambdaContext();
     const result = await debitWalletHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1344,8 +1421,13 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /wallet/:customerId/transactions - Get transactions by customer UUID
   app.get('/wallet/:customerId/transactions', async (c) => {
+    const { requireCustomerIdentifierMatch } = await import('../utils/security-ownership');
+    const authz = await requireCustomerIdentifierMatch(c, c.req.param('customerId'));
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
     const event = createApiGatewayEvent(c);
-    event.pathParameters = { customerId: c.req.param('customerId') };
+    event.pathParameters = { customerId: authz.customerId };
     const context = createLambdaContext();
     const result = await getTransactionsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1357,8 +1439,18 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /vendor/wallet/:vendorId - Get vendor wallet by vendor UUID
   app.get('/vendor/wallet/:vendorId', async (c) => {
+    const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+      '../utils/security-ownership'
+    );
+    const pathVendorId = c.req.param('vendorId');
+    if (!isAdminRole(c)) {
+      const authz = await requirePathVendorMatchesAuth(c, pathVendorId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+    }
     const event = createApiGatewayEvent(c);
-    event.pathParameters = { vendorId: c.req.param('vendorId') };
+    event.pathParameters = { vendorId: pathVendorId };
     const context = createLambdaContext();
     const result = await getVendorWalletHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1366,8 +1458,18 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /vendor/wallet/:vendorId/transactions - Get vendor wallet transactions
   app.get('/vendor/wallet/:vendorId/transactions', async (c) => {
+    const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+      '../utils/security-ownership'
+    );
+    const pathVendorId = c.req.param('vendorId');
+    if (!isAdminRole(c)) {
+      const authz = await requirePathVendorMatchesAuth(c, pathVendorId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+    }
     const event = createApiGatewayEvent(c);
-    event.pathParameters = { vendorId: c.req.param('vendorId') };
+    event.pathParameters = { vendorId: pathVendorId };
     const context = createLambdaContext();
     const result = await getVendorTransactionsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);

@@ -163,6 +163,15 @@ export class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Customer ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
+    // SECURITY: path customerId must match JWT subject.
+    const authCustomerId = context.userId;
+    if (!authCustomerId) {
+      return this.error('Authentication required', 401, 'AUTH_REQUIRED', undefined, requestId);
+    }
+    if (String(customerId).toLowerCase() !== String(authCustomerId).toLowerCase()) {
+      return this.error('Forbidden', 403, 'FORBIDDEN', undefined, requestId);
+    }
+
     const hasHouseNoInPut = 'houseNo' in body || 'house_no' in body;
     const hasFloorInPut = 'floor' in body;
 
@@ -179,7 +188,7 @@ export class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
-      const existingCustomers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers0(customerId);
+      const existingCustomers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers0(authCustomerId);
       if (existingCustomers.length === 0) {
         return this.error('Customer not found', 404, 'NOT_FOUND', undefined, requestId);
       }
@@ -254,8 +263,16 @@ export class GetCustomerPetsHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Customer ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
+    const authCustomerId = context.userId;
+    if (!authCustomerId) {
+      return this.error('Authentication required', 401, 'AUTH_REQUIRED', undefined, requestId);
+    }
+    if (String(customerId).toLowerCase() !== String(authCustomerId).toLowerCase()) {
+      return this.error('Forbidden', 403, 'FORBIDDEN', undefined, requestId);
+    }
+
     try {
-      const pets = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers4(customerId)
+      const pets = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers4(authCustomerId)
 
       return this.success({ pets }, requestId);
     } catch (error: any) {
@@ -281,10 +298,18 @@ export class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Customer ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
+    const authCustomerId = context.userId;
+    if (!authCustomerId) {
+      return this.error('Authentication required', 401, 'AUTH_REQUIRED', undefined, requestId);
+    }
+    if (String(customerId).toLowerCase() !== String(authCustomerId).toLowerCase()) {
+      return this.error('Forbidden', 403, 'FORBIDDEN', undefined, requestId);
+    }
+
     // Validate required fields for pet creation
     const createValidation = validatePetCreatePayload({
       ...body,
-      customerId,
+      customerId: authCustomerId,
     });
     if (!createValidation.ok) {
       return this.error(createValidation.error, 400, 'VALIDATION_ERROR', undefined, requestId);
@@ -316,7 +341,7 @@ export class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
           : {};
 
       const petData = {
-        customer_id: customerId,
+        customer_id: authCustomerId,
         name: body.name,
         species: body.species,
         breed: body.breed || null,
@@ -331,7 +356,7 @@ export class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
       const pets = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers5(petData)
       const created = pets[0] as Record<string, unknown>;
       const loyaltyFields = buildSinglePetCreateLoyaltyFields(
-        customerId,
+        authCustomerId,
         String(created.id),
         created,
         body as Record<string, unknown>
@@ -363,14 +388,27 @@ export class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Customer ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
+    const authCustomerId = context.userId;
+    if (!authCustomerId) {
+      return this.error('Authentication required', 401, 'AUTH_REQUIRED', undefined, requestId);
+    }
+    const actorType = context.userRole || body.actorType || 'customer';
+    const isAdmin = actorType === 'admin' || actorType === 'system';
+    if (
+      !isAdmin &&
+      String(customerId).toLowerCase() !== String(authCustomerId).toLowerCase()
+    ) {
+      return this.error('Forbidden', 403, 'FORBIDDEN', undefined, requestId);
+    }
+
     const reason = body.reason || body.deactivationReason || 'Customer request';
     const actorId = context.userId || body.actorId;
-    const actorType = context.userRole || body.actorType || 'customer';
     const permanentDelete = body.permanentDelete === true; // Only if explicitly requested
+    const targetCustomerId = isAdmin ? customerId : authCustomerId;
 
     try {
       // Get current customer
-      const existingCustomers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers6(customerId)
+      const existingCustomers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers6(targetCustomerId)
       if (existingCustomers.length === 0) {
         return this.error('Customer not found', 404, 'NOT_FOUND', undefined, requestId);
       }
@@ -390,9 +428,9 @@ export class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         // Check for active bookings/orders before deletion
-        const activeBookings = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers7(customerId)
+        const activeBookings = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers7(targetCustomerId)
 
-        const activeOrders = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers8(customerId)
+        const activeOrders = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers8(targetCustomerId)
 
         if (parseInt(activeBookings.rows[0]?.count || '0', 10) > 0 ||
             parseInt(activeOrders.rows[0]?.count || '0', 10) > 0) {
@@ -406,23 +444,23 @@ export class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         // Soft delete by setting is_active = false and updating
-        await enhanced_base_handlersRepo.dbEnhancedBaseHandlers9(customerId)
+        await enhanced_base_handlersRepo.dbEnhancedBaseHandlers9(targetCustomerId)
 
         return this.success({
-          customerId,
+          customerId: targetCustomerId,
           message: 'Customer account deactivated successfully',
           deactivated: true,
         }, requestId);
       } else {
         // Soft delete - deactivate account
-        await enhanced_base_handlersRepo.dbEnhancedBaseHandlers10(customerId)
+        await enhanced_base_handlersRepo.dbEnhancedBaseHandlers10(targetCustomerId)
 
         // Log audit entry
         try {
           const { logAuditEntry } = await import('../utils/audit-log');
           await logAuditEntry({
             entityType: 'customer',
-            entityId: customerId,
+            entityId: targetCustomerId,
             action: 'deactivate',
             oldValues: { is_active: currentCustomer.is_active },
             newValues: { is_active: false, reason },
@@ -436,7 +474,7 @@ export class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         return this.success({
-          customerId,
+          customerId: targetCustomerId,
           message: 'Customer account deactivated successfully',
           deactivated: true,
         }, requestId);

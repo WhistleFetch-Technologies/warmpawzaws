@@ -18,8 +18,15 @@ import { geocodeAddress, geocodeIndiaPincode } from '../../../../lib/utils/geoco
 export async function executecustomerCustomeridSearchhistoryDelete(c: Context) {
     try {
       const customerId = c.req.param('customerId');
+      const { requireCustomerIdentifierMatch } = await import(
+        '../../../../utils/security-ownership'
+      );
+      const authz = await requireCustomerIdentifierMatch(c, String(customerId || ''));
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
 
-      const customer = await resolveCustomerId(customerId);
+      const customer = await resolveCustomerId(authz.customerId);
       if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }

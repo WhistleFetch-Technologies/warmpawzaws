@@ -90,7 +90,6 @@ import {
   resolvePersistedBookingBasePrice,
   resolvePromoValidationAmount,
 } from '../../../utils/resolve-booking-list-price';
-import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 import { notifyBookingCreated, notifyBookingCancelled, notifyBookingRescheduled } from '../../../utils/booking-notifications';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
@@ -2918,42 +2917,23 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
     const booking = bookingResult.rows[0];
 
-    // ✅ SECURITY FIX: Verify authorization - only customer or vendor who owns the booking can access it
+    // SECURITY: JWT identity only — never trust query/body customerId/vendorId/phone as authz.
     const authenticatedUserId = context.userId;
     const authenticatedUserRole = context.userRole;
-    const queryParams = context.event.queryStringParameters || {};
-    const body = this.parseBody(context.event);
-    
-    // Get customerId/vendorId from various sources (query params, body, or authenticated user)
-    let requestCustomerId = queryParams.customerId || body.customerId || 
-                           (authenticatedUserRole === 'customer' ? authenticatedUserId : null);
-    const requestVendorId = queryParams.vendorId || body.vendorId || 
-                           (authenticatedUserRole === 'vendor' ? authenticatedUserId : null);
-    
-    // ✅ Support phone-based access: resolve phone to customerId if phone is provided
-    if (!requestCustomerId && (queryParams.phone || body.phone)) {
-      try {
-        const phone = (queryParams.phone || body.phone) as string;
-        const cleanPhone = phone.replace(/[^0-9]/g, '');
-        if (cleanPhone && cleanPhone.length >= 10) {
-          const customers = await select('customers', { phone: cleanPhone });
-          if (customers.length > 0) {
-            requestCustomerId = customers[0].id;
-          }
-        }
-      } catch (error) {
-        console.warn('[GetBooking] Error resolving customer from phone:', error);
-      }
+
+    if (!authenticatedUserId) {
+      return this.error('Authentication required', 401, 'AUTH_REQUIRED', undefined, requestId);
     }
-    
-    // Check if requester is authorized (must be either the customer or vendor who owns the booking)
-    const isAuthorized = 
-      (requestCustomerId && booking.customer_id === requestCustomerId) ||
-      (requestVendorId && booking.vendor_id === requestVendorId) ||
-      (authenticatedUserId && authenticatedUserId === booking.customer_id) ||
-      (authenticatedUserId && authenticatedUserId === booking.vendor_id);
-    
-    if (!isAuthorized) {
+
+    const isCustomerOwner =
+      authenticatedUserRole === 'customer' &&
+      authenticatedUserId === booking.customer_id;
+    const isVendorOwner =
+      (authenticatedUserRole === 'vendor' || authenticatedUserRole === 'staff') &&
+      authenticatedUserId === booking.vendor_id;
+    const isAdmin = authenticatedUserRole === 'admin';
+
+    if (!isCustomerOwner && !isVendorOwner && !isAdmin) {
       // Return 404 instead of 403 to avoid information leakage about booking existence
       return this.error('Booking not found', 404, 'NOT_FOUND', undefined, requestId);
     }
@@ -3005,7 +2985,7 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       }
     }
 
-    await reconcileBookingPayments([booking]);
+    // SECURITY: GET booking detail is read-only — no payment reconciliation on read.
 
     // Build enriched response
     const enrichedBooking = {
@@ -4732,8 +4712,14 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   });
 
   app.put('/bookings/:bookingId/status', async (c) => {
+    const bookingId = c.req.param('bookingId');
+    const { requireBookingActorAccess } = await import('../../../utils/security-ownership');
+    const authz = await requireBookingActorAccess(c, bookingId);
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
     const event = await createApiGatewayEvent(c);
-    event.pathParameters = { bookingId: c.req.param('bookingId') };
+    event.pathParameters = { bookingId };
     const context = createLambdaContext();
     const result: any = await updateHandler.execute(event, context);
     const body = JSON.parse(result.body);
@@ -4826,8 +4812,14 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   });
 
   app.post('/bookings/:bookingId/cancel', async (c) => {
+    const bookingId = c.req.param('bookingId');
+    const { requireBookingActorAccess } = await import('../../../utils/security-ownership');
+    const authz = await requireBookingActorAccess(c, bookingId);
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
     const event = await createApiGatewayEvent(c);
-    event.pathParameters = { bookingId: c.req.param('bookingId') };
+    event.pathParameters = { bookingId };
     const context = createLambdaContext();
     const result: any = await cancelHandler.execute(event, context);
     const body = JSON.parse(result.body);
@@ -4835,8 +4827,14 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   });
 
   app.post('/bookings/:bookingId/reschedule', async (c) => {
+    const bookingId = c.req.param('bookingId');
+    const { requireBookingActorAccess } = await import('../../../utils/security-ownership');
+    const authz = await requireBookingActorAccess(c, bookingId);
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
     const event = await createApiGatewayEvent(c);
-    event.pathParameters = { bookingId: c.req.param('bookingId') };
+    event.pathParameters = { bookingId };
     const context = createLambdaContext();
     const result: any = await rescheduleHandler.execute(event, context);
     const body = JSON.parse(result.body);

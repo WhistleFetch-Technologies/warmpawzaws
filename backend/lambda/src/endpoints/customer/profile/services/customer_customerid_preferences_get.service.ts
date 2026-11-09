@@ -17,8 +17,15 @@ import { geocodeAddress, geocodeIndiaPincode } from '../../../../lib/utils/geoco
 export async function executecustomerCustomeridPreferencesGet(c: Context) {
     try {
       const { customerId } = c.req.param();
+      const { requireCustomerIdentifierMatch } = await import(
+        '../../../../utils/security-ownership'
+      );
+      const authz = await requireCustomerIdentifierMatch(c, String(customerId || ''));
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
 
-      const customers = await customer_customerid_preferences_getRepo.dbCustomerCustomeridPreferencesGet0(customerId)
+      const customers = await customer_customerid_preferences_getRepo.dbCustomerCustomeridPreferencesGet0(authz.customerId)
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
       }

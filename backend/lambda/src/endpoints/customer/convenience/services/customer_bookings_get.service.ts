@@ -2,34 +2,13 @@ import type { Context } from 'hono';
 import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_bookings_getRepo from '../repos/customer_bookings_get.repo';
-import { Hono } from 'hono';
-import { randomUUID } from 'crypto';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../../utils/entity-extractor';
-import { isValidUUID } from '../../../../types/entities';
-import { reconcileBookingPayments } from '../../../../utils/payments/payment-reconciliation';
 import { resolveBookingPaymentSourcesBatch } from '../../../../utils/payments/booking-payment-sources';
-import {
-  DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
-  fetchCustomerNotificationSettings,
-  normalizeCustomerNotificationSettings,
-  persistCustomerNotificationSettings,
-} from '../../../../utils/customer-notification-settings';
-import { presignProductImagesJsonb } from '../../../../utils/s3-media-presign';
 import { bookingUsesDedicatedEndSessionOtp } from '../../../../lib/booking-dedicated-end-otp';
 import {
   packageFieldsFromBookingRow,
   SQL_PACKAGE_PURCHASE_JOIN,
   SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../../utils/customer-booking-package-fields';
-import { expirePaymentHolds } from '../../../../utils/payment-hold';
-import {
-  seedFinitePackagesMissingSessionsForScope,
-  type SqlClient,
-} from '../../../../utils/package-session-sync';
-import {
-  sqlPackagePurchaseActiveForListing,
-  sqlPackagePurchaseComputedStatus,
-} from '../../../../utils/package-session-eligibility';
 
 export async function executecustomerBookingsGet(c: Context) {
     try {
@@ -49,9 +28,8 @@ export async function executecustomerBookingsGet(c: Context) {
       }
       const customerId = phoneAuthz.customerId;
 
-      await expirePaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
-        console.warn('[customer/bookings] payment hold sweep failed:', e?.message || e)
-      );
+      // SECURITY: GET list is read-only — payment-hold expiry runs via
+      // POST /bookings/process-payment-hold-expiry (or scheduled jobs), not on history GET.
 
       // Build query (join package_purchases for same packageDetails / isPackage as customer/:id/bookings)
       // Children of a package purchase (`is_package_session = true`) are surfaced in
@@ -107,10 +85,8 @@ export async function executecustomerBookingsGet(c: Context) {
 
       const bookings = await customer_bookings_getRepo.dbCustomerBookingsGet0(bookingQuery, params)
 
-      // ✅ PAYMENT RECONCILIATION (2 tiers):
-      //   Tier 1 – DB: pending booking with completed payment → mark paid
-      //   Tier 2 – Razorpay API: pending payment with razorpay_order_id → check Razorpay if actually paid
-      await reconcileBookingPayments(bookings.rows);
+      // SECURITY: GET history is read-only — reconciliation runs via POST reconcile
+      // endpoints / Razorpay webhooks / jobs, not on list fetch.
 
       const paymentSourcesByBooking = await resolveBookingPaymentSourcesBatch(
         bookings.rows.map((b: any) => ({ id: b.id, total_amount: b.total_amount }))

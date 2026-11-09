@@ -102,7 +102,6 @@ import {
   forceApplyOrderCommissionAudit,
 } from '../../../utils/resolve-ecommerce-commission-rate';
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
-import { reconcilePendingShopPayments } from '../../../utils/payments/shop-payment-reconciliation';
 import { reconcilePendingWpayPayments } from '../../customer/warmpawz-pay/shared/reconcile-wpay-razorpay-capture';
 import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
@@ -1873,17 +1872,16 @@ export function registerEcommerceEndpoints(app: Hono) {
     try {
       const { customerId } = c.req.param();
 
-      await reconcilePendingShopPayments({
-        customerId,
-        limit: 30,
-        source: 'orders-customer-list',
-      }).catch((e) =>
-        console.warn('[orders/customer] reconcilePendingShopPayments failed:', e)
+      const { requireCustomerIdentifierMatch } = await import(
+        '../../../utils/security-ownership'
       );
+      const authz = await requireCustomerIdentifierMatch(c, customerId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
 
-      await expireShopPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
-        console.warn('[orders/customer] expireShopPaymentHolds failed:', e)
-      );
+      // SECURITY: GET order list is read-only — reconcile/hold expiry via POST
+      // /ecommerce/process-payment-hold-expiry, webhooks, or scheduled jobs.
 
       const orders = await query(
         `SELECT o.*, v.business_name as vendor_name
@@ -1891,7 +1889,7 @@ export function registerEcommerceEndpoints(app: Hono) {
          LEFT JOIN vendors v ON o.vendor_id = v.id
          WHERE o.customer_id = $1
          ORDER BY o.created_at DESC`,
-        [customerId]
+        [authz.customerId]
       );
 
       return c.json({

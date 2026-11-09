@@ -18,6 +18,14 @@ import { geocodeAddress, geocodeIndiaPincode } from '../../../../lib/utils/geoco
 export async function executecustomerCustomeridSearchhistoryPost(c: Context) {
     try {
       const customerId = c.req.param('customerId');
+      const { requireCustomerIdentifierMatch } = await import(
+        '../../../../utils/security-ownership'
+      );
+      const authz = await requireCustomerIdentifierMatch(c, String(customerId || ''));
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+
       const body = await c.req.json();
       const { query: searchQuery } = body;
 
@@ -25,7 +33,7 @@ export async function executecustomerCustomeridSearchhistoryPost(c: Context) {
         return c.json({ error: 'Search query is required' }, 400);
       }
 
-      const customer = await resolveCustomerId(customerId);
+      const customer = await resolveCustomerId(authz.customerId);
       if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }

@@ -1,10 +1,16 @@
 import type { Context } from 'hono';
 import * as customer_phone_reviews_bookingid_skip_postRepo from '../repos/customer_phone_reviews_bookingid_skip_post.repo';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 
 export async function executecustomerPhoneReviewsBookingidSkipPost(c: Context) {
   try {
     const phone = c.req.param('phone');
     const bookingId = c.req.param('bookingId');
+
+    const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+    if (!phoneAuthz.ok) {
+      return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
+    }
 
     const customers = await customer_phone_reviews_bookingid_skip_postRepo.dbCustomerPhoneReviewsBookingidSkipPost0(
       phone

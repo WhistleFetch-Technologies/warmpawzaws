@@ -848,6 +848,15 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       const { recordId } = c.req.param();
       const body = await c.req.json().catch(() => ({}));
 
+      const { requireAuthenticatedCustomer, isAdminRole } = await import(
+        '../utils/security-ownership'
+      );
+      const admin = isAdminRole(c);
+      const authz = await requireAuthenticatedCustomer(c);
+      if (!admin && !authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+
       const hasPatch =
         body.title !== undefined ||
         body.description !== undefined ||
@@ -858,6 +867,17 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           { success: false, error: 'At least one of title, description, contentData, or fileUrl is required' },
           400
         );
+      }
+
+      // Ownership: only the owning customer (or admin) may update.
+      if (!admin && authz.ok) {
+        const owned = await query(
+          `SELECT 1 FROM medical_records WHERE id = $1::uuid AND customer_id = $2::uuid LIMIT 1`,
+          [recordId, authz.customerId],
+        );
+        if ((owned.rows?.length ?? 0) === 0) {
+          return c.json({ success: false, error: 'Medical record not found' }, 404);
+        }
       }
 
       const updateData: any = {

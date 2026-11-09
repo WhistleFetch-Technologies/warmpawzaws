@@ -2,7 +2,6 @@ import type { Context } from 'hono';
 import * as customer_bookings_bookingid_getRepo from '../repos/customer_bookings_bookingid_get.repo';
 import { Hono } from 'hono';
 import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '../../../../utils/entity-extractor';
-import { reconcileBookingPayments } from '../../../../utils/payments/payment-reconciliation';
 import { resolveBookingPaymentSources, resolveBookingPaymentSourcesBatch } from '../../../../utils/payments/booking-payment-sources';
 import { normalizeBooking, isValidUUID } from '../../../../types/entities';
 import { getDiscoveryRules } from '../../../../lib/rule-engine';
@@ -113,7 +112,7 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
       // Get review if exists
       const reviews = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet5(bookingId, booking)
 
-      await reconcileBookingPayments([booking]);
+      // SECURITY: GET booking detail is read-only — reconciliation via POST/webhooks/jobs.
 
       const totalAmountNum =
         booking.total_amount != null ? parseFloat(String(booking.total_amount)) : undefined;

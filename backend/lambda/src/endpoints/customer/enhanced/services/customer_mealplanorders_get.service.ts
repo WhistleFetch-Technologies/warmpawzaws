@@ -2,7 +2,6 @@ import type { Context } from 'hono';
 import * as customer_mealplanorders_getRepo from '../repos/customer_mealplanorders_get.repo';
 import { createEnhancedApiGatewayEvent, createEnhancedLambdaContext } from '../../shared/hono-lambda-bridge.utils';
 import { Hono } from 'hono';
-import { randomUUID } from 'crypto';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../../../../handler/base-handler-enhanced';
 import {
   UpdateCustomerProfileRequestSchema,
@@ -19,7 +18,6 @@ import {
   normalizeBloodTypeForStorage,
   resolveBloodTypeFromPayload,
 } from '../../../../lib/pet-blood-types';
-import { findCustomerByPhone } from '../../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../../lib/rule-engine';
 import {
   resolveCustomerMealPlanOrderDisplayTotals,
@@ -31,34 +29,38 @@ import {
   mealRiderDeliveryMessage,
 } from '../../../../utils/meal-delivery-effective-state';
 import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../../services/meal-subscription/meal-subscription-operations-service';
-import { expireMealPaymentHolds } from '../../../../utils/meal-payment-hold';
 import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refund-cases';
 
 export async function executecustomerMealplanordersGet(c: Context) {
     try {
-      let customerId = String(c.req.query('customerId') || '').trim();
+      const rawCustomerId = String(c.req.query('customerId') || '').trim();
       const phone = String(c.req.query('phone') || '').trim();
 
+      const { requireCustomerIdentifierMatch, requireCustomerPhoneMatch, requireAuthenticatedCustomer } =
+        await import('../../../../utils/security-ownership');
+
+      let customerId = '';
       if (phone) {
-        const row = await findCustomerByPhone(phone);
-        const phoneCustomerId = row?.id ? String(row.id) : '';
-        if (phoneCustomerId) {
-          if (customerId && customerId !== phoneCustomerId) {
-            console.warn(
-              `[meal-plan-orders] customerId/phone mismatch queryCustomerId=${customerId} phoneCustomerId=${phoneCustomerId}`
-            );
-          }
-          customerId = phoneCustomerId;
+        const phoneAuthz = await requireCustomerPhoneMatch(c, phone);
+        if (!phoneAuthz.ok) {
+          return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
         }
+        customerId = phoneAuthz.customerId;
+      } else if (rawCustomerId) {
+        const idAuthz = await requireCustomerIdentifierMatch(c, rawCustomerId);
+        if (!idAuthz.ok) {
+          return c.json({ success: false, error: idAuthz.error }, idAuthz.status);
+        }
+        customerId = idAuthz.customerId;
+      } else {
+        const auth = await requireAuthenticatedCustomer(c);
+        if (!auth.ok) {
+          return c.json({ success: false, error: auth.error }, auth.status);
+        }
+        customerId = auth.customerId;
       }
 
-      if (!customerId) {
-        return c.json({ success: false, error: 'customerId or phone is required' }, 400);
-      }
-
-      await expireMealPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
-        console.warn('[meal-plan-orders] payment hold sweep failed:', e?.message || e)
-      );
+      // SECURITY: GET meal-plan orders is read-only — hold expiry via scheduled jobs/POST sweeps.
 
       const allOrders: any[] = [];
 

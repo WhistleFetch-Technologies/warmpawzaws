@@ -33,10 +33,8 @@ import {
 import { computeEcommerceDeliveryFee } from '../../../../utils/ecommerce/delivery-fee';
 import {
   buildShopOrderPaymentResumeContext,
-  discardUnpaidShopOrder,
-  expireShopPaymentHolds,
 } from '../../../../utils/shop-payment-hold';
-import { reconcilePendingShopPayments, reconcileShopOrderPayment } from '../../../../utils/payments/shop-payment-reconciliation';
+import { reconcileShopOrderPayment } from '../../../../utils/payments/shop-payment-reconciliation';
 import { assertShopCheckoutPaymentAllowed } from '../../../../utils/shop-checkout-payment-flags';
 import { signOrderItemImages } from '../shared/sign-order-item-images';
 
@@ -88,9 +86,8 @@ export class CreateCustomerOrderHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const body = this.parseBody(context.event);
-      const customerId = context.event.pathParameters?.customerId || 
-                        context.event.queryStringParameters?.customerId ||
-                        context.userId;
+      // SECURITY: JWT owner only — ignore path/query customerId spoofing.
+      const customerId = context.userId;
 
       let customerPhone = body.customer_phone || body.customerPhone;
       
@@ -373,31 +370,8 @@ export class GetCustomerOrdersHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
-      await reconcilePendingShopPayments({
-        customerId: String(customerId),
-        limit: 30,
-        source: 'customer-orders-list',
-      }).catch((e) =>
-        console.warn('[customer/orders] reconcilePendingShopPayments failed:', e)
-      );
-
-      await expireShopPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
-        console.warn('[customer/orders] expireShopPaymentHolds failed:', e)
-      );
-
-      const now = Date.now();
-      if (!(global as any).__shopRefundRetryLastRun || now - (global as any).__shopRefundRetryLastRun > 60_000) {
-        (global as any).__shopRefundRetryLastRun = now;
-        const { retryPendingShopRefunds, reconcileStuckShopRefunds } = await import(
-          '../../../../utils/payments/shop-order-refund'
-        );
-        void retryPendingShopRefunds({ limit: 20 }).catch((e) =>
-          console.warn('[customer/orders] retryPendingShopRefunds failed:', e)
-        );
-        void reconcileStuckShopRefunds({ limit: 10 }).catch((e) =>
-          console.warn('[customer/orders] reconcileStuckShopRefunds failed:', e)
-        );
-      }
+      // SECURITY: GET order history is read-only — shop reconcile / hold expiry /
+      // refund retries run via POST reconcile endpoints, webhooks, or scheduled jobs.
 
       const status = context.event.queryStringParameters?.status;
       const limit = parseInt(context.event.queryStringParameters?.limit || '50', 10);

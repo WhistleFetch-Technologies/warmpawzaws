@@ -17,9 +17,17 @@ import { geocodeAddress, geocodeIndiaPincode } from '../../../../lib/utils/geoco
 export async function executecustomerCustomeridPreferencesPut(c: Context) {
     try {
       const { customerId } = c.req.param();
+      const { requireCustomerIdentifierMatch } = await import(
+        '../../../../utils/security-ownership'
+      );
+      const authz = await requireCustomerIdentifierMatch(c, String(customerId || ''));
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+
       const newPreferences = await c.req.json();
 
-      const customers = await customer_customerid_preferences_putRepo.dbCustomerCustomeridPreferencesPut0(customerId)
+      const customers = await customer_customerid_preferences_putRepo.dbCustomerCustomeridPreferencesPut0(authz.customerId)
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
       }
@@ -32,7 +40,7 @@ export async function executecustomerCustomeridPreferencesPut(c: Context) {
       };
 
       const updated = await customer_customerid_preferences_putRepo.dbCustomerCustomeridPreferencesPut1(
-        customerId,
+        authz.customerId,
         mergedPreferences
       );
 
