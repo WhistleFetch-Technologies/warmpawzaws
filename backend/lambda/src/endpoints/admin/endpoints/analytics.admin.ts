@@ -28,6 +28,7 @@ import {
 	sqlAndExcludeSuppressedBookingRows,
 	sqlExcludeSuppressedVendorCreatedRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 export function registerAnalyticsEndpoints(app: Hono) {
   /**
@@ -136,7 +137,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting vendor analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -212,7 +213,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting customer analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -282,7 +283,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting platform analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -333,7 +334,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting vendor revenue analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -414,7 +415,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting admin analytics overview:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -500,7 +501,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting vendor analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -548,7 +549,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting customer analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -640,7 +641,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting KPIs:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -703,7 +704,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting revenue analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -768,7 +769,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting category analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -831,7 +832,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting peak times:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -892,7 +893,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting funnel data:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -950,7 +951,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting sales by role:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

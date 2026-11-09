@@ -28,6 +28,7 @@ import {
   fetchPidgeVendorToken,
   getPidgeCredentials,
 } from '../../../lib/services/pidge-logistics';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 export function registerAdminIntegrationEndpoints(app: Hono) {
   /**
@@ -66,7 +67,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching AWS config:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -97,7 +98,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       console.error('Error testing AWS connection:', error);
       return c.json({
         success: false,
-        error: error.message,
+        error: SAFE_INTERNAL_ERROR_MESSAGE,
       }, 500);
     }
   });
@@ -125,7 +126,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching Google Maps config:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -171,7 +172,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating Google Maps config:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -323,9 +324,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       // ✅ FIX: Return 503 only if it's actually a service issue, otherwise return 500
       const statusCode = error.message?.includes('timeout') || error.message?.includes('Service Unavailable') ? 503 : 500;
       return c.json({ 
-        error: error.message || 'Failed to fetch Google Maps API key',
-        details: error.name || 'Unknown error',
-        hint: 'Please check Lambda logs and Secrets Manager configuration'
+        error: SAFE_INTERNAL_ERROR_MESSAGE
       }, statusCode);
     }
   });
@@ -371,7 +370,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
 
     } catch (error: any) {
       console.error('[CONFIG] Error saving Google Maps API key:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -395,7 +394,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching payment gateway config:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -428,7 +427,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating payment gateway config:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -507,7 +506,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching logistics partners:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -535,7 +534,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating logistics settings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -567,10 +566,11 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
               },
             });
           } catch (error: any) {
+            console.error('[integrations/test] AWS connection failed:', error);
             return c.json({
               success: false,
               connected: false,
-              error: error.message,
+              error: SAFE_INTERNAL_ERROR_MESSAGE,
             }, 500);
           }
 
@@ -607,10 +607,11 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
               },
             });
           } catch (error: any) {
+            console.error('[integrations/test] Google Maps connection failed:', error);
             return c.json({
               success: false,
               connected: false,
-              error: error.message,
+              error: SAFE_INTERNAL_ERROR_MESSAGE,
             }, 500);
           }
 
@@ -637,10 +638,11 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
               },
             });
           } catch (error: any) {
+            console.error('[integrations/test] Razorpay connection failed:', error);
             return c.json({
               success: false,
               connected: false,
-              error: error.message,
+              error: SAFE_INTERNAL_ERROR_MESSAGE,
             }, 500);
           }
 
@@ -666,10 +668,11 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
               },
             });
           } catch (error: any) {
+            console.error('[integrations/test] Shiprocket connection failed:', error);
             return c.json({
               success: false,
               connected: false,
-              error: error.message,
+              error: SAFE_INTERNAL_ERROR_MESSAGE,
             }, 500);
           }
 
@@ -690,7 +693,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
               {
                 success: false,
                 connected: false,
-                error: error.message || 'Pidge vendor login failed',
+                error: SAFE_INTERNAL_ERROR_MESSAGE,
               },
               500
             );
@@ -706,7 +709,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       console.error(`Error testing ${c.req.param('integration')} integration:`, error);
       return c.json({
         success: false,
-        error: error.message,
+        error: SAFE_INTERNAL_ERROR_MESSAGE,
       }, 500);
     }
   });
@@ -765,7 +768,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       console.error('[GST VERIFY] Error:', error);
       return c.json({ 
         success: false,
-        error: error.message || 'GST verification failed'
+        error: SAFE_INTERNAL_ERROR_MESSAGE
       }, 500);
     }
   });
@@ -822,7 +825,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       console.error('[BANK VERIFY] Error:', error);
       return c.json({ 
         success: false,
-        error: error.message || 'Bank verification failed'
+        error: SAFE_INTERNAL_ERROR_MESSAGE
       }, 500);
     }
   });

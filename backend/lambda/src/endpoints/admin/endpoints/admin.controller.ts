@@ -38,6 +38,7 @@ import {
 	getTemporaryVendorSuppressionParams,
 	sqlAndExcludeSuppressedBookingRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 // ============================================================================
 // ADMIN HANDLERS
 // ============================================================================
@@ -212,7 +213,7 @@ class VendorStatsHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error in VendorStatsHandler:', error);
-      return this.error(error.message || 'Failed to fetch vendor stats', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -565,7 +566,7 @@ class ListVendorsHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error in ListVendorsHandler:', error);
-      return this.error(error.message || 'Failed to fetch vendors', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -845,7 +846,7 @@ export function registerAdminEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Clarification requested', applicationId });
     } catch (error: any) {
       console.error('Error requesting clarification (vendors/:id):', error);
-      return c.json({ success: false, error: error.message || 'Failed to request clarification' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1050,7 +1051,7 @@ export function registerAdminEndpoints(app: Hono) {
       console.error('[pending-applications-fixed] Error:', error);
       return c.json({ 
         success: false, 
-        error: error.message || 'Failed to fetch pending applications',
+        error: SAFE_INTERNAL_ERROR_MESSAGE,
         applications: [],
         total: 0
       }, 500);
@@ -1477,7 +1478,7 @@ export function registerAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error approving vendor:', error);
-      return c.json({ error: error.message || 'Failed to approve vendor' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1526,7 +1527,7 @@ export function registerAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error rejecting application:', error);
-      return c.json({ error: error.message || 'Failed to reject application' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1584,7 +1585,7 @@ export function registerAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error requesting clarification:', error);
-      return c.json({ success: false, error: error.message || 'Failed to request clarification' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1649,7 +1650,7 @@ export function registerAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching bookings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1668,7 +1669,7 @@ export function registerAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching GST configs:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1687,7 +1688,7 @@ export function registerAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching policies:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1713,7 +1714,7 @@ export function registerAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching staff:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1741,7 +1742,7 @@ export function registerAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching pets:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 

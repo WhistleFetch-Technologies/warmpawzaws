@@ -10,6 +10,7 @@ import {
   customerAdminDisplayLocation,
   type SavedAddressOverlay,
 } from './customer-admin-display-location';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -152,7 +153,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       return c.json({ stats });
     } catch (error: any) {
       console.error('[admin/customers/stats]', error);
-      return c.json({ error: error.message || 'Failed to load stats' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -194,7 +195,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching customers:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -258,7 +259,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       return c.json({ vendors: mapped, customers: mapped, total: mapped.length });
     } catch (error: any) {
       console.error('[admin/customers/active]', error);
-      return c.json({ success: false, error: error.message, vendors: [], customers: [], total: 0 }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE, vendors: [], customers: [], total: 0 }, 500);
     }
   });
 
@@ -310,7 +311,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       return c.json({ success: true, vendors: mapped, customers: mapped, total: mapped.length });
     } catch (error: any) {
       console.error('[admin/customers/deactivated]', error);
-      return c.json({ success: false, error: error.message, vendors: [], customers: [] }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE, vendors: [], customers: [] }, 500);
     }
   });
 
@@ -432,7 +433,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin/customers/insights]', error);
-      return c.json({ error: error.message || 'Failed to fetch insights' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -579,7 +580,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
 
       return c.json({ success: true, message: `Alert ${action}`, alertId });
     } catch (error: any) {
-      return c.json({ error: error.message || 'Failed' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -674,7 +675,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       );
       return c.json({ success: true });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -689,7 +690,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       );
       return c.json({ success: true });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -739,7 +740,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       );
       return c.json({ success: true });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -754,7 +755,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       );
       return c.json({ success: true });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -775,7 +776,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       }
       return c.json({ success: true });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -787,7 +788,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       await update('customers', { id: customerId }, { is_active: true, updated_at: new Date().toISOString() });
       return c.json({ success: true });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -802,7 +803,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       console.log('[admin/customers/delete]', customerId, reason);
       return c.json({ success: true });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -833,7 +834,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
         },
       });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
