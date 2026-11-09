@@ -20,6 +20,7 @@ import { isValidUUID } from '../types/entities';
 // Password verification
 import * as crypto from 'crypto';
 import { resolveAdminPermissions } from '../utils/admin-rbac-permissions';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -140,7 +141,7 @@ class GetAnalyticsOverviewHandler extends BaseHandler {
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch analytics overview', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -253,7 +254,7 @@ class GetAnalyticsCustomersHandler extends BaseHandler {
         }
       });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch customer analytics', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -398,7 +399,7 @@ class AdminLoginHandler extends BaseHandler {
         },
       });
     } catch (error: any) {
-      return this.error(error.message || 'Login failed', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -573,7 +574,7 @@ class AdminRefreshTokenHandler extends BaseHandler {
       return this.error('Invalid or expired refresh token', 401);
     } catch (error: any) {
       console.error('[ADMIN AUTH] Refresh error:', error);
-      return this.error(error.message || 'Refresh failed', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -642,7 +643,7 @@ class GetCurrentAdminHandler extends BaseHandler {
         return this.error('Token verification failed', 401);
       }
     } catch (error: any) {
-      return this.error(error.message || 'Failed to get admin info', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -682,7 +683,7 @@ class AdminSignupHandler extends BaseHandler {
         },
       });
     } catch (error: any) {
-      return this.error(error.message || 'Signup failed', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -798,7 +799,7 @@ class GetActiveVendorsHandler extends BaseHandler {
       return this.success({ success: true, vendors, total: vendors.length });
     } catch (error: any) {
       console.error('Error in GetActiveVendorsHandler:', error);
-      return this.error(error.message || 'Failed to fetch active vendors', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -1147,7 +1148,7 @@ class GetVendorDetailsHandler extends BaseHandler {
       return this.success({ success: true, vendor });
     } catch (error: any) {
       console.error('Error in GetVendorDetailsHandler:', error);
-      return this.error(error.message || 'Failed to fetch vendor details', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -1226,7 +1227,7 @@ class DeactivateVendorHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error in DeactivateVendorHandler:', error);
-      return this.error(error.message || 'Failed to deactivate vendor', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -1301,7 +1302,7 @@ class ReactivateVendorHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error in ReactivateVendorHandler:', error);
-      return this.error(error.message || 'Failed to reactivate vendor', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -1418,7 +1419,7 @@ class GetVendorActivityHistoryHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error in GetVendorActivityHistoryHandler:', error);
-      return this.error(error.message || 'Failed to fetch activity history', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -1916,7 +1917,7 @@ class GetVendorDocumentsHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('[GetVendorDocuments] Error:', error);
-      return this.error(error.message || 'Failed to fetch vendor documents', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 
@@ -2567,7 +2568,7 @@ async function updateVendorDocumentsHelper(
       console.error(`[UpdateVendorDocuments] Error processing ${fieldName}:`, error);
       uploadErrors.push({
         field: fieldName,
-        error: error.message || 'Upload failed'
+        error: 'Upload failed'
       });
     }
   }
@@ -2800,7 +2801,7 @@ class CreateVendorHandler extends BaseHandler {
 
       return this.success({ success: true, vendor: vendor[0] });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to create vendor', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -3115,7 +3116,7 @@ class GetTransactionStatsHandler extends BaseHandler {
 
       return this.success({ success: true, stats: stats.rows[0] });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch transaction stats', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -3187,7 +3188,7 @@ class GetTiersHandler extends BaseHandler {
 
       return this.success({ success: true, tiers });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch tiers', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -3229,7 +3230,7 @@ class GetUsersHandler extends BaseHandler {
 
       return this.success({ success: true, users: users.rows });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch users', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -3291,7 +3292,7 @@ class GetVendorPaymentRulesHandler extends BaseHandler {
 
       return this.success({ success: true,  rules: rules.rows  });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch payment rules', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -3344,7 +3345,7 @@ class GetTaxFlexibleConfigurationHandler extends BaseHandler {
         },
       });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch tax configuration', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -3510,7 +3511,7 @@ class GetVendorRolesHandler extends BaseHandler {
       }));
       return this.success({ success: true, roles: normalized });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch vendor roles', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -3530,7 +3531,7 @@ class GetGeneralSettingsHandler extends BaseHandler {
         settings: settings.length > 0 ? settings[0].setting_value : {},
       });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch general settings', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -3548,7 +3549,7 @@ class UpdateGeneralSettingsHandler extends BaseHandler {
 
       return this.success({ success: true });
     } catch (error: any) {
-      return this.error(error.message || 'Failed to update general settings', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -3602,7 +3603,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: any) {
       console.error('[ADMIN AUTH] Login endpoint error:', error);
-      return c.json({ error: error.message || 'Internal server error' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3616,7 +3617,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: any) {
       console.error('[ADMIN AUTH] Refresh endpoint error:', error);
-      return c.json({ error: error.message || 'Internal server error' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3629,7 +3630,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: any) {
       console.error('[ADMIN AUTH] Get current admin error:', error);
-      return c.json({ error: error.message || 'Internal server error' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3643,7 +3644,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: any) {
       console.error('[ADMIN AUTH] Get current admin error:', error);
-      return c.json({ error: error.message || 'Internal server error' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3891,7 +3892,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching active vendors:', error);
-      return c.json({ success: false, error: error.message || 'Failed to fetch active vendors' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3972,15 +3973,15 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('[UpdateVendorDocuments] Route error:', error);
       if (error.message === 'Vendor not found') {
-        return c.json({ error: error.message }, 404);
+        return c.json({ error: 'Vendor not found' }, 404);
       }
       if (error.message === 'No files provided') {
-        return c.json({ error: error.message }, 400);
+        return c.json({ error: 'No files provided' }, 400);
       }
       if (error.message.includes('All uploads failed')) {
-        return c.json({ error: error.message }, 400);
+        return c.json({ error: 'All uploads failed' }, 400);
       }
-      return c.json({ error: error.message || 'Failed to update vendor documents' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4206,7 +4207,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating tier:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4246,7 +4247,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Settings saved successfully' });
     } catch (error: any) {
       console.error('Error saving vendor settings:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4283,7 +4284,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, rule: rule[0] });
     } catch (error: any) {
       console.error('Error creating payment rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4300,7 +4301,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, rule: updated[0] });
     } catch (error: any) {
       console.error('Error updating payment rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4311,7 +4312,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Payment rule deleted' });
     } catch (error: any) {
       console.error('Error deleting payment rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4406,7 +4407,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, tier: tier[0] });
     } catch (error: any) {
       console.error('Error creating refund tier:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4420,7 +4421,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, tier: updated[0] });
     } catch (error: any) {
       console.error('Error updating refund tier:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4431,7 +4432,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Refund tier deleted' });
     } catch (error: any) {
       console.error('Error deleting refund tier:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4552,7 +4553,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating flexible tax rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4685,7 +4686,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating flexible tax rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4696,7 +4697,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Tax rule deleted' });
     } catch (error: any) {
       console.error('Error deleting flexible tax rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4761,7 +4762,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Settings saved successfully' });
     } catch (error: any) {
       console.error('Error saving integration settings:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4791,7 +4792,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Settings saved successfully' });
     } catch (error: any) {
       console.error('Error saving notification settings:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -5001,7 +5002,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Setting saved successfully' });
     } catch (error: any) {
       console.error('Error saving platform setting:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -5114,7 +5115,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           results.push({ migration: '558_vendor_referrals', status: 'completed', message: 'Table and indexes created' });
         }
       } catch (err: any) {
-        results.push({ migration: '558_vendor_referrals', status: 'error', message: err.message });
+        results.push({ migration: '558_vendor_referrals', status: 'error', message: 'Migration step failed' });
       }
 
       // =====================================================================
@@ -5141,7 +5142,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         await query(`CREATE INDEX IF NOT EXISTS idx_vendors_approved_not_availability ON vendors(status, availability_configured) WHERE status = 'approved' AND availability_configured = false`);
         results.push({ migration: '605_availability_configured', status: 'completed', message: 'Columns and indexes created/verified' });
       } catch (err: any) {
-        results.push({ migration: '605_availability_configured', status: 'error', message: err.message });
+        results.push({ migration: '605_availability_configured', status: 'error', message: 'Migration step failed' });
       }
 
       // =====================================================================
@@ -5191,7 +5192,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         await query(`CREATE INDEX IF NOT EXISTS idx_vendors_service_radius ON vendors(service_radius) WHERE service_radius IS NOT NULL`);
         results.push({ migration: '071_vendor_settings_columns', status: 'completed', message: 'All settings columns verified/created' });
       } catch (err: any) {
-        results.push({ migration: '071_vendor_settings_columns', status: 'error', message: err.message });
+        results.push({ migration: '071_vendor_settings_columns', status: 'error', message: 'Migration step failed' });
       }
 
       // =====================================================================
@@ -5235,7 +5236,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         `);
         results.push({ migration: '528_profile_fields', status: 'completed', message: 'Profile columns verified/created' });
       } catch (err: any) {
-        results.push({ migration: '528_profile_fields', status: 'error', message: err.message });
+        results.push({ migration: '528_profile_fields', status: 'error', message: 'Migration step failed' });
       }
 
       // =====================================================================
@@ -5268,11 +5269,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
     } catch (error: any) {
       console.error('[ADMIN] Migrations failed:', error);
-      return c.json({
-        success: false,
-        error: error.message,
-        results
-      }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE, results }, 500);
     }
   });
 }
