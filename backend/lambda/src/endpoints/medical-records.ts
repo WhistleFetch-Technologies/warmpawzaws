@@ -71,22 +71,23 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   app.get("/customer/:phone/medical-records", async (c) => {
     try {
       const phone = c.req.param('phone');
+      const { requireCustomerPhoneMatch } = await import('../utils/security-ownership');
+      const authz = await requireCustomerPhoneMatch(c, phone);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+
       const recordType = c.req.query('type');
       const limit = parseInt(c.req.query('limit') || '50');
       const offset = parseInt(c.req.query('offset') || '0');
-      
-      // Normalize phone number
-      const normalizedPhone = phone.replace(/[^0-9]/g, '').slice(-10);
-      
-      console.log('📋 [MEDICAL-RECORDS] Fetching records for customer phone:', normalizedPhone);
 
-      // First get customer and their pets
+      // First get authenticated customer's pets (JWT-bound; phone is not a capability token)
       const customerResult = await query(
         `SELECT c.id as customer_id, p.id as pet_id, p.name as pet_name
          FROM customers c
          LEFT JOIN pets p ON c.id = p.customer_id
-         WHERE c.phone LIKE $1 OR c.phone LIKE $2`,
-        [`%${normalizedPhone}`, `+91${normalizedPhone}`]
+         WHERE c.id = $1::uuid`,
+        [authz.customerId]
       );
       
       const customerRows = (customerResult as any)?.rows || customerResult || [];
@@ -262,6 +263,12 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   app.get("/medical-records/pet/:petId", async (c) => {
     try {
       const { petId } = c.req.param();
+      const { requirePetOwnedByAuthCustomer } = await import('../utils/security-ownership');
+      const authz = await requirePetOwnedByAuthCustomer(c, petId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+
       const recordType = c.req.query('type');
       const limit = parseInt(c.req.query('limit') || '50');
       const offset = parseInt(c.req.query('offset') || '0');
@@ -274,9 +281,10 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         LEFT JOIN vendors v ON mr.vendor_id = v.id
         LEFT JOIN pets p ON mr.pet_id = p.id
         WHERE mr.pet_id = $1::uuid
+          AND p.customer_id = $2::uuid
       `;
-      const params: any[] = [petId];
-      let paramIndex = 2;
+      const params: any[] = [petId, authz.customerId];
+      let paramIndex = 3;
 
       if (recordType) {
         queryText += ` AND mr.record_type = $${paramIndex}`;
@@ -300,10 +308,11 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
                   v.business_name as vendor_name
            FROM prescriptions p
            LEFT JOIN vendors v ON p.vendor_id = v.id
+           INNER JOIN pets pet ON pet.id = p.pet_id AND pet.customer_id = $2::uuid
            WHERE p.pet_id = $1::uuid
            ORDER BY p.created_at DESC
-           LIMIT $2 OFFSET $3`,
-          [petId, limit, offset]
+           LIMIT $3 OFFSET $4`,
+          [petId, authz.customerId, limit, offset]
         );
         prescriptionRecords = ((prescResult as any).rows || []).map((p: any) => ({
           id: p.id,
@@ -351,16 +360,21 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   app.get("/medical-records/booking/:bookingId", async (c) => {
     try {
       const { bookingId } = c.req.param();
+      const { requireBookingOwnedByAuthCustomer } = await import('../utils/security-ownership');
+      const authz = await requireBookingOwnedByAuthCustomer(c, bookingId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
 
-      // Get booking details
-      const bookings = await select('bookings', { id: bookingId });
+      // Get booking details (owner-bound)
+      const bookings = await select('bookings', { id: bookingId, customer_id: authz.customerId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
       const booking = bookings[0];
       const petId = booking.pet_id;
-      const customerId = booking.customer_id;
+      const customerId = authz.customerId;
 
       // ✅ FIX: Get ALL medical records for this pet (not just this booking)
       // This includes records from other bookings for the same pet (customer uploads, etc.)

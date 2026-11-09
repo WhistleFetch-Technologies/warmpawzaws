@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch, requirePetOwnedByAuthCustomer } from '../../../../utils/security-ownership';
 import * as customer_pets_phone_getRepo from '../repos/customer_pets_phone_get.repo';
 import { createEnhancedApiGatewayEvent, createEnhancedLambdaContext } from '../../shared/hono-lambda-bridge.utils';
 import { Hono } from 'hono';
@@ -43,6 +44,10 @@ export async function executecustomerPetsPhoneGet(c: Context) {
 
       // This route is registered before pets.ts; path param is used for phone OR pet UUID.
       if (isValidUUID(param)) {
+        const petAuthz = await requirePetOwnedByAuthCustomer(c, param);
+        if (!petAuthz.ok) {
+          return c.json({ success: false, error: petAuthz.error }, petAuthz.status);
+        }
         const rows = await customer_pets_phone_getRepo.dbCustomerPetsPhoneGet0(param)
         if (rows.length === 0) {
           return c.json({ success: false, error: 'Pet not found' }, 404);
@@ -76,6 +81,10 @@ export async function executecustomerPetsPhoneGet(c: Context) {
         });
       }
 
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(param));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
+      }
       const customer = await findCustomerByPhone(param);
       if (!customer) {
         return c.json({ pets: [], count: 0 });

@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_bookings_upcomingcalls_getRepo from '../repos/customer_phone_bookings_upcomingcalls_get.repo';
 import { Hono } from 'hono';
@@ -37,10 +38,11 @@ export async function executecustomerPhoneBookingsUpcomingcallsGet(c: Context) {
       const includeLive = c.req.query('includeLive') === 'true' || c.req.query('include_live') === 'true';
 
       // Get customer by phone with error handling
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ success: true, bookings: [] });
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       // Joinable = upcoming (next X min) OR live (scheduled passed, status confirmed/in_progress, within 2h).
       // Completed/cancelled/no_show MUST be excluded so home cards disappear once the

@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_cart_phone_items_itemid_deleteRepo from '../repos/customer_cart_phone_items_itemid_delete.repo';
 import { Hono } from 'hono';
@@ -34,10 +35,11 @@ export async function executecustomerCartPhoneItemsItemidDelete(c: Context) {
     try {
       const { phone, itemId } = c.req.param();
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ error: 'Customer not found' }, 404);
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       await customer_cart_phone_items_itemid_deleteRepo.dbCustomerCartPhoneItemsItemidDelete0(itemId, customerId)
 

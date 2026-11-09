@@ -327,6 +327,11 @@ export function registerWalkerGPSEndpoints(app: Hono) {
   app.get("/customer/:bookingId/track-walk", async (c) => {
     try {
       const { bookingId } = c.req.param();
+      const { requireBookingOwnedByAuthCustomer } = await import('../utils/security-ownership');
+      const authz = await requireBookingOwnedByAuthCustomer(c, bookingId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
 
       const result = await query(`
         SELECT 
@@ -352,7 +357,8 @@ export function registerWalkerGPSEndpoints(app: Hono) {
         LEFT JOIN bookings b ON wls.booking_id = b.id
         LEFT JOIN pets p ON b.pet_id = p.id
         WHERE wls.booking_id = $1
-      `, [bookingId]);
+          AND b.customer_id = $2::uuid
+      `, [bookingId, authz.customerId]);
 
       if (result.rows.length === 0) {
         return c.json({

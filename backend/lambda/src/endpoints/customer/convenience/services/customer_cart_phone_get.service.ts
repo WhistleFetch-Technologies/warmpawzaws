@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone, firstProductImageUrl } from '../repos/module-helpers.repo';
 import * as customer_cart_phone_getRepo from '../repos/customer_cart_phone_get.repo';
 import { Hono } from 'hono';
@@ -34,10 +35,11 @@ export async function executecustomerCartPhoneGet(c: Context) {
     try {
       const { phone } = c.req.param();
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ success: true, cartItems: [], totalPrice: 0 });
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       // products table uses price + images (JSONB); sale_price/base_price/image_url are not guaranteed
       const cartResult = await customer_cart_phone_getRepo.dbCustomerCartPhoneGet0(customerId)

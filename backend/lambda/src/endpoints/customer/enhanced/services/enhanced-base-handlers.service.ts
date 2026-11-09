@@ -72,13 +72,29 @@ export class GetCustomerHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
-      const customers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers0(customerId)
+      // SECURITY (H6): path customerId must match JWT subject; strip password_hash.
+      const authCustomerId = context.userId;
+      if (!authCustomerId) {
+        return this.error('Authentication required', 401, 'AUTH_REQUIRED', undefined, requestId);
+      }
+      const uuidRe =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (
+        uuidRe.test(String(customerId)) &&
+        String(customerId).toLowerCase() !== String(authCustomerId).toLowerCase()
+      ) {
+        return this.error('Forbidden', 403, 'FORBIDDEN', undefined, requestId);
+      }
+
+      const customers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers0(authCustomerId)
       
       if (customers.length === 0) {
         return this.error('Customer not found', 404, 'NOT_FOUND', undefined, requestId);
       }
 
-      return this.success({ customer: customers[0] }, requestId);
+      const row = customers[0] as Record<string, unknown>;
+      const { password_hash: _ph, passwordHash: _pH, password: _p, ...safe } = row;
+      return this.success({ customer: safe }, requestId);
     } catch (error: any) {
       console.error('Error getting customer:', error);
       return this.error(

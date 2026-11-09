@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_bookings_active_getRepo from '../repos/customer_bookings_active_get.repo';
 import { Hono } from 'hono';
@@ -38,15 +39,11 @@ export async function executecustomerBookingsActiveGet(c: Context) {
         return c.json({ error: 'phone parameter is required' }, 400);
       }
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        // ✅ FIX: Return empty array instead of 404 for better UX
-        return c.json({ 
-          success: true,
-          bookings: [],
-          count: 0 
-        }, 200);
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       // Get active bookings (confirmed, in_progress, scheduled, pending)
       const bookingQuery = `

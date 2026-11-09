@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_notifications_phone_getRepo from '../repos/customer_notifications_phone_get.repo';
 import { Hono } from 'hono';
@@ -34,15 +35,11 @@ export async function executecustomerNotificationsPhoneGet(c: Context) {
     const { phone } = c.req.param();
     const limit = parseInt(c.req.query('limit') || '50', 10);
 
-    const customerId = await resolveCustomerIdFromPhone(phone);
-    if (!customerId) {
-      return c.json({
-        success: true,
-        notifications: [],
-        unreadCount: 0,
-        settings: { ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS },
-      });
+    const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+    if (!phoneAuthz.ok) {
+      return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
     }
+    const customerId = phoneAuthz.customerId;
 
     const settings = await fetchCustomerNotificationSettings(customerId);
 

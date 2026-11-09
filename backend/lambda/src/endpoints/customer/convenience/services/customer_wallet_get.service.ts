@@ -47,25 +47,24 @@ export async function executecustomerWalletGet(c: Context) {
 
     try {
       const phone = c.req.query('phone');
+      const { requireAuthenticatedCustomer, requireCustomerPhoneMatch } = await import(
+        '../../../../utils/security-ownership'
+      );
 
-      if (!phone) {
-        // Return default wallet instead of error for missing phone
-        console.log('[WALLET] No phone provided, returning default wallet');
-        return c.json(defaultWallet);
-      }
-
+      // SECURITY (H5): JWT-bound identity; phone must match when provided. No INSERT on GET.
       let customerId: string | null = null;
-      try {
-        customerId = await resolveCustomerIdFromPhone(phone);
-      } catch (resolveError) {
-        console.warn('[WALLET] Error resolving customer ID:', resolveError);
-        return c.json(defaultWallet);
-      }
-
-      if (!customerId) {
-        // Return default wallet for unregistered customers
-        console.log('[WALLET] Customer not found for phone:', phone);
-        return c.json(defaultWallet);
+      if (phone) {
+        const authz = await requireCustomerPhoneMatch(c, String(phone));
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+        customerId = authz.customerId;
+      } else {
+        const authz = await requireAuthenticatedCustomer(c);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+        customerId = authz.customerId;
       }
 
       let wallet: any = { balance: 0, currency: 'INR', pending_credits: 0 };
@@ -76,11 +75,7 @@ export async function executecustomerWalletGet(c: Context) {
         if (walletResult.rows && walletResult.rows.length > 0) {
           wallet = walletResult.rows[0];
         } else {
-          try {
-            await customer_wallet_getRepo.dbCustomerWalletGet1(customerId)
-          } catch (insertError) {
-            console.log('[WALLET] Could not create wallet (table may not exist)');
-          }
+          // Read-only GET: do not auto-create wallet rows.
           const afterUpsert = await customer_wallet_getRepo.dbCustomerWalletGet2(customerId)
           if (afterUpsert.rows && afterUpsert.rows.length > 0) {
             wallet = afterUpsert.rows[0];

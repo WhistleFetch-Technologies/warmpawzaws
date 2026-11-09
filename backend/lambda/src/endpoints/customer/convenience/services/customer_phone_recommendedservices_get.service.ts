@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_recommendedservices_getRepo from '../repos/customer_phone_recommendedservices_get.repo';
 import { Hono } from 'hono';
@@ -35,10 +36,11 @@ export async function executecustomerPhoneRecommendedservicesGet(c: Context) {
       const { phone } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '5');
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ success: true, services: [] });
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       // Get customer's recent booking categories (bookings.service_id -> services.id)
       const recentBookings = await customer_phone_recommendedservices_getRepo.dbCustomerPhoneRecommendedservicesGet0(customerId).catch(() => ({ rows: [] }));

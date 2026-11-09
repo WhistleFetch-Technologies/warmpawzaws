@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_wallet_transactions_getRepo from '../repos/customer_wallet_transactions_get.repo';
 import { Hono } from 'hono';
@@ -41,10 +42,11 @@ export async function executecustomerWalletTransactionsGet(c: Context) {
         return c.json({ error: 'phone parameter is required' }, 400);
       }
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ error: 'Customer not found' }, 404);
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       const { sql, params } = await customer_wallet_transactions_getRepo.buildWalletTransactionsQuery(
         customerId,

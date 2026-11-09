@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_saved_phone_getRepo from '../repos/customer_saved_phone_get.repo';
 import { Hono } from 'hono';
@@ -34,10 +35,11 @@ export async function executecustomerSavedPhoneGet(c: Context) {
     try {
       const { phone } = c.req.param();
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ error: 'Customer not found' }, 404);
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       const savedResult = await customer_saved_phone_getRepo.dbCustomerSavedPhoneGet0(customerId)
 

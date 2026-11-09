@@ -5116,10 +5116,17 @@ export function registerBookingOTPEndpoint(app: Hono) {
   app.get('/customer/bookings/:bookingId/payment-resume', async (c) => {
     try {
       const bookingId = c.req.param('bookingId');
-      const phone = c.req.query('phone');
 
       if (!bookingId) {
         return c.json({ success: false, error: 'bookingId is required' }, 400);
+      }
+
+      const { requireBookingOwnedByAuthCustomer } = await import(
+        '../../../utils/security-ownership'
+      );
+      const authz = await requireBookingOwnedByAuthCustomer(c, bookingId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
       }
 
       const ctx = await buildBookingPaymentResumeContext(bookingId);
@@ -5127,8 +5134,12 @@ export function registerBookingOTPEndpoint(app: Hono) {
         return c.json({ success: false, error: 'Booking is not awaiting payment', canResume: false }, 404);
       }
 
+      // SECURITY (H3): always require JWT owner; never mutate holds on GET.
+      if (ctx.customerId && String(ctx.customerId).toLowerCase() !== authz.customerId.toLowerCase()) {
+        return c.json({ success: false, error: 'Unauthorized' }, 403);
+      }
+
       if (!ctx.canResume && !ctx.razorpayOrderId) {
-        await expirePaymentHolds({ limit: 5, requestId: randomUUID() });
         return c.json({
           success: false,
           error: 'Payment window expired',
@@ -5136,26 +5147,6 @@ export function registerBookingOTPEndpoint(app: Hono) {
           paymentHoldExpiresAt: ctx.paymentHoldExpiresAt,
           secondsRemaining: 0,
         }, 410);
-      }
-
-      if (phone) {
-        const digits = String(phone).replace(/\D/g, '').slice(-10);
-        if (digits.length >= 10 && ctx.customerId) {
-          const resolvedCustomerId = await resolveCustomerIdFromPhone(phone);
-          const ownerPhoneMatch = await query(
-            `SELECT 1
-             FROM customers c
-             WHERE c.id = $1::uuid
-               AND RIGHT(REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g'), 10) = $2
-             LIMIT 1`,
-            [ctx.customerId, digits]
-          );
-          const authorized =
-            resolvedCustomerId === ctx.customerId || ownerPhoneMatch.rows.length > 0;
-          if (!authorized) {
-            return c.json({ success: false, error: 'Unauthorized' }, 403);
-          }
-        }
       }
 
       return c.json({ success: true, resume: ctx });

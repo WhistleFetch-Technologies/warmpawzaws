@@ -73,9 +73,12 @@ export function registerVendorWpayBillImageEndpoints(app: Hono): void {
       if (!UUID_RE.test(paramVendorId) || !UUID_RE.test(settlementId)) {
         return c.json({ success: false, error: 'vendorId and settlementId must be UUIDs' }, 400);
       }
-      const vendorId = await resolveVendorId(paramVendorId);
-      let vendorIds = await resolveVendorIdsForLedger(paramVendorId);
-      if (vendorIds.length === 0) vendorIds = [vendorId];
+      const { requirePathVendorMatchesAuth } = await import('../../../utils/security-ownership');
+      const authz = await requirePathVendorMatchesAuth(c, paramVendorId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+      const vendorIds = authz.vendorIds;
       const row = await loadOwnedWpaySettlement(settlementId, vendorIds);
       if (!row) return c.json({ success: false, error: 'Settlement not found' }, 404);
       if (!requiresBillProof({ requireBill: row.require_bill, roleName: row.role_name })) {
@@ -97,9 +100,13 @@ export function registerVendorWpayBillImageEndpoints(app: Hono): void {
       if (!UUID_RE.test(paramVendorId) || !UUID_RE.test(settlementId)) {
         return c.json({ success: false, error: 'vendorId and settlementId must be UUIDs' }, 400);
       }
-      const vendorId = await resolveVendorId(paramVendorId);
-      let vendorIds = await resolveVendorIdsForLedger(paramVendorId);
-      if (vendorIds.length === 0) vendorIds = [vendorId];
+      const { requirePathVendorMatchesAuth } = await import('../../../utils/security-ownership');
+      const authz = await requirePathVendorMatchesAuth(c, paramVendorId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+      const vendorId = authz.vendorId;
+      const vendorIds = authz.vendorIds;
       const row = await loadOwnedWpaySettlement(settlementId, vendorIds);
       if (!row) return c.json({ success: false, error: 'Settlement not found' }, 404);
       if (!requiresBillProof({ requireBill: row.require_bill, roleName: row.role_name })) {

@@ -1253,34 +1253,57 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
 
   /**
    * GET /customer/tele/instant-cancel/:bookingId
-   * Customer cancels the instant tele consultation.
-   * Updates booking to cancelled.
+   * REMEDIATION (C1): Cancel must not be a GET (CSRF/prefetch + no ownership).
+   * Use POST with JWT ownership instead. This route no longer mutates state.
    */
   app.get('/customer/tele/instant-cancel/:bookingId', async (c) => {
+    return c.json(
+      {
+        success: false,
+        error: 'Method not allowed. Use POST to cancel.',
+        code: 'METHOD_NOT_ALLOWED',
+      },
+      405,
+    );
+  });
 
+  /**
+   * POST /customer/tele/instant-cancel/:bookingId
+   * Customer cancels the instant tele consultation (owner-bound).
+   */
+  app.post('/customer/tele/instant-cancel/:bookingId', async (c) => {
     try {
       const bookingId = c.req.param('bookingId');
       if (!bookingId) return c.json({ error: 'Booking ID is required' }, 400);
 
+      const { requireBookingOwnedByAuthCustomer } = await import(
+        '../../../utils/security-ownership'
+      );
+      const authz = await requireBookingOwnedByAuthCustomer(c, bookingId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
 
       const bookingResult = await query(
-        `SELECT * FROM bookings WHERE id = $1 AND is_instant_tele = true`,
-        [bookingId]
+        `SELECT * FROM bookings WHERE id = $1 AND is_instant_tele = true AND customer_id = $2::uuid`,
+        [bookingId, authz.customerId],
       );
       if (bookingResult.rows.length === 0) return c.json({ error: 'Booking not found' }, 404);
       const booking = bookingResult.rows[0];
-      if (booking.status !== BookingStatus.CONFIRMED) return c.json({ error: 'Booking is not accepted' }, 400);
+      if (booking.status !== BookingStatus.CONFIRMED) {
+        return c.json({ error: 'Booking is not accepted' }, 400);
+      }
 
       await query(
-        `UPDATE bookings SET status = $2,cancelled_by=$3, updated_at = NOW() WHERE id = $1`,
-        [bookingId, BookingStatus.CANCELLED, UserType.CUSTOMER]
+        `UPDATE bookings SET status = $2, cancelled_by = $3, updated_at = NOW()
+         WHERE id = $1 AND customer_id = $4::uuid`,
+        [bookingId, BookingStatus.CANCELLED, UserType.CUSTOMER, authz.customerId],
       );
       return c.json({ success: true, message: 'Booking cancelled' });
     } catch (error: any) {
       console.error('[customer-instant-cancel] error:', error);
       return c.json({ error: error.message }, 500);
     }
-
   });
 
 }

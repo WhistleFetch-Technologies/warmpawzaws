@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -33,15 +34,11 @@ export async function executecustomerNotificationsPhonePut(c: Context) {
     try {
       const { phone } = c.req.param();
       const body = await c.req.json().catch(() => ({}));
-      const customerId = await resolveCustomerIdFromPhone(phone);
-
-      if (!customerId) {
-        const merged = normalizeCustomerNotificationSettings({
-          ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
-          ...(typeof body === 'object' && body ? body : {}),
-        });
-        return c.json({ success: true, settings: merged, persisted: false });
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       try {
         const merged = await persistCustomerNotificationSettings(customerId, body);

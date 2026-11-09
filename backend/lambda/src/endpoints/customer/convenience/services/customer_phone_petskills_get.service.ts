@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_petskills_getRepo from '../repos/customer_phone_petskills_get.repo';
 import { Hono } from 'hono';
@@ -34,10 +35,11 @@ export async function executecustomerPhonePetskillsGet(c: Context) {
     try {
       const { phone } = c.req.param();
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ skills: [], success: true });
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       // Get all pets for this customer
       const pets = await customer_phone_petskills_getRepo.dbCustomerPhonePetskillsGet0(customerId)

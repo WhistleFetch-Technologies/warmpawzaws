@@ -1185,10 +1185,8 @@ async function packageSessionsAuthForRequest(
     pkg.customer_id != null ? String(pkg.customer_id).trim().toLowerCase() : '';
   const phoneLast10 = phoneLast10FromPackageSessionsRequest(c);
 
-  if (packageCustomerId && phoneLast10) {
-    const ownsByPhone = await packageCustomerOwnsByPhoneLast10(phoneLast10, packageCustomerId);
-    if (ownsByPhone) return 'customer';
-  }
+  // SECURITY (H7): phone alone must never grant customer OTP authz.
+  // Phone may only corroborate after JWT customer already matches package owner.
 
   if (!authRaw.trim()) return 'anonymous';
 

@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch, requirePetOwnedByAuthCustomer } from '../../../../utils/security-ownership';
 import * as customer_phone_orders_pharmacy_active_getRepo from '../repos/customer_phone_orders_pharmacy_active_get.repo';
 import { createEnhancedApiGatewayEvent, createEnhancedLambdaContext } from '../../shared/hono-lambda-bridge.utils';
 import { Hono } from 'hono';
@@ -37,6 +38,10 @@ import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refu
 export async function executecustomerPhoneOrdersPharmacyActiveGet(c: Context) {
     try {
       const phone = c.req.param('phone');
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
+      }
       const normalizedPhone = phone.replace(/\D/g, '');
 
       // Get customer by phone with error handling

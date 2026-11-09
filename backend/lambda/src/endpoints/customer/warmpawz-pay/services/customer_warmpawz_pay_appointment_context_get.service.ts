@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
-import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { dbFindCreditEligibleWapptBookingForPay } from '../repos/wpay-appointment-context.repo';
 import { mapWpayAppointmentContextBookingPublic } from '../shared/wpay-appointment-credit';
+import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -18,14 +18,11 @@ export async function executeCustomerWarmpawzPayAppointmentContextGet(c: Context
     if (!UUID_RE.test(vendorId)) {
       return c.json({ success: false, error: 'Invalid vendor id' }, 400);
     }
-    if (!phone) {
-      return c.json({ success: false, error: 'Phone is required' }, 400);
+    const identity = await resolveWpayAuthenticatedCustomer(c, phone);
+    if (!identity.ok) {
+      return c.json({ success: false, error: identity.error }, identity.status);
     }
-
-    const customerId = await resolveCustomerIdFromPhone(phone);
-    if (!customerId) {
-      return c.json({ success: false, error: 'Customer not found' }, 404);
-    }
+    const customerId = identity.customerId;
 
     const creditRow = await dbFindCreditEligibleWapptBookingForPay(customerId, vendorId);
     const creditEligibleBooking = creditRow

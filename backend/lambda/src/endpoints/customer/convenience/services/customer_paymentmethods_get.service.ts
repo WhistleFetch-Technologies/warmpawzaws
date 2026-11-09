@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone, decodePhoneParam, isPaymentMethodRowVisible, mapPaymentMethodRowForCustomerWeb } from '../repos/module-helpers.repo';
 import * as customer_paymentmethods_getRepo from '../repos/customer_paymentmethods_get.repo';
 import { Hono } from 'hono';
@@ -38,11 +39,11 @@ export async function executecustomerPaymentmethodsGet(c: Context) {
         return c.json({ success: true, paymentMethods: [] });
       }
 
-      const customerId = await resolveCustomerIdFromPhone(decodePhoneParam(phone));
-      if (!customerId) {
-        // Return empty payment methods for unregistered customers
-        return c.json({ success: true, paymentMethods: [] });
+      const phoneAuthz = await requireCustomerPhoneMatch(c, decodePhoneParam(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       let rows: any[] = [];
       try {

@@ -2,16 +2,30 @@ import { randomUUID } from 'crypto';
 import type { Context } from 'hono';
 
 /** Orders-style API Gateway event shim (move-only from customer-orders monolith). */
-export function createOrdersApiGatewayEvent(req: Context['req']): Record<string, unknown> {
+export function createOrdersApiGatewayEvent(
+  req: Context['req'],
+  auth?: { customerId?: string | null },
+): Record<string, unknown> {
+  // Prefer JWT-resolved customer id. Never default to 'test-user' (IDOR vector).
+  const authCustomerId = String(auth?.customerId || '').trim() || null;
+  const query = req.query ? Object.fromEntries(Object.entries(req.query())) : {};
+  // Strip spoofable customerId from query — ownership comes from JWT only.
+  if (query && typeof query === 'object') {
+    delete (query as Record<string, unknown>).customerId;
+  }
+  const pathParameters = req.param ? Object.fromEntries(Object.entries(req.param())) : {};
+  if (pathParameters && typeof pathParameters === 'object') {
+    delete (pathParameters as Record<string, unknown>).customerId;
+  }
   return {
-    pathParameters: req.param ? Object.fromEntries(Object.entries(req.param())) : {},
-    queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
+    pathParameters,
+    queryStringParameters: query,
     body: (req as { body?: unknown }).body ? JSON.stringify((req as { body?: unknown }).body) : null,
     headers: req.header ? Object.fromEntries(Object.entries(req.header())) : {},
     requestContext: {
       authorizer: {
         claims: {
-          sub: req.header?.('x-user-id') || 'test-user',
+          ...(authCustomerId ? { sub: authCustomerId } : {}),
         },
       },
     },

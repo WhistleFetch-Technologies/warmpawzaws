@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_latestbookingbyvendor_getRepo from '../repos/customer_phone_latestbookingbyvendor_get.repo';
 import { Hono } from 'hono';
@@ -37,10 +38,11 @@ export async function executecustomerPhoneLatestbookingbyvendorGet(c: Context) {
       if (!vendorId) {
         return c.json({ error: 'vendorId query required' }, 400);
       }
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ booking: null, success: true });
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
       const result = await customer_phone_latestbookingbyvendor_getRepo.dbCustomerPhoneLatestbookingbyvendorGet0(customerId, vendorId)
       const row = result.rows?.[0];
       if (!row) {

@@ -27,6 +27,14 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
     try {
       const { bookingId } = c.req.param();
 
+      const { requireBookingOwnedByAuthCustomer } = await import(
+        '../../../../utils/security-ownership'
+      );
+      const authz = await requireBookingOwnedByAuthCustomer(c, bookingId);
+      if (!authz.ok) {
+        return c.json({ error: authz.error }, authz.status);
+      }
+
       const bookingQuery = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet0(bookingId)
 
       if (bookingQuery.rows.length === 0) {
@@ -34,6 +42,12 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
       }
 
       const booking = bookingQuery.rows[0];
+      if (
+        String(booking.customer_id || '').toLowerCase() !==
+        authz.customerId.toLowerCase()
+      ) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
 
       const atHomeBooking =
         booking.service_style === 'at_home' || booking.service_type === 'at_home';

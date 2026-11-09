@@ -366,9 +366,8 @@ END AS product_image`;
 export class GetCustomerOrdersHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const customerId = context.event.pathParameters?.customerId || 
-                        context.event.queryStringParameters?.customerId ||
-                        context.userId;
+      // SECURITY: JWT owner only — ignore path/query customerId spoofing.
+      const customerId = context.userId;
       
       if (!customerId) {
         return this.error('Customer ID is required', 401);
@@ -594,9 +593,8 @@ export class GetOrderDetailsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const orderId = context.event.pathParameters?.id;
-      const customerId = context.event.pathParameters?.customerId || 
-                        context.event.queryStringParameters?.customerId ||
-                        context.userId;
+      // SECURITY: JWT owner only — ignore path/query customerId spoofing (C5).
+      const customerId = context.userId;
 
       if (!orderId) {
         return this.error('Order ID is required', 400);
@@ -655,9 +653,8 @@ export class GetOrderInvoiceHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const orderId = context.event.pathParameters?.id;
-      const customerId = context.event.pathParameters?.customerId || 
-                        context.event.queryStringParameters?.customerId ||
-                        context.userId;
+      // SECURITY: JWT owner only — ignore path/query customerId spoofing.
+      const customerId = context.userId;
 
       if (!orderId) {
         return this.error('Order ID is required', 400);
@@ -826,10 +823,8 @@ export class CustomerReturnOrderHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const orderId = context.event.pathParameters?.id;
-      const customerId =
-        context.event.pathParameters?.customerId ||
-        context.event.queryStringParameters?.customerId ||
-        context.userId;
+      // SECURITY: JWT owner only — ignore path/query customerId spoofing.
+      const customerId = context.userId;
 
       if (!orderId) {
         return this.error('Order ID is required', 400);
@@ -941,10 +936,8 @@ export class ShopOrderPaymentResumeHandler extends BaseHandler {
       const orderId =
         context.event.pathParameters?.orderId ||
         context.event.pathParameters?.id;
-      const customerId =
-        context.event.pathParameters?.customerId ||
-        context.event.queryStringParameters?.customerId ||
-        context.userId;
+      // SECURITY: JWT owner only — no path/query customerId override; no mutate-on-GET.
+      const customerId = context.userId;
 
       if (!orderId) {
         return this.error('Order ID is required', 400);
@@ -958,61 +951,20 @@ export class ShopOrderPaymentResumeHandler extends BaseHandler {
         return this.error('Order not found', 404);
       }
 
-      const reconciled = await reconcileShopOrderPayment(orderId, {
-        source: 'payment-resume',
-      }).catch((e) => {
-        console.warn('[customer/orders/payment-resume] reconcile failed:', e);
-        return false;
-      });
-      if (reconciled) {
-        return this.success({
-          success: true,
-          paid: true,
-          canResume: false,
-          orderId,
-          message: 'Payment confirmed — order placed',
-        });
-      }
-
+      // Read-only resume context. Reconciliation / discard moved off GET (H4).
       const ctx = await buildShopOrderPaymentResumeContext(orderId);
       if (!ctx) {
         return this.error('Order is not awaiting payment', 404);
       }
 
-      if (!ctx.canResume) {
-        const lateReconcile = await reconcileShopOrderPayment(orderId, {
-          source: 'payment-resume-expired',
-        }).catch(() => false);
-        if (lateReconcile) {
-          return this.success({
-            success: true,
-            paid: true,
-            canResume: false,
-            orderId,
-            message: 'Payment confirmed — order placed',
-          });
-        }
-        if (ctx.razorpayOrderId) {
-          return this.success({
-            success: true,
-            canResume: true,
-            ...ctx,
-          });
-        }
-
-        await discardUnpaidShopOrder(orderId, 'payment_window_expired', {
-          requestId: randomUUID(),
-          paymentStatus: 'expired',
-        }).catch((e) =>
-          console.warn('[customer/orders/payment-resume] discard after expiry failed:', e)
-        );
+      if (!ctx.canResume && !ctx.razorpayOrderId) {
         return this.error('Payment window expired. Please place a new order.', 410);
       }
 
       return this.success({
         success: true,
-        canResume: true,
         ...ctx,
+        canResume: Boolean(ctx.canResume || ctx.razorpayOrderId),
       });
     } catch (error: any) {
       console.error('[customer/orders/payment-resume] failed:', error);
@@ -1031,10 +983,8 @@ export class ShopOrderPaymentReconcileHandler extends BaseHandler {
       const orderId =
         context.event.pathParameters?.orderId ||
         context.event.pathParameters?.id;
-      const customerId =
-        context.event.pathParameters?.customerId ||
-        context.event.queryStringParameters?.customerId ||
-        context.userId;
+      // SECURITY: JWT owner only — ignore path/query customerId spoofing.
+      const customerId = context.userId;
 
       if (!orderId) {
         return this.error('Order ID is required', 400);

@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import {
   resolveCustomerIdFromPhone,
   decodePhoneParam,
@@ -40,10 +41,11 @@ export async function executecustomerPaymentsPhonePost(c: Context) {
       const { phone } = c.req.param();
       const body = (await c.req.json().catch(() => ({}))) as Record<string, any>;
 
-      const customerId = await resolveCustomerIdFromPhone(decodePhoneParam(phone));
-      if (!customerId) {
-        return c.json({ error: 'Customer not found' }, 404);
+      const phoneAuthz = await requireCustomerPhoneMatch(c, decodePhoneParam(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       const type = normalizeIncomingPaymentType(body);
       const digitsOnly = (s: string) => s.replace(/\D/g, '');

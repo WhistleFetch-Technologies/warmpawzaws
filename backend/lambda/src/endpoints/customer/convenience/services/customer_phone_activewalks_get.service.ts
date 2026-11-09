@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_activewalks_getRepo from '../repos/customer_phone_activewalks_get.repo';
 import { Hono } from 'hono';
@@ -34,10 +35,11 @@ export async function executecustomerPhoneActivewalksGet(c: Context) {
     try {
       const { phone } = c.req.param();
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ walks: [], success: true });
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       /**
        * Walk "live" card + Track must use booking_id for:

@@ -472,9 +472,8 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
 
       const teleQueueEntry = result.rows[0];
 
-      // Expire if past due
+      // SECURITY (SC1): GET is read-only — report expired without mutating.
       if (teleQueueEntry.status === 'waiting' && new Date(teleQueueEntry.expires_at) < new Date()) {
-        await query(`UPDATE tele_queue SET status = 'expired', resolved_at = NOW(), updated_at = NOW() WHERE id = $1`, [queueId]);
         teleQueueEntry.status = 'expired';
       }
 
@@ -498,11 +497,7 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
             const hoursSinceBooking = (Date.now() - bookingCreatedAt.getTime()) / (1000 * 60 * 60);
             
             if (bookingStatus === 'completed' || bookingStatus === 'cancelled' || hoursSinceBooking > 24) {
-              await query(`
-                UPDATE tele_queue 
-                SET status = 'expired', updated_at = NOW() 
-                WHERE id = $1
-              `, [queueId]);
+              // SECURITY (SC1): do not mutate tele_queue on GET — report expired only.
               teleQueueEntry.status = 'expired';
               bookingStatus = null;
               bookingPaymentStatus = null;
@@ -554,12 +549,13 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
   app.get('/vendor/:vendorId/tele-queue', async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const { requirePathVendorMatchesAuth } = await import('../../../utils/security-ownership');
+      const authz = await requirePathVendorMatchesAuth(c, vendorId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
 
-      // Expire old entries
-      await query(`
-        UPDATE tele_queue SET status = 'expired', resolved_at = NOW(), updated_at = NOW()
-        WHERE vendor_id = $1 AND status = 'waiting' AND expires_at < NOW()
-      `, [vendorId]);
+      // SECURITY (SC2): GET is read-only — do not bulk-expire on list.
 
       //get tele queue entries
       const result = await query(`
@@ -975,6 +971,11 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
   app.get('/vendor/:vendorId/tele-queue-stream', async (c) => {
     const vendorId = c.req.param('vendorId');
     if (!vendorId) return c.json({ error: 'Vendor ID is required' }, 400);
+    const { requirePathVendorMatchesAuth } = await import('../../../utils/security-ownership');
+    const streamAuthz = await requirePathVendorMatchesAuth(c, vendorId);
+    if (!streamAuthz.ok) {
+      return c.json({ success: false, error: streamAuthz.error }, streamAuthz.status);
+    }
 
     c.header('Content-Type', 'text/event-stream');
     c.header('Cache-Control', 'no-cache');
@@ -1017,10 +1018,8 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
       pollInterval = setInterval(async () => {
         if (!isActive) { cleanup(); return; }
         try {
-          await query(`
-            UPDATE tele_queue SET status = 'expired', resolved_at = NOW()
-            WHERE vendor_id = $1 AND status = 'waiting' AND expires_at < NOW()
-          `, [vendorId]);
+          // SECURITY (SC2): stream GET must not bulk-expire queue rows.
+          void vendorId;
 
           const result = await query(`
             SELECT tq.*, 

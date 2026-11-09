@@ -1,12 +1,10 @@
 import type { Context } from 'hono';
-import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { resolveMerchantDisplayName } from '../../../warmpawz-pay/shared/merchant/merchant-display-name.resolver';
 import {
-  dbWpayPendingForCustomer,
   dbWpayTransactionsPage,
   type WpayTransactionDbRow,
 } from '../repos/wpay-payment.repo';
-import { reconcileWpayRazorpayCapture } from '../shared/reconcile-wpay-razorpay-capture';
+import { resolveWpayAuthenticatedCustomer } from '../shared/wpay-authenticated-customer';
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 20;
 
@@ -66,23 +64,15 @@ function parseLimit(raw: string | undefined): number {
 export async function executeCustomerWarmpawzPayTransactionsGet(c: Context) {
   try {
     const phone = String(c.req.query('phone') ?? '').trim();
-    if (!phone) {
-      return c.json({ success: false, error: 'Phone is required' }, 400);
+    const identity = await resolveWpayAuthenticatedCustomer(c, phone);
+    if (!identity.ok) {
+      return c.json({ success: false, error: identity.error }, identity.status);
     }
-
-    const customerId = await resolveCustomerIdFromPhone(phone);
-    if (!customerId) {
-      return c.json({ success: true, transactions: [], total: 0, nextCursor: null });
-    }
+    const customerId = identity.customerId;
 
     const limit = parseLimit(c.req.query('limit'));
     const cursor = c.req.query('cursor')?.trim() || null;
-    const pending = await dbWpayPendingForCustomer(customerId, 3);
-    for (const row of pending) {
-      await reconcileWpayRazorpayCapture(row, customerId).catch((error) => {
-        console.error('[customer/warmpawz-pay/transactions] reconcile failed', error);
-      });
-    }
+    // SECURITY (H1): GET is read-only — do not reconcile/fulfill on history load.
     const page = await dbWpayTransactionsPage({ customerId, limit, cursor });
 
     const transactions = page.rows.map(mapWpayCustomerHistoryCard);

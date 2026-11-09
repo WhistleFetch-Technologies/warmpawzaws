@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerIdFromPhone, seedPackagesForCustomer } from '../repos/module-helpers.repo';
 import * as customer_phone_packages_getRepo from '../repos/customer_phone_packages_get.repo';
 import { Hono } from 'hono';
@@ -35,10 +36,11 @@ export async function executecustomerPhonePackagesGet(c: Context) {
       const { phone } = c.req.param();
       const serviceType = c.req.query('serviceType');
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ packages: [], success: true });
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
+      const customerId = phoneAuthz.customerId;
 
       await seedPackagesForCustomer(customerId);
 

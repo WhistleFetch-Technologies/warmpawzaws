@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
 import { resolveCustomerId } from '../repos/module-helpers.repo';
 import * as customer_byphone_getRepo from '../repos/customer_byphone_get.repo';
 import { Hono } from 'hono';
@@ -22,15 +23,11 @@ export async function executecustomerByphoneGet(c: Context) {
         return c.json({ error: 'Phone number is required' }, 400);
       }
 
-      const ms = await getCustomerByPhoneFromMicroservice(phone);
-      if (ms.kind === 'hit') {
-        return c.json(ms.body);
+      const phoneAuthz = await requireCustomerPhoneMatch(c, String(phone));
+      if (!phoneAuthz.ok) {
+        return c.json({ success: false, error: phoneAuthz.error }, phoneAuthz.status);
       }
-
-      const customerId = await resolveCustomerId(phone);
-      if (!customerId) {
-        return c.json({ error: 'Customer not found', customer: null }, 404);
-      }
+      const customerId = phoneAuthz.customerId;
       const customers = await customer_byphone_getRepo.dbCustomerByphoneGet0(customerId)
 
       if (customers.length === 0) {
