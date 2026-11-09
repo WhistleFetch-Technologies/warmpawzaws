@@ -1848,17 +1848,21 @@ export function registerAdminEndpoints(app: Hono) {
         verification: verify.rows,
       });
     } catch (error: any) {
-      console.error('[ADMIN] Error fixing staff vendor_identity:', error);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        path: c.req.path,
+        method: c.req.method,
+      });
       return c.json({
         success: false,
-        error: error.message,
-        stack: error.stack
+        error: SAFE_INTERNAL_ERROR_MESSAGE,
       }, 500);
     }
   });
 
 
-  //UPDATE VENDOR PROFILE
+  // UPDATE VENDOR PROFILE
   app.post('/admin/update-vendor-profile/:vendorId', async (c) => {
     // ✅ SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
@@ -1943,14 +1947,16 @@ export function registerAdminEndpoints(app: Hono) {
         verification: result.rows,
       });
     } catch (error) {
-      if (error instanceof Error) {
-        console.error('[ADMIN] Error fixing staff vendor_identity:', error);
-        return c.json({
-          success: false,
-          error: error.message,
-          stack: error.stack
-        }, 500);
-      }
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        path: c.req.path,
+        method: c.req.method,
+      });
+      return c.json({
+        success: false,
+        error: SAFE_INTERNAL_ERROR_MESSAGE,
+      }, 500);
     }
   });
 }

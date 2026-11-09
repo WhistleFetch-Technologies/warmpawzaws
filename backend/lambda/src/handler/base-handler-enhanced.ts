@@ -357,18 +357,15 @@ export abstract class BaseHandlerEnhanced {
     context: Context,
     requestId: string
   ): APIGatewayProxyResultV2 {
-    // Log error to CloudWatch
-    console.error(JSON.stringify({
-      level: 'ERROR',
-      type: 'HANDLER_ERROR',
-      requestId,
-      error: {
-        message: error.message,
-        stack: error.stack,
-        name: error.name,
-      },
-      timestamp: new Date().toISOString(),
-    }));
+    try {
+      const { captureException } = require('../utils/error-tracking');
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        requestId,
+        path: (event as any).rawPath || (event as any).path,
+      });
+    } catch {
+      // ignore tracking failures
+    }
 
     // Determine error code and status
     let statusCode = 500;
@@ -386,9 +383,12 @@ export abstract class BaseHandlerEnhanced {
       statusCode = 404;
       errorCode = ERROR_CODES.NOT_FOUND;
       message = error.message;
-    } else if (error.message) {
+    } else if (error.statusCode && error.statusCode < 500 && error.message) {
+      // Intentional client/business errors thrown with statusCode
+      statusCode = error.statusCode;
       message = error.message;
     }
+    // else: keep generic Internal Server Error for unexpected failures
 
     const errorResponse = createErrorResponse(errorCode, message, undefined, requestId);
 

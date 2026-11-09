@@ -220,7 +220,11 @@ export abstract class BaseHandler {
     });
 
     const statusCode = error.statusCode || 500;
-    const message = error.message || 'Internal server error';
+    // Stage 2: never echo raw exception text for unexpected 5xx; preserve intentional 4xx messages
+    const message =
+      statusCode >= 500
+        ? 'Internal Server Error'
+        : error.message || 'Request Error';
 
     return {
       statusCode,

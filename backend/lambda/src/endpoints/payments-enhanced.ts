@@ -885,29 +885,32 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
 
       return this.success(response, requestId);
     } catch (error: any) {
-      const message = error?.message || 'Failed to create payment';
-      console.error('[PAYMENT-CREATE] Error creating payment:', message, error?.stack);
-      // Include error details in response so client can show them (and so CloudWatch has context)
-      const details: Record<string, unknown> = {
-        step: error?.step || 'unknown',
-        message: message,
-      };
-      if (process.env.NODE_ENV === 'development' || process.env.STAGE === 'dev') {
-        details.stack = error?.stack;
-        details.code = error?.code;
-      }
       const gstConfig = isGstConfigurationError(error);
       const gstPlace = isGstPlaceOfSupplyError(error);
+      if (gstConfig || gstPlace) {
+        return this.error(
+          error?.message || 'Invalid GST configuration',
+          400,
+          gstPlace ? 'GST_PLACE_OF_SUPPLY_UNKNOWN' : 'GST_CONFIGURATION_MISSING',
+          { step: error?.step || 'unknown' },
+          requestId,
+        );
+      }
+      try {
+        const { captureException } = require('../utils/error-tracking');
+        captureException(error instanceof Error ? error : new Error(String(error)), {
+          requestId,
+          path: '/payments',
+        });
+      } catch {
+        /* ignore */
+      }
       return this.error(
-        message,
-        gstConfig || gstPlace ? 400 : 500,
-        gstPlace
-          ? 'GST_PLACE_OF_SUPPLY_UNKNOWN'
-          : gstConfig
-            ? 'GST_CONFIGURATION_MISSING'
-            : 'INTERNAL_ERROR',
-        details,
-        requestId
+        'Internal Server Error',
+        500,
+        'INTERNAL_ERROR',
+        { step: error?.step || 'unknown' },
+        requestId,
       );
     }
   }
@@ -1187,25 +1190,28 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
       
       return c.json(body, result.statusCode);
     } catch (error: any) {
-      const message = error?.message || 'Internal server error';
-      console.error('[PAYMENTS-CREATE] Endpoint error:', message, error?.stack);
-      // Return structured JSON so client can display it (CORS-safe; API Gateway forwards body)
+      try {
+        const { captureException } = await import('../utils/error-tracking');
+        captureException(error instanceof Error ? error : new Error(String(error)), {
+          path: c.req.path,
+          method: c.req.method,
+        });
+      } catch {
+        /* ignore */
+      }
       return c.json(
         {
           success: false,
           error: {
             code: 'INTERNAL_ERROR',
-            message,
+            message: 'Internal Server Error',
             details: {
               step: error?.step,
-              ...(process.env.NODE_ENV === 'development' || process.env.STAGE === 'dev'
-                ? { stack: error?.stack, raw: String(error) }
-                : {}),
             },
           },
           meta: { timestamp: new Date().toISOString() },
         },
-        500
+        500,
       );
     }
   });

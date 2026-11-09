@@ -137,25 +137,13 @@ export function registerStorageEndpoints(app: Hono) {
         
         // Provide helpful error messages
         if (s3Error.Code === 'NoSuchBucket' || s3Error.name === 'NoSuchBucket') {
-          return c.json({ 
-            error: 'S3 bucket not found',
-            details: `Bucket "${BUCKET_NAME}" does not exist. Please check S3_UPLOADS_BUCKET environment variable.`,
-            bucket: BUCKET_NAME
-          }, 500);
+          return c.json({ error: 'File storage is temporarily unavailable' }, 503);
         }
         if (s3Error.Code === 'AccessDenied' || s3Error.name === 'AccessDenied') {
-          return c.json({ 
-            error: 'S3 access denied',
-            details: 'Lambda function does not have permission to upload to S3. Check IAM permissions.',
-            bucket: BUCKET_NAME
-          }, 500);
+          return c.json({ error: 'File storage is temporarily unavailable' }, 503);
         }
-        
-        return c.json({ 
-          error: 'S3 upload failed',
-          details: s3Error.message || 'Unknown S3 error',
-          code: s3Error.Code || s3Error.name
-        }, 500);
+
+        return c.json({ error: 'File upload failed' }, 500);
       }
 
       // Generate presigned URL
@@ -194,11 +182,16 @@ export function registerStorageEndpoints(app: Hono) {
         name: error.name,
         stack: error.stack?.substring(0, 500)
       });
-      return c.json({ 
-        error: 'Internal Server Error',
-        details: error.message || 'Unknown error occurred',
-        type: error.name || 'Error'
-      }, 500);
+      try {
+        const { captureException } = await import('../utils/error-tracking');
+        captureException(error instanceof Error ? error : new Error(String(error)), {
+          path: c.req.path,
+          method: c.req.method,
+        });
+      } catch {
+        /* ignore */
+      }
+      return c.json({ error: 'Internal Server Error' }, 500);
     }
   });
 

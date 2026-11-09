@@ -889,10 +889,16 @@ export function registerReferralEndpoints(app: Hono) {
       `);
       return c.json({ success: true, message: 'vendor_refer_friend rule created/updated' });
     } catch (error: any) {
-      console.error('Error creating rule:', error);
-      return c.json({ error: error.message, stack: error.stack }, 500);
+      const { captureException } = await import('../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        path: c.req.path,
+        method: c.req.method,
+      });
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
+
 
   /**
    * POST /vendor/:vendorId/referral/retroactive-process

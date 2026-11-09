@@ -117,7 +117,7 @@ export function registerPushNotificationEndpoints(app: Hono) {
         error: error.message,
         stack: error.stack,
       }));
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: 'Failed to register device' }, 500);
     }
   });
 

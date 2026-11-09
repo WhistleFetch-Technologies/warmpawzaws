@@ -1083,7 +1083,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           orderData,
         });
         // ✅ Re-throw with more context
-        throw new Error(`Razorpay API call failed: ${razorpayError.message || 'Unknown error'}. Check Lambda VPC configuration and internet connectivity.`);
+        throw new Error('Razorpay API call failed');
       }
 
       if (!razorpayOrder || !razorpayOrder.id) {
@@ -1276,15 +1276,15 @@ class CreateRazorpayOrderHandler extends BaseHandler {
       }
       
       if (errorMessage.includes('Network error') || errorMessage.includes('fetch failed') || errorMessage.includes('ENOTFOUND') || errorMessage.includes('ECONNREFUSED')) {
-        return this.error('Network error connecting to payment gateway. Please check Lambda VPC configuration and ensure internet connectivity is available.', 500);
+        return this.error('Payment gateway is temporarily unavailable. Please try again.', 503);
       }
       
       if (errorMessage.includes('SSL') || errorMessage.includes('certificate') || errorMessage.includes('TLS')) {
-        return this.error('SSL/TLS error connecting to payment gateway. Please check certificate configuration.', 500);
+        return this.error('Payment gateway is temporarily unavailable. Please try again.', 503);
       }
       
       if (errorMessage.includes('configuration error') || errorMessage.includes('not configured')) {
-        return this.error(errorMessage, 500);
+        return this.error('Payment gateway is not configured.', 500);
       }
       
       // ✅ Return detailed error message for debugging
@@ -1935,10 +1935,10 @@ class VerifyPaymentHandler extends BaseHandler {
         );
       }
 
-      if (error.message) {
-        return this.error(`Payment verification encountered an error: ${error.message}. Your payment is safe — your booking will be confirmed shortly.`, 500);
-      }
-      return this.error('Payment verification encountered an error. Your payment is safe — your booking will be confirmed shortly.', 500);
+      return this.error(
+        'Payment verification encountered an error. Your payment is safe — your booking will be confirmed shortly.',
+        500,
+      );
     }
   }
 }
@@ -2706,10 +2706,16 @@ export function registerRazorpayEndpoints(app: Hono) {
         micr: bankData.MICR || '',
       });
     } catch (error: any) {
-      console.error('Error looking up IFSC code:', error);
-      return c.json({ 
-        error: error.message || 'Failed to lookup IFSC code' 
-      }, 500);
+      try {
+        const { captureException } = await import('../../../utils/error-tracking');
+        captureException(error instanceof Error ? error : new Error(String(error)), {
+          path: c.req.path,
+          method: c.req.method,
+        });
+      } catch {
+        /* ignore */
+      }
+      return c.json({ error: 'Failed to lookup IFSC code' }, 500);
     }
   });
 
@@ -2840,11 +2846,19 @@ export function registerRazorpayEndpoints(app: Hono) {
           'Format validation passed. For full verification, configure the Razorpay Banking payout source account (Admin → Payment gateways or RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER) and allowlist your server IPs in the Razorpay Dashboard.',
       });
     } catch (error: any) {
-      console.error('Error verifying bank account:', error);
+      try {
+        const { captureException } = await import('../../../utils/error-tracking');
+        captureException(error instanceof Error ? error : new Error(String(error)), {
+          path: c.req.path,
+          method: c.req.method,
+        });
+      } catch {
+        /* ignore */
+      }
       return c.json({
         success: false,
         valid: false,
-        error: error.message || 'Failed to verify bank account',
+        error: 'Failed to verify bank account',
       }, 500);
     }
   });

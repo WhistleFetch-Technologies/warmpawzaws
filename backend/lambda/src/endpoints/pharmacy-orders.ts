@@ -1280,7 +1280,13 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
         }
       });
     } catch (error: any) {
-      return c.json({ error: error.message, stack: error.stack }, 500);
+      const { captureException } = await import('../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        path: c.req.path,
+        method: c.req.method,
+      });
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

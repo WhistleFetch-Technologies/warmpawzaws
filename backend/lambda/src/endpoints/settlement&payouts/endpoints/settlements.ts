@@ -757,7 +757,10 @@ export function registerSettlementEndpoints(app: Hono) {
       return c.json({ success: true, ...result });
     } catch (error: any) {
       console.error('Error running ecommerce settlement batch job:', error);
-      return c.json({ success: false, error: error.message || 'Batch run failed' }, 500);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -979,7 +982,10 @@ export function registerSettlementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching settlement details:', error);
-      return c.json({ error: error.message }, 500);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
   /**
@@ -1320,7 +1326,10 @@ export function registerSettlementEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error calculating settlements:', error);
-      return c.json({ error: error.message }, 500);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1700,7 +1709,10 @@ export function registerSettlementEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error requesting settlement:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1961,7 +1973,10 @@ export function registerSettlementEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error processing payout:', error);
-      return c.json({ error: error.message }, 500);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2153,7 +2168,10 @@ export function registerSettlementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error processing payouts:', error);
-      return c.json({ error: error.message }, 500);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2208,7 +2226,10 @@ export function registerSettlementEndpoints(app: Hono) {
       return c.json({ success: true, bankDetails, message: 'Bank details saved successfully' });
     } catch (error: any) {
       console.error('Error updating bank details:', error);
-      return c.json({ error: error.message }, 500);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2268,7 +2289,10 @@ export function registerSettlementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error saving bank details:', error);
-      return c.json({ error: error.message }, 500);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2355,7 +2379,10 @@ export function registerSettlementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching bank details:', error);
-      return c.json({ error: error.message }, 500);
+      const { captureException } = await import('../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
