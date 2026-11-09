@@ -84,6 +84,7 @@ import {
 import { clampLeadTimeHours } from '../utils/meal-booking-policy';
 import { parseOrderCutoffHm } from '../utils/meal-product-timing';
 import { buildVendorPrepScheduling } from '@warmpawz/shared-types';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 function mealOrderDeliveryTimeDisplay(o: Record<string, unknown>): string | null {
   const raw = o.scheduled_delivery_slot;
@@ -301,7 +302,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error discovering meal plans:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -417,7 +418,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error discovering training programs:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -476,7 +477,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error discovering holiday packages:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -542,7 +543,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error discovering adoption pets:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -596,7 +597,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error discovering boarding rooms:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -627,7 +628,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, vehicles, total: vehicles.length });
     } catch (error: any) {
       console.error('Error fetching ambulance vehicles:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -663,7 +664,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, vehicle: vehicle[0], message: 'Vehicle added successfully' });
     } catch (error: any) {
       console.error('Error adding ambulance vehicle:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -706,7 +707,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, vehicle: updated[0], message: 'Vehicle updated successfully' });
     } catch (error: any) {
       console.error('Error updating ambulance vehicle:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -783,7 +784,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching diagnostic tests:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -940,7 +941,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, vendors: out });
     } catch (error: any) {
       console.error('Error fetching diagnostics vendors-with-tests:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1052,7 +1053,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error adding diagnostic test:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1180,7 +1181,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error updating diagnostic test:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1211,7 +1212,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Diagnostic test deleted' });
     } catch (error: any) {
       console.error('Error deleting diagnostic test:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1340,7 +1341,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting diagnostics bookings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1389,7 +1390,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, medicines: medicines.rows, total: medicines.rows.length });
     } catch (error: any) {
       console.error('Error fetching pharmacy inventory:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1427,7 +1428,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, medicine: medicine[0], message: 'Medicine added to inventory' });
     } catch (error: any) {
       console.error('Error adding medicine:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1469,7 +1470,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, mealPlans, plans: mealPlans, total: mealPlans.length });
     } catch (error: any) {
       console.error('Error fetching meal plans:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1521,7 +1522,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, mealPlan: mealPlan[0], message: 'Meal plan created successfully' });
     } catch (error: any) {
       console.error('Error creating meal plan:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1581,7 +1582,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Meal plan updated' });
     } catch (error: any) {
       console.error('Error updating meal plan:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1607,7 +1608,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error deleting meal plan:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1720,7 +1721,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating meal plan delivery order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1774,7 +1775,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching delivery orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1869,7 +1870,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching meal plans:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1967,8 +1968,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         },
       });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Failed to load kitchen status';
-      return c.json({ success: false, error: msg }, 500);
+      console.error('Error loading meal kitchen availability:', error);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2028,8 +2029,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         },
       });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Failed to update kitchen status';
-      return c.json({ success: false, error: msg }, 500);
+      console.error('Error updating meal kitchen availability:', error);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2096,7 +2097,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, product: transformedProduct });
     } catch (error: any) {
       console.error('Error creating meal product:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2221,7 +2222,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Product updated' });
     } catch (error: any) {
       console.error('Error updating meal product:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2267,7 +2268,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }
       }
       console.error('Error deleting meal product:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2368,7 +2369,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, debug });
     } catch (error: any) {
       console.error('[meal-orders-debug] Error:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2628,7 +2629,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, orders: forVendor, total: forVendor.length });
     } catch (error: any) {
       console.error('Error fetching meal orders:', error);
-      return c.json({ success: false, error: error.message || 'Failed to fetch meal orders', orders: [], total: 0 }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE, orders: [], total: 0 }, 500);
     }
   });
 
@@ -3072,7 +3073,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating meal order status:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3106,7 +3107,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching cafe menu:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3147,7 +3148,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, tables: tables.rows, totalSeats });
     } catch (error: any) {
       console.error('Error fetching cafe tables:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3244,7 +3245,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching table availability:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3305,7 +3306,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, tables: results, totalSeats, message: 'Table configuration updated' });
     } catch (error: any) {
       console.error('Error updating cafe tables:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3338,7 +3339,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, table: updated[0], message: 'Table updated successfully' });
     } catch (error: any) {
       console.error('Error updating cafe table:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3355,7 +3356,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Table deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting cafe table:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3382,7 +3383,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, menuItem: menuItem[0], message: 'Menu item added successfully' });
     } catch (error: any) {
       console.error('Error adding cafe menu item:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3415,7 +3416,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, menuItem: updated[0], message: 'Menu item updated successfully' });
     } catch (error: any) {
       console.error('Error updating cafe menu item:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3432,7 +3433,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Menu item deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting cafe menu item:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3449,7 +3450,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Vehicle deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting ambulance vehicle:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3513,7 +3514,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, message: 'SOS request updated successfully' });
     } catch (error: any) {
       console.error('Error updating SOS request:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3546,7 +3547,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, room: updated[0], message: 'Room updated successfully' });
     } catch (error: any) {
       console.error('Error updating resort room:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3563,7 +3564,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Room deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting resort room:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3601,7 +3602,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, puppies: puppies.rows, total: puppies.rows.length });
     } catch (error: any) {
       console.error('Error fetching puppies:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3651,7 +3652,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, puppy: puppy[0], message: 'Puppy profile created successfully' });
     } catch (error: any) {
       console.error('Error creating puppy profile:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3688,7 +3689,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, rooms: rooms.rows, total: rooms.rows.length });
     } catch (error: any) {
       console.error('Error fetching resort rooms:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3744,7 +3745,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, room, message: 'Room configuration updated' });
     } catch (error: any) {
       console.error('Error updating resort rooms:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3776,7 +3777,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, programs: programs.rows, total: programs.rows.length });
     } catch (error: any) {
       console.error('Error fetching training programs:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3813,7 +3814,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, program: program[0], message: 'Training program created successfully' });
     } catch (error: any) {
       console.error('Error creating training program:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3864,7 +3865,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, progress: merged, total: merged.length });
     } catch (error: any) {
       console.error('Error fetching training progress:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3896,7 +3897,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, packages: packages.rows, total: packages.rows.length });
     } catch (error: any) {
       console.error('Error fetching holiday packages:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3936,7 +3937,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, package: pkg[0], message: 'Holiday package created successfully' });
     } catch (error: any) {
       console.error('Error creating holiday package:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3968,7 +3969,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, schedule: schedule.rows, total: schedule.rows.length });
     } catch (error: any) {
       console.error('Error fetching tour schedule:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4004,7 +4005,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching portfolio:', error);
-      return c.json({ success: false, error: error.message, portfolio: [] }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE, portfolio: [] }, 500);
     }
   });
 
@@ -4054,7 +4055,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error adding portfolio:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4104,7 +4105,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error updating portfolio:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4139,7 +4140,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error deleting portfolio:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

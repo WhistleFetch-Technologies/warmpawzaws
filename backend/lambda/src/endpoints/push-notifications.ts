@@ -24,6 +24,7 @@ import {
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { applyRegisterDeviceTokenHygiene } from '../utils/device-token-hygiene';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 const registerDeviceSchema = z.object({
   userId: z.string().uuid(),
@@ -152,7 +153,7 @@ export function registerPushNotificationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error unregistering device:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -200,7 +201,7 @@ export function registerPushNotificationEndpoints(app: Hono) {
       return c.json(result);
     } catch (error: any) {
       console.error('Error sending push notification:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -251,7 +252,7 @@ export function registerPushNotificationEndpoints(app: Hono) {
       return c.json(result);
     } catch (error: any) {
       console.error('Error sending templated push:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -277,7 +278,7 @@ export function registerPushNotificationEndpoints(app: Hono) {
       return c.json(result);
     } catch (error: any) {
       console.error('Error sending topic push:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -307,7 +308,7 @@ export function registerPushNotificationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error broadcasting push:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -346,7 +347,7 @@ export function registerPushNotificationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error subscribing to topic:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -381,7 +382,7 @@ export function registerPushNotificationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error unsubscribing from topic:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 

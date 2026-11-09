@@ -59,6 +59,7 @@ import {
   getSupportRoutingSettings,
   updateSupportRoutingSettings,
 } from '../support-ticket-auto-assign';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 async function logTicketStatusActivity(
   ticketId: string,
@@ -271,7 +272,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating support ticket:', error);
-      return c.json({ error: error.message || 'Failed to create support ticket' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -306,7 +307,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching support tickets:', error);
-      return c.json({ error: error.message || 'Failed to fetch support tickets' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -438,7 +439,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching support ticket:', error);
-      return c.json({ error: error.message || 'Failed to fetch support ticket' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -575,7 +576,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error adding response:', error);
-      return c.json({ error: error.message || 'Failed to add response' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -616,7 +617,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error assigning ticket:', error);
-      return c.json({ error: error.message || 'Failed to assign ticket' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -690,7 +691,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating ticket status:', error);
-      return c.json({ error: error.message || 'Failed to update ticket status' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -717,7 +718,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching agents:', error);
-      return c.json({ error: error.message || 'Failed to fetch agents' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -802,7 +803,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching CRM tickets:', error);
-      return c.json({ success: false, error: error.message || 'Failed to fetch tickets', tickets: [], count: 0 }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE, tickets: [], count: 0 }, 500);
     }
   });
 
@@ -1258,7 +1259,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error performing CRM action:', error);
-      return c.json({ error: error.message || 'Failed to perform action' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1316,7 +1317,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error adding reply:', error);
-      return c.json({ error: error.message || 'Failed to add reply' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1365,7 +1366,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error closing ticket:', error);
-      return c.json({ error: error.message || 'Failed to close ticket' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1418,7 +1419,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error auto-routing tickets:', error);
-      return c.json({ error: error.message || 'Failed to auto-route tickets' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1476,7 +1477,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error in auto-assign batch:', error);
-      return c.json({ error: error.message || 'Failed to auto-assign batch' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1516,7 +1517,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error in escalation batch:', error);
-      return c.json({ error: error.message || 'Failed to process escalation batch' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1530,7 +1531,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       return c.json({ success: true, notifications: settings });
     } catch (error: any) {
       console.error('Error fetching notification settings:', error);
-      return c.json({ error: error.message || 'Failed to fetch notification settings' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1544,7 +1545,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       return c.json({ success: true, notifications: settings });
     } catch (error: any) {
       console.error('Error updating notification settings:', error);
-      return c.json({ error: error.message || 'Failed to update notification settings' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1558,7 +1559,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       return c.json({ success: true, routing: settings });
     } catch (error: any) {
       console.error('Error fetching routing settings:', error);
-      return c.json({ error: error.message || 'Failed to fetch routing settings' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1578,7 +1579,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       return c.json({ success: true, routing, message: 'Routing settings updated' });
     } catch (error: any) {
       console.error('Error updating routing settings:', error);
-      return c.json({ error: error.message || 'Failed to update routing settings' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1762,7 +1763,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating chat handoff ticket:', error);
-      return c.json({ error: error.message || 'Failed to create support ticket' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1857,7 +1858,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching ticket context:', error);
-      return c.json({ error: error.message || 'Failed to fetch ticket context' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1919,7 +1920,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching support agents:', error);
-      return c.json({ error: error.message || 'Failed to fetch agents' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2028,10 +2029,11 @@ export function registerSupportCrmEndpoints(app: Hono) {
             return c.json({ success: true, agent: created.rows[0], message: 'Agent created' });
           }
         } catch (fallbackError: any) {
-          return c.json({ error: fallbackError.message || 'Failed to save agent' }, 500);
+          console.error('Error saving support agent (fallback):', fallbackError);
+          return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
         }
       }
-      return c.json({ error: error.message || 'Failed to save agent' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2055,7 +2057,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Agent deactivated' });
     } catch (error: any) {
       console.error('Error deactivating agent:', error);
-      return c.json({ error: error.message || 'Failed to deactivate agent' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2085,7 +2087,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching SLA configs:', error);
-      return c.json({ error: error.message || 'Failed to fetch SLA configs' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2125,7 +2127,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error saving SLA config:', error);
-      return c.json({ error: error.message || 'Failed to save SLA config' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2158,7 +2160,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching categories:', error);
-      return c.json({ error: error.message || 'Failed to fetch categories' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2196,7 +2198,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error saving category:', error);
-      return c.json({ error: error.message || 'Failed to save category' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2232,7 +2234,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching escalation rules:', error);
-      return c.json({ error: error.message || 'Failed to fetch escalation rules' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2270,7 +2272,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error saving escalation rule:', error);
-      return c.json({ error: error.message || 'Failed to save escalation rule' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2287,7 +2289,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Rule deleted' });
     } catch (error: any) {
       console.error('Error deleting escalation rule:', error);
-      return c.json({ error: error.message || 'Failed to delete rule' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2312,7 +2314,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching ticket activity:', error);
-      return c.json({ error: error.message || 'Failed to fetch activity' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2397,7 +2399,7 @@ ${thread || '(no replies yet)'}`;
     } catch (error: any) {
       console.error('Error suggesting reply:', error);
       return c.json(
-        { error: error.message || 'Failed to suggest reply', suggestions: [] as string[] },
+        { error: SAFE_INTERNAL_ERROR_MESSAGE, suggestions: [] as string[] },
         500
       );
     }
@@ -2448,7 +2450,7 @@ ${thread || '(no replies yet)'}`;
       return c.json({ success: true, templates });
     } catch (error: any) {
       console.error('Error fetching reply templates:', error);
-      return c.json({ error: error.message || 'Failed to fetch reply templates' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2467,7 +2469,7 @@ ${thread || '(no replies yet)'}`;
       });
     } catch (error: any) {
       console.error('Error fetching reply templates (settings):', error);
-      return c.json({ error: error.message || 'Failed to fetch reply templates' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2525,7 +2527,7 @@ ${thread || '(no replies yet)'}`;
         return c.json({ error: 'A template with this name already exists' }, 409);
       }
       console.error('Error saving reply template:', error);
-      return c.json({ error: error.message || 'Failed to save reply template' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2551,7 +2553,7 @@ ${thread || '(no replies yet)'}`;
       return c.json({ success: true, message: 'Template deleted' });
     } catch (error: any) {
       console.error('Error deleting reply template:', error);
-      return c.json({ error: error.message || 'Failed to delete reply template' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2623,7 +2625,7 @@ ${thread || '(no replies yet)'}`;
       });
     } catch (error: any) {
       console.error('Error fetching staff list:', error);
-      return c.json({ error: error.message || 'Failed to fetch staff list' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

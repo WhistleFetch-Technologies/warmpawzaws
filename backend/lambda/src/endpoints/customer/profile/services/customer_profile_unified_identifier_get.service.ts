@@ -34,7 +34,7 @@ export async function executecustomerProfileUnifiedIdentifierGet(c: Context) {
       } catch (error: any) {
         console.error('[profile/unified] Error resolving customer ID:', error);
         console.error('[profile/unified] Error stack:', error?.stack);
-        return c.json({ success: true, profile: null, _degraded: true, error: error?.message }, 200);
+        return c.json({ success: true, profile: null, _degraded: true, error: 'Profile temporarily unavailable' }, 200);
       }
 
       if (!customerId) {
@@ -181,7 +181,7 @@ export async function executecustomerProfileUnifiedIdentifierGet(c: Context) {
         success: true,
         profile: null,
         _degraded: true,
-        error: error?.message || 'Unknown error'
+        error: 'Temporarily unavailable'
       }, 200);
     }
 }

@@ -97,6 +97,7 @@ import {
   vendorBlockedMealStatusForPidge,
 } from '../utils/meal-order-vendor-delivery-guard';
 import { fireVendorMealOrderScheduledSms } from '../lib/vendor-appointment-sms';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 async function mealBookingPolicyPreviewExtras(
   plan: Record<string, unknown>,
@@ -394,7 +395,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating meal plan:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -465,7 +466,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating meal plan:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -571,7 +572,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching meal plans:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -739,7 +740,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error searching meal plans:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -798,7 +799,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching meal plan:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1093,7 +1094,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error meal order preview:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1130,7 +1131,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating meal Razorpay order:', error);
-      return c.json({ error: error.message || 'Payment gateway error' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1497,7 +1498,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating meal order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1524,7 +1525,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       await update('meal_orders', { id: orderId }, { razorpay_order_id: razorpayOrderId });
       return c.json({ success: true });
     } catch (error: any) {
-      return c.json({ success: false, error: error.message || 'Could not link checkout order' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1554,7 +1555,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       return c.json({ success: true, ...(result as Omit<typeof result, 'success'>) });
     } catch (error: any) {
       console.error('Error debiting wallet for meal order:', error);
-      return c.json({ success: false, error: error.message || 'Wallet debit failed' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1618,7 +1619,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error confirming payment:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1661,7 +1662,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error submitting meal order review:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1720,7 +1721,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1749,7 +1750,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching customer orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1820,7 +1821,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       return c.json({ success: true, orders });
     } catch (error: any) {
       console.error('Error fetching vendor orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2027,7 +2028,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating order status:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2097,7 +2098,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating subscription:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2126,7 +2127,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching subscriptions:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2154,7 +2155,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error pausing subscription:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2181,7 +2182,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error resuming subscription:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2212,7 +2213,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error cancelling subscription:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2286,7 +2287,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting filters:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2347,7 +2348,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error notifying logistics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2417,7 +2418,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error assigning delivery:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2467,7 +2468,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating preparation ETA:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

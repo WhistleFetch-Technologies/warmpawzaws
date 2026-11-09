@@ -59,6 +59,7 @@ import {
   type CommercialDiscountDomain,
 } from '../utils/commercial-discount-domain';
 import { countActiveEcommerceAdminPromotions } from '../utils/count-active-ecommerce-promotions';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 /** calculate-booking HTTP payload — unified quote plus legacy field aliases for existing customer-web callers. */
 function buildCalculateBookingHttpPayload(quote: UnifiedResolverResponse) {
@@ -520,7 +521,7 @@ export function registerPromotionEndpoints(app: Hono) {
       if (error.message && error.message.includes('does not exist')) {
         return c.json({ success: true, spotlights: [], total: 0 });
       }
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -580,7 +581,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating spotlight:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -605,7 +606,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error deleting spotlight:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -857,7 +858,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error applying promotion:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -912,7 +913,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error validating promotion:', error);
-      return c.json({ valid: false, error: error.message }, 500);
+      return c.json({ valid: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -992,7 +993,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error validating coupon:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1058,7 +1059,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error applying coupon:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1118,7 +1119,7 @@ export function registerPromotionEndpoints(app: Hono) {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error('Error calculating booking promotions:', msg);
-      return c.json({ success: false, error: msg }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1212,7 +1213,7 @@ export function registerPromotionEndpoints(app: Hono) {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error('Error calculating booking promotions batch:', msg);
-      return c.json({ success: false, error: msg }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1527,7 +1528,7 @@ export function registerPromotionEndpoints(app: Hono) {
       if (error.message && error.message.includes('does not exist')) {
         return c.json({ success: true, promotions: [], total: 0 });
       }
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1666,7 +1667,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating promotion:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1764,7 +1765,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating promotion:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1787,7 +1788,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error deleting promotion:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1886,7 +1887,7 @@ export function registerPromotionEndpoints(app: Hono) {
       ) {
         console.warn('[admin/promotions] discount_domain missing — returning unfiltered (pre-migration)');
       }
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1939,7 +1940,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating promotion:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1993,7 +1994,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating promotion:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2016,7 +2017,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error deleting promotion:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2201,7 +2202,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching coupons:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2281,7 +2282,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating coupon:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2360,7 +2361,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating coupon:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2498,7 +2499,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating coupon:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2569,7 +2570,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error bulk-generating coupons:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2589,7 +2590,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error deleting coupon:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2669,7 +2670,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error applying promotion:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2717,7 +2718,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error recording policy acceptance:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2749,7 +2750,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error accepting policy:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2822,7 +2823,7 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating subscription payment:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

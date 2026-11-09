@@ -19,6 +19,7 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 // Utility function to generate booking reference
 function generateBookingReference(): string {
@@ -97,7 +98,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching events:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -155,7 +156,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -247,7 +248,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating vendor event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -303,7 +304,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor events:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -385,7 +386,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating vendor event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -424,7 +425,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error submitting event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -478,7 +479,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error discovering events:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -578,7 +579,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error registering for event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -606,7 +607,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching registrations:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -658,7 +659,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching customer registrations:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -722,7 +723,7 @@ export function registerEventEndpoints(app: Hono) {
       return c.json(transformedEvents);
     } catch (error: any) {
       console.error('Error fetching admin events:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -790,7 +791,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -876,7 +877,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -903,7 +904,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error deleting event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -951,7 +952,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1005,7 +1006,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1057,7 +1058,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching service events:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1083,7 +1084,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching pending events:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1121,7 +1122,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error approving event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1158,7 +1159,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error rejecting event:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1212,7 +1213,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error verifying booking:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1259,7 +1260,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error checking in customer:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1305,7 +1306,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching event registrations:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1360,7 +1361,7 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching registration:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

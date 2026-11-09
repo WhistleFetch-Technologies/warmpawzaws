@@ -33,6 +33,7 @@ import {
   readSettlementPreviewFromMetadata,
 } from '../../../discount-engine/settlement/settlement-hook-bridge';
 import { executePharmacyNearbyPharmaciesDebug } from '../../pharmacy-debug-nearby';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 // Haversine formula to calculate distance between two points
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -273,7 +274,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating pharmacy order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -318,7 +319,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -358,7 +359,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching customer orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -396,7 +397,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching pending broadcasts:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -552,7 +553,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error accepting order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -577,7 +578,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error rejecting order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -704,7 +705,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error accepting pharmacy order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -819,7 +820,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating order status:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -887,7 +888,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error generating invoice:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -946,7 +947,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error expanding broadcast:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1018,7 +1019,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching incoming pharmacy orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1119,7 +1120,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching pharmacy orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1164,7 +1165,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error rejecting order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1219,7 +1220,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error dispatching order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1266,7 +1267,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error completing order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1623,7 +1624,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error uploading invoice:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1661,7 +1662,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error assigning logistics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1713,7 +1714,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting tracking:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1765,7 +1766,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting broadcast status:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1868,7 +1869,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error getting pharmacy order status:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1981,7 +1982,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error approving invoice:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2167,7 +2168,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching order status:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2219,7 +2220,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error processing payment:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2255,7 +2256,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error confirming COD:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2452,7 +2453,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating customer pharmacy order:', error);
-      return c.json({ error: error.message || 'Failed to create order' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2647,7 +2648,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching customer pharmacy orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

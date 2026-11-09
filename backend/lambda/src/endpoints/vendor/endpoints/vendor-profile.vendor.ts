@@ -23,6 +23,7 @@ import { isValidUUID } from '../../../types/entities';
 import { getEffectiveCapabilities } from '../../../utils/capability-filter';
 import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
 import { markVendorBankVerified } from '../../../utils/sync-vendor-bank-verified';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 /** Parse roles.config when stored as JSON string (Postgres json/jsonb driver variance). */
 export function parseRoleConfigJson(config: unknown): Record<string, any> {
@@ -1020,7 +1021,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('❌ [PROFILE-GET] Error:', error);
-      return c.json({ error: 'Failed to get vendor profile', details: error.message }, 500);
+      return c.json({ error: 'Failed to get vendor profile', details: 'Request failed' }, 500);
     }
   });
 
@@ -1248,7 +1249,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('❌ [PROFILE-UPDATE] Error updating profile:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   };
 
@@ -1281,7 +1282,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('❌ [PROFILE-UPDATE] Error checking edit status:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1475,7 +1476,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor profile:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1590,7 +1591,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching complete vendor data:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1654,7 +1655,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       return c.json({ success: true, bankAccount });
     } catch (error: any) {
       console.error('Error fetching bank account:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1730,7 +1731,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Bank account saved successfully' });
     } catch (error: any) {
       console.error('Error saving bank account:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1847,7 +1848,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error verifying bank account:', error);
-      return c.json({ error: error.message || 'Verification failed' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1876,7 +1877,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Document uploaded successfully' });
     } catch (error: any) {
       console.error('Error uploading document:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1946,7 +1947,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       return c.json({ success: true, settings });
     } catch (error: any) {
       console.error('Error fetching settings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2081,7 +2082,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Settings updated successfully' });
     } catch (error: any) {
       console.error('Error updating settings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   };
   
@@ -2199,7 +2200,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor details:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

@@ -33,6 +33,7 @@ import {
   VACCINE_IMAGE_MAX_BYTES,
   vaccinationOwnerId,
 } from '../utils/pet-vaccination-image';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 // Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
@@ -272,7 +273,7 @@ export function registerStorageEndpoints(app: Hono) {
             uploadResults.push({
               documentType,
               success: false,
-              error: error.message,
+              error: SAFE_INTERNAL_ERROR_MESSAGE,
             });
           }
         }
@@ -286,7 +287,7 @@ export function registerStorageEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('❌ Error uploading multiple files:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -310,7 +311,7 @@ export function registerStorageEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('❌ Error deleting file:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -343,7 +344,7 @@ export function registerStorageEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('❌ Error generating presigned URL:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -403,7 +404,7 @@ export function registerStorageEndpoints(app: Hono) {
         return c.json({ error: 'File not found' }, 404);
       }
       
-      return c.json({ error: error.message || 'Failed to serve media' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -455,10 +456,7 @@ export function registerStorageEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('❌ Error refreshing URL:', error);
-      return c.json({ 
-        success: false,
-        error: error.message || 'Failed to refresh URL' 
-      }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -510,7 +508,7 @@ export function registerStorageEndpoints(app: Hono) {
         return c.json({ error: error.message }, error.statusCode as ContentfulStatusCode);
       }
       console.error('❌ Error uploading media:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -541,7 +539,7 @@ export function registerStorageEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error abandoning pet upload:', error);
-      return c.json({ error: error.message || 'Failed to abandon pet upload' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -586,7 +584,7 @@ export function registerStorageEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('❌ Error generating presigned upload URL:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -630,7 +628,7 @@ export function registerStorageEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('❌ Error generating presigned upload URL:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

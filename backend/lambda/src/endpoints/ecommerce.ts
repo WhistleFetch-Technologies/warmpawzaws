@@ -20,6 +20,7 @@ import { randomUUID } from 'crypto';
 import { select, insert, update, query, upsert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 export function registerEcommerceEndpoints(app: Hono) {
   // ============================================
@@ -190,7 +191,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching ecommerce products:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -355,7 +356,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating ecommerce order:', error);
-      return c.json({ error: error.message || 'Failed to create order' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -385,7 +386,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching product:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -423,7 +424,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching e-commerce categories:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -464,7 +465,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching cart:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -505,7 +506,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error adding to cart:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -522,7 +523,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Item removed from cart' });
     } catch (error: any) {
       console.error('Error removing from cart:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -698,7 +699,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -743,7 +744,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching order:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -771,7 +772,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching customer orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -820,7 +821,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching platform analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -874,7 +875,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -921,7 +922,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -968,7 +969,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching products:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -995,7 +996,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating product:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1016,7 +1017,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching categories:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1041,7 +1042,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating categories:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1098,7 +1099,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1138,7 +1139,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1200,7 +1201,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching commission settings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1225,7 +1226,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating commission settings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1254,7 +1255,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor list:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

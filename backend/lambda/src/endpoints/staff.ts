@@ -37,6 +37,7 @@ import {
   ImageProcessingError,
 } from '../services/image';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 // Type-only ambient declaration: `platformCommissionRate` is referenced in the staff earnings
 // endpoint but never defined at runtime (pre-existing bug preserved intentionally; emits no JS).
@@ -503,7 +504,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error discovering staff:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1100,7 +1101,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating staff:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1173,7 +1174,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, staff: updated[0], message: 'Staff member updated successfully' });
     } catch (error: any) {
       console.error('Error updating staff:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1200,7 +1201,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Staff member deactivated successfully' });
     } catch (error: any) {
       console.error('Error deactivating staff:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1242,7 +1243,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, availability: availability.rows });
     } catch (error: any) {
       console.error('Error fetching staff availability:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1273,7 +1274,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, availability: results, message: 'Availability set successfully' });
     } catch (error: any) {
       console.error('Error setting staff availability:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1344,7 +1345,7 @@ export function registerStaffEndpoints(app: Hono) {
         });
       }
       console.error('Error fetching staff availability per style:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1409,7 +1410,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error setting staff availability per style:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1459,7 +1460,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error bulk updating staff availability:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1482,7 +1483,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error deleting staff availability:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1518,7 +1519,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating staff photo:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1581,7 +1582,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error verifying staff mobile:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1643,7 +1644,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error resending OTP:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1714,7 +1715,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, slots: enrichedSlots });
     } catch (error: any) {
       console.error('Error fetching availability slots:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1793,7 +1794,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, slot: slot[0], message: 'Availability slot created successfully' });
     } catch (error: any) {
       console.error('Error creating availability slot:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1859,7 +1860,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, slot: updated[0], message: 'Slot updated successfully' });
     } catch (error: any) {
       console.error('Error updating availability slot:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1881,7 +1882,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Slot deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting availability slot:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1989,7 +1990,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching availability by style:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2115,7 +2116,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error configuring availability by style:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2149,7 +2150,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching staff service styles:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2178,7 +2179,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, services: servicesResult.rows });
     } catch (error: any) {
       console.error('Error fetching staff services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2221,7 +2222,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error enabling service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2245,7 +2246,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Service disabled' });
     } catch (error: any) {
       console.error('Error disabling service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2277,7 +2278,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, service: updated[0], message: 'Service configuration updated' });
     } catch (error: any) {
       console.error('Error updating service configuration:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2341,7 +2342,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error assigning services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2452,7 +2453,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating individual provider:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2498,7 +2499,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, location, message: 'Location updated successfully' });
     } catch (error: any) {
       console.error('Error updating location:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2534,7 +2535,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, location });
     } catch (error: any) {
       console.error('Error fetching location:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2584,7 +2585,7 @@ export function registerStaffEndpoints(app: Hono) {
         return c.json({ success: true, holidays: [] });
       }
       console.error('Error fetching staff holidays:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2665,7 +2666,7 @@ export function registerStaffEndpoints(app: Hono) {
         }
       }
       console.error('Error adding staff holiday:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2685,7 +2686,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Holiday removed successfully' });
     } catch (error: any) {
       console.error('Error deleting staff holiday:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2736,7 +2737,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, predictions: data.predictions || [] });
     } catch (error: any) {
       console.error('Error in autocomplete:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2792,7 +2793,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, location });
     } catch (error: any) {
       console.error('Error getting place details:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2935,7 +2936,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error sending staff login OTP:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3233,7 +3234,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error verifying staff login OTP:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3352,7 +3353,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching staff appointments:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3414,7 +3415,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching staff notifications:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3434,7 +3435,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Notification marked as read' });
     } catch (error: any) {
       console.error('Error marking notification as read:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3455,7 +3456,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, message: 'All notifications marked as read' });
     } catch (error: any) {
       console.error('Error marking all notifications as read:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3483,7 +3484,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Booking accepted successfully' });
     } catch (error: any) {
       console.error('Error accepting booking:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3515,7 +3516,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Booking rejected' });
     } catch (error: any) {
       console.error('Error rejecting booking:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3566,7 +3567,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error starting service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3628,7 +3629,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error completing service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3815,7 +3816,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching staff earnings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -3934,7 +3935,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching staff transactions:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4033,7 +4034,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching conversations:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4088,7 +4089,7 @@ export function registerStaffEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error fetching messages:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4156,7 +4157,7 @@ export function registerStaffEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error sending message:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4193,7 +4194,7 @@ export function registerStaffEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error marking as read:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4280,7 +4281,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching staff profile:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4395,7 +4396,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating staff profile:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4565,7 +4566,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[STAFF PHOTO] Error uploading staff photo:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -4637,7 +4638,7 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error bulk activating staff:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

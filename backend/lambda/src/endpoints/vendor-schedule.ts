@@ -34,6 +34,7 @@ import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { geocodeAddress } from '../lib/utils/geocode';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 /**
  * Generate time slots from a time window
@@ -263,7 +264,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor slots:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -354,7 +355,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor schedule:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -506,7 +507,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error setting vendor schedule:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -565,7 +566,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error setting vacation mode:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -641,7 +642,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       return c.json({ success: true, slots: enrichedSlots });
     } catch (error: any) {
       console.error('Error fetching vendor availability slots:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -783,7 +784,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       return c.json({ success: true, slot: slot[0], message: 'Availability slot created successfully' });
     } catch (error: any) {
       console.error('Error creating vendor availability slot:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -864,7 +865,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       return c.json({ success: true, slot: updated[0], message: 'Slot updated successfully' });
     } catch (error: any) {
       console.error('Error updating vendor availability slot:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -896,7 +897,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Slot deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting vendor availability slot:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -920,7 +921,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       return c.json({ success: true, holidays: holidays.rows });
     } catch (error: any) {
       console.error('Error fetching vendor holidays:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -970,7 +971,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Holiday added successfully' });
     } catch (error: any) {
       console.error('Error adding vendor holiday:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -990,7 +991,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Holiday removed successfully' });
     } catch (error: any) {
       console.error('Error deleting vendor holiday:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1035,7 +1036,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor breaks:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1140,7 +1141,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error saving vendor breaks:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1180,7 +1181,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching enhanced holidays:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1269,7 +1270,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error saving enhanced holidays:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1311,7 +1312,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error toggling online status:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1751,7 +1752,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error saving availability:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1940,7 +1941,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching availability:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

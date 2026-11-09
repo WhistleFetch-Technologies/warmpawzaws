@@ -23,6 +23,7 @@ import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../../../
 import { isValidUUID, normalizeVendorService } from '../../../types/entities';
 import { resolveVendorById } from './vendorProfile.vendor';
 import { buildVendorServiceUpdateData } from '../../../utils/vendor-service-publish-sync';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 // ----------------------------------------------------------------------------
 // Category normalization helpers
@@ -554,7 +555,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -643,7 +644,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching enabled services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -931,7 +932,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1163,7 +1164,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error adding vendor service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1688,7 +1689,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error adding catalog service to vendor:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2033,7 +2034,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error bulk updating services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2101,7 +2102,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error publishing services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2164,7 +2165,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error bulk publishing services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2461,7 +2462,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating vendor service (POST):', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2496,7 +2497,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error removing vendor service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -2563,7 +2564,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error publishing custom service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

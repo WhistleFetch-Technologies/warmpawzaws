@@ -53,6 +53,7 @@ import {
   recordRazorpayWebhookEvent,
 } from '../utils/payments/finalize-captured-payment';
 import { ensurePostPaymentLifecycleNotifications } from '../utils/payment-lifecycle-notifications';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 // Type-only helper (no runtime emit)
 type BookingStatusChange = { bookingId: string; from: string | null; to: string | null };
@@ -1055,9 +1056,7 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
         }
       } catch (error: any) {
         console.error('Error processing webhook:', error);
-        return this.error(
-          error.message || 'Failed to process webhook',
-          500,
+        return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500,
           'INTERNAL_ERROR',
           undefined,
           requestId
@@ -1141,9 +1140,7 @@ class GetPaymentHandlerEnhanced extends BaseHandlerEnhanced {
       }, requestId);
     } catch (error: any) {
       console.error('Error getting payment:', error);
-      return this.error(
-        error.message || 'Failed to get payment',
-        500,
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500,
         'INTERNAL_ERROR',
         undefined,
         requestId
@@ -1365,7 +1362,7 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error verifying payment:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }
