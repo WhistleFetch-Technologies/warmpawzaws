@@ -32,6 +32,7 @@ import {
   applySettlementPreviewToCommissionableGross,
   readSettlementPreviewFromMetadata,
 } from '../../../discount-engine/settlement/settlement-hook-bridge';
+import { executePharmacyNearbyPharmaciesDebug } from '../../pharmacy-debug-nearby';
 
 // Haversine formula to calculate distance between two points
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -1269,67 +1270,8 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
     }
   });
 
-  // Debug endpoint to test pharmacy query
-  app.get("/pharmacy/debug/nearby-pharmacies", async (c) => {
-    try {
-      const lat = parseFloat(c.req.query('lat') || '19.0954');
-      const lng = parseFloat(c.req.query('lng') || '72.8331');
-      const radiusKm = parseFloat(c.req.query('radius') || '5');
-
-      const latDiff = radiusKm / 111;
-      const lngDiff = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
-
-      // First get all pharmacies with coordinates
-      const allPharmacies = await query(
-        `SELECT v.id, v.business_name, v.latitude, v.longitude, v.is_active, v.status, r.name as role_name
-         FROM vendors v
-         LEFT JOIN roles r ON v.role_id = r.id
-         WHERE v.latitude IS NOT NULL 
-         AND v.latitude::text != ''
-         AND v.longitude IS NOT NULL
-         AND v.longitude::text != ''
-         LIMIT 10`,
-        []
-      );
-
-      // Filter by role name
-      const pharmacyVendors = await query(
-        `SELECT v.id, v.business_name, v.latitude, v.longitude, v.is_active, v.status
-         FROM vendors v
-         WHERE v.role_id IN (SELECT id FROM roles WHERE LOWER(name) LIKE '%pharmacy%')
-         AND v.is_active = true
-         AND v.status = 'approved'
-         AND v.latitude IS NOT NULL 
-         AND v.latitude::text != ''
-         AND v.longitude IS NOT NULL
-         AND v.longitude::text != ''`,
-        []
-      );
-
-      return c.json({
-        success: true,
-        debug: {
-          searchLocation: { lat, lng },
-          boundingBox: {
-            latMin: lat - latDiff,
-            latMax: lat + latDiff,
-            lngMin: lng - lngDiff,
-            lngMax: lng + lngDiff,
-          },
-          allVendorsWithCoordinates: allPharmacies.rows,
-          pharmacyVendors: pharmacyVendors.rows,
-        }
-      });
-    } catch (error: any) {
-      const { captureException } = await import('../../../utils/error-tracking');
-      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../utils/safe-hono-error');
-      captureException(error instanceof Error ? error : new Error(String(error)), {
-        path: c.req.path,
-        method: c.req.method,
-      });
-      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
-    }
-  });
+  // Stage 3: admin-only diagnostic (counts only — no vendor rows/coordinates)
+  app.get('/pharmacy/debug/nearby-pharmacies', executePharmacyNearbyPharmaciesDebug);
 }
 
 /**

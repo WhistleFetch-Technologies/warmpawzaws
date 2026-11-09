@@ -56,39 +56,33 @@ import {
 } from '../../../../services/image';
 
 export async function executedebugAtCenterVendors(c: Context) {
-
     try {
-      const category = c.req.query('category') || 'vet';
+      // Stage 3: admin-only operational diagnostic — never dump vendor rows to clients.
+      const { isAdminRole } = await import('../../../../utils/security-ownership');
+      if (!isAdminRole(c)) {
+        return c.json({ success: false, error: 'Forbidden' }, 403);
+      }
 
-      // Query 1: All vendors with at_center services
-      const allVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors0()
+      const allVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors0();
+      const approvedVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors1();
+      const vetVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors2();
 
-      // Query 2: Approved/active vendors with at_center services (non-solo)
-      const approvedVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors1()
-
-      // Query 3: Vet category vendors with at_center services
-      const vetVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors2()
-
-      // Query 4: Check availability for vet vendors
-      let vetAvailability = [];
+      let vetWithAvailability = 0;
       if (vetVendors.rows.length > 0) {
-        const vetIds = vetVendors.rows.map((v: any) => v.id);
-        const availabilityResult = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors3(vetIds)
-        vetAvailability = availabilityResult.rows;
+        const vetIds = vetVendors.rows.map((v: { id: string }) => v.id);
+        const availabilityResult = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors3(vetIds);
+        vetWithAvailability = parseInt(availabilityResult.rows[0]?.c || '0', 10) || 0;
       }
 
       return c.json({
         success: true,
         summary: {
-          all_vendors_with_at_center: allVendors.rows.length,
-          approved_active_non_solo: approvedVendors.rows.length,
+          all_vendors_with_at_center: parseInt(allVendors.rows[0]?.c || '0', 10) || 0,
+          approved_active_non_solo: parseInt(approvedVendors.rows[0]?.c || '0', 10) || 0,
           vet_category: vetVendors.rows.length,
-          vet_with_availability: vetAvailability.length
+          vet_with_availability: vetWithAvailability,
         },
-        all_vendors: allVendors.rows,
-        approved_vendors: approvedVendors.rows,
-        vet_vendors: vetVendors.rows,
-        vet_availability: vetAvailability
+        message: 'Diagnostic summary only; vendor records are not exposed',
       });
     } catch (error: any) {
       const { captureException } = await import('../../../../utils/error-tracking');

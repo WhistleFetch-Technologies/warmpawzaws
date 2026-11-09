@@ -1,35 +1,22 @@
-import { query, select, insert, update } from '../../../../database/rds-connection';
+import { query } from '../../../../database/rds-connection';
 
+/** Count vendors with enabled at_center-style services (no PII rows). */
 export async function dbDebugAtCenterVendors0() {
   return await query(`
-        SELECT 
-          v.id,
-          v.business_name,
-          v.status,
-          v.is_active,
-          r.name as role_name,
-          COUNT(vs.id) as at_center_service_count
+        SELECT COUNT(DISTINCT v.id)::text AS c
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         INNER JOIN vendor_services vs ON vs.vendor_id = v.id
         WHERE vs.service_style IN ('at_center', 'at_vendor', 'at_clinic')
           AND vs.is_enabled = true
           AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
-        GROUP BY v.id, v.business_name, v.status, v.is_active, r.name
-        ORDER BY v.business_name
-        LIMIT 50
       `);
 }
 
+/** Count approved/active non-solo vendors with at_center-style services. */
 export async function dbDebugAtCenterVendors1() {
   return await query(`
-        SELECT 
-          v.id,
-          v.business_name,
-          v.status,
-          v.is_active,
-          r.name as role_name,
-          COUNT(vs.id) as at_center_service_count
+        SELECT COUNT(DISTINCT v.id)::text AS c
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         INNER JOIN vendor_services vs ON vs.vendor_id = v.id
@@ -39,21 +26,13 @@ export async function dbDebugAtCenterVendors1() {
           AND vs.service_style IN ('at_center', 'at_vendor', 'at_clinic')
           AND vs.is_enabled = true
           AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
-        GROUP BY v.id, v.business_name, v.status, v.is_active, r.name
-        ORDER BY v.business_name
-        LIMIT 50
       `);
 }
 
+/** Vet vendor ids only (for availability count); no business names. */
 export async function dbDebugAtCenterVendors2() {
   return await query(`
-        SELECT 
-          v.id,
-          v.business_name,
-          v.status,
-          v.is_active,
-          r.name as role_name,
-          COUNT(vs.id) as at_center_service_count
+        SELECT DISTINCT v.id
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         INNER JOIN vendor_services vs ON vs.vendor_id = v.id
@@ -64,25 +43,19 @@ export async function dbDebugAtCenterVendors2() {
           AND vs.service_style IN ('at_center', 'at_vendor', 'at_clinic')
           AND vs.is_enabled = true
           AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
-        GROUP BY v.id, v.business_name, v.status, v.is_active, r.name
-        ORDER BY v.business_name
         LIMIT 50
       `);
 }
 
-export async function dbDebugAtCenterVendors3(vetIds) {
-  return await query(`
-          SELECT 
-            va.vendor_id,
-            v.business_name,
-            COUNT(va.id) as availability_slots,
-            COUNT(CASE WHEN COALESCE(va.service_styles, ARRAY[]::text[]) && ARRAY['at_center', 'at_vendor', 'at_clinic']::text[] THEN 1 END) as matching_slots,
-            COUNT(CASE WHEN COALESCE(va.service_styles, ARRAY[]::text[]) = ARRAY[]::text[] THEN 1 END) as empty_service_styles_slots
+/** Count distinct vet vendors that have availability rows (no names/slots dump). */
+export async function dbDebugAtCenterVendors3(vetIds: string[]) {
+  return await query(
+    `
+          SELECT COUNT(DISTINCT va.vendor_id)::text AS c
           FROM vendor_availability_v2 va
-          INNER JOIN vendors v ON va.vendor_id = v.id
           WHERE va.vendor_id = ANY($1::uuid[])
             AND (va.is_available IS NULL OR va.is_available = true)
-          GROUP BY va.vendor_id, v.business_name
-        `, [vetIds]);
+        `,
+    [vetIds],
+  );
 }
-
