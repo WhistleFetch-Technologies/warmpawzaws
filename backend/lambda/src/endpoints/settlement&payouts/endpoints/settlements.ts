@@ -1335,20 +1335,37 @@ export function registerSettlementEndpoints(app: Hono) {
       const { requirePathVendorMatchesAuth, isAdminRole } = await import(
         '../../../utils/security-ownership'
       );
+      // SECURITY: never trust path vendorId alone. Admin may read any vendor;
+      // vendors may only read their own resolved identity set.
+      let scopedVendorIds: string[] = [String(vendorId || '')];
       if (!isAdminRole(c)) {
         const authz = await requirePathVendorMatchesAuth(c, vendorId);
         if (!authz.ok) {
           return c.json({ success: false, error: authz.error }, authz.status);
         }
+        scopedVendorIds = authz.vendorIds?.length ? authz.vendorIds : [authz.vendorId];
       }
 
       // Handle test IDs - return empty settlements
-      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (
+        scopedVendorIds.every(
+          (id) =>
+            id === 'test-vendor-id' ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),
+        )
+      ) {
         return c.json({
           success: true,
           settlements: [],
           total: 0,
         });
+      }
+
+      const uuidIds = scopedVendorIds.filter((id) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),
+      );
+      if (uuidIds.length === 0) {
+        return c.json({ success: true, settlements: [], total: 0 });
       }
 
       let settlements;
@@ -1357,19 +1374,19 @@ export function registerSettlementEndpoints(app: Hono) {
         if (temporarySuppression) {
           settlements = await query(
             `SELECT * FROM settlements
-           WHERE vendor_id = $1
+           WHERE vendor_id = ANY($1::uuid[])
              AND ${sqlExcludeSuppressedSettlementRows('settlements', 2, 3)}
            ORDER BY created_at DESC
            LIMIT 50`,
-            [vendorId, temporarySuppression.vendorIds, temporarySuppression.cutoffDateIst]
+            [uuidIds, temporarySuppression.vendorIds, temporarySuppression.cutoffDateIst]
           );
         } else {
           settlements = await query(
             `SELECT * FROM settlements
-           WHERE vendor_id = $1
+           WHERE vendor_id = ANY($1::uuid[])
            ORDER BY created_at DESC
            LIMIT 50`,
-            [vendorId]
+            [uuidIds]
           );
         }
       } catch (error: any) {
@@ -1391,7 +1408,7 @@ export function registerSettlementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching settlements:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ success: false, error: 'Failed to fetch settlements' }, 500);
     }
   });
 
@@ -1695,12 +1712,31 @@ export function registerSettlementEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
+      const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+        '../../../utils/security-ownership'
+      );
+      let scopedVendorIds: string[] = [String(vendorId || '')];
+      if (!isAdminRole(c)) {
+        const authz = await requirePathVendorMatchesAuth(c, vendorId);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+        scopedVendorIds = authz.vendorIds?.length ? authz.vendorIds : [authz.vendorId];
+      }
+
+      const uuidIds = scopedVendorIds.filter((id) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),
+      );
+      if (uuidIds.length === 0) {
+        return c.json({ success: true, payouts: [], total: 0 });
+      }
+
       const payouts = await query(
         `SELECT * FROM payouts
-         WHERE vendor_id = $1
+         WHERE vendor_id = ANY($1::uuid[])
          ORDER BY created_at DESC
          LIMIT 50`,
-        [vendorId]
+        [uuidIds]
       );
 
       return c.json({
@@ -1710,7 +1746,7 @@ export function registerSettlementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching payouts:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ success: false, error: 'Failed to fetch payouts' }, 500);
     }
   });
 

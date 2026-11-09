@@ -169,12 +169,14 @@ export async function requirePathVendorMatchesAuth(
   if (authIds.length === 0) authIds = [authResolved];
 
   const allowed = new Set(authIds.map((id) => id.toLowerCase()));
+  // Path vendor (or any of its ledger aliases) must be in the authenticated vendor set.
   const pathOk = pathIds.some((id) => allowed.has(String(id).toLowerCase()));
-  if (!pathOk && pathResolved.toLowerCase() !== authResolved.toLowerCase()) {
+  const directOk = allowed.has(String(pathResolved).toLowerCase());
+  if (!pathOk && !directOk) {
     return { ok: false, status: 403, error: 'Forbidden' };
   }
 
-  return { ok: true, vendorId: pathResolved, vendorIds: pathIds };
+  return { ok: true, vendorId: pathResolved, vendorIds: authIds };
 }
 
 /**

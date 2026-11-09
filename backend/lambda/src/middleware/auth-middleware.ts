@@ -112,20 +112,12 @@ async function extractAuth(c: Context): Promise<{
 }> {
   const authHeader = c.req.header('authorization') || c.req.header('Authorization');
   const uatModeHeader = c.req.header('X-UAT-Mode') || c.req.header('x-uat-mode');
-  
-  // ✅ FIX: In UAT mode, allow requests without auth header (for testing)
   const uatMode = process.env.UAT_MODE === 'true' || uatModeHeader === 'true';
-  if (uatMode && (!authHeader || !authHeader.startsWith('Bearer '))) {
-    console.log('[AuthMiddleware] UAT Mode: Allowing request without auth header');
-    return {
-      valid: true,
-      userId: 'uat-admin-user',
-      userRole: 'admin',
-      groups: ['admin'],
-      isUAT: true,
-    };
-  }
-  
+
+  // SECURITY: Missing Bearer must remain unauthenticated.
+  // Previously UAT_MODE=true minted an anonymous admin identity — that bypassed
+  // object-level authorization (settlement IDOR, medical PUT treated as admin).
+  // UAT_MODE still enables OTP 123456 and warmpawz-uat JWT verification below.
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     console.log('[AuthMiddleware] No authorization header found');
     return { valid: false, error: 'No authorization header' };
@@ -134,19 +126,20 @@ async function extractAuth(c: Context): Promise<{
   const token = authHeader.replace('Bearer ', '').trim();
   console.log(`[AuthMiddleware] Token detected: ${token.substring(0, 30)}... (UAT_MODE=${process.env.UAT_MODE}, uatModeHeader=${uatModeHeader})`);
 
-  // Check for UAT mode tokens (format: uat-token-{type}-{timestamp})
-  if (token.startsWith('uat-token-') || uatModeHeader === 'true' || uatMode) {
+  // Synthetic UAT tokens ONLY (explicit format). Never treat real JWTs as synthetic
+  // merely because UAT_MODE=true — that previously defaulted every JWT to admin.
+  if (token.startsWith('uat-token-')) {
     const uatAllowed = isUATModeAllowed();
-    console.log(`[AuthMiddleware] UAT token detected, UAT allowed: ${uatAllowed}`);
+    console.log(`[AuthMiddleware] Synthetic UAT token detected, UAT allowed: ${uatAllowed}`);
     if (!uatAllowed) {
       console.warn('[AuthMiddleware] UAT mode not allowed in production');
       return { valid: false, error: 'UAT mode not allowed in production' };
     }
 
     // Parse UAT token type: uat-token-admin-xxx, uat-token-vendor-xxx, uat-token-customer-xxx
-    let userRole = 'user';
+    let userRole = '';
     let groups: string[] = [];
-    
+
     if (token.includes('-admin-')) {
       userRole = 'admin';
       groups = ['admin'];
@@ -156,14 +149,12 @@ async function extractAuth(c: Context): Promise<{
     } else if (token.includes('-customer-')) {
       userRole = 'customer';
       groups = ['customer'];
-    } else if (uatMode) {
-      // If UAT mode is enabled but token doesn't specify role, default to admin
-      userRole = 'admin';
-      groups = ['admin'];
+    } else {
+      return { valid: false, error: 'Invalid synthetic UAT token role' };
     }
 
-    console.log(`[AuthMiddleware] UAT mode token accepted for role: ${userRole}, token: ${token.substring(0, 30)}...`);
-    
+    console.log(`[AuthMiddleware] Synthetic UAT token accepted for role: ${userRole}`);
+
     return {
       valid: true,
       userId: `uat-${userRole}-user`,
@@ -173,7 +164,7 @@ async function extractAuth(c: Context): Promise<{
     };
   }
 
-  // Standard JWT verification
+  // Standard JWT verification (includes warmpawz-uat issuer when UAT_MODE or iss claim)
   try {
     const headers: Record<string, string> = { authorization: authHeader };
     const result = await extractAndVerifyAuthToken(headers);

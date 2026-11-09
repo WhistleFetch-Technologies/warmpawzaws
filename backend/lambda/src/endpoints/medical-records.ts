@@ -846,15 +846,38 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   app.put("/medical-records/:recordId", async (c) => {
     try {
       const { recordId } = c.req.param();
+      if (!recordId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recordId)) {
+        return c.json({ success: false, error: 'Invalid medical record id' }, 400);
+      }
+
       const body = await c.req.json().catch(() => ({}));
 
       const { requireAuthenticatedCustomer, isAdminRole } = await import(
         '../utils/security-ownership'
       );
       const admin = isAdminRole(c);
-      const authz = await requireAuthenticatedCustomer(c);
-      if (!admin && !authz.ok) {
-        return c.json({ success: false, error: authz.error }, authz.status);
+      // Fail closed: non-admins must resolve to a real customer JWT subject.
+      if (!admin) {
+        const authz = await requireAuthenticatedCustomer(c);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+
+        // Authorization BEFORE any update — record must belong to JWT customer
+        // (and preferably to a pet they own when pet_id is present).
+        const owned = await query(
+          `SELECT mr.id
+           FROM medical_records mr
+           LEFT JOIN pets p ON p.id = mr.pet_id
+           WHERE mr.id = $1::uuid
+             AND mr.customer_id = $2::uuid
+             AND (mr.pet_id IS NULL OR p.customer_id = $2::uuid)
+           LIMIT 1`,
+          [recordId, authz.customerId],
+        );
+        if ((owned.rows?.length ?? 0) === 0) {
+          return c.json({ success: false, error: 'Medical record not found' }, 404);
+        }
       }
 
       const hasPatch =
@@ -867,17 +890,6 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           { success: false, error: 'At least one of title, description, contentData, or fileUrl is required' },
           400
         );
-      }
-
-      // Ownership: only the owning customer (or admin) may update.
-      if (!admin && authz.ok) {
-        const owned = await query(
-          `SELECT 1 FROM medical_records WHERE id = $1::uuid AND customer_id = $2::uuid LIMIT 1`,
-          [recordId, authz.customerId],
-        );
-        if ((owned.rows?.length ?? 0) === 0) {
-          return c.json({ success: false, error: 'Medical record not found' }, 404);
-        }
       }
 
       const updateData: any = {
@@ -908,7 +920,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating medical record:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ success: false, error: 'Failed to update medical record' }, 500);
     }
   });
 

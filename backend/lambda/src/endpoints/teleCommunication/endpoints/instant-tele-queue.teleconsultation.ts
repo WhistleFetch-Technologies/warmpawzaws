@@ -557,7 +557,7 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
 
       // SECURITY (SC2): GET is read-only — do not bulk-expire on list.
 
-      //get tele queue entries
+      // Query scoped to authenticated vendor identity (not raw path param alone).
       const result = await query(`
         SELECT
           tq.*,
@@ -568,9 +568,9 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
         FROM tele_queue tq
         INNER JOIN customers c ON tq.customer_id = c.id
         INNER JOIN pets p ON tq.pet_id = p.id
-        WHERE tq.vendor_id = $1 AND tq.status = 'waiting'
+        WHERE tq.vendor_id = ANY($1::uuid[]) AND tq.status = 'waiting'
         ORDER BY tq.urgency DESC, tq.position ASC
-      `, [vendorId]);
+      `, [authz.vendorIds?.length ? authz.vendorIds : [authz.vendorId]]);
 
       //map tele queue entries to response
       const queue = result.rows.map((q: any) => ({
@@ -602,11 +602,16 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
   app.post('/vendor/:vendorId/tele-queue/:queueId/accept', async (c) => {
     try {
       const { vendorId, queueId } = c.req.param();
+      const { requirePathVendorMatchesAuth } = await import('../../../utils/security-ownership');
+      const authz = await requirePathVendorMatchesAuth(c, vendorId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
 
-      // find the queue entry by queueId and vendorId
+      // find the queue entry by queueId and authenticated vendor scope
       const queueResult = await query(`
-        SELECT * FROM tele_queue WHERE id = $1 AND vendor_id = $2 AND status = 'waiting'
-      `, [queueId, vendorId]);
+        SELECT * FROM tele_queue WHERE id = $1 AND vendor_id = ANY($2::uuid[]) AND status = 'waiting'
+      `, [queueId, authz.vendorIds?.length ? authz.vendorIds : [authz.vendorId]]);
       if (queueResult.rows.length === 0) {
         return c.json({ error: 'Queue entry not found or already processed' }, 404);
       }
@@ -737,23 +742,29 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
   app.post('/vendor/:vendorId/tele-queue/:queueId/skip', async (c) => {
     try {
       const { vendorId, queueId } = c.req.param();
+      const { requirePathVendorMatchesAuth } = await import('../../../utils/security-ownership');
+      const authz = await requirePathVendorMatchesAuth(c, vendorId);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+      const scopedIds = authz.vendorIds?.length ? authz.vendorIds : [authz.vendorId];
       const body = await c.req.json();
       const { reason, removeFromQueue = false } = body;
 
       if (removeFromQueue) {
         await query(`
           UPDATE tele_queue SET status = 'skipped', skip_reason = $1, resolved_at = NOW(), updated_at = NOW()
-          WHERE id = $2 AND vendor_id = $3
-        `, [reason, queueId, vendorId]);
+          WHERE id = $2 AND vendor_id = ANY($3::uuid[])
+        `, [reason, queueId, scopedIds]);
       } else {
         const maxPos = await query(`
           SELECT COALESCE(MAX(position), 0) + 1 AS next_position
-          FROM tele_queue WHERE vendor_id = $1 AND status = 'waiting'
-        `, [vendorId]);
+          FROM tele_queue WHERE vendor_id = ANY($1::uuid[]) AND status = 'waiting'
+        `, [scopedIds]);
         await query(`
           UPDATE tele_queue SET position = $1, updated_at = NOW()
-          WHERE id = $2 AND vendor_id = $3
-        `, [maxPos.rows[0].next_position, queueId, vendorId]);
+          WHERE id = $2 AND vendor_id = ANY($3::uuid[])
+        `, [maxPos.rows[0].next_position, queueId, scopedIds]);
       }
 
       return c.json({
@@ -777,6 +788,25 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
   app.get('/customer/tele/queue-stream/:queueId', async (c) => {
     const queueId = c.req.param('queueId');
     if (!queueId) return c.json({ error: 'Queue ID is required' }, 400);
+
+    const { requireAuthenticatedCustomer, isAdminRole } = await import(
+      '../../../utils/security-ownership'
+    );
+    let authCustomerId: string | null = null;
+    if (!isAdminRole(c)) {
+      const authz = await requireAuthenticatedCustomer(c);
+      if (!authz.ok) {
+        return c.json({ success: false, error: authz.error }, authz.status);
+      }
+      authCustomerId = authz.customerId;
+      const owned = await query(
+        `SELECT 1 FROM tele_queue WHERE id = $1 AND customer_id = $2::uuid LIMIT 1`,
+        [queueId, authCustomerId],
+      );
+      if ((owned.rows?.length ?? 0) === 0) {
+        return c.json({ success: false, error: 'Queue entry not found' }, 404);
+      }
+    }
 
     c.header('Content-Type', 'text/event-stream');
     c.header('Cache-Control', 'no-cache');
@@ -976,6 +1006,9 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
     if (!streamAuthz.ok) {
       return c.json({ success: false, error: streamAuthz.error }, streamAuthz.status);
     }
+    const scopedStreamIds = streamAuthz.vendorIds?.length
+      ? streamAuthz.vendorIds
+      : [streamAuthz.vendorId];
 
     c.header('Content-Type', 'text/event-stream');
     c.header('Cache-Control', 'no-cache');
@@ -1019,7 +1052,6 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
         if (!isActive) { cleanup(); return; }
         try {
           // SECURITY (SC2): stream GET must not bulk-expire queue rows.
-          void vendorId;
 
           const result = await query(`
             SELECT tq.*, 
@@ -1030,9 +1062,9 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
             FROM tele_queue tq
             INNER JOIN customers c ON tq.customer_id = c.id
             INNER JOIN pets p ON tq.pet_id = p.id
-            WHERE tq.vendor_id = $1 AND tq.status = 'waiting'
+            WHERE tq.vendor_id = ANY($1::uuid[]) AND tq.status = 'waiting'
             ORDER BY tq.urgency DESC, tq.position ASC
-          `, [vendorId]);
+          `, [scopedStreamIds]);
 
           const queueHash = JSON.stringify(result.rows.map((r: any) => r.id));
           if (queueHash !== lastQueueHash) {
