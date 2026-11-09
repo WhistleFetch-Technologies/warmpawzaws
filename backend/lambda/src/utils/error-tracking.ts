@@ -18,6 +18,12 @@
  */
 
 import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
+import {
+  redactSecretsForLog,
+  sanitizeErrorForLog,
+  sanitizeSentryEvent,
+  sanitizeValueForLog,
+} from './safe-hono-error';
 
 /**
  * Error tracking configuration
@@ -78,17 +84,8 @@ export function initializeErrorTracking(config: ErrorTrackingConfig): void {
         environment: config.environment,
         tracesSampleRate: config.environment === 'prod' ? 0.1 : 1.0,
         beforeSend(event: any) {
-          // Filter sensitive data
-          if (event.request?.cookies) {
-            delete event.request.cookies;
-          }
-          if (event.request?.headers) {
-            delete event.request.headers['authorization'];
-            delete event.request.headers['Authorization'];
-            delete event.request.headers['x-uat-token'];
-            delete event.request.headers['X-UAT-Token'];
-          }
-          return event;
+          // Stage 1.1: sanitize full Sentry event (message, stacks, headers, breadcrumbs, extras)
+          return sanitizeSentryEvent(event);
         },
       });
       console.log(`[Error Tracking] Sentry initialized (optional) for environment: ${config.environment}`);
@@ -150,48 +147,63 @@ export function captureException(error: Error, context?: Record<string, any>): v
   const errorType = error.name || 'Error';
   const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-  // Enhanced CloudWatch structured logging
-  const logData = {
-    level: 'ERROR',
-    errorId,
-    error: {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      type: errorType,
-    },
-    context: {
-      ...context,
-      requestId: context?.requestId || 'unknown',
-      path: context?.path,
-      method: context?.method,
-      userId: context?.userId,
-    },
-    timestamp: new Date().toISOString(),
-    environment: process.env.ENVIRONMENT || 'development',
-    // Structured for CloudWatch Logs Insights queries
-    _metadata: {
-      errorType,
-      severity: 'error',
-      hasStack: !!error.stack,
-      contextKeys: context ? Object.keys(context).join(',') : '',
-    },
-  };
+  // Sanitize message + stack + cause for CloudWatch (do not mutate original Error)
+  const safeError = sanitizeErrorForLog(error);
+  const safeContext = sanitizeValueForLog({
+    ...(context || {}),
+    requestId: context?.requestId || 'unknown',
+    path: context?.path,
+    method: context?.method,
+    userId: context?.userId,
+  }) as Record<string, unknown>;
 
-  // Log to CloudWatch with structured JSON
-  console.error(JSON.stringify(logData));
+  // Enhanced CloudWatch structured logging
+  let logData: Record<string, unknown>;
+  try {
+    logData = {
+      level: 'ERROR',
+      errorId,
+      error: {
+        name: safeError.name || error.name,
+        message: safeError.message,
+        stack: safeError.stack,
+        cause: safeError.cause,
+        type: errorType,
+      },
+      context: safeContext,
+      timestamp: new Date().toISOString(),
+      environment: process.env.ENVIRONMENT || 'development',
+      _metadata: {
+        errorType,
+        severity: 'error',
+        hasStack: !!safeError.stack,
+        contextKeys: context ? Object.keys(context).join(',') : '',
+      },
+    };
+    console.error(JSON.stringify(logData));
+  } catch {
+    console.error(
+      JSON.stringify({
+        level: 'ERROR',
+        errorId,
+        error: { message: '[log-serialization-failed]', type: errorType },
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }
 
   // Publish CloudWatch metric
   publishErrorMetric(errorType, 'error').catch(() => {
     // Ignore metric errors
   });
 
-  // Send to Sentry if available (optional)
+  // Send to Sentry if available (optional). Original Error is passed for SDK typing;
+  // beforeSend(sanitizeSentryEvent) scrubs the serialized event before transmission.
   if (Sentry) {
     try {
       Sentry.captureException(error, {
         contexts: {
-          custom: context || {},
+          custom: safeContext,
         },
         tags: {
           environment: process.env.ENVIRONMENT || 'development',
@@ -222,13 +234,15 @@ export function captureMessage(
   }
 
   const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const safeMessage = redactSecretsForLog(message || '');
+  const safeContext = sanitizeValueForLog(context || {}) as Record<string, unknown>;
 
   // Enhanced CloudWatch structured logging
   const logData = {
     level: level.toUpperCase(),
     messageId,
-    message,
-    context: context || {},
+    message: safeMessage,
+    context: safeContext,
     timestamp: new Date().toISOString(),
     environment: process.env.ENVIRONMENT || 'development',
     _metadata: {
@@ -248,13 +262,13 @@ export function captureMessage(
     });
   }
 
-  // Send to Sentry if available (optional)
+  // Send to Sentry if available (optional); beforeSend sanitizes event payload
   if (Sentry) {
     try {
-      Sentry.captureMessage(message, {
+      Sentry.captureMessage(safeMessage, {
         level: level === 'error' ? 'error' : level === 'warning' ? 'warning' : 'info',
         contexts: {
-          custom: context || {},
+          custom: safeContext,
         },
         tags: {
           environment: process.env.ENVIRONMENT || 'development',

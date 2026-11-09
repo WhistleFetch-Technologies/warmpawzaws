@@ -15,6 +15,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResultV2, Context } from 'aws-la
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { initializeErrorTracking, captureException, setUserContext, getErrorTrackingConfig } from '../utils/error-tracking';
+import { mapHonoThrownErrorToClientResponse, redactSecretsForLog } from '../utils/safe-hono-error';
 import { validateEnvironmentOrThrow, getValidationReport, validateEnvironment } from '../utils/env-validation';
 import { checkDbHealth } from '../database/rds-connection';
 import { requireAuth, requireAdmin, authAuditLog, requireAiChatbotAuth } from '../middleware/auth-middleware';
@@ -889,31 +890,32 @@ app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404, headers);
 });
 
-// Error handler with CloudWatch tracking
+// Error handler with CloudWatch tracking (Stage 1: sanitize all client bodies)
 app.onError((err, c) => {
-  // Capture error to CloudWatch (India data residency compliant)
-  captureException(err, {
-    requestId: c.req.header('x-request-id') || 'unknown',
-    path: c.req.path,
-    method: c.req.method,
-  });
-  
-  // CRITICAL: Check error message FIRST before checking path
-  // This ensures we catch errors even if path matching fails
-  const errorMessage = err.message || String(err) || 'Unknown error';
+  const requestId = c.req.header('x-request-id') || c.req.header('X-Request-Id') || 'unknown';
   const requestPath = c.req.path || (c.req as any).rawPath || c.req.url || '';
-  
-  console.error('[Hono Error Handler] Error caught:', {
-    message: errorMessage,
+
+  // Single internal diagnostic capture (includes stack for authorized logs)
+  const tracked =
+    err instanceof Error ? err : new Error(typeof err === 'string' ? err : 'Unknown error');
+  captureException(tracked, {
+    requestId,
     path: requestPath,
-    fullPath: c.req.path,
-    rawPath: (c.req as any).rawPath,
-    url: c.req.url,
-    errorType: err.constructor?.name,
-    stack: err.stack?.substring(0, 200),
+    method: c.req.method,
+    errorType: err?.constructor?.name || 'Error',
+    sanitizedLogMessage: redactSecretsForLog(tracked.message || ''),
   });
-  
-  // Get origin for CORS headers (used in all error responses)
+
+  if (process.env.DEBUG === 'true') {
+    console.error('[Hono Error Handler] Error caught (sanitized client path):', {
+      path: requestPath,
+      method: c.req.method,
+      requestId,
+      errorType: err?.constructor?.name,
+      message: redactSecretsForLog(tracked.message || '').substring(0, 200),
+    });
+  }
+
   const origin = c.req.header('origin') || c.req.header('Origin') || '';
   const allowedOrigin = getAllowedOrigin(origin);
   const corsHeaders: Record<string, string> = {
@@ -924,309 +926,24 @@ app.onError((err, c) => {
     corsHeaders['access-control-allow-origin'] = allowedOrigin;
     corsHeaders['access-control-allow-credentials'] = 'true';
   }
-  
-  // CRITICAL: Check path FIRST - this is the most reliable way to match
-  // Check for service-catalog/categories errors by PATH (most reliable)
-  if (requestPath.includes('service-catalog/categories') || 
-      requestPath.includes('/categories') ||
-      requestPath.endsWith('categories') ||
-      c.req.path.includes('service-catalog/categories') ||
-      c.req.path.includes('categories')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED service-catalog/categories by PATH - Returning 200');
-    }
-    return c.json({
-      success: true,
-      categories: [],
-      total: 0,
-      message: `Service categories query failed: ${errorMessage}`,
-    }, 200, corsHeaders);
-  }
-  
-  // Check for payment-gateways errors by PATH (most reliable)
-  if (requestPath.includes('payment-gateways') || 
-      requestPath.includes('payment-gateway') ||
-      c.req.path.includes('payment-gateways') ||
-      c.req.path.includes('payment-gateway')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED payment-gateways by PATH - Returning 200');
-    }
-    return c.json({
-      success: true,
-      gateways: [],
-      message: `Payment gateway query failed: ${errorMessage}`,
-    }, 200, corsHeaders);
-  }
-  
-  // Fallback: Check by error message (less reliable but catches edge cases)
-  const isServiceCategoriesError = 
-    errorMessage.includes('operator does not exist') || 
-    errorMessage.includes('uuid = text') || 
-    errorMessage.includes('uuid =') ||
-    errorMessage.includes('service_categories');
-  
-  if (isServiceCategoriesError) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED service-catalog/categories by ERROR MESSAGE - Returning 200');
-    }
-    return c.json({
-      success: true,
-      categories: [],
-      total: 0,
-      message: `Service categories query failed: ${errorMessage}`,
-    }, 200, corsHeaders);
-  }
-  
-  // Fallback: Check payment-gateways by error message
-  const isPaymentGatewaysError = 
-    errorMessage.includes('payment_gateways') || 
-    errorMessage.includes('payment_gateway') ||
-    (errorMessage.includes('relation') && errorMessage.includes('payment'));
-  
-  if (isPaymentGatewaysError) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED payment-gateways by ERROR MESSAGE - Returning 200');
-    }
-    return c.json({
-      success: true,
-      gateways: [],
-      message: `Payment gateway query failed: ${errorMessage}`,
-    }, 200, corsHeaders);
-  }
-  
-  // Check for onboarding/roles errors
-  if (requestPath.includes('onboarding/roles') || 
-      (requestPath.includes('roles') && requestPath.includes('onboarding'))) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED onboarding/roles - Returning 200');
-    }
-    return c.json({
-      success: true,
-      data: { roles: [] },
-      message: `Failed to get roles: ${errorMessage}`,
-    }, 200, corsHeaders);
-  }
-  
-  // Check for customer/profile/unified - critical for customer web load
-  // Return 200 with degraded response so app can load (auth/onboarding flow) instead of 500
-  if (requestPath.includes('profile/unified') || requestPath.includes('customer/profile/unified')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED customer/profile/unified - Returning 200 degraded');
-    }
-    return c.json({
-      success: true,
-      profile: null,
-      _degraded: true,
-      error: errorMessage,
-      message: `Profile fetch failed: ${errorMessage}`,
-    }, 200, corsHeaders);
-  }
-  
-  // Check for customer previous-providers - return empty list on error (non-critical)
-  if (requestPath.includes('previous-providers')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED previous-providers - Returning 200 empty');
-    }
-    return c.json({ success: true, providers: [], total: 0 }, 200, corsHeaders);
-  }
-  
-  // Check for customer problems/trending - return empty on error (non-critical)
-  if (requestPath.includes('problems/trending')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED problems/trending - Returning 200 empty');
-    }
-    return c.json({ success: true, trending: [], total: 0 }, 200, corsHeaders);
-  }
-  
-  // Check for public/problem-grid - return empty on error (non-critical)
-  if (requestPath.includes('problem-grid')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED problem-grid - Returning 200 empty');
-    }
-    return c.json({ success: true, problems: [], byCategory: {} }, 200, corsHeaders);
-  }
-  
-  // Check for customer recommended-services - return empty on error (non-critical)
-  if (requestPath.includes('recommended-services')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED recommended-services - Returning 200 empty');
-    }
-    return c.json({ success: true, services: [] }, 200, corsHeaders);
-  }
-  
-  // Check for customer search-suggestions - return empty on error (non-critical)
-  if (requestPath.includes('search-suggestions')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED search-suggestions - Returning 200 empty');
-    }
-    return c.json({ success: true, suggestions: [], count: 0 }, 200, corsHeaders);
+  if (requestId && requestId !== 'unknown') {
+    corsHeaders['x-request-id'] = requestId;
   }
 
-  // Universal /search must never hard-fail the home page. If the underlying SQL
-  // throws (schema drift, missing column, etc.) return an empty result envelope
-  // shaped like the success response so the EnhancedSearchBar shows "no results"
-  // rather than a broken UI. Match the canonical /search route only — avoid
-  // accidentally swallowing /customer/search-* (already handled above).
-  if (requestPath === '/search' || requestPath.endsWith('/search')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED /search - Returning 200 empty');
-    }
-    let qParam = '';
-    try { qParam = (c.req as any).query('q') || ''; } catch (_) { qParam = ''; }
-    return c.json(
-      {
-        query: qParam,
-        categories: [],
-        taxonomyResolvedHub: null,
-        taxonomySource: 'none',
-        effectiveCategory: null,
-        categorySource: 'none',
-        hubDrivenRetrieval: false,
-        searchText: '',
-        vendors: [],
-        services: [],
-        total: 0,
-        searchMethod: 'sql',
-      },
-      200,
-      corsHeaders
-    );
-  }
-  
-  // Check for customer orders/meals/active - return empty on error (non-critical)
-  if (requestPath.includes('orders/meals/active')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED orders/meals/active - Returning 200 empty');
-    }
-    return c.json({ success: true, orders: [] }, 200, corsHeaders);
-  }
-  
-  // Check for customer adoption-stats - return defaults on error (non-critical)
-  if (requestPath.includes('adoption-stats')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED adoption-stats - Returning 200 defaults');
-    }
-    return c.json({
-      success: true,
-      stats: { adoptablePets: 50, certifiedBreeders: 30, rehomingListings: 20 },
-    }, 200, corsHeaders);
-  }
-  
-  // Check for customer notifications - return empty on error (non-critical)
-  if (requestPath.includes('notifications') && requestPath.includes('customer')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED customer notifications - Returning 200 empty');
-    }
-    return c.json({ success: true, notifications: [], unreadCount: 0 }, 200, corsHeaders);
-  }
-  
-  // Degrade only GET list-style customer pet routes — never mask PUT/DELETE or /customer/:id/pets/:petId
-  const httpMethod = (c.req.method || 'GET').toUpperCase();
-  const isCustomerPetListRoute =
-    requestPath.includes('/pets/') &&
-    requestPath.includes('customer') &&
-    httpMethod === 'GET' &&
-    !/\/customer\/[^/]+\/pets\/[^/]+/.test(requestPath);
-  if (isCustomerPetListRoute) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED customer pets list - Returning 200 empty');
-    }
-    return c.json({ success: true, pets: [], count: 0 }, 200, corsHeaders);
+  let searchQuery = '';
+  try {
+    searchQuery = (c.req as any).query?.('q') || '';
+  } catch {
+    searchQuery = '';
   }
 
-  // Check for service-launch/customer - return defaults on error (non-critical)
-  if (requestPath.includes('service-launch') && requestPath.includes('customer')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED service-launch/customer - Returning 200 defaults');
-    }
-    return c.json({
-      success: true,
-      location: { state: null, stateCode: null, city: null },
-      services: { visible: [], comingSoon: [], hidden: [] },
-      buttons: [],
-    }, 200, corsHeaders);
-  }
+  const mapped = mapHonoThrownErrorToClientResponse(err, requestPath, {
+    method: c.req.method,
+    searchQuery,
+  });
 
-  // Check for reminders/upcoming - return empty on error (non-critical)
-  if (requestPath.includes('reminders/upcoming')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED reminders/upcoming - Returning 200 empty');
-    }
-    return c.json({ success: true, reminders: [] }, 200, corsHeaders);
-  }
-
-  // Check for reviews/pending - return empty on error (non-critical)
-  if (requestPath.includes('reviews/pending')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED reviews/pending - Returning 200 empty');
-    }
-    return c.json({ success: true, reviews: [], pending: [] }, 200, corsHeaders);
-  }
-
-  // Mobile: GET /customer/appointments?customerId= (list) and GET /customer/appointments/:id (detail)
-  if (requestPath.includes('customer/appointments')) {
-    const idSegment = requestPath.match(/\/customer\/appointments\/([^/?#]+)/);
-    if (idSegment?.[1]) {
-      if (process.env.DEBUG === 'true') {
-        console.log('[Hono Error Handler] MATCHED customer/appointments/:id - Returning 404 degraded');
-      }
-      return c.json(
-        { error: 'Appointment not found', _degraded: true, message: errorMessage },
-        404,
-        corsHeaders
-      );
-    }
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED customer/appointments list - Returning 200 empty');
-    }
-    return c.json(
-      {
-        appointments: [],
-        count: 0,
-        message: 'No booking',
-        _degraded: true,
-        error: errorMessage,
-      },
-      200,
-      corsHeaders
-    );
-  }
-
-  // Customer appointments list (web + mobile compatibility path)
-  if (requestPath.includes('/appointment/customer')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED appointment/customer list - Returning 200 empty');
-    }
-    return c.json(
-      {
-        appointments: [],
-        count: 0,
-        message: 'No booking',
-        _degraded: true,
-        error: errorMessage,
-      },
-      200,
-      corsHeaders
-    );
-  }
-
-  // GET /appointment/:id (detail), cancel, reschedule — avoid raw 500 for customer bookings UI
-  if (requestPath.includes('/appointment/')) {
-    if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED /appointment/* detail - Returning 404 degraded');
-    }
-    return c.json(
-      { error: 'Appointment not found', _degraded: true, message: errorMessage },
-      404,
-      corsHeaders
-    );
-  }
-  
-  // Default error response - CRITICAL: Must include CORS headers
-  if (process.env.DEBUG === 'true') {
-    console.log('[Hono Error Handler] NO MATCH - Returning 500');
-  }
-  return c.json({ error: errorMessage }, 500, corsHeaders);
+  // Status cast: Hono ContentfulStatusCode accepts our mapped statuses
+  return c.json(mapped.body, mapped.status as any, corsHeaders);
 });
 
 /**
