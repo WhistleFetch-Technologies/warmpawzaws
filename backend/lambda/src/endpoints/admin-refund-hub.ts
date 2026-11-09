@@ -13,6 +13,7 @@ import {
   backfillMealRefundCaseByOrderRef,
   rejectMealRefundCase,
 } from '../utils/meal-refund-cases';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 function adminReviewerId(c: { get: (k: string) => unknown }): string {
   return String(c.get('userId') || c.get('userEmail') || 'admin');
@@ -47,7 +48,7 @@ export function registerAdminRefundHubEndpoints(app: Hono) {
       });
     } catch (e: unknown) {
       console.error('[admin/refund-cases] list', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -69,7 +70,7 @@ export function registerAdminRefundHubEndpoints(app: Hono) {
       return c.json({ success: true, ...result });
     } catch (e: unknown) {
       console.error('[admin/refund-cases/meal-backfill]', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -89,7 +90,7 @@ export function registerAdminRefundHubEndpoints(app: Hono) {
       });
     } catch (e: unknown) {
       console.error('[admin/refund-cases/meal_case/approve]', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -107,7 +108,7 @@ export function registerAdminRefundHubEndpoints(app: Hono) {
       return c.json({ success: true, status: 'rejected' });
     } catch (e: unknown) {
       console.error('[admin/refund-cases/meal_case/reject]', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -124,7 +125,7 @@ export function registerAdminRefundHubEndpoints(app: Hono) {
       return c.json({ success: true, case: detail });
     } catch (e: unknown) {
       console.error('[admin/refund-cases] detail', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

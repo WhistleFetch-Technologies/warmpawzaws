@@ -10,6 +10,7 @@ import {
   initiateShopOrderRazorpayRefund,
   reconcileShopRefundById,
 } from '../utils/payments/shop-order-refund';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 function parseLimit(raw: string | undefined, fallback = 50, max = 100): number {
   const n = raw ? parseInt(raw, 10) : fallback;
@@ -67,7 +68,7 @@ export function registerAdminShopRefundsEndpoints(app: Hono) {
       });
     } catch (e: unknown) {
       console.error('[admin/shop-refunds] list', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -109,7 +110,7 @@ export function registerAdminShopRefundsEndpoints(app: Hono) {
       });
     } catch (e: unknown) {
       console.error('[admin/shop-refunds/missing]', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -171,7 +172,7 @@ export function registerAdminShopRefundsEndpoints(app: Hono) {
       });
     } catch (e: unknown) {
       console.error('[admin/shop-refunds/initiate]', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -189,7 +190,7 @@ export function registerAdminShopRefundsEndpoints(app: Hono) {
       });
     } catch (e: unknown) {
       console.error('[admin/shop-refunds/reconcile]', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -238,7 +239,7 @@ export function registerAdminShopRefundsEndpoints(app: Hono) {
       });
     } catch (e: unknown) {
       console.error('[admin/shop-returns] list', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -286,7 +287,7 @@ export function registerAdminShopRefundsEndpoints(app: Hono) {
       });
     } catch (e: unknown) {
       console.error('[admin/shop-refunds/retry]', e);
-      return c.json({ success: false, error: (e as Error).message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

@@ -35,6 +35,7 @@ import {
   uploadDisplayImage,
   ImageProcessingError,
 } from '../../../services/image';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 // ============================================================================
 // CAPABILITY REFRESH SYSTEM
@@ -63,7 +64,7 @@ class RefreshCapabilitiesHandler extends BaseHandler {
             await this.refreshVendorCapabilities(vendor.id, forceRefresh);
             results.push({ vendorId: vendor.id, status: 'success' });
           } catch (error: any) {
-            results.push({ vendorId: vendor.id, status: 'error', error: error.message });
+            results.push({ vendorId: vendor.id, status: 'error', error: SAFE_INTERNAL_ERROR_MESSAGE });
           }
         }
 
@@ -74,7 +75,7 @@ class RefreshCapabilitiesHandler extends BaseHandler {
       }
     } catch (error: any) {
       console.error('Error refreshing capabilities:', error);
-      return this.error(`Capability refresh failed: ${error.message}`, 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 
@@ -154,7 +155,7 @@ class SyncServiceCatalogHandler extends BaseHandler {
       }
     } catch (error: any) {
       console.error('Error syncing service catalog:', error);
-      return this.error(`Service catalog sync failed: ${error.message}`, 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 
@@ -239,7 +240,7 @@ class ApplyTierCommissionsHandler extends BaseHandler {
             await this.applyTierCommission(vendor.id);
             results.push({ vendorId: vendor.id, status: 'success' });
           } catch (error: any) {
-            results.push({ vendorId: vendor.id, status: 'error', error: error.message });
+            results.push({ vendorId: vendor.id, status: 'error', error: SAFE_INTERNAL_ERROR_MESSAGE });
           }
         }
 
@@ -258,7 +259,7 @@ class ApplyTierCommissionsHandler extends BaseHandler {
       }
     } catch (error: any) {
       console.error('Error applying tier commissions:', error);
-      return this.error(`Tier commission application failed: ${error.message}`, 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 
@@ -322,7 +323,7 @@ class CalculateTaxHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error calculating tax:', error);
-      return this.error(`Tax calculation failed: ${error.message}`, 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 
@@ -516,7 +517,7 @@ class GetBannersHandler extends BaseHandler {
         console.warn('⚠️ Database connection issue - returning empty array');
         return this.success({ banners: [], total: 0, message: 'Database connection issue. Please try again later.' });
       }
-      return this.error(`Failed to fetch banners: ${error.message}`, 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -588,7 +589,7 @@ class CreateBannerHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error creating banner:', error);
-      return this.error(`Failed to create banner: ${error.message}`, 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -694,7 +695,7 @@ class UpdateBannerHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error updating banner:', error);
-      return this.error(`Failed to update banner: ${error.message}`, 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -727,7 +728,7 @@ class DeleteBannerHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error deleting banner:', error);
-      return this.error(`Failed to delete banner: ${error.message}`, 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -810,7 +811,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error calculating tax:', error);
-      return c.json({ error: error.message || 'Failed to calculate tax' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -828,7 +829,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
         console.warn('⚠️ banners table does not exist - returning empty array');
         return c.json({ success: true, banners: [], total: 0, message: 'Banners table not initialized. Run migrations first.' });
       }
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -925,7 +926,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
         return c.json({ error: error.message }, error.statusCode as ContentfulStatusCode);
       }
       console.error('Error uploading banner image:', error);
-      return c.json({ error: error.message || 'Failed to upload banner image' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -948,7 +949,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
       return c.json(
         {
           success: false,
-          error: error.message || 'Failed to load destination options',
+          error: SAFE_INTERNAL_ERROR_MESSAGE,
           categories: [],
           serviceStyles: [],
           vendors: [],
@@ -971,7 +972,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
       return c.json(
         {
           success: false,
-          error: error.message || 'Failed to load shop destination options',
+          error: SAFE_INTERNAL_ERROR_MESSAGE,
           products: [],
           total: 0,
         },
@@ -997,7 +998,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
       return c.json({ success: true, services, total: services.length });
     } catch (error: any) {
       console.error('Error listing vendor services for banner picker:', error);
-      return c.json({ success: false, error: error.message || 'Failed to list services', services: [] }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE, services: [] }, 500);
     }
   });
 
@@ -1020,7 +1021,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
       ).catch(() => ({ rows: [] }));
       return c.json({ success: true, states: result.rows || [] });
     } catch (error: any) {
-      return c.json({ success: true, states: [], error: error.message });
+      return c.json({ success: true, states: [], error: SAFE_INTERNAL_ERROR_MESSAGE });
     }
   });
 
@@ -1050,7 +1051,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
       const result = await query(sql, params).catch(() => ({ rows: [] }));
       return c.json({ success: true, cities: result.rows || [] });
     } catch (error: any) {
-      return c.json({ success: true, cities: [], error: error.message });
+      return c.json({ success: true, cities: [], error: SAFE_INTERNAL_ERROR_MESSAGE });
     }
   });
 

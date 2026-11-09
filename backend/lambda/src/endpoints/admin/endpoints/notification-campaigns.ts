@@ -20,6 +20,7 @@ import {
   isNotificationCronEnabled,
   isNotificationPipelineEnabled,
 } from '../../../utils/notification-pipeline-kill-switch';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 function getAdminId(c: { req: { header: (name: string) => string | undefined } }): string | null {
   return c.req.header('x-admin-id') || c.req.header('x-user-id') || null;
@@ -142,8 +143,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
 
       return c.json({ success: true, customers: result.rows || [] });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Customer lookup failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -194,8 +195,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       }
       return c.json({ success: true });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Failed to update settings';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -206,8 +207,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       const estimate = await estimateCampaignAudience(body as AudienceFilters);
       return c.json({ success: true, ...estimate });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Estimate failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -243,8 +244,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       });
       return c.json({ success: true, template: row[0] });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Create template failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -258,8 +259,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       });
       return c.json({ success: true, template: updated[0] });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Update template failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -269,8 +270,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       await update('notification_campaign_templates', { id }, { is_active: false, updated_at: new Date().toISOString() });
       return c.json({ success: true });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Delete template failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -307,8 +308,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       }
       return c.json({ success: true, segment: row[0] });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Create segment failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -324,8 +325,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       });
       return c.json({ success: true, ...estimate });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Preview failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -364,8 +365,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       const targeting = await loadCampaignTargeting(id);
       return c.json({ success: true, campaign: { ...result.rows[0], ...targeting } });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Fetch failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -405,8 +406,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       }
       return c.json({ success: true, campaign: row[0] });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Create campaign failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -442,8 +443,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       await recordCampaignEvent(id, 'UPDATED', adminId);
       return c.json({ success: true, campaign: updated[0] });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Update failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -477,8 +478,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       }
       return c.json({ success: true, campaign: row[0] });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Duplicate failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -519,8 +520,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
         estimatedRecipients: estimate.estimatedRecipients,
       });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Validation failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -569,10 +570,11 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       }
 
       // Async enqueue — worker self-chains; avoid waiting for FCM fan-out (API GW 30s).
+      const deliveryStatus = String(delivery.status);
       return c.json({
         success: true,
         status: delivery.status,
-        queued: delivery.status === 'QUEUED' || delivery.status === 'SENDING',
+        queued: deliveryStatus === 'QUEUED' || deliveryStatus === 'SENDING',
         estimatedRecipients: delivery.estimatedRecipients,
         sentRecipients: delivery.sentRecipients,
         failedRecipients: delivery.failedRecipients,
@@ -581,13 +583,13 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
         warnings: estimate.warnings,
         errors: delivery.errors,
         message:
-          delivery.status === 'QUEUED' || delivery.estimatedRecipients > 0
+          deliveryStatus === 'QUEUED' || delivery.estimatedRecipients > 0
             ? 'Campaign queued; delivery runs asynchronously for recipients with fresh FCM tokens.'
             : undefined,
       }, delivery.status === 'FAILED' ? 500 : 202);
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Send failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -602,8 +604,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       await recordCampaignEvent(id, 'CANCELLED', adminId);
       return c.json({ success: true });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Cancel failed';
-      return c.json({ error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -673,8 +675,8 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       );
       return c.json({ success: true, ...result });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Campaign cron failed';
-      return c.json({ success: false, error: msg }, 500);
+      console.error('[admin/notifications] unexpected error', error);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }
