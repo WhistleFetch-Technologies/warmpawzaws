@@ -5,6 +5,7 @@ import {
   validateCustomerDeliveryFeePolicy,
 } from '../../../../utils/customer-delivery-fee-policy';
 import { POLICY_KEY } from '../constants';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../../utils/safe-hono-error';
 
 export async function executegetAdminDeliveryFeePolicy(c: Context) {
   try {
@@ -26,6 +27,6 @@ export async function executegetAdminDeliveryFeePolicy(c: Context) {
       updatedAt: row.updated_at,
     });
   } catch (e: any) {
-    return c.json({ success: false, error: e?.message || 'Failed to load' }, 500);
+    return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
   }
 }

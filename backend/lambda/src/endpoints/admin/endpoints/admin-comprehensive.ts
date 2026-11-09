@@ -3932,7 +3932,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('[vendor-portal-code] Error:', error);
       return c.json(
-        { success: false, error: error?.message || 'Failed to create portal code' },
+        { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE },
         500
       );
     }

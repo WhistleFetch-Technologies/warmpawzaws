@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 // ============================================================================
 // FIELD TYPE CONSTANTS
@@ -462,7 +463,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
             roleId: role.name,
             roleName: role.display_name || role.name,
             status: 'error',
-            error: error.message,
+            error: SAFE_INTERNAL_ERROR_MESSAGE,
           });
         }
       }
@@ -481,7 +482,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error migrating onboarding fields:', error);
-      return c.json({ error: error.message || 'Failed to migrate onboarding fields' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -657,7 +658,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
             roleId: role.name,
             roleName: role.display_name || role.name,
             status: 'error',
-            error: error.message,
+            error: SAFE_INTERNAL_ERROR_MESSAGE,
           });
         }
       }
@@ -676,9 +677,9 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[KYC-MIGRATE] Error:', error);
-      return c.json({ 
+      return c.json({
         success: false,
-        error: error.message || 'Failed to migrate KYC fields' 
+        error: SAFE_INTERNAL_ERROR_MESSAGE,
       }, 500);
     }
   });
@@ -1057,7 +1058,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching onboarding fields:', error);
-      return c.json({ error: error.message || 'Failed to fetch onboarding fields' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1183,7 +1184,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching onboarding field:', error);
-      return c.json({ error: error.message || 'Failed to fetch field' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1271,7 +1272,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating onboarding field:', error);
-      return c.json({ error: error.message || 'Failed to create field' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1368,7 +1369,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating onboarding field:', error);
-      return c.json({ error: error.message || 'Failed to update field' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1562,7 +1563,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error deleting onboarding field:', error);
-      return c.json({ error: error.message || 'Failed to delete field' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1610,7 +1611,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error reordering onboarding fields:', error);
-      return c.json({ error: error.message || 'Failed to reorder fields' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1652,7 +1653,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching onboarding form:', error);
-      return c.json({ error: error.message || 'Failed to fetch onboarding form' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1695,7 +1696,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error saving form:', error);
-      return c.json({ error: error.message || 'Failed to save form' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1739,7 +1740,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
           results.push({
             roleId: role.name,
             status: 'error',
-            error: error.message,
+            error: SAFE_INTERNAL_ERROR_MESSAGE,
           });
         }
       }
@@ -1751,7 +1752,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error syncing onboarding fields:', error);
-      return c.json({ error: error.message || 'Failed to sync onboarding fields' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

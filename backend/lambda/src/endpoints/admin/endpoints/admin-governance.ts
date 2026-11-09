@@ -22,6 +22,7 @@ import { query, select, insert, update } from '../../../database/rds-connection'
 import { publishToSNS, sendToSQS } from '../../../utils/aws/aws-clients';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 // ============================================================================
 // HANDLERS
@@ -96,7 +97,7 @@ class PropagateChangesHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Propagation error:', error);
-      return this.error(`Propagation failed: ${error.message}`, 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 

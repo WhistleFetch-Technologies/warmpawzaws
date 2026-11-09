@@ -9,6 +9,7 @@ import {
   type ReferralProgramSettings,
 } from '../../../lib/services/referral-program-settings';
 import { customerDisplayNameSql } from '../../../lib/sql/customer-display-name';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 export function registerAdminReferralsEndpoints(app: Hono) {
   /**
@@ -20,7 +21,7 @@ export function registerAdminReferralsEndpoints(app: Hono) {
       return c.json({ success: true, settings });
     } catch (error: unknown) {
       console.error('Error fetching referral program settings:', error);
-      return c.json({ error: (error as Error).message || 'Failed to fetch settings' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -77,7 +78,7 @@ export function registerAdminReferralsEndpoints(app: Hono) {
       return c.json({ success: true, settings: next });
     } catch (error: unknown) {
       console.error('Error updating referral program settings:', error);
-      return c.json({ error: (error as Error).message || 'Failed to update settings' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -115,7 +116,7 @@ export function registerAdminReferralsEndpoints(app: Hono) {
       });
     } catch (error: unknown) {
       console.error('Error fetching referral stats:', error);
-      return c.json({ error: (error as Error).message || 'Failed to fetch stats' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -164,7 +165,7 @@ export function registerAdminReferralsEndpoints(app: Hono) {
       return c.json({ success: true, signups: rows.rows, limit, offset });
     } catch (error: unknown) {
       console.error('Error fetching referral signups:', error);
-      return c.json({ error: (error as Error).message || 'Failed to fetch signups' }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

@@ -17,6 +17,7 @@ import { select, update, query } from '../../../database/rds-connection';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 // ============================================================================
 // GET /admin/vendors/sellers - List sellers pending approval
@@ -80,7 +81,7 @@ class GetSellersHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error fetching sellers:', error);
-      return this.error(error.message || 'Failed to fetch sellers', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -134,7 +135,7 @@ class ApproveSellerHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error approving seller:', error);
-      return this.error(error.message || 'Failed to approve seller', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -187,7 +188,7 @@ class RejectSellerHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error rejecting seller:', error);
-      return this.error(error.message || 'Failed to reject seller', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }

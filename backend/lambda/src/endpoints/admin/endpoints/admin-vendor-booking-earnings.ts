@@ -3,6 +3,7 @@
  */
 
 import { Hono } from 'hono';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { assertReportDate, parseYearMonthQuery } from '../../../utils/vendor-accrual-ist';
 import { buildSettlementAuditCsv } from '../../../utils/settlement-audit-csv';
@@ -182,7 +183,7 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin-vendor-booking-earnings] list:', error);
-      return c.json({ success: false, error: error?.message || 'Failed to load vendor booking earnings' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -260,7 +261,7 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin-vendor-booking-earnings] export:', error);
-      return c.text(error?.message || 'Export failed', 500);
+      return c.text(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   });
 
@@ -293,7 +294,7 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin-vendor-booking-earnings] settlement audit export:', error);
-      return c.text(error?.message || 'Settlement audit export failed', 500);
+      return c.text(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   });
 }

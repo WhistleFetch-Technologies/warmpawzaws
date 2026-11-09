@@ -10,6 +10,7 @@
 import { Hono } from 'hono';
 import { query } from '../database/rds-connection';
 import { isValidUUID } from '../types/entities';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 export function registerDiscoveryRulesAdminEndpoints(app: Hono) {
   /**
@@ -67,7 +68,7 @@ export function registerDiscoveryRulesAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin/discovery-rules] GET error:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -139,7 +140,7 @@ export function registerDiscoveryRulesAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin/discovery-rules] POST error:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -212,7 +213,7 @@ export function registerDiscoveryRulesAdminEndpoints(app: Hono) {
       return c.json({ success: true, rule: res.rows[0] });
     } catch (error: any) {
       console.error('[admin/discovery-rules] PUT error:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -239,7 +240,7 @@ export function registerDiscoveryRulesAdminEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Rule deactivated' });
     } catch (error: any) {
       console.error('[admin/discovery-rules] DELETE error:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

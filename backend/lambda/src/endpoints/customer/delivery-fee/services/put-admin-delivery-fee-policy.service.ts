@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import * as put_admin_delivery_fee_policyRepo from '../repos/put-admin-delivery-fee-policy.repo';
 import { validateCustomerDeliveryFeePolicy } from '../../../../utils/customer-delivery-fee-policy';
 import { POLICY_KEY } from '../constants';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../../utils/safe-hono-error';
 
 const DESCRIPTION =
   'Customer-facing delivery fee matrix (zones by distance + order value), surges, and policy copy';
@@ -27,6 +28,6 @@ export async function executeputAdminDeliveryFeePolicy(c: Context) {
     }
     return c.json({ success: true, policy: parsed.policy });
   } catch (e: any) {
-    return c.json({ success: false, error: e?.message || 'Failed to save' }, 500);
+    return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
   }
 }

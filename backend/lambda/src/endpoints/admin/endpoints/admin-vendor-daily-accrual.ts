@@ -28,6 +28,7 @@ import {
   sumAccrualFeeBreakdowns,
 } from '../../../utils/vendor-accrual-fee-breakdown';
 import { fetchFundingDiscountTotalsForIstRange } from '../../../utils/resolve-settlement-breakdown-for-report';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 import { sqlPackageAllocatedEarningsAgg } from '../../../utils/package-session-earnings-allocation';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -462,7 +463,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin-vendor-daily-accrual] compute:', error);
-      return c.json({ success: false, error: error?.message || 'Compute failed' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -529,7 +530,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin-vendor-daily-accrual] monthly compute:', error);
-      return c.json({ success: false, error: error?.message || 'Monthly compute failed' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -624,7 +625,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin-vendor-daily-accrual] monthly export:', error);
-      return c.text(error?.message || 'Monthly export failed', 500);
+      return c.text(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   });
 
@@ -676,7 +677,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin-vendor-daily-accrual] monthly list:', error);
-      return c.json({ success: false, error: error?.message || 'Failed to load monthly accrual' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -767,7 +768,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin-vendor-daily-accrual] export:', error);
-      return c.text(error?.message || 'Export failed', 500);
+      return c.text(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   });
 
@@ -817,7 +818,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[admin-vendor-daily-accrual] list:', error);
-      return c.json({ success: false, error: error?.message || 'Failed to load accrual' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

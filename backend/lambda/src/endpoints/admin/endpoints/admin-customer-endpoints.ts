@@ -853,7 +853,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       }
       return c.json({ success: true, code: result.code, expiresAt: result.expiresAt });
     } catch (error: any) {
-      return c.json({ success: false, error: error?.message || 'Failed' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -888,7 +888,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
       }
       return c.json({ success: true, data: sessionResult.data });
     } catch (error: any) {
-      return c.json({ success: false, error: error?.message || 'Failed' }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 

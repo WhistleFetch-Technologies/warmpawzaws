@@ -3,6 +3,7 @@
  */
 import { Hono } from 'hono';
 import { requireAdminAuth } from './admin.controller';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 const FETCH_TIMEOUT_MS = 28_000;
 
@@ -33,8 +34,8 @@ async function callDeliveryService(
     }
     return { ok: resp.ok, status: resp.status, data };
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e);
-    return { ok: false, status: 502, data: { success: false, error: `delivery-service unreachable: ${message}` } };
+    console.error('[admin/meal-logistics] delivery-service unreachable', e);
+    return { ok: false, status: 502, data: { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE } };
   } finally {
     clearTimeout(timer);
   }

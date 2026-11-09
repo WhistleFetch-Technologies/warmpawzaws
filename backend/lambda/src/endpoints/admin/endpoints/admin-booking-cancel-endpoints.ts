@@ -14,6 +14,7 @@ import {
   normalizeAdminRefundMethod,
   previewAdminBookingCancel,
 } from '../../../lib/services/admin/admin-booking-cancel-service';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 async function gate(c: any) {
   const auth = await requireAdminAuth(c);
@@ -33,7 +34,7 @@ function errorResponse(c: any, error: unknown, logPrefix: string) {
     return c.json({ success: false, error: error.message, code: error.code }, error.status);
   }
   console.error(logPrefix, error);
-  return c.json({ success: false, error: (error as Error)?.message || 'Failed' }, 500);
+  return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
 }
 
 export function registerAdminBookingCancelEndpoints(app: Hono) {

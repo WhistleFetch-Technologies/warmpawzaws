@@ -14,6 +14,7 @@
 
 import { Hono } from 'hono';
 import { select, update, query } from '../../../database/rds-connection';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 export function registerAdminCustomServicesEndpoints(app: Hono) {
   /**
@@ -81,7 +82,7 @@ export function registerAdminCustomServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching pending custom services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -139,7 +140,7 @@ export function registerAdminCustomServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching custom services:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -197,7 +198,7 @@ export function registerAdminCustomServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error approving custom service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -253,7 +254,7 @@ export function registerAdminCustomServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error rejecting custom service:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -301,7 +302,7 @@ export function registerAdminCustomServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error requesting changes:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -338,7 +339,7 @@ export function registerAdminCustomServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching stats:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

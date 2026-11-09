@@ -16,6 +16,7 @@ import {
   cronPipelineSkippedPayload,
   isNotificationCronEnabled,
 } from '../../../utils/notification-pipeline-kill-switch';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 export function registerAdminNotificationDeliveryEndpoints(app: Hono) {
   /**
@@ -180,9 +181,8 @@ export function registerAdminNotificationDeliveryEndpoints(app: Hono) {
         message: 'Test notification created and in-app delivery finalized',
       });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Internal server error';
       console.error('[admin-notification-delivery] test send error:', error);
-      return c.json({ error: msg }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -206,8 +206,8 @@ export function registerAdminNotificationDeliveryEndpoints(app: Hono) {
       );
       return c.json({ success: true, deleted, retentionDays });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Retention purge failed';
-      return c.json({ success: false, error: msg }, 500);
+      console.error('[admin-notification-delivery] retention purge error:', error);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

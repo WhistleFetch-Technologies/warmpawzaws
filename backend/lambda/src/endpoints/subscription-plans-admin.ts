@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
 
 // ============================================================================
 // TYPES
@@ -103,7 +104,7 @@ class GetSubscriptionPlansHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error getting subscription plans:', error);
-      return this.error(error.message || 'Failed to get plans', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -162,7 +163,7 @@ class CreateSubscriptionPlanHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error creating plan:', error);
-      return this.error(error.message || 'Failed to create plan', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -203,7 +204,7 @@ class UpdateSubscriptionPlanHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error updating plan:', error);
-      return this.error(error.message || 'Failed to update plan', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
@@ -241,7 +242,7 @@ class DeleteSubscriptionPlanHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error deleting plan:', error);
-      return this.error(error.message || 'Failed to delete plan', 500);
+      return this.error(SAFE_INTERNAL_ERROR_MESSAGE, 500);
     }
   }
 }
