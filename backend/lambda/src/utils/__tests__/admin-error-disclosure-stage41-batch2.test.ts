@@ -119,6 +119,18 @@ describe('Stage 4.1 Batch 2 — source contracts', () => {
   });
 });
 
+/** Batch 1 F03 requires admin/vendor auth on analytics — inject role for catch-path tests. */
+function analyticsAppWithRole(role: string = 'admin') {
+  const app = new Hono();
+  app.use('*', async (c, next) => {
+    (c as any).set('userRole', role);
+    (c as any).set('userGroups', [role]);
+    await next();
+  });
+  registerAnalyticsEndpoints(app);
+  return app;
+}
+
 describe('Stage 4.1 Batch 2 — analytics runtime', () => {
   beforeEach(() => {
     mockedQuery.mockReset();
@@ -129,8 +141,7 @@ describe('Stage 4.1 Batch 2 — analytics runtime', () => {
     mockedQuery.mockRejectedValueOnce(
       new Error('relation "bookings" does not exist'),
     );
-    const app = new Hono();
-    registerAnalyticsEndpoints(app);
+    const app = analyticsAppWithRole('admin');
     const res = await app.request('http://localhost/analytics/platform/overview');
     expect(res.status).toBe(500);
     const body = (await res.json()) as any;
@@ -141,8 +152,7 @@ describe('Stage 4.1 Batch 2 — analytics runtime', () => {
   it('GET /analytics/vendor/:id/dashboard unexpected failure is sanitized', async () => {
     mockedSelect.mockResolvedValueOnce([{ id: '11111111-1111-4111-8111-111111111111' }] as any);
     mockedQuery.mockRejectedValueOnce(new Error('column "xyz" does not exist'));
-    const app = new Hono();
-    registerAnalyticsEndpoints(app);
+    const app = analyticsAppWithRole('admin');
     const res = await app.request(
       'http://localhost/analytics/vendor/11111111-1111-4111-8111-111111111111/dashboard',
     );

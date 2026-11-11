@@ -22,7 +22,10 @@ import { query, select, update, insert, deleteRows, upsert } from '../../../data
 import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../../../utils/payments/razorpay-client';
 import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-payout';
 import { sqlCountsTowardBookingMetrics } from '../../../utils/booking-cancellation-metrics';
-import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
+import {
+  getInternalErrorMessage,
+  createSafeErrorResponse,
+} from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import {
@@ -2908,9 +2911,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       console.error('Error creating product:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create product', 500);
 
-      // Provide more specific error message for foreign key violations
-      if (errorResponse.error && typeof errorResponse.error === 'string' &&
-        errorResponse.error.includes('foreign key constraint')) {
+      // Batch 2: inspect internal diagnostic text only — never client-facing `.error`
+      const internalMsg = getInternalErrorMessage(error);
+      if (internalMsg.includes('foreign key constraint')) {
         return c.json({
           success: false,
           error: 'Invalid category selected. The category does not exist in the system. Please select a valid product category or leave it empty.'
@@ -4184,7 +4187,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           'Prefer Finance → Cancellation & Refund Policy (vendor_refund_tiers). This legacy cancellation_policies table is retained for read/migration only.',
       });
     } catch (error: unknown) {
-      const msg = String(getErrorMessage(error));
+      const msg = String(getInternalErrorMessage(error));
       if (/relation\s+["']?cancellation_policies["']?\s+does not exist/i.test(msg)) {
         console.warn('[admin/finance/cancellation-policies] Table missing:', msg);
         return c.json({ success: true, policies: [] });
@@ -6458,7 +6461,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           listWhere.values,
         );
       } catch (colErr: unknown) {
-        const colMsg = String(getErrorMessage(colErr));
+        const colMsg = String(getInternalErrorMessage(colErr));
         if (/column "terms_and_conditions" does not exist|column "marketplace_enabled" does not exist/i.test(colMsg)) {
           result = await query(
             `
@@ -6482,7 +6485,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const rows = (result.rows || []).map((row: Record<string, unknown>) => mapVendorPaymentTierRow(row));
       return c.json({ success: true, tiers: rows });
     } catch (error: unknown) {
-      const msg = String(getErrorMessage(error));
+      const msg = String(getInternalErrorMessage(error));
       // Table missing: return empty tiers so UI loads; run migration 008 to create vendor_tiers
       if (/relation\s+["']?(?:vendor_tiers|payment_tiers)["']?\s+does not exist/i.test(msg)) {
         console.warn('[admin/payments/tiers] Table missing:', msg);
