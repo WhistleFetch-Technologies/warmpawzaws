@@ -396,7 +396,7 @@ export function InsuranceQuoteJourney({
         {step < 5 ? <Stepper active={stepperActive} /> : null}
       </div>
 
-      <div className="px-4 pb-32 pt-4 space-y-4">
+      <div className="px-4 pt-4 space-y-4 pb-[calc(6.5rem+var(--customer-tabbed-nav-offset,0px))]">
         {error ? <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{error}</p> : null}
 
         {step === 1 ? (
@@ -749,7 +749,7 @@ export function InsuranceQuoteJourney({
       </div>
 
       {step < 5 ? (
-        <div className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-100 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="sticky bottom-[var(--customer-tabbed-nav-offset,0px)] z-20 bg-white border-t border-gray-100 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="max-w-lg mx-auto">
             {step === 1 ? (
               <button
