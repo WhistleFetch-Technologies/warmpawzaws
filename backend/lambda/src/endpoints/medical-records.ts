@@ -971,13 +971,25 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   /**
    * POST /medical-records/booking/:bookingId/upload-prescription
    * Upload handwritten prescription (photo/PDF) with mandatory date field
-   * Available for both customer and vendor
+   * Available for booking owner (customer) or booking vendor/staff via JWT.
+   * Multipart uploadedBy/userId are labels only — never authorization identity.
    */
   app.post("/medical-records/booking/:bookingId/upload-prescription", async (c) => {
     try {
       const { bookingId } = c.req.param();
-      
-      // Get booking details to verify access
+
+      // Batch 1 follow-up P0: JWT booking actor before any S3 or DB write.
+      // No admin bypass — requireBookingActorAccess is customer-or-vendor ownership only.
+      const { requireBookingActorAccess } = await import('../utils/security-ownership');
+      const actorAuthz = await requireBookingActorAccess(c, bookingId);
+      if (!actorAuthz.ok) {
+        return c.json(
+          { success: false, error: actorAuthz.error },
+          actorAuthz.status as ContentfulStatusCode,
+        );
+      }
+
+      // Get booking details after authorization (persisted relationship is authoritative)
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
@@ -987,17 +999,19 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       const formData = await c.req.formData();
       const file = formData.get('file') as File;
       const recordDate = formData.get('recordDate') as string; // Mandatory date field
-      const uploadedBy = formData.get('uploadedBy') as string; // 'customer' or 'vendor'
-      const userId = formData.get('userId') as string; // customer phone or vendor ID
+      // uploadedBy / userId may still be sent by clients for UX; ignore for authz/identity.
+      const _ignoredUploadedBy = formData.get('uploadedBy');
+      const _ignoredUserId = formData.get('userId');
+      void _ignoredUploadedBy;
+      void _ignoredUserId;
       const context = formData.get('context') as string; // Optional context/notes field
 
       if (!file || !recordDate) {
         return c.json({ error: 'file and recordDate are required' }, 400);
       }
 
-      if (!uploadedBy || !['customer', 'vendor'].includes(uploadedBy)) {
-        return c.json({ error: 'uploadedBy must be "customer" or "vendor"' }, 400);
-      }
+      // Actor label derived from verified JWT booking access — not multipart fields.
+      const actorLabel = actorAuthz.actor === 'vendor' ? 'vendor' : 'customer';
 
       // Validate date format
       const dateObj = new Date(recordDate);
@@ -1033,11 +1047,11 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       // RDS NOT NULL on created_by; use booking-scoped UUIDs. Role "system" for customer uploads
       // satisfies legacy CHECK (vendor|staff|admin|system) where "customer" is not allowed.
       const createdBy =
-        uploadedBy === 'vendor'
+        actorLabel === 'vendor'
           ? booking.vendor_id
           : booking.customer_id;
       const createdByRole =
-        uploadedBy === 'vendor' ? 'vendor' : 'system';
+        actorLabel === 'vendor' ? 'vendor' : 'system';
 
       if (!createdBy) {
         return c.json(
@@ -1066,7 +1080,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           ...recordBase,
           record_type: 'prescription',
           title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
-          description: context || `Handwritten prescription uploaded by ${uploadedBy}`,
+          description: context || `Handwritten prescription uploaded by ${actorLabel}`,
         });
       } catch (constraintError: any) {
         // ✅ FIX: If constraint doesn't allow 'prescription', use 'treatment' as fallback
@@ -1076,7 +1090,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
             ...recordBase,
             record_type: 'treatment', // Fallback value that works with older constraints
             title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
-            description: context || `Handwritten prescription uploaded by ${uploadedBy} [Type: Prescription]`,
+            description: context || `Handwritten prescription uploaded by ${actorLabel} [Type: Prescription]`,
           });
         } else {
           throw constraintError;
@@ -1203,9 +1217,9 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         diagnosis,
         notes,
         followUpDate,
-        vendorId,
-        staffId,
+        staffId: rawStaffId,
       } = body;
+      // body.vendorId is intentionally ignored — never authz or persistence identity.
 
       // Get booking details
       const bookings = await select('bookings', { id: bookingId });
@@ -1215,12 +1229,38 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
-      // Get prescriber name
+      // Persisted booking.vendor_id is required for all actors including admin.
+      const vendorId = String(booking.vendor_id || '').trim();
+      if (!vendorId) {
+        return c.json({ success: false, error: 'Booking vendor relationship missing' }, 400);
+      }
+
+      // Batch 1 F05: vendor/staff ownership from JWT + persisted booking.vendor_id.
+      const { isAdminRole, requirePathVendorMatchesAuth } = await import('../utils/security-ownership');
+      if (!isAdminRole(c)) {
+        const authz = await requirePathVendorMatchesAuth(c, vendorId);
+        if (!authz.ok) {
+          if (authz.status === 403 && String(authz.error || '').includes('Vendor access required')) {
+            return c.json({ success: false, error: 'Forbidden' }, 403);
+          }
+          // Cross-vendor / unknown — do not confirm booking existence to other tenants
+          return c.json({ error: 'Booking not found' }, 404);
+        }
+      }
+
+      // Optional staffId must belong to the booking's vendor when provided.
+      let staffId: string | undefined;
       let prescriberName = 'Doctor';
-      if (staffId) {
-        const staff = await select('staff', { id: staffId });
-        prescriberName = staff[0]?.name || 'Doctor';
-      } else if (vendorId) {
+      if (rawStaffId) {
+        const staffRows = await select('staff', { id: rawStaffId });
+        const staffRow = staffRows[0];
+        const staffVendorId = String(staffRow?.vendor_id || '').trim();
+        if (!staffRow || staffVendorId.toLowerCase() !== vendorId.toLowerCase()) {
+          return c.json({ success: false, error: 'Staff is not associated with this booking vendor' }, 403);
+        }
+        staffId = String(rawStaffId);
+        prescriberName = staffRow?.name || 'Doctor';
+      } else {
         const vendors = await select('vendors', { id: vendorId });
         prescriberName = vendors[0]?.business_name || 'Doctor';
       }
@@ -1270,7 +1310,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           newRecord = await insert('medical_records', {
             pet_id: booking.pet_id,
             customer_id: booking.customer_id,
-            vendor_id: vendorId || booking.vendor_id,
+            vendor_id: vendorId,
             staff_id: staffId,
             booking_id: bookingId,
             record_type: 'prescription',
@@ -1282,7 +1322,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
               notes,
               followUpDate,
             }),
-            prescribed_by: staffId || vendorId || booking.vendor_id,
+            prescribed_by: staffId || vendorId,
             prescribed_by_name: prescriberName,
             prescription_date: prescriptionDate, // Auto-updated with latest date
             created_at: new Date().toISOString(),
@@ -1294,7 +1334,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
             newRecord = await insert('medical_records', {
               pet_id: booking.pet_id,
               customer_id: booking.customer_id,
-              vendor_id: vendorId || booking.vendor_id,
+              vendor_id: vendorId,
               staff_id: staffId,
               booking_id: bookingId,
               record_type: 'treatment', // Fallback value that works with older constraints
@@ -1307,7 +1347,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
                 followUpDate,
                 recordType: 'prescription', // Store actual type in content_data
               }),
-              prescribed_by: staffId || vendorId || booking.vendor_id,
+              prescribed_by: staffId || vendorId,
               prescribed_by_name: prescriberName,
               prescription_date: prescriptionDate,
               created_at: new Date().toISOString(),

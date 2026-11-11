@@ -335,6 +335,12 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
    */
   app.put("/config/google-maps-key", async (c) => {
     try {
+      // Batch 1 F04: path is /config/* (not /admin/*) — enforce admin before mutation.
+      const { isAdminRole } = await import('../../../utils/security-ownership');
+      if (!isAdminRole(c)) {
+        return c.json({ success: false, error: 'Forbidden', code: 'ADMIN_REQUIRED' }, 403);
+      }
+
       const { apiKey } = await c.req.json();
       
       if (!apiKey || typeof apiKey !== 'string') {

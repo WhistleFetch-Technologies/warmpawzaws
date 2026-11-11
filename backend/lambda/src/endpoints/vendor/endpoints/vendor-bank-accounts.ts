@@ -21,6 +21,19 @@ import { markVendorBankVerified } from '../../../utils/sync-vendor-bank-verified
 
 export function registerVendorBankAccountEndpoints(app: Hono) {
 
+  /** Batch 1 F06: path vendorId must match JWT vendor (admin bypass). */
+  async function assertVendorBankAccess(c: any, vendorId: string) {
+    const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+      '../../../utils/security-ownership'
+    );
+    if (isAdminRole(c)) return null;
+    const authz = await requirePathVendorMatchesAuth(c, vendorId);
+    if (!authz.ok) {
+      return c.json({ success: false, error: authz.error }, authz.status);
+    }
+    return null;
+  }
+
   /**
    * GET /vendor/:vendorId/bank-accounts
    * List all bank accounts for a vendor
@@ -29,6 +42,8 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   app.get("/vendor/:vendorId/bank-accounts", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const denied = await assertVendorBankAccess(c, vendorId);
+      if (denied) return denied;
 
       const vendor = await resolveVendorById(vendorId);
       const resolvedVendorId = vendor?.id ?? vendorId;
@@ -79,6 +94,9 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   const addBankAccountHandler = async (c: any) => {
     try {
       const { vendorId } = c.req.param();
+      const denied = await assertVendorBankAccess(c, vendorId);
+      if (denied) return denied;
+
       const body = await c.req.json();
       
       // Support both camelCase and snake_case field names
@@ -350,6 +368,8 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   app.post("/vendor/:vendorId/bank-accounts/:accountId/verify", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
+      const denied = await assertVendorBankAccess(c, vendorId);
+      if (denied) return denied;
       const resolvedVendorIdForSelect = (await resolveVendorById(vendorId))?.id ?? vendorId;
 
       const accounts = await select('vendor_bank_accounts', { id: accountId, vendor_id: resolvedVendorIdForSelect });
@@ -432,6 +452,8 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   app.post("/vendor/:vendorId/bank-accounts/:accountId/set-primary", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
+      const denied = await assertVendorBankAccess(c, vendorId);
+      if (denied) return denied;
       const resolvedVendorId = (await resolveVendorById(vendorId))?.id ?? vendorId;
 
       // Check if account exists and is verified
@@ -472,6 +494,8 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   app.delete("/vendor/:vendorId/bank-accounts/:accountId", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
+      const denied = await assertVendorBankAccess(c, vendorId);
+      if (denied) return denied;
       const resolvedVendorId = (await resolveVendorById(vendorId))?.id ?? vendorId;
 
       // Check if account exists

@@ -397,8 +397,14 @@ app.use('*', actionSourceMiddleware());
 app.use('*', requireAuth());
 app.use('*', authAuditLog());
 
-// ✅ TEMPORARY: Migration endpoint (registered BEFORE admin auth middleware)
+// ✅ TEMPORARY: Migration endpoint (registered BEFORE admin auth middleware).
+// Batch 1: fail-closed admin gate — path is /system/* so requireAdmin() would not apply.
 app.post('/system/run-pending-migrations', async (c) => {
+  const { isAdminRole } = await import('../utils/security-ownership');
+  if (!isAdminRole(c)) {
+    return c.json({ success: false, error: 'Forbidden', code: 'ADMIN_REQUIRED' }, 403);
+  }
+
   const { query: dbQuery } = require('../database/rds-connection');
   const results: any[] = [];
   try {
@@ -416,7 +422,7 @@ app.post('/system/run-pending-migrations', async (c) => {
         await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_status ON vendor_referrals(status)`);
         results.push({ migration: '558_vendor_referrals', status: 'completed', message: 'Table and indexes created' });
       }
-    } catch (err: any) { results.push({ migration: '558_vendor_referrals', status: 'error', message: err.message }); }
+    } catch (err: any) { results.push({ migration: '558_vendor_referrals', status: 'error', message: 'Migration step failed' }); }
 
     // Migration 605: availability_configured + services_configured
     try {
@@ -425,7 +431,7 @@ app.post('/system/run-pending-migrations', async (c) => {
       await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_availability_configured ON vendors(availability_configured) WHERE availability_configured = false`);
       await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_approved_not_availability ON vendors(status, availability_configured) WHERE status = 'approved' AND availability_configured = false`);
       results.push({ migration: '605_availability_configured', status: 'completed', message: 'Columns and indexes created/verified' });
-    } catch (err: any) { results.push({ migration: '605_availability_configured', status: 'error', message: err.message }); }
+    } catch (err: any) { results.push({ migration: '605_availability_configured', status: 'error', message: 'Migration step failed' }); }
 
     // Migration 620: customer_referrals — vendor-as-referrer for customer signups
     try {
@@ -461,7 +467,7 @@ app.post('/system/run-pending-migrations', async (c) => {
         WHERE referrer_vendor_id IS NOT NULL;
       `);
       results.push({ migration: '620_customer_referrals_vendor_referrer', status: 'completed', message: 'referrer_vendor_id + constraints' });
-    } catch (err: any) { results.push({ migration: '620_customer_referrals_vendor_referrer', status: 'error', message: err.message }); }
+    } catch (err: any) { results.push({ migration: '620_customer_referrals_vendor_referrer', status: 'error', message: 'Migration step failed' }); }
 
     // Migration 071: vendor settings columns
     try {
@@ -472,7 +478,7 @@ app.post('/system/run-pending-migrations', async (c) => {
       await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') THEN ALTER TABLE vendors ADD COLUMN other_config JSONB DEFAULT '{}'::jsonb; END IF; END $$`);
       await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_service_radius ON vendors(service_radius) WHERE service_radius IS NOT NULL`);
       results.push({ migration: '071_vendor_settings_columns', status: 'completed' });
-    } catch (err: any) { results.push({ migration: '071_vendor_settings_columns', status: 'error', message: err.message }); }
+    } catch (err: any) { results.push({ migration: '071_vendor_settings_columns', status: 'error', message: 'Migration step failed' }); }
 
     // Migration: setup_completed, profile_photo_url, etc.
     try {
@@ -482,10 +488,10 @@ app.post('/system/run-pending-migrations', async (c) => {
       await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_area') THEN ALTER TABLE vendors ADD COLUMN service_area TEXT; END IF; END $$`);
       await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'description') THEN ALTER TABLE vendors ADD COLUMN description TEXT; END IF; END $$`);
       results.push({ migration: '528_profile_fields', status: 'completed' });
-    } catch (err: any) { results.push({ migration: '528_profile_fields', status: 'error', message: err.message }); }
+    } catch (err: any) { results.push({ migration: '528_profile_fields', status: 'error', message: 'Migration step failed' }); }
 
-    // Verification
-    const verifyResult = await dbQuery(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vendors' ORDER BY ordinal_position`);
+    // Verification (counts only — do not dump column names to clients)
+    const verifyResult = await dbQuery(`SELECT COUNT(*)::int AS total FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vendors'`);
     const referralsCheck = await dbQuery(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vendor_referrals') as exists`);
 
     return c.json({
@@ -493,13 +499,13 @@ app.post('/system/run-pending-migrations', async (c) => {
       message: 'All migrations completed',
       results,
       verification: {
-        vendor_columns: verifyResult.rows.map((r: any) => r.column_name),
         vendor_referrals_table_exists: referralsCheck.rows[0]?.exists || false,
-        total_vendor_columns: verifyResult.rows.length
+        total_vendor_columns: verifyResult.rows[0]?.total ?? 0
       }
     });
   } catch (error: any) {
-    return c.json({ success: false, error: error.message, results }, 500);
+    console.error('[system/run-pending-migrations] failed:', error?.message || error);
+    return c.json({ success: false, error: 'Migration execution failed', results }, 500);
   }
 });
 

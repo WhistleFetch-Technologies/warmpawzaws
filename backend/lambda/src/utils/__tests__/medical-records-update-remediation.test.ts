@@ -42,6 +42,11 @@ jest.mock('../customer-id-from-auth', () => ({
   }),
 }));
 
+jest.mock('../vendor-resolve', () => ({
+  resolveVendorId: jest.fn(async (id: string) => id),
+  resolveVendorIdsForLedger: jest.fn(async (id: string) => [id]),
+}));
+
 jest.mock('../aws/aws-clients', () => ({
   uploadToS3: jest.fn(),
   generateS3Key: jest.fn(() => 'key'),
@@ -258,7 +263,11 @@ describe('POST /medical-records/booking/:bookingId/prescription upsert UPDATE', 
       `http://localhost/medical-records/booking/${BOOKING_ID}/prescription`,
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'x-test-role': 'vendor',
+          'x-test-user-id': VENDOR_ID,
+        },
         body: JSON.stringify({
           medications: [{ name: 'Med A' }],
           diagnosis: 'checkup',

@@ -12,4 +12,8 @@ module.exports = {
     'loyalty-points-service\\.test\\.ts',
   ],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  // Allow settlement handlers that import via the Lambda `src/...` alias to resolve in Jest.
+  moduleNameMapper: {
+    '^src/(.*)$': '<rootDir>/src/$1',
+  },
 };

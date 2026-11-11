@@ -62,6 +62,12 @@ import {
 export async function executedebugTrainingVendors(c: Context) {
 
     try {
+      // Stage 3 / Batch 1 F02: admin-only operational diagnostic — summary counts only.
+      const { isAdminRole } = await import('../../../../utils/security-ownership');
+      if (!isAdminRole(c)) {
+        return c.json({ success: false, error: 'Forbidden' }, 403);
+      }
+
       const hasVsCatId = await columnExists('vendor_services', 'category_id');
 
       // Show all trainer_center / training_center vendors and their at_center services
@@ -84,15 +90,26 @@ export async function executedebugTrainingVendors(c: Context) {
 
       return c.json({
         success: true,
-        has_category_id_col: hasVsCatId,
-        training_vendors_detail: vendorCheck.rows,
-        by_style_check: byStyleCheck.rows,
-        specialization_check: specCheck.rows,
-        master_check: masterCheck.rows,
-        spec_filter_simulation: (specFilterSimulation as any).rows || [],
-        spec_filter_error: (specFilterSimulation as any).error || null,
+        summary: {
+          has_category_id_col: !!hasVsCatId,
+          training_vendor_count: Array.isArray(vendorCheck.rows) ? vendorCheck.rows.length : 0,
+          by_style_pass_count: Array.isArray(byStyleCheck.rows) ? byStyleCheck.rows.length : 0,
+          specialization_row_count: Array.isArray(specCheck.rows) ? specCheck.rows.length : 0,
+          master_row_count: Array.isArray(masterCheck.rows) ? masterCheck.rows.length : 0,
+          spec_filter_match_count: Array.isArray((specFilterSimulation as any).rows)
+            ? (specFilterSimulation as any).rows.length
+            : 0,
+          spec_filter_failed: !!(specFilterSimulation as any).error,
+        },
+        message: 'Diagnostic summary only; vendor records are not exposed',
       });
     } catch (error: any) {
-      return c.json({ success: false, error: error?.message }, 500);
+      const { captureException } = await import('../../../../utils/error-tracking');
+      const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../../../../utils/safe-hono-error');
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        path: c.req.path,
+        method: c.req.method,
+      });
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
 }

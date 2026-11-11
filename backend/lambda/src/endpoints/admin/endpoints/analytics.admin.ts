@@ -38,6 +38,18 @@ export function registerAnalyticsEndpoints(app: Hono) {
   app.get("/analytics/vendor/:vendorId/dashboard", async (c) => {
     try {
       const paramVendorId = c.req.param('vendorId');
+
+      // Batch 1 F03: vendor owns own analytics; admin may read any vendor.
+      const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+        '../../../utils/security-ownership'
+      );
+      if (!isAdminRole(c)) {
+        const authz = await requirePathVendorMatchesAuth(c, paramVendorId);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+      }
+
       const vendorId = await resolveVendorId(paramVendorId);
       const period = c.req.query('period') || 'all'; // all, today, week, month, year
 
@@ -147,7 +159,20 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/analytics/customer/:customerId/dashboard", async (c) => {
     try {
-      const { customerId } = c.req.param();
+      const { customerId: paramCustomerId } = c.req.param();
+
+      // Batch 1 F03: customer owns own analytics; admin may read any customer.
+      const { requireCustomerIdentifierMatch, isAdminRole } = await import(
+        '../../../utils/security-ownership'
+      );
+      let customerId = String(paramCustomerId || '').trim();
+      if (!isAdminRole(c)) {
+        const authz = await requireCustomerIdentifierMatch(c, customerId);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+        customerId = authz.customerId;
+      }
 
       // Get pets count
       const pets = await select('pets', { customer_id: customerId });
@@ -223,6 +248,12 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/analytics/platform/overview", async (c) => {
     try {
+      // Batch 1 F03: platform-wide analytics are admin-only.
+      const { isAdminRole } = await import('../../../utils/security-ownership');
+      if (!isAdminRole(c)) {
+        return c.json({ success: false, error: 'Forbidden', code: 'ADMIN_REQUIRED' }, 403);
+      }
+
       // Get vendor statistics
       const vendorStats = await query(
         `SELECT 
@@ -294,6 +325,18 @@ export function registerAnalyticsEndpoints(app: Hono) {
   app.get("/analytics/vendor/:vendorId/revenue", async (c) => {
     try {
       const paramVendorId = c.req.param('vendorId');
+
+      // Batch 1 F03: revenue series scoped to authenticated vendor (or admin).
+      const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+        '../../../utils/security-ownership'
+      );
+      if (!isAdminRole(c)) {
+        const authz = await requirePathVendorMatchesAuth(c, paramVendorId);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+      }
+
       const vendorId = await resolveVendorId(paramVendorId);
       const startDate = c.req.query('startDate');
       const endDate = c.req.query('endDate');

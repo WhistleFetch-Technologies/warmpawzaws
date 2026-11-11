@@ -1441,6 +1441,17 @@ export function registerSettlementEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Valid amount is required' }, 400);
       }
 
+      // Batch 1 F06: never trust body vendorId alone — JWT vendor must match (admin may act).
+      const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+        '../../../utils/security-ownership'
+      );
+      if (!isAdminRole(c)) {
+        const authz = await requirePathVendorMatchesAuth(c, String(paramVendorId));
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+      }
+
       // Resolve vendor_identity id -> vendors.id
       const vendorId = await resolveVendorId(paramVendorId);
 
@@ -2183,6 +2194,17 @@ export function registerSettlementEndpoints(app: Hono) {
   app.put("/vendor/:vendorId/bank-details", async (c) => {
     try {
       const { vendorId: paramVendorId } = c.req.param();
+
+      const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+        '../../../utils/security-ownership'
+      );
+      if (!isAdminRole(c)) {
+        const authz = await requirePathVendorMatchesAuth(c, paramVendorId);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+      }
+
       const resolved: any = await resolveOrCreateVendorIdForBank(paramVendorId);
       if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status);
       const vendorId = resolved.actualVendorId;
@@ -2241,6 +2263,17 @@ export function registerSettlementEndpoints(app: Hono) {
   app.post("/vendor/:vendorId/bank-details", async (c) => {
     try {
       const { vendorId: paramVendorId } = c.req.param();
+
+      const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+        '../../../utils/security-ownership'
+      );
+      if (!isAdminRole(c)) {
+        const authz = await requirePathVendorMatchesAuth(c, paramVendorId);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+      }
+
       const resolved: any = await resolveOrCreateVendorIdForBank(paramVendorId);
       if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status);
       const vendorId = resolved.actualVendorId;
@@ -2306,6 +2339,16 @@ export function registerSettlementEndpoints(app: Hono) {
   app.get("/vendor/:vendorId/bank-details", async (c) => {
     try {
       const { vendorId: paramVendorId } = c.req.param();
+
+      const { requirePathVendorMatchesAuth, isAdminRole } = await import(
+        '../../../utils/security-ownership'
+      );
+      if (!isAdminRole(c)) {
+        const authz = await requirePathVendorMatchesAuth(c, paramVendorId);
+        if (!authz.ok) {
+          return c.json({ success: false, error: authz.error }, authz.status);
+        }
+      }
 
       if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
