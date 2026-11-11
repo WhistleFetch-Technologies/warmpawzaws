@@ -20,9 +20,15 @@ type PlanRow = {
 type FormRow = { id?: string; name?: string; status?: string };
 type ChatMessage = { id?: string; message?: string; sender_type?: string; metadata?: Record<string, unknown> | null };
 
-const PAYMENT_STATUSES = new Set(['form_submitted', 'form_confirmed', 'payment_link_sent', 'payment_link_expired']);
+const PAYMENT_STATUSES = new Set([
+  'quote_shared',
+  'form_submitted',
+  'form_confirmed',
+  'payment_link_sent',
+  'payment_link_expired',
+]);
 const POLICY_STATUSES = new Set(['payment_link_sent', 'payment_link_expired', 'payment_reported', 'policy_uploaded']);
-const QUOTE_STATUSES = new Set(['consulted', 'quote_shared']);
+const QUOTE_STATUSES = new Set(['enquiry_submitted', 'consulted', 'quote_shared']);
 
 function lastPaymentUrl(messages: ChatMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i -= 1) {

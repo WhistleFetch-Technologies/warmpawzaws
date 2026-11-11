@@ -23,6 +23,10 @@ export type BoardApplication = {
   payment_link_expires_at?: string | null;
   policy_number?: string | null;
   documents?: Array<{ name?: string; url?: string }>;
+  application_source?: string | null;
+  coverage_selection?: Record<string, unknown> | null;
+  health_declarations?: Record<string, unknown> | null;
+  quoted_premium?: number | string | null;
 };
 
 /** Status-only transitions that DnD / transition endpoint can perform without payloads. */

@@ -15,13 +15,14 @@ export async function dbGetVendorApplication(vendorId: string, applicationId: st
 export async function dbListVendorApplications(vendorId: string): Promise<Row[]> {
   const res = await query(
     `SELECT a.id, a.booking_id, a.status, a.plan_id, a.pet_id, a.customer_id, a.company_id, a.updated_at,
-            a.payment_link_expires_at,
+            a.payment_link_expires_at, a.coverage_selection, a.health_declarations,
+            a.application_source, a.quoted_premium,
             COALESCE(issued.policy_number, a.policy_number) AS policy_number,
             issued.documents AS policy_documents,
             b.status AS booking_status,
             p.name AS plan_name,
             co.name AS company_name,
-            cu.full_name AS customer_name,
+            COALESCE(cu.full_name, cu.phone::text) AS customer_name,
             pet.name AS pet_name,
             pet.species AS pet_species,
             pet.breed AS pet_breed
@@ -37,6 +38,37 @@ export async function dbListVendorApplications(vendorId: string): Promise<Row[]>
     [vendorId],
   );
   return res.rows as Row[];
+}
+
+/** Status transition without chat (self-serve enquiries may have no booking yet). */
+export async function dbTransitionApplicationStatus(input: {
+  applicationId: string;
+  fromStatus: string | null;
+  toStatus: string;
+  actorId: string;
+  note: string;
+  quotedPremium?: number | null;
+}): Promise<void> {
+  await withTransaction(async (client) => {
+    if (input.quotedPremium != null && Number.isFinite(input.quotedPremium)) {
+      await client.query(
+        `UPDATE insurance_applications
+         SET status = $2, quoted_premium = $3, updated_at = NOW()
+         WHERE id = $1::uuid`,
+        [input.applicationId, input.toStatus, input.quotedPremium],
+      );
+    } else {
+      await client.query(
+        `UPDATE insurance_applications SET status = $2, updated_at = NOW() WHERE id = $1::uuid`,
+        [input.applicationId, input.toStatus],
+      );
+    }
+    await client.query(
+      `INSERT INTO insurance_application_events (application_id, from_status, to_status, actor_type, actor_id, note)
+       VALUES ($1::uuid, $2, $3, 'vendor', $4, $5)`,
+      [input.applicationId, input.fromStatus, input.toStatus, input.actorId, input.note],
+    );
+  });
 }
 
 export async function dbGetBookingStatus(bookingId: string): Promise<string | null> {

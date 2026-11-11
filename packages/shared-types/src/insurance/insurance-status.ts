@@ -1,6 +1,7 @@
 /** Single status list for admin, vendor, and customer insurance applications. */
 
 export const INSURANCE_APPLICATION_STATUSES = [
+  'enquiry_submitted',
   'consultation_booked',
   'consulted',
   'quote_shared',
@@ -27,24 +28,26 @@ export type InsuranceKanbanColumn = 'new' | 'in_progress' | 'awaiting_payment' |
 export type InsuranceStatusStage = 'new' | 'in_progress' | 'awaiting_external' | 'completed' | 'cancelled';
 
 export const INSURANCE_STATUS_LABELS: Readonly<Record<InsuranceApplicationStatus, string>> = {
+  enquiry_submitted: 'Application submitted',
   consultation_booked: 'Consultation booked',
   consulted: 'Consultation done',
-  quote_shared: 'Plan shared',
+  quote_shared: 'Quote received',
   form_sent: 'Information needed',
   form_submitted: 'Information submitted',
   changes_requested: 'Corrections needed',
   form_confirmed: 'Details confirmed',
-  payment_link_sent: 'Payment required',
+  payment_link_sent: 'Purchase assistance',
   payment_link_expired: 'Payment link expired',
   payment_reported: 'Payment received',
   policy_uploaded: 'Review your policy',
-  policy_confirmed: 'Policy active',
+  policy_confirmed: 'Policy issued',
   free_look_cancelled: 'Policy cancelled',
   dropped: 'Closed',
   cancelled: 'Cancelled',
 };
 
 export const INSURANCE_KANBAN_COLUMN: Readonly<Record<InsuranceApplicationStatus, InsuranceKanbanColumn>> = {
+  enquiry_submitted: 'new',
   consultation_booked: 'new',
   consulted: 'in_progress',
   quote_shared: 'in_progress',
@@ -78,9 +81,10 @@ export const INSURANCE_STATUS_STAGE: Readonly<Record<InsuranceApplicationStatus,
 export const INSURANCE_STATUS_TRANSITIONS: Readonly<
   Record<InsuranceApplicationStatus, readonly InsuranceApplicationStatus[]>
 > = {
+  enquiry_submitted: ['quote_shared', 'form_sent', 'consultation_booked', 'dropped', 'cancelled'],
   consultation_booked: ['consulted', 'cancelled'],
   consulted: ['quote_shared', 'form_sent', 'dropped'],
-  quote_shared: ['quote_shared', 'form_sent', 'dropped'],
+  quote_shared: ['quote_shared', 'form_sent', 'payment_link_sent', 'dropped'],
   form_sent: ['form_submitted', 'dropped'],
   form_submitted: ['changes_requested', 'form_confirmed', 'payment_link_sent'],
   changes_requested: ['form_submitted', 'dropped'],

@@ -212,6 +212,161 @@ export async function dbPlanCompany(planId: string): Promise<Row | null> {
   return (res.rows as Row[])[0] || null;
 }
 
+export async function dbFindPawsNClawsPlan(): Promise<Row | null> {
+  const res = await query(
+    `SELECT p.id, p.company_id, p.name, p.status, c.name AS company_name,
+            c.provider_code, c.status AS company_status, c.logo_url, c.description
+     FROM insurance_company_plans p
+     JOIN insurance_companies c ON c.id = p.company_id
+     WHERE (
+       p.id = 'b2222222-2222-4222-8222-222222222201'::uuid
+       OR lower(COALESCE(c.provider_code, '')) = 'hdfc_ergo'
+     )
+       AND p.status = 'published'
+       AND c.status = 'active'
+     ORDER BY CASE WHEN p.id = 'b2222222-2222-4222-8222-222222222201'::uuid THEN 0 ELSE 1 END
+     LIMIT 1`,
+  );
+  return (res.rows as Row[])[0] || null;
+}
+
+export async function dbPickReadyVendorForCompany(
+  companyId: string,
+  requireForm: boolean,
+): Promise<string | null> {
+  const res = await query(
+    `SELECT v.id
+     FROM insurance_vendor_companies l
+     JOIN vendors v ON v.id = l.vendor_id
+     WHERE l.company_id = $1::uuid
+       AND l.status = 'active'
+       AND v.is_active = true
+       AND lower(COALESCE(v.status, '')) IN ('approved', 'active', 'live')
+       AND EXISTS (
+         SELECT 1 FROM vendor_availability_v2 va
+         WHERE va.vendor_id = v.id
+           AND 'tele' = ANY (COALESCE(va.service_styles, ARRAY[]::text[]))
+       )
+       AND (
+         NOT $2::boolean
+         OR EXISTS (
+           SELECT 1 FROM insurance_form_templates t
+           WHERE t.vendor_id = v.id
+             AND t.company_id = l.company_id
+             AND t.status = 'published'
+         )
+       )
+     ORDER BY v.created_at ASC NULLS LAST
+     LIMIT 1`,
+    [companyId, requireForm],
+  );
+  const id = (res.rows as Row[])[0]?.id;
+  return id ? String(id) : null;
+}
+
+/** Fallback when no tele-ready vendor — still assign an active linked advisor for demo fulfilment. */
+export async function dbPickAnyLinkedVendorForCompany(companyId: string): Promise<string | null> {
+  const res = await query(
+    `SELECT v.id
+     FROM insurance_vendor_companies l
+     JOIN vendors v ON v.id = l.vendor_id
+     WHERE l.company_id = $1::uuid
+       AND l.status = 'active'
+       AND v.is_active = true
+     ORDER BY v.created_at ASC NULLS LAST
+     LIMIT 1`,
+    [companyId],
+  );
+  const id = (res.rows as Row[])[0]?.id;
+  return id ? String(id) : null;
+}
+
+export async function dbGetCustomerPet(customerId: string, petId: string): Promise<Row | null> {
+  const res = await query(
+    `SELECT * FROM pets WHERE id = $1::uuid AND customer_id = $2::uuid LIMIT 1`,
+    [petId, customerId],
+  );
+  return (res.rows as Row[])[0] || null;
+}
+
+export async function dbGetCustomerProfile(customerId: string): Promise<Row | null> {
+  const res = await query(`SELECT * FROM customers WHERE id = $1::uuid LIMIT 1`, [customerId]);
+  return (res.rows as Row[])[0] || null;
+}
+
+export async function dbGetApplicationForCustomer(
+  applicationId: string,
+  customerId: string,
+): Promise<Row | null> {
+  const res = await query(
+    `SELECT a.*,
+            c.name AS company_name,
+            c.provider_code,
+            p.name AS plan_name,
+            pet.name AS pet_name,
+            pet.species AS pet_species,
+            pet.breed AS pet_breed
+     FROM insurance_applications a
+     LEFT JOIN insurance_companies c ON c.id = a.company_id
+     LEFT JOIN insurance_company_plans p ON p.id = a.plan_id
+     LEFT JOIN pets pet ON pet.id = a.pet_id
+     WHERE a.id = $1::uuid AND a.customer_id = $2::uuid
+     LIMIT 1`,
+    [applicationId, customerId],
+  );
+  return (res.rows as Row[])[0] || null;
+}
+
+export async function dbInsertSelfServeEnquiry(input: {
+  customerId: string;
+  vendorId: string;
+  companyId: string;
+  planId: string;
+  petId: string;
+  coverageSelection: Record<string, unknown>;
+  healthDeclarations: Record<string, unknown>;
+}): Promise<Row> {
+  return withTransaction(async (client) => {
+    const inserted = await client.query(
+      `INSERT INTO insurance_applications
+         (booking_id, customer_id, vendor_id, company_id, plan_id, pet_id, status,
+          application_source, coverage_selection, health_declarations, template_version_id)
+       VALUES (
+         NULL, $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, 'enquiry_submitted',
+         'self_serve', $6::jsonb, $7::jsonb,
+         (
+           SELECT t.current_version_id
+           FROM insurance_form_templates t
+           WHERE t.vendor_id = $2::uuid
+             AND t.company_id = $3::uuid
+             AND t.status = 'published'
+             AND t.current_version_id IS NOT NULL
+             AND (t.plan_id IS NULL OR t.plan_id = $4::uuid)
+           ORDER BY (t.plan_id IS NOT NULL) DESC
+           LIMIT 1
+         )
+       )
+       RETURNING *`,
+      [
+        input.customerId,
+        input.vendorId,
+        input.companyId,
+        input.planId,
+        input.petId,
+        JSON.stringify(input.coverageSelection),
+        JSON.stringify(input.healthDeclarations),
+      ],
+    );
+    const row = inserted.rows[0] as Row;
+    await client.query(
+      `INSERT INTO insurance_application_events (application_id, from_status, to_status, actor_type, actor_id, note)
+       VALUES ($1::uuid, NULL, 'enquiry_submitted', 'customer', $2::uuid, 'Self-serve Paws N Claws enquiry submitted')`,
+      [row.id, input.customerId],
+    );
+    return row;
+  });
+}
+
 export async function dbVendorReadyForPlan(vendorId: string, planId: string, requireForm: boolean): Promise<boolean> {
   const res = await query(
     `SELECT 1

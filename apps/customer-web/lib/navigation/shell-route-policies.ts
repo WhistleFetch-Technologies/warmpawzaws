@@ -109,6 +109,7 @@ const ENTITY_SCREENS: Record<string, ShellRoutePolicyDef> = {
   'cafe_detail': { forward: 'push', requiresKey: true },
   'insurance_provider': { forward: 'push', requiresKey: true },
   'insurance_plan': { forward: 'push', requiresKey: true },
+  'insurance_quote': { forward: 'push' },
   'insurance_form': { forward: 'push', requiresKey: true },
   'my_insurance': { forward: 'push' },
   'insurance_policy': { forward: 'push', requiresKey: true },

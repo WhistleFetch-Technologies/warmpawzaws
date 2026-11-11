@@ -371,6 +371,7 @@ type ScreenType =
   | 'insurance'
   | 'insurance_provider'
   | 'insurance_plan'
+  | 'insurance_quote'
   | 'insurance_form'
   | 'my_insurance'
   | 'insurance_policy'
@@ -4781,9 +4782,13 @@ export function CustomerHomeWrapper({
     );
   }
   // ✅ FIX: Insurance Services with StandardizedHeader layout
-  if (currentScreen === 'insurance') {
-    return renderScreenWithLayout('insurance',
-      <InsuranceServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+  if (currentScreen === 'insurance' || currentScreen === 'insurance_quote') {
+    return renderScreenWithLayout(currentScreen,
+      <InsuranceServicesLanding
+        phone={phone}
+        startQuote={currentScreen === 'insurance_quote'}
+        onBack={handleBack}
+        onNavigate={(screen, data) => {
         if (screen === 'insurance_policy_purchase' || screen === 'insurance_provider') {
           const vid = String(data?.vendorId || data?.provider?.id || '').trim();
           setSelectedVendorId(vid || undefined);
@@ -4794,6 +4799,10 @@ export function CustomerHomeWrapper({
           }
         } else if (screen === 'insurance_plan') {
           navigateToScreen('insurance_plan', routeKey.insurancePlan(String(data?.planId || 'consult')));
+        } else if (screen === 'insurance_quote') {
+          navigateToScreen('insurance_quote');
+        } else if (screen === 'my_insurance') {
+          navigateToScreen('my_insurance');
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           navigateToScreen('create-booking');

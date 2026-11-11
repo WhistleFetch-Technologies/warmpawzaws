@@ -20,9 +20,9 @@ describe('insurance status transitions', () => {
     }
   });
 
-  it('reaches every status from consultation_booked', () => {
-    const seen = new Set<string>(['consultation_booked']);
-    const queue = ['consultation_booked'];
+  it('reaches every status from the entry statuses', () => {
+    const seen = new Set<string>(['consultation_booked', 'enquiry_submitted']);
+    const queue = ['consultation_booked', 'enquiry_submitted'];
     while (queue.length) {
       const current = queue.pop() as keyof typeof INSURANCE_STATUS_TRANSITIONS;
       for (const next of INSURANCE_STATUS_TRANSITIONS[current]) {

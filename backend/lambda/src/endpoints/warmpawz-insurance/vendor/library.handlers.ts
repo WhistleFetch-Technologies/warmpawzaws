@@ -177,13 +177,14 @@ async function transitionCard(
   const application = await dbGetVendorApplication(vendorId, c.req.param('id'));
   if (!application) throw new InsuranceAdminError(404, 'NOT_FOUND', 'Application not found');
   const from = normalizeInsuranceStatus(application.status);
-  if (!application.booking_id) throw new InsuranceAdminError(422, 'NO_BOOKING', 'Application has no consultation booking');
 
   const consultGuards =
     toStatus === 'consulted'
       ? [
           {
-            ok: (await dbGetBookingStatus(String(application.booking_id)))?.toLowerCase() === 'completed',
+            ok: application.booking_id
+              ? (await dbGetBookingStatus(String(application.booking_id)))?.toLowerCase() === 'completed'
+              : false,
             reason: 'Mark the tele consultation complete in Bookings before marking consulted',
           },
         ]
@@ -197,6 +198,25 @@ async function transitionCard(
   if (parsed.applicationId !== String(application.id)) {
     throw new InsuranceAdminError(422, 'WRONG_APPLICATION', 'Card application does not match');
   }
+
+  // Self-serve enquiries may not have a consultation booking yet — still allow quote/status updates.
+  if (!application.booking_id) {
+    const { dbTransitionApplicationStatus } = await import('./cards.repo');
+    const quoted =
+      parsed.card === 'plan_quote' && 'indicativePremium' in parsed
+        ? Number((parsed as { indicativePremium?: number }).indicativePremium)
+        : null;
+    await dbTransitionApplicationStatus({
+      applicationId: String(application.id),
+      fromStatus: from,
+      toStatus,
+      actorId: vendorId,
+      note: `${parsed.card}: ${message}`,
+      quotedPremium: Number.isFinite(quoted as number) ? (quoted as number) : null,
+    });
+    return insuranceAdminOk(c, { messageId: null, status: toStatus, chatSkipped: true });
+  }
+
   const saved = await dbInsertChatCard({
     bookingId: String(application.booking_id),
     senderPhone: vendorId,

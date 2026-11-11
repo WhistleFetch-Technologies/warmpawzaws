@@ -119,7 +119,6 @@ export async function paymentLinkHandler(c: Context) {
     if (issues.length) throw new InsuranceAdminError(422, 'PAYMENT_LINK', issues.join('; '));
     const blocked = transitionBlockReason(String(application.status), 'payment_link_sent');
     if (blocked) throw new InsuranceAdminError(422, 'INVALID_TRANSITION', blocked);
-    if (!application.booking_id) throw new InsuranceAdminError(422, 'NO_BOOKING', 'Application has no consultation booking');
     await dbSavePaymentLink(String(application.id), body.url, expiresAt, body.amount);
     const card = paymentLinkCardSchema.parse({
       card: 'payment_link',
@@ -129,6 +128,17 @@ export async function paymentLinkHandler(c: Context) {
       amount: body.amount,
       expiresAt,
     });
+    if (!application.booking_id) {
+      const { dbTransitionApplicationStatus } = await import('./cards.repo');
+      await dbTransitionApplicationStatus({
+        applicationId: String(application.id),
+        fromStatus: normalizeInsuranceStatus(application.status),
+        toStatus: 'payment_link_sent',
+        actorId: c.req.param('vendorId'),
+        note: 'payment_link (no booking chat)',
+      });
+      return insuranceAdminOk(c, { messageId: null, status: 'payment_link_sent', expiresAt, chatSkipped: true });
+    }
     const saved = await dbInsertChatCard({
       bookingId: String(application.booking_id),
       senderPhone: c.req.param('vendorId'),
@@ -163,7 +173,6 @@ export async function policyUploadHandler(c: Context) {
     const application = await loadOwned(c);
     const blocked = transitionBlockReason(String(application.status), 'policy_uploaded');
     if (blocked) throw new InsuranceAdminError(422, 'INVALID_TRANSITION', blocked);
-    if (!application.booking_id) throw new InsuranceAdminError(422, 'NO_BOOKING', 'Application has no consultation booking');
     await dbSavePolicy({ applicationId: String(application.id), ...body });
     const card = policyDocumentsCardSchema.parse({
       card: 'policy_documents',
@@ -173,6 +182,17 @@ export async function policyUploadHandler(c: Context) {
       documentCount: body.documents.length,
       documents: body.documents.map((doc) => ({ name: doc.name || 'Policy document', s3Key: doc.s3Key })),
     });
+    if (!application.booking_id) {
+      const { dbTransitionApplicationStatus } = await import('./cards.repo');
+      await dbTransitionApplicationStatus({
+        applicationId: String(application.id),
+        fromStatus: normalizeInsuranceStatus(application.status),
+        toStatus: 'policy_uploaded',
+        actorId: c.req.param('vendorId'),
+        note: 'policy_documents (no booking chat)',
+      });
+      return insuranceAdminOk(c, { messageId: null, status: 'policy_uploaded', chatSkipped: true });
+    }
     const saved = await dbInsertChatCard({
       bookingId: String(application.booking_id),
       senderPhone: c.req.param('vendorId'),

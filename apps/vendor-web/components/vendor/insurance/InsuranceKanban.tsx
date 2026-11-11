@@ -227,6 +227,21 @@ export function InsuranceKanban({
                     <p className="text-xs text-gray-500">{[row.pet_name, row.pet_breed || row.pet_species].filter(Boolean).join(' · ') || 'Pet'}</p>
                     <p className="mt-2 text-xs font-semibold text-[#FF8C42]">{row.company_name || 'Insurer'}</p>
                     <p className="text-xs text-gray-600">{row.plan_name || 'Plan'}</p>
+                    {row.application_source === 'self_serve' ? (
+                      <p className="mt-1 text-[11px] font-semibold text-sky-700">Self-serve enquiry</p>
+                    ) : null}
+                    {row.coverage_selection && typeof row.coverage_selection === 'object' ? (
+                      <p className="mt-1 text-[11px] text-gray-500">
+                        {[
+                          String((row.coverage_selection as { mainSection?: string }).mainSection || ''),
+                          (row.coverage_selection as { sumInsured?: number }).sumInsured
+                            ? `SI ₹${Number((row.coverage_selection as { sumInsured?: number }).sumInsured).toLocaleString('en-IN')}`
+                            : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
+                    ) : null}
                     <span className="mt-2 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700">{label(row.status)}</span>
                     {row.policy_number ? <p className="mt-2 text-xs font-semibold text-gray-800">Policy {row.policy_number}</p> : null}
                     {(row.documents || []).map((doc) => (
@@ -241,13 +256,13 @@ export function InsuranceKanban({
                     {row.status === 'consultation_booked' && !isBookingCompleted(row.booking_status) ? (
                       <p className="mt-2 text-[11px] text-amber-700">Complete the tele booking first, then mark consulted.</p>
                     ) : null}
-                    {row.status === 'consulted' || row.status === 'quote_shared' || row.status === 'form_sent' || row.status === 'changes_requested' || row.status === 'payment_link_expired' ? (
+                    {row.status === 'enquiry_submitted' || row.status === 'consulted' || row.status === 'quote_shared' || row.status === 'form_sent' || row.status === 'changes_requested' || row.status === 'payment_link_expired' ? (
                       <button type="button" className="mt-2 block text-xs font-semibold text-gray-600 underline" onClick={() => void transitionTo(row.id, 'dropped')}>Move to archive</button>
                     ) : null}
                     {row.status === 'consultation_booked' ? (
                       <button type="button" className="mt-1 block text-xs font-semibold text-gray-600 underline" onClick={() => void transitionTo(row.id, 'cancelled')}>Cancel application</button>
                     ) : null}
-                    {row.status === 'form_submitted' || row.status === 'form_confirmed' || row.status === 'payment_link_sent' || row.status === 'payment_link_expired' ? (
+                    {row.status === 'quote_shared' || row.status === 'form_submitted' || row.status === 'form_confirmed' || row.status === 'payment_link_sent' || row.status === 'payment_link_expired' ? (
                       <div className="mt-2 space-y-1">
                         <input className="w-full rounded border px-2 py-1 text-xs" value={paymentUrl} onChange={(e) => setPaymentUrl(e.target.value)} placeholder="https:// payment link" />
                         <button type="button" className="rounded-lg bg-[#FF8C42] px-2 py-1 text-xs font-semibold text-white" onClick={() => void post(row.id, 'payment-link', { url: paymentUrl, amount: Number(amount) })}>Send payment link</button>
