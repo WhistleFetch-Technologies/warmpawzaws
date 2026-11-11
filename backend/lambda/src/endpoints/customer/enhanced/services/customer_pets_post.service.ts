@@ -45,6 +45,10 @@ export async function executecustomerPetsPost(c: Context) {
     try {
       const body = await c.req.json();
       const { phone, pets } = body;
+      // Insurance quote flow collects name/species/breed/dob/gender but not a profile photo.
+      // Keep full-profile pet creates strict; only relax photo for this explicit source.
+      const createMode =
+        body?.source === 'insurance_quote' ? ('onboarding' as const) : ('strict' as const);
 
       if (!phone) {
         return c.json({ error: 'phone is required' }, 400);
@@ -79,8 +83,30 @@ export async function executecustomerPetsPost(c: Context) {
           const existingPets = await customer_pets_postRepo.dbCustomerPetsPost0(customer, pet);
 
           if (existingPets.length === 0) {
+            if (createMode === 'onboarding') {
+              if (!String(pet?.name || '').trim()) {
+                return c.json({ error: 'Pet name is required' }, 400);
+              }
+              if (!String(pet?.breed || '').trim()) {
+                return c.json({ error: 'Breed is required' }, 400);
+              }
+              const gender = String(pet?.gender || '').trim().toLowerCase();
+              if (!['male', 'female', 'neutered', 'spayed'].includes(gender)) {
+                return c.json(
+                  { error: 'Gender is required (male, female, neutered, or spayed)' },
+                  400,
+                );
+              }
+              const dob = pet?.dob || pet?.dateOfBirth || pet?.date_of_birth;
+              const hasDob = typeof dob === 'string' && dob.trim() !== '' && !Number.isNaN(new Date(dob).getTime());
+              const ageOk = pet?.age != null && pet?.age !== '';
+              if (!hasDob && !ageOk) {
+                return c.json({ error: 'Date of birth or age is required' }, 400);
+              }
+            }
             const createValidation = validatePetCreatePayload(pet, {
               requireCustomerId: false,
+              mode: createMode,
             });
             if (!createValidation.ok) {
               return c.json({ error: createValidation.error }, 400);

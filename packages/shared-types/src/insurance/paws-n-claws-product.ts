@@ -53,7 +53,8 @@ export const PAWS_N_CLAWS_PRODUCT = {
     comprehensive: {
       key: 'comprehensive' as const,
       title: 'Comprehensive Cover',
-      subtitle: 'All-round protection for injury, illness, surgery, and treatment',
+      subtitle:
+        'All-round protection for eligible injury, illness, surgery and treatment expenses.',
       covers: ['Injury', 'Illness', 'Surgery', 'Diagnostic & treatment', 'OPD where applicable'],
       sumInsured: [...PAWS_COMPREHENSIVE_SUM_INSURED],
       copay: [...PAWS_COPAY],
@@ -62,7 +63,7 @@ export const PAWS_N_CLAWS_PRODUCT = {
     make_your_own: {
       key: 'make_your_own' as const,
       title: 'Make Your Own Plan',
-      subtitle: 'Choose Injury, Illness, and/or Surgery cover',
+      subtitle: 'Build your coverage by selecting the protection your pet needs.',
       covers: [
         { key: 'injury' as const, label: 'Injury Cover' },
         { key: 'illness' as const, label: 'Illness Cover' },
@@ -75,7 +76,8 @@ export const PAWS_N_CLAWS_PRODUCT = {
     third_party: {
       key: 'third_party' as const,
       title: 'Third-Party Liability',
-      subtitle: 'Bodily injury and property damage liability',
+      subtitle:
+        'Protection against eligible third-party bodily injury and property damage liability.',
       covers: ['Third-party bodily injury', 'Third-party property damage'],
       sumInsured: [...PAWS_TPL_SUM_INSURED],
       copay: [] as number[],
@@ -86,20 +88,23 @@ export const PAWS_N_CLAWS_PRODUCT = {
     {
       key: 'veterinary_consultation' as const,
       label: 'Veterinary Consultation',
-      description: '2 video consultations and 4 audio consultations',
+      description:
+        '2 video consultations and 4 audio consultations, delivered through Petofy as described in the product leaflet.',
       blockedWithThirdPartyOnly: true,
     },
     {
       key: 'trip_cancellation' as const,
       label: 'Trip Cancellation',
-      description: 'Sum insured ₹10,000–₹50,000',
+      description:
+        'Protection against eligible non-refundable domestic travel and accommodation expenses if a covered medical emergency involving your pet forces you to cancel or cut short your trip. Sum insured ₹10,000–₹50,000, subject to policy terms.',
       sumInsuredOptions: [...PAWS_TRIP_CANCEL_SUM],
       blockedWithThirdPartyOnly: true,
     },
     {
       key: 'funeral_expenses' as const,
       label: 'Funeral Expenses',
-      description: '10% of base sum insured',
+      description:
+        'Additional benefit towards eligible funeral expenses — typically 10% of the base sum insured, subject to policy terms.',
       blockedWithThirdPartyOnly: true,
     },
   ],
@@ -198,22 +203,25 @@ export function isPawsCoverageSelectionValid(selection: CoverageSelection): bool
 export const HEALTH_DECLARATION_FIELDS = [
   {
     key: 'priorIllnessOrInjury',
-    label: 'Has the pet had any previous illness or injury?',
+    label: 'Has your pet had any previous illness or injury?',
     type: 'yes_no' as const,
+    followUpHint: 'Briefly describe the illness or injury',
   },
   {
     key: 'priorVetDiagnosis',
-    label: 'Has a veterinarian diagnosed any condition previously?',
+    label: 'Has a veterinarian previously diagnosed any medical condition?',
     type: 'yes_no' as const,
+    followUpHint: 'Share the diagnosed condition',
   },
   {
     key: 'ongoingMedicationOrTreatment',
-    label: 'Is the pet on medication or ongoing treatment?',
+    label: 'Is your pet currently taking medication or receiving ongoing treatment?',
     type: 'yes_no' as const,
+    followUpHint: 'List medication or treatment details',
   },
   {
     key: 'otherMedicalDisclosure',
-    label: 'Any other medical disclosure relevant to cover?',
+    label: 'Any other relevant medical disclosure?',
     type: 'text' as const,
     required: false,
   },
@@ -224,4 +232,8 @@ export type HealthDeclarations = {
   priorVetDiagnosis: 'Yes' | 'No';
   ongoingMedicationOrTreatment: 'Yes' | 'No';
   otherMedicalDisclosure?: string;
+  /** Kept even if answer flips to No — never silently discard disclosures. */
+  priorIllnessOrInjuryDetails?: string;
+  priorVetDiagnosisDetails?: string;
+  ongoingMedicationOrTreatmentDetails?: string;
 };

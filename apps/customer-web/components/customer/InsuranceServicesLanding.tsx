@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { isWarmpawzInsuranceCustomerEnabled } from '@/lib/warmpawz-insurance-flag';
 import { InsuranceEntryHero } from './insurance/InsuranceEntryHero';
 import { InsuranceQuoteJourney, beginInsuranceQuoteOrAuth } from './insurance/InsuranceQuoteJourney';
-import { PlanGrid } from './insurance/PlanGrid';
 import { ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -24,7 +23,7 @@ export function InsuranceServicesLanding({
   startQuote = false,
 }: InsuranceServicesLandingProps) {
   const [ready, setReady] = useState(false);
-  const [mode, setMode] = useState<'hero' | 'quote' | 'explore'>(startQuote ? 'quote' : 'hero');
+  const [mode, setMode] = useState<'hero' | 'quote'>(startQuote ? 'quote' : 'hero');
 
   useEffect(() => setReady(true), []);
   useEffect(() => {
@@ -80,15 +79,6 @@ export function InsuranceServicesLanding({
     );
   }
 
-  if (mode === 'explore') {
-    return (
-      <PlanGrid
-        onBack={() => setMode('hero')}
-        onOpen={() => onNavigate?.('insurance_plan', { planId: 'consult' })}
-      />
-    );
-  }
-
   return (
     <InsuranceEntryHero
       onBack={onBack}
@@ -98,7 +88,9 @@ export function InsuranceServicesLanding({
           onNavigate?.('insurance_quote');
         })
       }
-      onExplore={() => setMode('explore')}
+      onExplore={() => {
+        /* Explore Coverage is inline on the hero — keep customers out of PlanGrid/application. */
+      }}
       onTalkToExpert={() => onNavigate?.('insurance_plan', { planId: 'consult' })}
     />
   );
