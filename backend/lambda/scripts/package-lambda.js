@@ -131,11 +131,22 @@ function commandExists(cmd) {
   }
 }
 
+function resolveTarBin() {
+  // Git Bash `tar` mis-parses Windows drive paths ("Cannot connect to C:").
+  // Prefer system bsdtar on Windows when present.
+  if (process.platform === 'win32') {
+    const systemTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+    if (fs.existsSync(systemTar)) return `"${systemTar}"`;
+  }
+  return 'tar';
+}
+
 function zipWithTar(cwd, destinationPath, entries) {
   const dest = path.resolve(destinationPath);
   if (fs.existsSync(dest)) fs.unlinkSync(dest);
   const entryArgs = entries.map((e) => `"${e}"`).join(' ');
-  execSync(`tar -a -cf "${dest}" ${entryArgs}`, {
+  const tarBin = resolveTarBin();
+  execSync(`${tarBin} -a -cf "${dest}" ${entryArgs}`, {
     cwd,
     stdio: 'inherit',
     shell: true,
