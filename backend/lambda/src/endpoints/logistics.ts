@@ -38,6 +38,7 @@ import {
   extractPidgeOrderIdMap,
 } from '../lib/services/pidge-logistics';
 import { SAFE_INTERNAL_ERROR_MESSAGE } from '../utils/safe-hono-error';
+import { secureLog, secureLogError } from '../utils/secure-logger';
 
 // ============================================================================
 // API BASE URLS
@@ -181,7 +182,7 @@ async function getShiprocketToken(): Promise<string> {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[SHIPROCKET] Auth failed:', response.status, errorText);
+      secureLog('error', "[SHIPROCKET] Auth failed:", { httpStatus: response.status, providerBody: errorText });
       throw new Error(`Shiprocket authentication failed: ${response.status}`);
     }
 
@@ -195,7 +196,7 @@ async function getShiprocketToken(): Promise<string> {
 
     return shiprocketToken;
   } catch (error: any) {
-    console.error('[SHIPROCKET] Auth error:', error);
+    secureLogError("[SHIPROCKET] Auth error:", error);
     throw error;
   }
 }
@@ -231,7 +232,7 @@ async function getDelhiveryCredentials(): Promise<{ apiToken: string; clientName
 
     throw new Error('Delhivery credentials not configured');
   } catch (error: any) {
-    console.error('[DELHIVERY] Error fetching credentials:', error);
+    secureLogError("[DELHIVERY] Error fetching credentials:", error);
     throw error;
   }
 }
@@ -269,7 +270,7 @@ async function getDunzoCredentials(): Promise<{ clientId: string; clientSecret: 
 
     throw new Error('Dunzo credentials not configured');
   } catch (error: any) {
-    console.error('[DUNZO] Error fetching credentials:', error);
+    secureLogError("[DUNZO] Error fetching credentials:", error);
     throw error;
   }
 }
@@ -294,14 +295,14 @@ async function getDunzoAccessToken(): Promise<string> {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[DUNZO] Token fetch failed:', response.status, errorText);
+      secureLog('error', "[DUNZO] Token fetch failed:", { httpStatus: response.status, providerBody: errorText });
       throw new Error(`Dunzo authentication failed: ${response.status}`);
     }
 
     const data: any = await response.json();
     return data.token || data.access_token;
   } catch (error: any) {
-    console.error('[DUNZO] Auth error:', error);
+    secureLogError("[DUNZO] Auth error:", error);
     throw error;
   }
 }
@@ -371,7 +372,7 @@ async function delhiveryCreateOrder(orderData: {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[DELHIVERY] Create order failed:', response.status, errorText);
+      secureLog('error', "[DELHIVERY] Create order failed:", { httpStatus: response.status, providerBody: errorText });
       return { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE };
     }
 
@@ -387,7 +388,7 @@ async function delhiveryCreateOrder(orderData: {
     
     return { success: true, waybill };
   } catch (error: any) {
-    console.error('[DELHIVERY] Create order error:', error);
+    secureLogError("[DELHIVERY] Create order error:", error);
     return { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE };
   }
 }
@@ -407,7 +408,7 @@ async function delhiveryTrackShipment(waybill: string): Promise<NormalizedTracki
     });
 
     if (!response.ok) {
-      console.error('[DELHIVERY] Track failed:', response.status);
+      secureLog('error', "[DELHIVERY] Track failed:", { httpStatus: response.status });
       return null;
     }
 
@@ -451,7 +452,7 @@ async function delhiveryTrackShipment(waybill: string): Promise<NormalizedTracki
       trackingUrl: `https://www.delhivery.com/track/package/${waybill}`,
     };
   } catch (error: any) {
-    console.error('[DELHIVERY] Track error:', error);
+    secureLogError("[DELHIVERY] Track error:", error);
     return null;
   }
 }
@@ -477,14 +478,14 @@ async function delhiveryCancelShipment(waybill: string): Promise<{ success: bool
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[DELHIVERY] Cancel failed:', response.status, errorText);
+      secureLog('error', "[DELHIVERY] Cancel failed:", { httpStatus: response.status, providerBody: errorText });
       return { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE };
     }
 
     console.log('[DELHIVERY] ✅ Shipment cancelled:', waybill);
     return { success: true };
   } catch (error: any) {
-    console.error('[DELHIVERY] Cancel error:', error);
+    secureLogError("[DELHIVERY] Cancel error:", error);
     return { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE };
   }
 }
@@ -573,7 +574,7 @@ async function dunzoCreateTask(taskData: {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[DUNZO] Create task failed:', response.status, errorText);
+      secureLog('error', "[DUNZO] Create task failed:", { httpStatus: response.status, providerBody: errorText });
       return { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE };
     }
 
@@ -587,7 +588,7 @@ async function dunzoCreateTask(taskData: {
       trackingUrl: result.tracking_url,
     };
   } catch (error: any) {
-    console.error('[DUNZO] Create task error:', error);
+    secureLogError("[DUNZO] Create task error:", error);
     return { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE };
   }
 }
@@ -608,7 +609,7 @@ async function dunzoGetTaskStatus(taskId: string): Promise<NormalizedTracking | 
     });
 
     if (!response.ok) {
-      console.error('[DUNZO] Get status failed:', response.status);
+      secureLog('error', "[DUNZO] Get status failed:", { httpStatus: response.status });
       return null;
     }
 
@@ -652,7 +653,7 @@ async function dunzoGetTaskStatus(taskId: string): Promise<NormalizedTracking | 
       trackingUrl: data.tracking_url,
     };
   } catch (error: any) {
-    console.error('[DUNZO] Get status error:', error);
+    secureLogError("[DUNZO] Get status error:", error);
     return null;
   }
 }
@@ -674,14 +675,14 @@ async function dunzoCancelTask(taskId: string): Promise<{ success: boolean; erro
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[DUNZO] Cancel failed:', response.status, errorText);
+      secureLog('error', "[DUNZO] Cancel failed:", { httpStatus: response.status, providerBody: errorText });
       return { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE };
     }
 
     console.log('[DUNZO] ✅ Task cancelled:', taskId);
     return { success: true };
   } catch (error: any) {
-    console.error('[DUNZO] Cancel error:', error);
+    secureLogError("[DUNZO] Cancel error:", error);
     return { success: false, error: SAFE_INTERNAL_ERROR_MESSAGE };
   }
 }
@@ -806,7 +807,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         shipment: result,
       });
     } catch (error: any) {
-      console.error('Error creating Shiprocket order:', error);
+      secureLogError("Error creating Shiprocket order:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -855,7 +856,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         pidgeOrderId: firstPidgeId || undefined,
       });
     } catch (error: any) {
-      console.error('[PIDGE] create-order:', error);
+      secureLogError("[PIDGE] create-order:", error);
       return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 502);
     }
   });
@@ -880,7 +881,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         pidge: json,
       });
     } catch (error: any) {
-      console.error('[PIDGE] get order:', error);
+      secureLogError("[PIDGE] get order:", error);
       const upstream = error?.httpStatus;
       const status =
         typeof upstream === 'number' && upstream >= 400 && upstream < 600
@@ -925,7 +926,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         pidge: json,
       });
     } catch (error: any) {
-      console.error('[PIDGE] cancel order:', error);
+      secureLogError("[PIDGE] cancel order:", error);
       const upstream = error?.httpStatus;
       const status =
         typeof upstream === 'number' && upstream >= 400 && upstream < 600
@@ -965,7 +966,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         tracking: result,
       });
     } catch (error: any) {
-      console.error('Error tracking shipment:', error);
+      secureLogError("Error tracking shipment:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1014,7 +1015,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         awb: result,
       });
     } catch (error: any) {
-      console.error('Error generating AWB:', error);
+      secureLogError("Error generating AWB:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1051,7 +1052,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         },
       });
     } catch (error: any) {
-      console.error('Error calculating shipping:', error);
+      secureLogError("Error calculating shipping:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1085,7 +1086,7 @@ export function registerLogisticsEndpoints(app: Hono) {
       const result = await response.json();
       return c.json(result, response.status as 200 | 400 | 500);
     } catch (error: any) {
-      console.error('Error creating logistics order:', error);
+      secureLogError("Error creating logistics order:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1142,7 +1143,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         message: 'Order cancelled successfully',
       });
     } catch (error: any) {
-      console.error('Error cancelling order:', error);
+      secureLogError("Error cancelling order:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1191,7 +1192,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         },
       });
     } catch (error: any) {
-      console.error('Error tracking shipment:', error);
+      secureLogError("Error tracking shipment:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1249,7 +1250,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         trackingUrl: `https://www.delhivery.com/track/package/${result.waybill}`,
       });
     } catch (error: any) {
-      console.error('[DELHIVERY CREATE ORDER] Error:', error);
+      secureLogError("[DELHIVERY CREATE ORDER] Error:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1272,7 +1273,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         tracking,
       });
     } catch (error: any) {
-      console.error('[DELHIVERY TRACK] Error:', error);
+      secureLogError("[DELHIVERY TRACK] Error:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1303,7 +1304,7 @@ export function registerLogisticsEndpoints(app: Hono) {
 
       return c.json({ success: true, message: 'Shipment cancelled' });
     } catch (error: any) {
-      console.error('[DELHIVERY CANCEL] Error:', error);
+      secureLogError("[DELHIVERY CANCEL] Error:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1352,7 +1353,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         trackingUrl: result.trackingUrl,
       });
     } catch (error: any) {
-      console.error('[DUNZO CREATE TASK] Error:', error);
+      secureLogError("[DUNZO CREATE TASK] Error:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1375,7 +1376,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         task: status,
       });
     } catch (error: any) {
-      console.error('[DUNZO GET TASK] Error:', error);
+      secureLogError("[DUNZO GET TASK] Error:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1407,7 +1408,7 @@ export function registerLogisticsEndpoints(app: Hono) {
 
       return c.json({ success: true, message: 'Task cancelled' });
     } catch (error: any) {
-      console.error('[DUNZO CANCEL] Error:', error);
+      secureLogError("[DUNZO CANCEL] Error:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1591,7 +1592,7 @@ export function registerLogisticsEndpoints(app: Hono) {
       const shiprocketResult: any = await response.json();
 
       if (!response.ok || !shiprocketResult.order_id) {
-        console.error('[SHIPROCKET] Create failed:', shiprocketResult);
+        secureLog('error', "[SHIPROCKET] Create failed:", { providerResult: shiprocketResult });
         return c.json({
           success: false,
           error: shiprocketResult.message || 'Failed to create shipment with any partner',
@@ -1623,7 +1624,7 @@ export function registerLogisticsEndpoints(app: Hono) {
           : null,
       });
     } catch (error: any) {
-      console.error('[CREATE SHIPMENT] Error:', error);
+      secureLogError("[CREATE SHIPMENT] Error:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1774,7 +1775,7 @@ export function registerLogisticsEndpoints(app: Hono) {
 
       return c.json({ error: 'Shipment not found' }, 404);
     } catch (error: any) {
-      console.error('[UNIFIED TRACK] Error:', error);
+      secureLogError("[UNIFIED TRACK] Error:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
@@ -1836,7 +1837,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         message: 'Mock shipment created (no logistics API configured)',
       });
     } catch (error: any) {
-      console.error('[MOCK CREATE] Error:', error);
+      secureLogError("[MOCK CREATE] Error:", error);
       return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });

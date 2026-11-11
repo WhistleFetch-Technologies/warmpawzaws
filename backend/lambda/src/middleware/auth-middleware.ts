@@ -16,6 +16,9 @@
 
 import { Context, Next } from 'hono';
 import { extractAndVerifyAuthToken } from '../utils/jwt-verification';
+import { secureLogError } from '../utils/secure-logger';
+import { logSecurityEvent } from '../utils/security-event-log';
+import { getCorrelationIdFromContext } from './request-correlation-middleware';
 
 // Public endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
@@ -124,7 +127,10 @@ async function extractAuth(c: Context): Promise<{
   }
 
   const token = authHeader.replace('Bearer ', '').trim();
-  console.log(`[AuthMiddleware] Token detected: ${token.substring(0, 30)}... (UAT_MODE=${process.env.UAT_MODE}, uatModeHeader=${uatModeHeader})`);
+  // Batch 4: never log token prefixes / JWT fragments.
+  console.log(
+    `[AuthMiddleware] Bearer present (len=${token.length}, UAT_MODE=${process.env.UAT_MODE}, uatModeHeader=${uatModeHeader})`,
+  );
 
   // Synthetic UAT tokens ONLY (explicit format). Never treat real JWTs as synthetic
   // merely because UAT_MODE=true — that previously defaulted every JWT to admin.
@@ -170,8 +176,12 @@ async function extractAuth(c: Context): Promise<{
     const result = await extractAndVerifyAuthToken(headers);
     
     if (!result.valid || !result.payload) {
-      console.warn(`[AuthMiddleware] Token verification failed: ${result.error || 'unknown error'}`);
-      return { valid: false, error: result.error || 'Invalid or expired token' };
+      logSecurityEvent({
+        eventType: 'TOKEN_FAILURE',
+        outcome: 'failure',
+        reasonCategory: 'INVALID_TOKEN',
+      });
+      return { valid: false, error: 'Invalid or expired token' };
     }
 
     const payload = result.payload;
@@ -192,9 +202,11 @@ async function extractAuth(c: Context): Promise<{
       groups,
       isUAT: isUATToken,
     };
-  } catch (error: any) {
-    console.error('[AuthMiddleware] Token verification failed:', error.message || error);
-    return { valid: false, error: `Token verification failed: ${error.message || 'unknown error'}` };
+  } catch (error: unknown) {
+    secureLogError('[AuthMiddleware] Token verification failed', error, {
+      eventType: 'TOKEN_FAILURE',
+    });
+    return { valid: false, error: 'Token verification failed' };
   }
 }
 
@@ -268,14 +280,22 @@ export function requireAdmin() {
     // In UAT mode, check if the token is for admin
     if (auth.isUAT) {
       if (auth.userRole !== 'admin') {
-        console.warn(`[AuthMiddleware] UAT Admin access denied - token is for role: ${auth.userRole}`);
+        logSecurityEvent({
+          eventType: 'AUTHZ_DENIAL',
+          outcome: 'denied',
+          reasonCategory: 'ADMIN_REQUIRED',
+          actorCategory: auth.userRole || 'unknown',
+          actorId: auth.userId,
+          requestId: getCorrelationIdFromContext(c),
+          path: c.req.path,
+          method: c.req.method,
+        });
         return c.json(
           { success: false, error: 'Admin access required', code: 'ADMIN_REQUIRED' },
           403
         );
       }
       // UAT admin token is valid
-      console.log(`[AuthMiddleware] UAT Admin access granted for: ${auth.userId}`);
       c.set('userId', auth.userId);
       c.set('userRole', 'admin');
       c.set('userGroups', ['admin']);
@@ -290,7 +310,16 @@ export function requireAdmin() {
                     auth.userRole === 'admin';
 
     if (!isAdmin) {
-      console.warn(`[AuthMiddleware] Admin access denied for user ${auth.userId}, role: ${auth.userRole}`);
+      logSecurityEvent({
+        eventType: 'AUTHZ_DENIAL',
+        outcome: 'denied',
+        reasonCategory: 'ADMIN_REQUIRED',
+        actorCategory: auth.userRole || 'unknown',
+        actorId: auth.userId,
+        requestId: getCorrelationIdFromContext(c),
+        path: c.req.path,
+        method: c.req.method,
+      });
       return c.json(
         { success: false, error: 'Admin access required', code: 'ADMIN_REQUIRED' },
         403
@@ -329,13 +358,21 @@ export function requireVendor() {
     // In UAT mode, check if the token is for vendor
     if (auth.isUAT) {
       if (auth.userRole !== 'vendor') {
-        console.warn(`[AuthMiddleware] UAT Vendor access denied - token is for role: ${auth.userRole}`);
+        logSecurityEvent({
+          eventType: 'AUTHZ_DENIAL',
+          outcome: 'denied',
+          reasonCategory: 'VENDOR_REQUIRED',
+          actorCategory: auth.userRole || 'unknown',
+          actorId: auth.userId,
+          requestId: getCorrelationIdFromContext(c),
+          path: c.req.path,
+          method: c.req.method,
+        });
         return c.json(
           { success: false, error: 'Vendor access required', code: 'VENDOR_REQUIRED' },
           403
         );
       }
-      console.log(`[AuthMiddleware] UAT Vendor access granted for: ${auth.userId}`);
       c.set('userId', auth.userId);
       c.set('userRole', 'vendor');
       c.set('userGroups', ['vendor']);
@@ -349,7 +386,16 @@ export function requireVendor() {
                      auth.userRole === 'staff';
 
     if (!isVendor) {
-      console.warn(`[AuthMiddleware] Vendor access denied for user ${auth.userId}, role: ${auth.userRole}`);
+      logSecurityEvent({
+        eventType: 'AUTHZ_DENIAL',
+        outcome: 'denied',
+        reasonCategory: 'VENDOR_REQUIRED',
+        actorCategory: auth.userRole || 'unknown',
+        actorId: auth.userId,
+        requestId: getCorrelationIdFromContext(c),
+        path: c.req.path,
+        method: c.req.method,
+      });
       return c.json(
         { success: false, error: 'Vendor access required', code: 'VENDOR_REQUIRED' },
         403
@@ -388,13 +434,21 @@ export function requireCustomer() {
     // In UAT mode, check if the token is for customer
     if (auth.isUAT) {
       if (auth.userRole !== 'customer') {
-        console.warn(`[AuthMiddleware] UAT Customer access denied - token is for role: ${auth.userRole}`);
+        logSecurityEvent({
+          eventType: 'AUTHZ_DENIAL',
+          outcome: 'denied',
+          reasonCategory: 'CUSTOMER_REQUIRED',
+          actorCategory: auth.userRole || 'unknown',
+          actorId: auth.userId,
+          requestId: getCorrelationIdFromContext(c),
+          path: c.req.path,
+          method: c.req.method,
+        });
         return c.json(
           { success: false, error: 'Customer access required', code: 'CUSTOMER_REQUIRED' },
           403
         );
       }
-      console.log(`[AuthMiddleware] UAT Customer access granted for: ${auth.userId}`);
       c.set('userId', auth.userId);
       c.set('userRole', 'customer');
       c.set('userGroups', ['customer']);
@@ -407,7 +461,16 @@ export function requireCustomer() {
                        auth.userRole === 'customer';
 
     if (!isCustomer) {
-      console.warn(`[AuthMiddleware] Customer access denied for user ${auth.userId}, role: ${auth.userRole}`);
+      logSecurityEvent({
+        eventType: 'AUTHZ_DENIAL',
+        outcome: 'denied',
+        reasonCategory: 'CUSTOMER_REQUIRED',
+        actorCategory: auth.userRole || 'unknown',
+        actorId: auth.userId,
+        requestId: getCorrelationIdFromContext(c),
+        path: c.req.path,
+        method: c.req.method,
+      });
       return c.json(
         { success: false, error: 'Customer access required', code: 'CUSTOMER_REQUIRED' },
         403
@@ -458,18 +521,36 @@ export function authAuditLog() {
     const path = c.req.path;
     const method = c.req.method;
     const userId = c.get('userId');
-    
-    // Log the request
-    console.log(`[AuthAudit] ${method} ${path} - User: ${userId || 'anonymous'}`);
-    
+    const requestId = getCorrelationIdFromContext(c);
+
     await next();
-    
+
     const duration = Date.now() - startTime;
     const status = c.res.status;
-    
-    // Log auth failures for security monitoring
-    if (status === 401 || status === 403) {
-      console.warn(`[AuthAudit] AUTH_FAILURE ${method} ${path} - Status: ${status} - Duration: ${duration}ms`);
+
+    // Structured security diagnostics only on authn/authz failures (avoid per-request noise).
+    if (status === 401) {
+      logSecurityEvent({
+        eventType: 'AUTH_FAILURE',
+        outcome: 'failure',
+        reasonCategory: 'UNAUTHORIZED',
+        actorCategory: (c.get('userRole') as string) || 'anonymous',
+        actorId: typeof userId === 'string' ? userId : undefined,
+        requestId,
+        path,
+        method,
+      });
+    } else if (status === 403) {
+      logSecurityEvent({
+        eventType: 'AUTHZ_DENIAL',
+        outcome: 'denied',
+        reasonCategory: 'FORBIDDEN',
+        actorCategory: (c.get('userRole') as string) || 'anonymous',
+        actorId: typeof userId === 'string' ? userId : undefined,
+        requestId,
+        path,
+        method,
+      });
     }
   };
 }

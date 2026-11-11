@@ -1,24 +1,23 @@
 /**
  * Redact sensitive substrings before logging (PII, bearer tokens).
- * Does not guarantee log safety for all encodings; use for dev/ops logs only.
+ * Batch 4: delegates string scrubbing to Stage 1 `redactSecretsForLog` and
+ * exception logging to `secureLogError`.
  */
 
+import { redactSecretsForLog } from './safe-hono-error';
+import { secureLogError } from './secure-logger';
+
 const PHONE_LIKE = /\b\+?\d[\d\s\-().]{7,}\b/g;
-const EMAIL_LIKE = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
-const BEARER = /Bearer\s+[\w-._~+/]+=*/gi;
 
 export function redactForLog(input: string | undefined | null, maxLen = 500): string {
   if (input == null) return '';
-  let s = String(input);
-  if (s.length > maxLen) s = `${s.slice(0, maxLen)}…`;
-  s = s.replace(BEARER, 'Bearer [REDACTED]');
-  s = s.replace(EMAIL_LIKE, '[REDACTED_EMAIL]');
+  let s = redactSecretsForLog(String(input));
+  // Extra bare phone scrub for free-form ops logs (status codes left to Stage 1 rules).
   s = s.replace(PHONE_LIKE, '[REDACTED_PHONE]');
+  if (s.length > maxLen) s = `${s.slice(0, maxLen)}…`;
   return s;
 }
 
 export function logErrorSafe(prefix: string, err: unknown): void {
-  const e = err as { name?: string; message?: string; code?: string };
-  const msg = redactForLog(e?.message || String(err), 400);
-  console.error(`[${prefix}]`, e?.name || 'Error', e?.code || '', msg);
+  secureLogError(prefix, err);
 }

@@ -23,6 +23,7 @@ import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { query, select, insert, update } from '../database/rds-connection';
 import { uploadToS3, generateS3Key } from '../utils/aws/aws-clients';
+import { secureLog, secureLogError } from '../utils/secure-logger';
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -176,7 +177,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           source: 'prescriptions',
         }));
       } catch (prescErr: any) {
-        console.warn('[MEDICAL-RECORDS] Prescriptions fetch failed (non-blocking):', prescErr?.message);
+        secureLog('warn', '[MEDICAL-RECORDS] Prescriptions fetch failed (non-blocking)', { error: prescErr });
       }
 
       const allRecords = [...recordsFromMr, ...prescriptionRecords].sort(
@@ -190,7 +191,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('❌ [MEDICAL-RECORDS] Error fetching by phone:', error);
+      secureLogError("❌ [MEDICAL-RECORDS] Error fetching by phone:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -331,7 +332,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           source: 'prescriptions',
         }));
       } catch (prescErr) {
-        console.warn('[Medical Records] Pet prescriptions query failed (non-blocking):', prescErr);
+        secureLog('warn', '[Medical Records] Pet prescriptions query failed (non-blocking)', { error: prescErr });
       }
 
       const combined = [...recordsFromMr.map((r: any) => ({ ...r, source: 'medical_records' })), ...prescriptionRecords];
@@ -349,7 +350,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error fetching medical records:', error);
+      secureLogError("Error fetching medical records:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -486,7 +487,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error fetching booking records:', error);
+      secureLogError("Error fetching booking records:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -601,7 +602,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           },
         });
       } catch (notifError) {
-        console.warn('Failed to send prescription notification:', notifError);
+        secureLog('warn', 'Failed to send prescription notification', { error: notifError });
       }
 
       return c.json({
@@ -611,7 +612,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error uploading prescription:', error);
+      secureLogError("Error uploading prescription:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -697,7 +698,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           },
         });
       } catch (notifError) {
-        console.warn('Failed to send report notification to customer:', notifError);
+        secureLog('warn', 'Failed to send report notification to customer', { error: notifError });
       }
 
       // ✅ FIX GAP PG-3: Notify the prescribing vet about the diagnostics report
@@ -737,7 +738,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
             console.log(`📋 Notified prescribing vet (${recipientType} ${recipientId}) about diagnostics report`);
           }
         } catch (vetNotifError) {
-          console.warn('Failed to notify prescribing vet:', vetNotifError);
+          secureLog('warn', 'Failed to notify prescribing vet', { error: vetNotifError });
         }
       }
 
@@ -748,7 +749,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error uploading diagnostic report:', error);
+      secureLogError("Error uploading diagnostic report:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -812,7 +813,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error uploading medical record:', error);
+      secureLogError("Error uploading medical record:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -852,7 +853,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error fetching prescribing vet records:', error);
+      secureLogError("Error fetching prescribing vet records:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -940,7 +941,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         customerId: row.customer_id,
       });
     } catch (error: any) {
-      console.error('Error updating medical record:', error);
+      secureLogError("Error updating medical record:", error);
       return c.json({ success: false, error: 'Failed to update medical record' }, 500);
     }
   });
@@ -1115,7 +1116,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error uploading handwritten prescription:', error);
+      secureLogError("Error uploading handwritten prescription:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -1194,7 +1195,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error uploading customer prescription:', error);
+      secureLogError("Error uploading customer prescription:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -1367,7 +1368,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error creating prescription:', error);
+      secureLogError("Error creating prescription:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -1420,7 +1421,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         prescriptionsTableRecords = (prescriptionsResult as any).rows || [];
         console.log(`[Prescriptions] Found ${prescriptionsTableRecords.length} prescriptions from prescriptions table`);
       } catch (prescError) {
-        console.warn('Error querying prescriptions table:', prescError);
+        secureLog('warn', 'Error querying prescriptions table', { error: prescError });
         prescriptionsTableRecords = [];
       }
 
@@ -1447,7 +1448,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         uploadedPrescriptions = (medicalRecordsResult as any).rows || [];
         console.log(`[Prescriptions] Found ${uploadedPrescriptions.length} uploaded prescription documents from medical_records table`);
       } catch (medicalError) {
-        console.warn('Error querying medical_records table for prescriptions:', medicalError);
+        secureLog('warn', 'Error querying medical_records table for prescriptions', { error: medicalError });
         uploadedPrescriptions = [];
       }
 
@@ -1479,7 +1480,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
               );
               return { ...p, file_url: signedUrl, prescription_file_url: signedUrl };
             } catch (urlError: any) {
-              console.warn(`[Prescriptions] Failed to generate presigned URL for ${p.file_url}:`, urlError?.message);
+              secureLog('warn', '[Prescriptions] Failed to generate presigned URL', { error: urlError });
               return p; // Return without URL if generation fails
             }
           }
@@ -1506,7 +1507,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error fetching prescriptions:', error);
+      secureLogError("Error fetching prescriptions:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });
@@ -1542,7 +1543,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
             recordSource = 'prescriptions';
           }
         } catch (prescError) {
-          console.warn('Error checking prescriptions table:', prescError);
+          secureLog('warn', 'Error checking prescriptions table', { error: prescError });
         }
 
         // ✅ FIX: Also try searching by just recordId (in case booking_id doesn't match)
@@ -1658,7 +1659,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
               type: 'file',
             });
           } catch (s3Error: any) {
-            console.error('Failed to generate presigned URL:', s3Error);
+            secureLogError('Failed to generate presigned URL', s3Error);
             // Fall through to return original URL
           }
         }
@@ -1710,7 +1711,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error('Error viewing prescription:', error);
+      secureLogError("Error viewing prescription:", error);
       const { captureException } = await import('../utils/error-tracking');
       const { SAFE_INTERNAL_ERROR_MESSAGE } = await import('../utils/safe-hono-error');
       captureException(error instanceof Error ? error : new Error(String(error)), { path: c.req.path, method: c.req.method });

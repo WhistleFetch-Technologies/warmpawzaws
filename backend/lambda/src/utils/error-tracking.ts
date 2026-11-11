@@ -285,25 +285,30 @@ export function captureMessage(
  * Set user context for error tracking
  */
 export function setUserContext(userId?: string, userRole?: string, additionalContext?: Record<string, any>): void {
-  // Log to CloudWatch
-  console.log(JSON.stringify({
-    level: 'INFO',
-    type: 'user_context',
-    userId,
-    userRole,
-    additionalContext,
-    timestamp: new Date().toISOString(),
-    environment: process.env.ENVIRONMENT || 'development',
-  }));
+  const safeAdditional = sanitizeValueForLog(additionalContext || {}) as Record<string, unknown>;
+  // Log to CloudWatch (sanitized; never dump raw PII/secrets from additionalContext)
+  console.log(
+    JSON.stringify({
+      level: 'INFO',
+      type: 'user_context',
+      userId: userId ? redactSecretsForLog(String(userId)) : undefined,
+      userRole: userRole ? redactSecretsForLog(String(userRole)) : undefined,
+      additionalContext: safeAdditional,
+      timestamp: new Date().toISOString(),
+      environment: process.env.ENVIRONMENT || 'development',
+    }),
+  );
 
   // Set Sentry user context if available (optional)
   if (Sentry) {
     try {
-      Sentry.setUser({
-        id: userId,
-        role: userRole,
-        ...additionalContext,
-      });
+      Sentry.setUser(
+        sanitizeValueForLog({
+          id: userId,
+          role: userRole,
+          ...safeAdditional,
+        }) as Record<string, unknown>,
+      );
     } catch (e) {
       console.error('[Error Tracking] Failed to set Sentry user context:', e);
     }
@@ -319,25 +324,29 @@ export function addBreadcrumb(
   level: 'info' | 'warning' | 'error' = 'info',
   data?: Record<string, any>
 ): void {
+  const safeMessage = redactSecretsForLog(message || '');
+  const safeData = sanitizeValueForLog(data || {}) as Record<string, unknown>;
   // Log to CloudWatch
-  console.log(JSON.stringify({
-    level: level.toUpperCase() as 'INFO' | 'WARNING' | 'ERROR',
-    type: 'breadcrumb',
-    message,
-    category,
-    data,
-    timestamp: new Date().toISOString(),
-    environment: process.env.ENVIRONMENT || 'development',
-  }));
+  console.log(
+    JSON.stringify({
+      level: level.toUpperCase() as 'INFO' | 'WARNING' | 'ERROR',
+      type: 'breadcrumb',
+      message: safeMessage,
+      category: redactSecretsForLog(category || ''),
+      data: safeData,
+      timestamp: new Date().toISOString(),
+      environment: process.env.ENVIRONMENT || 'development',
+    }),
+  );
 
   // Add Sentry breadcrumb if available (optional)
   if (Sentry) {
     try {
       Sentry.addBreadcrumb({
-        message,
+        message: safeMessage,
         category,
         level: level === 'error' ? 'error' : level === 'warning' ? 'warning' : 'info',
-        data,
+        data: safeData,
       });
     } catch (e) {
       console.error('[Error Tracking] Failed to add Sentry breadcrumb:', e);

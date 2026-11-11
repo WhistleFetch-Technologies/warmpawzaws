@@ -16,10 +16,16 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { initializeErrorTracking, captureException, setUserContext, getErrorTrackingConfig } from '../utils/error-tracking';
 import { mapHonoThrownErrorToClientResponse, redactSecretsForLog } from '../utils/safe-hono-error';
+import { secureLog, secureLogError } from '../utils/secure-logger';
 import { validateEnvironmentOrThrow, getValidationReport, validateEnvironment } from '../utils/env-validation';
 import { checkDbHealth } from '../database/rds-connection';
 import { requireAuth, requireAdmin, authAuditLog, requireAiChatbotAuth } from '../middleware/auth-middleware';
 import { rateLimit, rateLimitAuth, rateLimitOtp, slidingWindowRateLimit } from '../middleware/rate-limit-middleware';
+import {
+  requestCorrelationMiddleware,
+  resolveRequestIdForError,
+} from '../middleware/request-correlation-middleware';
+import '../types/hono-variables';
 // Enhanced handlers (Phase 2-5)
 import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor/endpoints/vendor-onboarding-enhanced';
 import { registerVendorOnboardingFixes } from '../endpoints/vendor/endpoints/vendor-onboarding-fixes';
@@ -226,7 +232,7 @@ import { registerLoyaltyActionSourcesManagementEndpoints } from 'src/endpoints/l
 import { registerWalletCheckoutRulesEndpoints } from 'src/endpoints/wallet-checkout-rules-endpoints';
 import { actionSourceMiddleware } from '../middleware/action-source-middleware';
 
-// Create Hono app
+// Create Hono app (requestId/correlationId typed via ContextVariableMap augmentation)
 const app = new Hono();
 
 /** Local browser dev servers (merged only when not prod/stage — see getAllowedOriginsList).
@@ -246,7 +252,7 @@ const LOCAL_DEV_ORIGINS = [
 
 /** Must stay aligned with API Gateway AllowHeaders (infra/modules/api-gateway/main.tf). */
 const CORS_ALLOW_HEADERS_BASE =
-  'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,x-customer-phone,X-Requested-With';
+  'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,x-customer-phone,X-Requested-With,x-request-id,x-correlation-id';
 
 const isStrictCorsOriginPolicy = (): boolean => {
   const e = (process.env.ENVIRONMENT || '').toLowerCase();
@@ -354,7 +360,11 @@ app.options('*', async (c) => {
       headers: corsPreflightResponseHeaders(allowedOrigin, requestedHeaders),
     });
   } catch (error) {
-    console.error('[Hono OPTIONS] Error in OPTIONS handler:', error);
+    secureLogError('[Hono OPTIONS] Error in OPTIONS handler', error, {
+      requestId: resolveRequestIdForError(c),
+      path: c.req.path,
+      method: 'OPTIONS',
+    });
     const origin = c.req.header('origin') || c.req.header('Origin') || '';
     const allowedOrigin = getAllowedOrigin(origin);
     return new Response(null, {
@@ -381,14 +391,17 @@ app.use('*', cors({
     'X-UAT-Mode',
     'X-UAT-Token',
     'X-Customer-Phone',
+    'x-request-id',
+    'X-Request-Id',
+    'x-correlation-id',
+    'X-Correlation-Id',
   ],
   credentials: true,
   maxAge: 86400,
 }));
 
-app.use('*', async (c, next) => {
-  await next();
-});
+// Batch 4: server-validated correlation / request IDs for CloudWatch + error paths
+app.use('*', requestCorrelationMiddleware());
 
 // Action Sources middleware - emits ActionOccurred based on DB-configured triggers
 app.use('*', actionSourceMiddleware());
@@ -503,8 +516,11 @@ app.post('/system/run-pending-migrations', async (c) => {
         total_vendor_columns: verifyResult.rows[0]?.total ?? 0
       }
     });
-  } catch (error: any) {
-    console.error('[system/run-pending-migrations] failed:', error?.message || error);
+  } catch (error: unknown) {
+    secureLogError('[system/run-pending-migrations] failed', error, {
+      requestId: resolveRequestIdForError(c),
+      path: c.req.path,
+    });
     return c.json({ success: false, error: 'Migration execution failed', results }, 500);
   }
 });
@@ -898,7 +914,8 @@ app.notFound((c) => {
 
 // Error handler with CloudWatch tracking (Stage 1: sanitize all client bodies)
 app.onError((err, c) => {
-  const requestId = c.req.header('x-request-id') || c.req.header('X-Request-Id') || 'unknown';
+  // Never trust raw inbound x-request-id; prefer validated context or resolveCorrelationId.
+  const requestId = resolveRequestIdForError(c);
   const requestPath = c.req.path || (c.req as any).rawPath || c.req.url || '';
 
   // Single internal diagnostic capture (includes stack for authorized logs)
@@ -913,7 +930,7 @@ app.onError((err, c) => {
   });
 
   if (process.env.DEBUG === 'true') {
-    console.error('[Hono Error Handler] Error caught (sanitized client path):', {
+    secureLog('error', '[Hono Error Handler] Error caught (sanitized client path)', {
       path: requestPath,
       method: c.req.method,
       requestId,
@@ -1070,7 +1087,9 @@ export const handler = async (
         }
         return { statusCode: 400, body: JSON.stringify({ ok: false, error: 'invalid drive ingest event' }) };
       } catch (jobErr) {
-        console.error('[HANDLER] drive image ingest job failed:', jobErr);
+        secureLogError('[HANDLER] drive image ingest job failed', jobErr, {
+          requestId: context.awsRequestId,
+        });
         return {
           statusCode: 500,
           body: JSON.stringify({
@@ -1094,7 +1113,9 @@ export const handler = async (
         );
         return { statusCode: 200, body: JSON.stringify({ ok: true, job: 'notification-campaign-delivery' }) };
       } catch (jobErr) {
-        console.error('[HANDLER] campaign delivery job failed:', jobErr);
+        secureLogError('[HANDLER] campaign delivery job failed', jobErr, {
+          requestId: context.awsRequestId,
+        });
         return {
           statusCode: 500,
           body: JSON.stringify({
@@ -1152,7 +1173,9 @@ export const handler = async (
     } catch (optionsError) {
       // CRITICAL: Even on ANY error, return 200 OK for CORS preflight
       // Browsers will reject non-200 responses for OPTIONS requests
-      console.error('[HANDLER] Error in OPTIONS handler, but returning 200 OK:', optionsError);
+      secureLogError('[HANDLER] Error in OPTIONS handler, but returning 200 OK', optionsError, {
+        requestId: context.awsRequestId,
+      });
       return {
         statusCode: 200,
         body: '',
@@ -1345,8 +1368,9 @@ export const handler = async (
       } as HonoFetchOptions & Record<string, unknown>);
     } catch (error) {
       // Log error but don't expose internal details
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[HANDLER] Error processing request:', errorMessage);
+      secureLogError('[HANDLER] Error processing request', error, {
+        requestId: context.awsRequestId,
+      });
       throw error;
     }
 
@@ -1401,7 +1425,9 @@ export const handler = async (
     };
     return finalResponse;
   } catch (error) {
-    console.error('Lambda handler error:', error);
+    secureLogError('Lambda handler error', error, {
+      requestId: context.awsRequestId,
+    });
     
     // ✅ CRITICAL FIX: If this is an OPTIONS request, always return 200 OK for CORS
     const httpMethod = event.requestContext?.http?.method || 
@@ -1410,7 +1436,9 @@ export const handler = async (
                       'GET';
     
     if (httpMethod === 'OPTIONS') {
-      console.error('[OPTIONS] Error in handler, but returning 200 OK for CORS preflight:', error);
+      secureLogError('[OPTIONS] Error in handler, but returning 200 OK for CORS preflight', error, {
+        requestId: context.awsRequestId,
+      });
       const origin = event.headers?.origin || 
                      event.headers?.Origin || 
                      event.headers?.['origin'] ||
@@ -1461,7 +1489,9 @@ export const handler = async (
                           !!(event?.headers?.['Access-Control-Request-Method']);
       
       if (httpMethod === 'OPTIONS' || hasPreflight) {
-        console.error('[HANDLER] Outer error, but returning 200 OK for OPTIONS:', outerError);
+        secureLogError('[HANDLER] Outer error, but returning 200 OK for OPTIONS', outerError, {
+          requestId: context?.awsRequestId,
+        });
         return {
           statusCode: 200,
           body: '',
@@ -1478,7 +1508,9 @@ export const handler = async (
     }
     
     // For non-OPTIONS errors, return 500 with CORS
-    console.error('[HANDLER] Unhandled outer error:', outerError);
+    secureLogError('[HANDLER] Unhandled outer error', outerError, {
+      requestId: context?.awsRequestId,
+    });
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Internal Server Error' }),

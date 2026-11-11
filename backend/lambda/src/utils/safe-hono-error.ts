@@ -57,10 +57,10 @@ export function getHttpExceptionStatus(err: unknown): number | null {
 }
 
 const SENSITIVE_FIELD_KEY =
-  '(?:password|passwd|secret|client[_-]?secret|api[_-]?key|apiKey|access[_-]?key|access[_-]?token|accessToken|refresh[_-]?token|refreshToken|id[_-]?token|idToken|aws[_-]?access[_-]?key[_-]?id|aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token|session[_-]?token|private[_-]?key|authorization|otp)';
+  '(?:password|passwd|secret|client[_-]?secret|api[_-]?key|apiKey|access[_-]?key|access[_-]?token|accessToken|refresh[_-]?token|refreshToken|id[_-]?token|idToken|aws[_-]?access[_-]?key[_-]?id|aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token|session[_-]?token|private[_-]?key|authorization|cookie|otp|verification[_-]?code|reset[_-]?token|account[_-]?number|card[_-]?number|cvv|bank[_-]?details|ifsc)';
 
 const SENSITIVE_OBJECT_KEY_RE =
-  /password|passwd|secret|token|authorization|otp|apikey|api[_-]?key|private|credential|passwd/i;
+  /password|passwd|secret|token|authorization|cookie|otp|apikey|api[_-]?key|private|credential|verification|reset[_-]?token|account[_-]?number|card[_-]?number|cvv|bank|ifsc|phone|email|address|prescription|medical[_-]?record|medical|mobile|msisdn|customer[_-]?mobile|contact[_-]?number|contact[_-]?phone/i;
 
 /**
  * Redact secrets/tokens/PII from strings before internal logging.
@@ -82,6 +82,9 @@ export function redactSecretsForLog(text: string): string {
   // JWT / JWT-like (allow short/truncated segments used in tests and truncated logs)
   s = s.replace(/eyJ[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}/g, '[REDACTED_JWT]');
 
+  // Stripe-style / payment gateway secret keys (labeled or free-text)
+  s = s.replace(/\bsk_(?:live|test)_[A-Za-z0-9]+/g, '[REDACTED_PAYMENT_KEY]');
+
   // JSON / JS object style: "password":"value" or 'password':'value'
   s = s.replace(
     new RegExp(`(["'])(${SENSITIVE_FIELD_KEY})\\1\\s*:\\s*(["'])(?:\\\\.|(?!\\3).)*\\3`, 'gi'),
@@ -100,15 +103,30 @@ export function redactSecretsForLog(text: string): string {
 
   // Contextual phone / mobile (do not scrub bare status codes or SQLSTATE digits)
   s = s.replace(
-    /\b(?:phone|mobile|msisdn)(["']?\s*[:=]\s*["']?)\+?\d{8,15}\b/gi,
+    /\b(?:phone|mobile|msisdn|customer[_-]?mobile|contact[_-]?number|contact[_-]?phone)(["']?\s*[:=]\s*["']?)\+?\d{8,15}\b/gi,
     (_m, sep: string) => `phone${sep}[REDACTED_PHONE]`,
   );
   s = s.replace(/\bphone=\+?\d{8,15}\b/gi, 'phone=[REDACTED_PHONE]');
+
+  // Indian mobile numbers: +91 / 91-prefixed, or bare 10-digit starting 6–9
+  // Avoid matching short IDs / HTTP statuses / SQLSTATE by requiring plausible mobile shape.
+  s = s.replace(/\+91[\s-]?[6-9]\d{9}\b/g, '[REDACTED_PHONE]');
+  s = s.replace(/(?<![A-Za-z0-9])91[\s-]?[6-9]\d{9}\b/g, '[REDACTED_PHONE]');
+  s = s.replace(/(?<![A-Za-z0-9])[6-9]\d{9}(?![A-Za-z0-9])/g, '[REDACTED_PHONE]');
 
   // Email addresses
   s = s.replace(
     /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
     '[REDACTED_EMAIL]',
+  );
+
+  // Cookie header values
+  s = s.replace(/\bCookie\s*[:=]\s*[^\s;]+(?:;\s*[^\s;]+)*/gi, 'Cookie=[REDACTED]');
+
+  // Card-like digit runs (13–19) when labeled
+  s = s.replace(
+    /\b(?:card[_-]?number|pan)(["']?\s*[:=]\s*["']?)\d{13,19}\b/gi,
+    (_m, sep: string) => `card_number${sep}[REDACTED]`,
   );
 
   return s;
