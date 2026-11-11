@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import * as customer_phone_reviews_bookingid_skip_postRepo from '../repos/customer_phone_reviews_bookingid_skip_post.repo';
 import { requireCustomerPhoneMatch } from '../../../../utils/security-ownership';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../../utils/safe-hono-error';
 
 export async function executecustomerPhoneReviewsBookingidSkipPost(c: Context) {
   try {
@@ -33,6 +34,6 @@ export async function executecustomerPhoneReviewsBookingidSkipPost(c: Context) {
     });
   } catch (error: any) {
     console.error('Error skipping review:', error);
-    return c.json({ error: error.message }, 500);
+    return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
   }
 }

@@ -50,10 +50,9 @@ export async function executecustomerPhoneOrdersPharmacyActiveGet(c: Context) {
         customers = await customer_phone_orders_pharmacy_active_getRepo.dbCustomerPhoneOrdersPharmacyActiveGet0(normalizedPhone)
       } catch (error: any) {
         console.error('Error fetching customer:', error);
-        return c.json({ 
-          success: true, 
+        return c.json({
+          success: true,
           orders: [],
-          error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
       }
 
@@ -106,10 +105,9 @@ export async function executecustomerPhoneOrdersPharmacyActiveGet(c: Context) {
     } catch (error: any) {
       console.error('Error fetching active pharmacy orders:', error);
       // Return empty array instead of error to prevent frontend crashes
-      return c.json({ 
-        success: true, 
+      return c.json({
+        success: true,
         orders: [],
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
 }

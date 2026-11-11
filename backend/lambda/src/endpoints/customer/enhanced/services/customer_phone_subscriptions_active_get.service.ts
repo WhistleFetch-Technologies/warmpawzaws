@@ -100,11 +100,11 @@ export async function executecustomerPhoneSubscriptionsActiveGet(c: Context) {
       });
     } catch (error: any) {
       console.error('Error checking active subscriptions:', error);
-      return c.json({ 
-        success: true, 
-        hasActiveSubscription: false, 
+      // Soft-fail for UI resilience — never embed exception text.
+      return c.json({
+        success: true,
+        hasActiveSubscription: false,
         subscriptions: [],
-        error: error.message 
       });
     }
 }

@@ -74,6 +74,7 @@ import {
   buildVendorEarningsExportXlsx,
 } from '../shared/vendor-earnings-export.xlsx';
 import { wpayVendorExportSettingsRepository } from '../../warmpawz-pay/repositories/wpay-vendor-export-settings.repository';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../utils/safe-hono-error';
 
 const DASHBOARD_SERVICE_NAME_SQL = `CASE
   WHEN LOWER(COALESCE(b.commerce_mode, '')) = 'warmpawz_appointments'
@@ -346,7 +347,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor dashboard:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -571,7 +572,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor dashboard:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -735,7 +736,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor analytics:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -807,7 +808,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error exporting vendor earnings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1302,7 +1303,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor earnings:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1609,7 +1610,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching settlement breakup:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1678,7 +1679,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[SETTLEMENT-STATEMENT] Error:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 
@@ -1886,7 +1887,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor settlements:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
   });
 }

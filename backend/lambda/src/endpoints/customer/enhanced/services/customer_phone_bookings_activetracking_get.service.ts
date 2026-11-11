@@ -34,6 +34,7 @@ import {
 import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../../services/meal-subscription/meal-subscription-operations-service';
 import { expireMealPaymentHolds } from '../../../../utils/meal-payment-hold';
 import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refund-cases';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../../utils/safe-hono-error';
 
 export async function executecustomerPhoneBookingsActivetrackingGet(c: Context) {
     try {
@@ -70,6 +71,6 @@ export async function executecustomerPhoneBookingsActivetrackingGet(c: Context) 
       });
     } catch (error: any) {
       console.error('Error fetching active tracking:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
 }

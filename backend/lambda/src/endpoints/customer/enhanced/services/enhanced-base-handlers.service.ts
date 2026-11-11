@@ -55,6 +55,7 @@ import {
 import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../../services/meal-subscription/meal-subscription-operations-service';
 import { expireMealPaymentHolds } from '../../../../utils/meal-payment-hold';
 import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refund-cases';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../../utils/safe-hono-error';
 
 /** Module helpers (move-only). */
 
@@ -98,7 +99,7 @@ export class GetCustomerHandlerEnhanced extends BaseHandlerEnhanced {
     } catch (error: any) {
       console.error('Error getting customer:', error);
       return this.error(
-        error.message || 'Failed to get customer',
+        SAFE_INTERNAL_ERROR_MESSAGE,
         500,
         'INTERNAL_ERROR',
         undefined,
@@ -143,7 +144,7 @@ export class GetCustomerByPhoneHandlerEnhanced extends BaseHandlerEnhanced {
     } catch (error: any) {
       console.error('Error getting customer by phone:', error);
       return this.error(
-        error.message || 'Failed to get customer',
+        SAFE_INTERNAL_ERROR_MESSAGE,
         500,
         'INTERNAL_ERROR',
         undefined,
@@ -244,7 +245,7 @@ export class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
     } catch (error: any) {
       console.error('Error updating customer:', error);
       return this.error(
-        error.message || 'Failed to update customer',
+        SAFE_INTERNAL_ERROR_MESSAGE,
         500,
         'INTERNAL_ERROR',
         undefined,
@@ -278,7 +279,7 @@ export class GetCustomerPetsHandlerEnhanced extends BaseHandlerEnhanced {
     } catch (error: any) {
       console.error('Error getting customer pets:', error);
       return this.error(
-        error.message || 'Failed to get pets',
+        SAFE_INTERNAL_ERROR_MESSAGE,
         500,
         'INTERNAL_ERROR',
         undefined,
@@ -368,7 +369,7 @@ export class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
     } catch (error: any) {
       console.error('Error adding pet:', error);
       return this.error(
-        error.message || 'Failed to add pet',
+        SAFE_INTERNAL_ERROR_MESSAGE,
         500,
         'INTERNAL_ERROR',
         undefined,
@@ -482,7 +483,7 @@ export class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
     } catch (error: any) {
       console.error('Error deactivating customer:', error);
       return this.error(
-        error.message || 'Failed to deactivate customer',
+        SAFE_INTERNAL_ERROR_MESSAGE,
         500,
         'INTERNAL_ERROR',
         undefined,

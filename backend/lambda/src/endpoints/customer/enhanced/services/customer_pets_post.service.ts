@@ -45,6 +45,7 @@ import {
   recordPetInsertLoyalty,
   recordPetUpdateLoyalty,
 } from '../../../../lib/pet-loyalty-response';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../../utils/safe-hono-error';
 
 export async function executecustomerPetsPost(c: Context) {
     try {
@@ -216,6 +217,6 @@ export async function executecustomerPetsPost(c: Context) {
       });
     } catch (error: any) {
       console.error('Error saving customer pets:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
 }

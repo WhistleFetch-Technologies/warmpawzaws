@@ -33,6 +33,7 @@ import {
 import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../../services/meal-subscription/meal-subscription-operations-service';
 import { expireMealPaymentHolds } from '../../../../utils/meal-payment-hold';
 import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refund-cases';
+import { SAFE_INTERNAL_ERROR_MESSAGE } from '../../../../utils/safe-hono-error';
 
 export async function executecustomerOrdersOrderidPharmacystatusGet(c: Context) {
     try {
@@ -117,6 +118,6 @@ export async function executecustomerOrdersOrderidPharmacystatusGet(c: Context) 
       });
     } catch (error: any) {
       console.error('Error getting pharmacy order status:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: SAFE_INTERNAL_ERROR_MESSAGE }, 500);
     }
 }
