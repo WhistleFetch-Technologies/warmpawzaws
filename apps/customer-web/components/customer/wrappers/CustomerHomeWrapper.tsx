@@ -4802,7 +4802,9 @@ export function CustomerHomeWrapper({
         } else if (screen === 'insurance_quote') {
           navigateToScreen('insurance_quote');
         } else if (screen === 'my_insurance') {
-          navigateToScreen('my_insurance');
+          const aid = String(data?.applicationId || '').trim();
+          if (aid) navigateToScreen('my_insurance', routeKey.insurancePolicy(aid));
+          else navigateToScreen('my_insurance');
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           navigateToScreen('create-booking');
@@ -4851,10 +4853,19 @@ export function CustomerHomeWrapper({
   }
 
   if (currentScreen === 'my_insurance' || currentScreen === 'insurance_policy') {
-    const applicationId = currentScreen === 'insurance_policy'
-      ? String(history[history.length - 1]?.key || '').replace('insurance-policy:', '')
+    const historyKey = String(history[history.length - 1]?.key || '');
+    const applicationId = historyKey.startsWith('insurance-policy:')
+      ? historyKey.replace('insurance-policy:', '')
       : undefined;
-    return <MyInsuranceList onBack={handleBack} focusApplicationId={applicationId} />;
+    return (
+      <MyInsuranceList
+        onBack={handleBack}
+        focusApplicationId={applicationId || undefined}
+        onTalkToExpert={() =>
+          navigateToScreen('insurance_plan', routeKey.insurancePlan('consult'))
+        }
+      />
+    );
   }
 
   if (currentScreen === 'insurance_provider') {

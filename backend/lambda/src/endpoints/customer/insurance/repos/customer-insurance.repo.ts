@@ -317,6 +317,47 @@ export async function dbGetApplicationForCustomer(
   return (res.rows as Row[])[0] || null;
 }
 
+/** Open / in-progress applications (not yet issued policies). */
+export async function dbListApplicationsForCustomer(customerId: string): Promise<Row[]> {
+  const res = await query(
+    `SELECT a.id,
+            a.status,
+            a.application_source,
+            a.coverage_selection,
+            a.quoted_premium,
+            a.created_at,
+            a.updated_at,
+            c.name AS company_name,
+            c.provider_code,
+            p.name AS plan_name,
+            pet.name AS pet_name,
+            pet.species AS pet_species,
+            pet.breed AS pet_breed
+     FROM insurance_applications a
+     LEFT JOIN insurance_companies c ON c.id = a.company_id
+     LEFT JOIN insurance_company_plans p ON p.id = a.plan_id
+     LEFT JOIN pets pet ON pet.id = a.pet_id
+     WHERE a.status NOT IN (
+             'policy_uploaded', 'policy_confirmed', 'free_look_cancelled',
+             'documents_uploaded', 'policy_issued'
+           )
+       AND (
+         a.customer_id = $1::uuid
+         OR EXISTS (
+           SELECT 1
+           FROM customers me
+           JOIN customers same ON same.phone = me.phone
+           WHERE me.id = $1::uuid
+             AND NULLIF(BTRIM(me.phone), '') IS NOT NULL
+             AND same.id = a.customer_id
+         )
+       )
+     ORDER BY COALESCE(a.updated_at, a.created_at) DESC NULLS LAST`,
+    [customerId],
+  );
+  return res.rows as Row[];
+}
+
 export async function dbInsertSelfServeEnquiry(input: {
   customerId: string;
   vendorId: string;

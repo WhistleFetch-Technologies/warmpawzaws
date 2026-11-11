@@ -74,7 +74,9 @@ export function InsuranceServicesLanding({
         phone={phone}
         onBack={() => setMode('hero')}
         onTalkToExpert={() => onNavigate?.('insurance_plan', { planId: 'consult' })}
-        onGoMyInsurance={() => onNavigate?.('my_insurance')}
+        onGoMyInsurance={(applicationId) =>
+          onNavigate?.('my_insurance', applicationId ? { applicationId } : undefined)
+        }
       />
     );
   }

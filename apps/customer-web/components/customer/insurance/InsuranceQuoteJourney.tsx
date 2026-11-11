@@ -161,7 +161,7 @@ type Props = {
   initialStep?: Step;
   onBack: () => void;
   onTalkToExpert: () => void;
-  onGoMyInsurance: () => void;
+  onGoMyInsurance: (applicationId?: string) => void;
 };
 
 const PLAN_ICONS: Record<PawsMainSection, typeof Shield> = {
@@ -1121,7 +1121,9 @@ export function InsuranceQuoteJourney({
             ))}
           </SoftCard>
 
-          <PrimaryButton onClick={onGoMyInsurance}>View / track application</PrimaryButton>
+          <PrimaryButton onClick={() => onGoMyInsurance(result.applicationId)}>
+            View / track application
+          </PrimaryButton>
           <SecondaryButton onClick={onTalkToExpert} className="inline-flex items-center justify-center gap-2">
             <Headphones className="w-4 h-4" />
             Talk to an insurance expert
