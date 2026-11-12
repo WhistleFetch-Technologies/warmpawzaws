@@ -1266,7 +1266,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
                 location: submissionData.coordinates,
                 coordinates: submissionData.coordinates,
                 specializations: submissionData.specializations || [],
-                agreedToTerms: submissionData.agreedToTerms || true,
+                agreedToTerms: Boolean(submissionData.agreedToTerms),
               },
               uploaded_documents: validDocuments,
             };

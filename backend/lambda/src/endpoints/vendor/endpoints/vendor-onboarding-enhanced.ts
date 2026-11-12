@@ -39,6 +39,12 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { inferVendorKindFromServiceCategory } from './vendor-profile.vendor';
 import { geocodeVendorAddressFields } from '../../../utils/vendor-address-geocode';
+import {
+  dbUpsertVendorLegalAcceptance,
+  isVendorAgreedToTerms,
+  PLATFORM_VENDOR_LEGAL_VERSION,
+  VENDOR_LEGAL_ACCEPTANCE_SOURCE,
+} from '../../../utils/vendor-legal-acceptance';
 
 // ============================================================================
 // PHASE 1: AUTH & ENTRY
@@ -660,8 +666,8 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
     let normalizedBody = body;
     
     if (!body.application_payload && body.businessName) {
-      // Convert flat structure to expected format
-      const { phone, uploaded_documents, specializations, agreedToTerms, ...restFields } = body;
+      // Convert flat structure to expected format (keep agreedToTerms in payload for audit)
+      const { phone, uploaded_documents, specializations, ...restFields } = body;
       normalizedBody = {
         phone,
         application_payload: restFields,
@@ -1096,6 +1102,36 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
         { id: applicationId },
         { status: 'UNDER_REVIEW', updated_at: new Date().toISOString() }
       );
+
+      // Audit: persist once-per-identity legal acceptance when vendor agreed on the form.
+      if (isVendorAgreedToTerms(application_payload)) {
+        try {
+          const headers = this.getHeaders(context.event);
+          const ipAddress =
+            headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+            headers['x-real-ip'] ||
+            null;
+          const userAgent = headers['user-agent'] || null;
+          await dbUpsertVendorLegalAcceptance({
+            vendorIdentityId: identity.id,
+            applicationId,
+            policyVersion: PLATFORM_VENDOR_LEGAL_VERSION,
+            source: VENDOR_LEGAL_ACCEPTANCE_SOURCE,
+            ipAddress,
+            userAgent,
+          });
+          console.log(
+            `✅ [SUBMIT] Vendor legal acceptance recorded for identity ${identity.id} (${PLATFORM_VENDOR_LEGAL_VERSION})`,
+          );
+        } catch (legalErr) {
+          // Do not fail onboarding submit if audit write fails; log for ops.
+          console.error('❌ [SUBMIT] Failed to record vendor legal acceptance:', legalErr);
+        }
+      } else {
+        console.warn(
+          `⚠️ [SUBMIT] Application ${applicationId} submitted without agreedToTerms=true — no legal audit row`,
+        );
+      }
 
       console.log('✅ [SUBMIT] Application submitted successfully:', applicationId);
 

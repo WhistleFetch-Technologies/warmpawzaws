@@ -609,7 +609,7 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
     
     if (!body.application_payload && body.businessName) {
       // Convert flat structure to expected format
-      const { phone, uploaded_documents, specializations, agreedToTerms, ...restFields } = body;
+      const { phone, uploaded_documents, specializations, ...restFields } = body;
       normalizedBody = {
         phone,
         application_payload: restFields,
