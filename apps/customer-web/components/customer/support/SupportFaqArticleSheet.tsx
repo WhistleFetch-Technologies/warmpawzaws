@@ -19,7 +19,7 @@ export function SupportFaqArticleSheet({
   if (!open || !article) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
       <button
         type="button"
         className="absolute inset-0 bg-black/45"
@@ -30,7 +30,7 @@ export function SupportFaqArticleSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="faq-article-title"
-        className="relative z-[1] w-full max-w-lg max-h-[85dvh] flex flex-col rounded-t-2xl sm:rounded-2xl bg-white shadow-xl animate-in slide-in-from-bottom-4 duration-200"
+        className="relative z-[1] w-full max-w-lg max-h-[85dvh] flex flex-col rounded-2xl bg-white shadow-xl animate-in fade-in-0 zoom-in-95 duration-200"
       >
         <div className="flex items-start justify-between gap-3 border-b border-[#F1F5F9] px-4 py-4 shrink-0">
           <div className="min-w-0">

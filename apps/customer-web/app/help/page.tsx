@@ -80,6 +80,7 @@ function HelpPageContent() {
         <SupportHelpCenter
           phone={phone}
           onBack={() => handleHelpPageBack(router)}
+          onCloseToHome={() => router.replace('/')}
           initialTab={bookingContext || mealOrderContext ? 'contact' : undefined}
           bookingContext={bookingContext}
           mealOrderContext={mealOrderContext}

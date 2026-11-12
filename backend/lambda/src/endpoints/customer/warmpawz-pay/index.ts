@@ -10,6 +10,8 @@ import { registerCustomerWarmpawzPayInitiatePostRoute } from './routes/customer_
 import { registerCustomerWarmpawzPayVerifyPostRoute } from './routes/customer_warmpawz_pay_verify_post.route';
 import { registerCustomerWarmpawzPayReconcilePostRoute } from './routes/customer_warmpawz_pay_reconcile_post.route';
 import { registerCustomerWarmpawzPayTransactionsGetRoute } from './routes/customer_warmpawz_pay_transactions_get.route';
+import { registerCustomerWarmpawzPayLegalAcceptanceGetRoute } from './routes/customer_warmpawz_pay_legal_acceptance_get.route';
+import { registerCustomerWarmpawzPayLegalAcceptancePostRoute } from './routes/customer_warmpawz_pay_legal_acceptance_post.route';
 
 export function registerCustomerWarmpawzPayEndpoints(app: Hono) {
   registerCustomerWarmpawzPayVendorsGetRoute(app);
@@ -19,6 +21,8 @@ export function registerCustomerWarmpawzPayEndpoints(app: Hono) {
   registerPublicWarmpawzPayVendorsNearbyGetRoute(app);
   registerPublicWarmpawzPayVendorGetRoute(app);
   registerCustomerWarmpawzPayAppointmentContextGetRoute(app);
+  registerCustomerWarmpawzPayLegalAcceptanceGetRoute(app);
+  registerCustomerWarmpawzPayLegalAcceptancePostRoute(app);
   registerCustomerWarmpawzPayInitiatePostRoute(app);
   registerCustomerWarmpawzPayVerifyPostRoute(app);
   registerCustomerWarmpawzPayReconcilePostRoute(app);

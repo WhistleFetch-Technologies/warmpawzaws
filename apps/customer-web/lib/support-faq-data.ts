@@ -36,7 +36,7 @@ export const SUPPORT_FAQ_CATEGORIES: SupportFaqCategory[] = [
         id: 'booking-3',
         question: 'What payment methods are accepted?',
         answer:
-          'We accept credit and debit cards, UPI, net banking, and WarmPawz wallet balance through Razorpay.',
+          'We accept credit and debit cards, UPI, net banking, and Warmpawz wallet balance through Razorpay.',
       },
       {
         id: 'booking-4',
@@ -174,7 +174,7 @@ export const SUPPORT_FAQ_CATEGORIES: SupportFaqCategory[] = [
       },
       {
         id: 'account-4',
-        question: 'How do I use my WarmPawz wallet?',
+        question: 'How do I use my Warmpawz wallet?',
         answer:
           'Wallet balance can be applied at checkout for bookings and orders. View balance and history in the Wallet section.',
       },
@@ -212,7 +212,7 @@ export const SUPPORT_FAQ_CATEGORIES: SupportFaqCategory[] = [
         id: 'account-10',
         question: 'Is my payment information secure?',
         answer:
-          'Payments are processed by Razorpay. WarmPawz does not store full card numbers on our servers.',
+          'Payments are processed by Razorpay. Warmpawz does not store full card numbers on our servers.',
       },
     ],
   },
@@ -249,7 +249,7 @@ export const SUPPORT_FAQ_CATEGORIES: SupportFaqCategory[] = [
         id: 'technical-5',
         question: 'Location or maps are not working',
         answer:
-          'Enable location permissions for WarmPawz in your device settings and refresh the page or restart the app.',
+          'Enable location permissions for Warmpawz in your device settings and refresh the page or restart the app.',
       },
       {
         id: 'technical-6',

@@ -46,7 +46,7 @@ export interface ServiceDashboardHeaderProps {
    * `topRight` — back text button on the top row, title block below (no home X).
    */
   backButtonPlacement?: 'inline' | 'topRight';
-  /** When set: X (left) = home, Back (right) = previous — same pattern as profile / address book */
+  /** When set: Back (left) = previous, X (right) = home */
   onCloseToHome?: () => void;
   
   // Custom styling
@@ -381,24 +381,18 @@ export function ServiceDashboardHeader({
           </div>
         ) : null}
         <div className={`relative z-10 ${innerShellClass}`}>
-        {/* Split nav row: optional X (home) + Back (previous), then title block below */}
+        {/* Split nav row: Back (previous) left + X (home) right, then title block below */}
         {onCloseToHome || backButtonPlacement === 'topRight' ? (
           <>
             <div
               className={`relative z-20 flex items-center gap-2 ${titleRowMb} ${
-                onCloseToHome ? 'justify-between' : 'justify-end'
+                onCloseToHome && showBackButton && onBack
+                  ? 'justify-between'
+                  : onCloseToHome
+                    ? 'justify-end'
+                    : 'justify-start'
               }`}
             >
-              {onCloseToHome ? (
-                <button
-                  type="button"
-                  onClick={onCloseToHome}
-                  className={`relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full pointer-events-auto ${isPremium ? premiumGlassBtn : 'bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30'}`}
-                  aria-label="Close to home"
-                >
-                  <X className="h-6 w-6 text-white" />
-                </button>
-              ) : null}
               {showBackButton && onBack && (
                 <button
                   type="button"
@@ -410,6 +404,16 @@ export function ServiceDashboardHeader({
                   <span className="font-medium">Back</span>
                 </button>
               )}
+              {onCloseToHome ? (
+                <button
+                  type="button"
+                  onClick={onCloseToHome}
+                  className={`relative z-30 ml-auto flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full pointer-events-auto ${isPremium ? premiumGlassBtn : 'bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30'}`}
+                  aria-label="Close to home"
+                >
+                  <X className="h-6 w-6 text-white" />
+                </button>
+              ) : null}
             </div>
             <div className={`flex items-start gap-3 ${compact ? 'mb-3' : isPremium ? 'mb-4 gap-4' : 'mb-4'}`}>
               <div className={iconShellClass}>

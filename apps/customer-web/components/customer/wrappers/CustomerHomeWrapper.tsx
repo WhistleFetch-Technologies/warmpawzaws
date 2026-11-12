@@ -5969,6 +5969,7 @@ export function CustomerHomeWrapper({
         <SupportHelpCenter
           phone={phone}
           onBack={handleSupportBack}
+          onCloseToHome={goToHome}
           onInternalBackReady={(fn) => { supportHelpInternalBackRef.current = fn; }}
           onChatbotNavigate={handleSupportHelpChatbotNavigate}
           initialTab={supportCtx.kind ? 'contact' : undefined}

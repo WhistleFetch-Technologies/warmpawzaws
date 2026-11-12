@@ -6,11 +6,17 @@ import { QrCode } from 'lucide-react';
 import { useWpayVendorId } from '@/lib/warmpawz-pay/use-wpay-vendor-id';
 import {
   fetchWpayAppointmentContext,
+  fetchWpayLegalAcceptanceStatus,
   fetchWpayVendorDetail,
   readCustomerPhoneFromStorage,
+  recordWpayLegalAcceptance,
   type WpayAppointmentContext,
   type WpayVendorDetail,
 } from '@/lib/warmpawz-pay/wpay-api';
+import {
+  PlatformLegalPolicyDialog,
+  type PlatformPolicyType,
+} from '@/components/legal/PlatformLegalPolicyDialog';
 import { previewWpayCommercialQuote, previewWpayQuote } from '@/lib/warmpawz-pay/wpay-quote';
 import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
 import { buildWpaySuccessPath } from '@/lib/warmpawz-pay/wpay-success-href';
@@ -74,6 +80,12 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [showWaitForConfirmDialog, setShowWaitForConfirmDialog] = useState(false);
+  const [legalAcceptedOnServer, setLegalAcceptedOnServer] = useState<boolean | null>(null);
+  const [legalCheckboxChecked, setLegalCheckboxChecked] = useState(false);
+  const [legalStatusLoading, setLegalStatusLoading] = useState(false);
+  const [legalAcceptSaving, setLegalAcceptSaving] = useState(false);
+  const [legalDialogOpen, setLegalDialogOpen] = useState(false);
+  const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
   const [promoEnginePreview, setPromoEnginePreview] =
     useState<PromoEngineEarnPreviewData | null>(null);
   const [previewStatus, setPreviewStatus] = useState<OfferPreviewStatus>('loading');
@@ -341,22 +353,73 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     walletAmountApplied,
   ]);
 
+  const loadLegalAcceptanceStatus = useCallback(async () => {
+    const customerPhone = readCustomerPhoneFromStorage();
+    if (!customerPhone) {
+      setLegalAcceptedOnServer(false);
+      return;
+    }
+    setLegalStatusLoading(true);
+    try {
+      const status = await fetchWpayLegalAcceptanceStatus(customerPhone);
+      setLegalAcceptedOnServer(Boolean(status.accepted));
+      if (status.accepted) setLegalCheckboxChecked(true);
+    } catch {
+      // Fail closed: require checkbox if status cannot be loaded.
+      setLegalAcceptedOnServer(false);
+    } finally {
+      setLegalStatusLoading(false);
+    }
+  }, []);
+
   const onProceedToPay = useCallback(() => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
     if (requestGuestAuthForWpayPay({ vendorId: resolvedVendorId, amount: billAmount })) return;
-    const phone = readCustomerPhoneFromStorage();
-    if (!phone) {
+    const customerPhone = readCustomerPhoneFromStorage();
+    if (!customerPhone) {
       setPayError('Please log in to continue');
       return;
     }
     setPayError(null);
+    setLegalCheckboxChecked(false);
     setShowWaitForConfirmDialog(true);
-  }, [billAmount, quote, resolvedVendorId, vendor]);
+    void loadLegalAcceptanceStatus();
+  }, [billAmount, loadLegalAcceptanceStatus, quote, resolvedVendorId, vendor]);
 
-  const onConfirmWaitAndPay = useCallback(() => {
+  const onConfirmWaitAndPay = useCallback(async () => {
+    const customerPhone = readCustomerPhoneFromStorage();
+    if (!customerPhone) {
+      setPayError('Please log in to continue');
+      setShowWaitForConfirmDialog(false);
+      return;
+    }
+
+    const needsCheckbox = legalAcceptedOnServer !== true;
+    if (needsCheckbox && !legalCheckboxChecked) {
+      setPayError('Please agree to the Customer Terms of Service and Privacy Policy to continue');
+      return;
+    }
+
+    if (needsCheckbox) {
+      setLegalAcceptSaving(true);
+      try {
+        const recorded = await recordWpayLegalAcceptance({ phone: customerPhone });
+        if (!recorded.success && !recorded.accepted) {
+          setPayError(recorded.error || 'Could not save policy acceptance. Please try again.');
+          return;
+        }
+        setLegalAcceptedOnServer(true);
+      } catch (e: unknown) {
+        setPayError(e instanceof Error ? e.message : 'Could not save policy acceptance');
+        return;
+      } finally {
+        setLegalAcceptSaving(false);
+      }
+    }
+
     setShowWaitForConfirmDialog(false);
     void runPaymentCheckout();
-  }, [runPaymentCheckout]);
+  }, [legalAcceptedOnServer, legalCheckboxChecked, runPaymentCheckout]);
 
   if (loading) {
     return <p className="p-8 text-center text-sm text-gray-500">Loading…</p>;
@@ -609,18 +672,67 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
               After you continue, complete payment in Razorpay and wait on the confirmation screen
               until it says your order / payment is confirmed.
             </p>
+
+            {legalAcceptedOnServer !== true ? (
+              <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 shrink-0 accent-[#FF6B00]"
+                  checked={legalCheckboxChecked}
+                  disabled={legalStatusLoading || legalAcceptSaving}
+                  onChange={(e) => {
+                    setLegalCheckboxChecked(e.target.checked);
+                    setPayError(null);
+                  }}
+                />
+                <span className="leading-relaxed">
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    className="font-medium text-[#FF6B00] underline underline-offset-2"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setLegalDialogType('customer_terms_of_service');
+                      setLegalDialogOpen(true);
+                    }}
+                  >
+                    Customer Terms of Service
+                  </button>{' '}
+                  and{' '}
+                  <button
+                    type="button"
+                    className="font-medium text-[#FF6B00] underline underline-offset-2"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setLegalDialogType('privacy_policy');
+                      setLegalDialogOpen(true);
+                    }}
+                  >
+                    Privacy Policy
+                  </button>
+                  .
+                </span>
+              </label>
+            ) : null}
+
             <DialogFooter className="flex-col gap-2 sm:flex-col">
               <button
                 type="button"
-                onClick={onConfirmWaitAndPay}
-                className="w-full rounded-xl bg-[#FF6B00] py-3 text-center font-semibold text-white"
+                disabled={
+                  legalAcceptSaving ||
+                  legalStatusLoading ||
+                  (legalAcceptedOnServer !== true && !legalCheckboxChecked)
+                }
+                onClick={() => void onConfirmWaitAndPay()}
+                className="w-full rounded-xl bg-[#FF6B00] py-3 text-center font-semibold text-white disabled:opacity-50"
               >
-                Continue to payment
+                {legalAcceptSaving ? 'Saving…' : 'Continue to payment'}
               </button>
               <button
                 type="button"
+                disabled={legalAcceptSaving}
                 onClick={() => setShowWaitForConfirmDialog(false)}
-                className="w-full rounded-xl border border-gray-200 bg-white py-3 text-center font-medium text-gray-700"
+                className="w-full rounded-xl border border-gray-200 bg-white py-3 text-center font-medium text-gray-700 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -628,6 +740,15 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <PlatformLegalPolicyDialog
+        open={legalDialogOpen}
+        onOpenChange={(open) => {
+          setLegalDialogOpen(open);
+          if (!open) setLegalDialogType(null);
+        }}
+        policyType={legalDialogType}
+      />
     </div>
   );
 }

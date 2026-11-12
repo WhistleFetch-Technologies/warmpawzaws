@@ -163,3 +163,58 @@ export function readCustomerPhoneFromStorage(): string {
     ''
   ).trim();
 }
+
+/** Must match backend `PLATFORM_CUSTOMER_LEGAL_VERSION`. */
+export const WPAY_PLATFORM_LEGAL_VERSION = 'platform_tos_privacy_v1';
+
+export type WpayLegalAcceptanceStatus = {
+  success?: boolean;
+  accepted: boolean;
+  policyVersion: string;
+  acceptedAt?: string | null;
+  source?: string | null;
+  error?: string;
+};
+
+export async function fetchWpayLegalAcceptanceStatus(
+  phone: string,
+  policyVersion: string = WPAY_PLATFORM_LEGAL_VERSION,
+): Promise<WpayLegalAcceptanceStatus> {
+  const params = new URLSearchParams();
+  params.set('phone', phone);
+  params.set('policyVersion', policyVersion);
+  const res = await apiClient.get<WpayLegalAcceptanceStatus>(
+    `/customer/warmpawz-pay/legal-acceptance?${params.toString()}`,
+  );
+  return {
+    success: res?.success,
+    accepted: Boolean(res?.accepted),
+    policyVersion: res?.policyVersion || policyVersion,
+    acceptedAt: res?.acceptedAt ?? null,
+    source: res?.source ?? null,
+    error: res?.error,
+  };
+}
+
+export async function recordWpayLegalAcceptance(params: {
+  phone: string;
+  policyVersion?: string;
+  source?: string;
+}): Promise<WpayLegalAcceptanceStatus> {
+  const res = await apiClient.post<WpayLegalAcceptanceStatus>(
+    '/customer/warmpawz-pay/legal-acceptance',
+    {
+      phone: params.phone,
+      policyVersion: params.policyVersion || WPAY_PLATFORM_LEGAL_VERSION,
+      source: params.source || 'warmpawz_pay',
+    },
+  );
+  return {
+    success: res?.success,
+    accepted: Boolean(res?.accepted ?? res?.success),
+    policyVersion: res?.policyVersion || params.policyVersion || WPAY_PLATFORM_LEGAL_VERSION,
+    acceptedAt: res?.acceptedAt ?? null,
+    source: res?.source ?? null,
+    error: res?.error,
+  };
+}

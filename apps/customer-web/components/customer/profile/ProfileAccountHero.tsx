@@ -36,7 +36,7 @@ interface ProfileAccountHeroProps {
   memberSinceLabel?: string;
   onCloseToHome: () => void;
   onSettings?: () => void;
-  /** Back chevron (profile page); shown on the right when set. */
+  /** Back chevron (profile page); shown on the left when set (X stays on the right). */
   onBack?: () => void;
   /** Pet profile: glass Edit button top-right */
   onEdit?: () => void;
@@ -119,9 +119,21 @@ export function ProfileAccountHero({
 
         <div className="relative z-10 flex flex-col px-4 pb-5 pt-1 sm:px-5 md:pb-6">
           <div className="flex shrink-0 items-center justify-between">
-            <button type="button" onClick={onCloseToHome} className={glassBtn} aria-label="Close to home">
-              <X className="h-5 w-5 text-white" strokeWidth={2.25} />
-            </button>
+            {onBack ? (
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex min-h-[44px] items-center gap-0.5 rounded-xl px-2 text-sm font-semibold text-white active:opacity-90"
+                aria-label="Go back"
+              >
+                <ChevronLeft className="h-5 w-5" strokeWidth={2.5} />
+                Back
+              </button>
+            ) : (
+              <button type="button" onClick={onCloseToHome} className={glassBtn} aria-label="Close to home">
+                <X className="h-5 w-5 text-white" strokeWidth={2.25} />
+              </button>
+            )}
             {onEdit ? (
               <button
                 type="button"
@@ -136,14 +148,8 @@ export function ProfileAccountHero({
                 )}
               </button>
             ) : onBack ? (
-              <button
-                type="button"
-                onClick={onBack}
-                className="inline-flex min-h-[44px] items-center gap-0.5 rounded-xl px-2 text-sm font-semibold text-white active:opacity-90"
-                aria-label="Go back"
-              >
-                <ChevronLeft className="h-5 w-5" strokeWidth={2.5} />
-                Back
+              <button type="button" onClick={onCloseToHome} className={glassBtn} aria-label="Close to home">
+                <X className="h-5 w-5 text-white" strokeWidth={2.25} />
               </button>
             ) : onSettings ? (
               <button type="button" onClick={onSettings} className={glassBtn} aria-label="Settings">
