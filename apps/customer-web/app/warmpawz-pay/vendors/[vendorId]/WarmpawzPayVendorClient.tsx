@@ -353,26 +353,31 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     walletAmountApplied,
   ]);
 
-  const loadLegalAcceptanceStatus = useCallback(async () => {
+  const loadLegalAcceptanceStatus = useCallback(async (): Promise<boolean> => {
     const customerPhone = readCustomerPhoneFromStorage();
     if (!customerPhone) {
       setLegalAcceptedOnServer(false);
-      return;
+      setLegalCheckboxChecked(false);
+      return false;
     }
     setLegalStatusLoading(true);
     try {
       const status = await fetchWpayLegalAcceptanceStatus(customerPhone);
-      setLegalAcceptedOnServer(Boolean(status.accepted));
-      if (status.accepted) setLegalCheckboxChecked(true);
+      const accepted = Boolean(status.accepted);
+      setLegalAcceptedOnServer(accepted);
+      setLegalCheckboxChecked(accepted);
+      return accepted;
     } catch {
       // Fail closed: require checkbox if status cannot be loaded.
       setLegalAcceptedOnServer(false);
+      setLegalCheckboxChecked(false);
+      return false;
     } finally {
       setLegalStatusLoading(false);
     }
   }, []);
 
-  const onProceedToPay = useCallback(() => {
+  const onProceedToPay = useCallback(async () => {
     if (!vendor || !resolvedVendorId || billAmount <= 0 || !quote) return;
     if (requestGuestAuthForWpayPay({ vendorId: resolvedVendorId, amount: billAmount })) return;
     const customerPhone = readCustomerPhoneFromStorage();
@@ -381,9 +386,9 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
       return;
     }
     setPayError(null);
-    setLegalCheckboxChecked(false);
+    // Prefetch before opening so accepted users never flash the T&Cs checkbox.
+    await loadLegalAcceptanceStatus();
     setShowWaitForConfirmDialog(true);
-    void loadLegalAcceptanceStatus();
   }, [billAmount, loadLegalAcceptanceStatus, quote, resolvedVendorId, vendor]);
 
   const onConfirmWaitAndPay = useCallback(async () => {
@@ -626,19 +631,26 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
             <button
               type="button"
-              disabled={billAmount <= 0 || paying || (quoteReady && previewStatus === 'loading')}
-              onClick={quoteReady ? () => onProceedToPay() : onGetDiscount}
+              disabled={
+                billAmount <= 0 ||
+                paying ||
+                legalStatusLoading ||
+                (quoteReady && previewStatus === 'loading')
+              }
+              onClick={quoteReady ? () => void onProceedToPay() : onGetDiscount}
               className="w-full rounded-xl bg-[#FF6B00] py-3 text-center font-semibold text-white disabled:opacity-50"
             >
               {paying
                 ? 'Opening payment…'
-                : !quoteReady
-                  ? 'Get Discount'
-                  : previewStatus === 'loading'
-                    ? 'Checking offer…'
-                    : previewStatus === 'guest'
-                      ? 'Log in to get discount'
-                      : 'Proceed to Pay'}
+                : legalStatusLoading
+                  ? 'Checking…'
+                  : !quoteReady
+                    ? 'Get Discount'
+                    : previewStatus === 'loading'
+                      ? 'Checking offer…'
+                      : previewStatus === 'guest'
+                        ? 'Log in to get discount'
+                        : 'Proceed to Pay'}
             </button>
             {payError ? <p className="text-center text-sm text-red-600">{payError}</p> : null}
           </div>
@@ -673,13 +685,13 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
               until it says your order / payment is confirmed.
             </p>
 
-            {legalAcceptedOnServer !== true ? (
+            {legalAcceptedOnServer === false ? (
               <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
                 <input
                   type="checkbox"
                   className="mt-1 h-4 w-4 shrink-0 accent-[#FF6B00]"
                   checked={legalCheckboxChecked}
-                  disabled={legalStatusLoading || legalAcceptSaving}
+                  disabled={legalAcceptSaving}
                   onChange={(e) => {
                     setLegalCheckboxChecked(e.target.checked);
                     setPayError(null);

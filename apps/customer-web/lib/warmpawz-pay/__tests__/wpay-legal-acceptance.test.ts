@@ -72,4 +72,12 @@ describe('wpay legal continue gate', () => {
     expect(false !== true && !true).toBe(false);
     expect(true !== true && !false).toBe(false);
   });
+
+  it('hides checkbox until status is known false (no flash while null)', () => {
+    const showCheckbox = (legalAcceptedOnServer: boolean | null) =>
+      legalAcceptedOnServer === false;
+    expect(showCheckbox(null)).toBe(false);
+    expect(showCheckbox(true)).toBe(false);
+    expect(showCheckbox(false)).toBe(true);
+  });
 });
