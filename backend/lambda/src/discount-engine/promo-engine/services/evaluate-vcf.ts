@@ -18,6 +18,10 @@ import type { PromoUsageCounts } from '../repos/promo-engine.repo';
 import type { PromoEngineLimitsRow } from '../types';
 import { checkPromoLimits } from './promo-limits';
 import { checkRangeLimits, isRangedRule, pickAmountRange } from '../vcf/amount-range';
+import {
+  lockPetStoreWalkinCashbackRedeem,
+  lockRedeemScopeWhenEarnedAtWalkinStore,
+} from '../vcf/pet-store-walkin-redeem';
 
 export type VcfScoreResult = {
   winnerBenefits: AppliedBenefit[];
@@ -77,6 +81,8 @@ export function scoreVcfCandidates(opts: {
   usageByRule?: Map<string, PromoUsageCounts>;
   behaviour: CustomerBehaviourProfile;
   req: EvaluateRequest;
+  /** Walk-in Store catalogue ids — locks Anywhere cashback redeem at evaluate time. */
+  storeCategoryIds?: string[];
 }): VcfScoreResult {
   const pay = paymentFromReq(opts.req);
   const visitProfile: VisitProfile = parseVisitProfile(
@@ -146,7 +152,28 @@ export function scoreVcfCandidates(opts: {
       continue;
     }
 
-    const withRedeem = attachRedeem(benefits, vcf.redeem);
+    const hasCashback =
+      vcf.benefitMode === 'cashback' ||
+      vcf.benefitMode === 'both' ||
+      benefits.some((b) => b.benefit_type === 'CASHBACK' && b.amount > 0);
+    const lockedVcf = lockPetStoreWalkinCashbackRedeem({
+      vcf: vcf as unknown as Record<string, unknown>,
+      hasCashback,
+      storeCategoryIds: opts.storeCategoryIds || [],
+      serviceCategories: promo.service_categories,
+    });
+    const audienceRedeem =
+      (lockedVcf.redeem as typeof vcf.redeem | undefined) || vcf.redeem;
+    const redeem = lockRedeemScopeWhenEarnedAtWalkinStore({
+      redeemScope: audienceRedeem,
+      storeCategoryIds: opts.storeCategoryIds || [],
+      paymentVendorId: pay.vendorId,
+      paymentCategoryId: pay.categoryId,
+      paymentServiceCategory:
+        (opts.req.transaction as { service_category?: string } | undefined)?.service_category ||
+        null,
+    }) as typeof vcf.redeem;
+    const withRedeem = attachRedeem(benefits, redeem);
     const expiry = vcf.expiryDays;
     // A range's own cashback expiry wins; pre-range promos keep the promo-level expiry.
     const stamped = withRedeem.map((b) => {

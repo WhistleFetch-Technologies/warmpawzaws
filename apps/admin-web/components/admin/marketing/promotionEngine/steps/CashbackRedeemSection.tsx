@@ -43,6 +43,7 @@ export function CashbackRedeemSection({
       <Label>Redeem cashback</Label>
       <p className="text-xs text-slate-500">
         Same vendor / category seeds from Audience; add more so one promo covers multiple spend targets.
+        Pet Store walk-in cashback is locked to Store + Pay Bill (not other vendors).
         {draft.ranges?.length ? ' Applies to cashback from every range.' : ''}
       </p>
       <div className="flex flex-wrap gap-2">

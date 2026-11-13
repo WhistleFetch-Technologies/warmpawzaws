@@ -9,10 +9,13 @@ import {
   dbGetUsageByIdempotencyKey,
   dbInsertAudit,
   dbInsertUsage,
+  dbLoadPetStoreWalkinCategoryIds,
+  dbLoadVendorRole,
   dbSetUsageCashback,
 } from '../repos/promo-engine.repo';
 import { creditPromoCashback, pickCashbackBenefits } from './wallet-cashback.service';
 import { notifyPromoCashbackCredited } from './cashback-notification.service';
+import { lockRedeemScopeWhenEarnedAtWalkinStore } from '../vcf/pet-store-walkin-redeem';
 import {
   cashbackAllowedWithinBudget,
   countLimitExceededAfterInsert,
@@ -164,6 +167,16 @@ export async function commitPromotion(req: CommitRequest): Promise<{
 
   const userId = req.user_id || String(evalRow.user_id);
   const result = parseJson(evalRow.result_json);
+  const evalRequest = parseJson(evalRow.request_json);
+  const evalTx = parseJson(evalRequest.transaction);
+  const paymentVendorId = String(evalTx.vendorId || evalTx.vendor_id || '').trim() || null;
+  const paymentCategoryId = String(evalTx.categoryId || evalTx.category_id || '').trim() || null;
+  const paymentServiceCategory =
+    String(evalTx.service_category || evalTx.serviceCategory || '').trim() || null;
+  const [storeCategoryIds, vendorRole] = await Promise.all([
+    dbLoadPetStoreWalkinCategoryIds(),
+    paymentVendorId ? dbLoadVendorRole(paymentVendorId) : Promise.resolve(null),
+  ]);
   const benefits = await withholdCashbackOverBenefitCap({
     benefits: (Array.isArray(result.benefits) ? result.benefits : []) as AppliedBenefit[],
     userId,
@@ -253,6 +266,15 @@ export async function commitPromotion(req: CommitRequest): Promise<{
     for (const cb of cashbackRows) {
       const amount = round2(cb.amount * scale);
       if (amount <= 0) continue;
+      const redeemScope = lockRedeemScopeWhenEarnedAtWalkinStore({
+        redeemScope: cb.redeem || cb.redeem_scope,
+        storeCategoryIds,
+        paymentVendorId,
+        paymentCategoryId,
+        paymentServiceCategory,
+        paymentRoleName: vendorRole?.roleName,
+        paymentRoleId: vendorRole?.roleId,
+      });
       const credit = await creditPromoCashback({
         userId,
         amount,
@@ -260,7 +282,7 @@ export async function commitPromotion(req: CommitRequest): Promise<{
         referenceId: req.transaction_id,
         evaluationId: req.evaluation_id,
         expiryDays: cb.expiry_days,
-        redeemScope: cb.redeem || cb.redeem_scope,
+        redeemScope: redeemScope as AppliedBenefit['redeem'],
       });
       // credited=false means this transaction's wallet credit already exists (retry).
       cashbackCredited += amount;

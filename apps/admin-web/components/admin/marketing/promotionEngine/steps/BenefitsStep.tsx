@@ -27,6 +27,11 @@ import {
   resolveScopeCategoryIds,
   resolveScopeVendorIds,
 } from '@/lib/promo-engine/vcf';
+import {
+  ensureDraftWalkinCashbackRedeem,
+  isPetStoreWalkinCategorySlug,
+} from '@/lib/promo-engine/pet-store-walkin-redeem';
+import { useCatalogServiceCategories } from '@/lib/promo-engine/use-catalog-categories';
 import { BenefitValueFields } from './BenefitValueFields';
 import { CashbackRedeemSection, redeemSummary } from './CashbackRedeemSection';
 import { RangeCard } from './RangeCard';
@@ -69,6 +74,10 @@ export function BenefitsStep({
   const [expandedKey, setExpandedKey] = useState<string | null>(ranges[0]?.key ?? null);
   const discount = discountOf(draft.benefitJson);
   const cashback = cashbackOf(draft.benefitJson);
+  const { categories } = useCatalogServiceCategories();
+  const storeCategoryIds = categories
+    .filter((c) => isPetStoreWalkinCategorySlug(c.slug))
+    .map((c) => c.id);
 
   // Seed Same vendor/category from Audience only when redeem lists are still empty.
   useEffect(() => {
@@ -101,6 +110,25 @@ export function BenefitsStep({
     resolveScopeVendorIds(draft.vcf?.publish).join(','),
     resolveScopeCategoryIds(draft.vcf?.publish).join(','),
     draft.vcf?.redeem?.letter,
+  ]);
+
+  // Walk-in Store cashback: never leave redeem as Anywhere (F).
+  useEffect(() => {
+    if (!storeCategoryIds.length) return;
+    const next = ensureDraftWalkinCashbackRedeem(draft, storeCategoryIds);
+    if (next === draft) return;
+    onChange(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lock when cashback / audience / catalogue ready
+  }, [
+    storeCategoryIds.join(','),
+    draft.vcf?.benefitMode,
+    draft.vcf?.redeem?.letter,
+    resolveScopeCategoryIds(draft.vcf?.publish).join(','),
+    resolveScopeCategoryIds(draft.vcf?.visitSource).join(','),
+    cashback?.value,
+    (draft.ranges || [])
+      .map((r) => cashbackOf(r.benefitJson)?.value ?? '')
+      .join(','),
   ]);
 
   const setSingle = (d: PromoEngineBenefit, c: PromoEngineBenefit | null, maxDiscountChanged = false) => {

@@ -8,6 +8,7 @@ import {
   dbListRulesForPromotions,
   dbCountUsageBatch,
   dbCountRuleUsageBatch,
+  dbLoadPetStoreWalkinCategoryIds,
   type PromoUsageCounts,
 } from '../repos/promo-engine.repo';
 import type {
@@ -33,6 +34,8 @@ export type EvaluateSnapshot = {
   /** Usage per bill-amount range (rule_id). Optional for callers that build snapshots by hand. */
   usageByRule?: Map<string, PromoUsageCounts>;
   behaviour: CustomerBehaviourProfile;
+  /** Catalogue ids for pet_store_walkin / store — used to lock cashback redeem. */
+  storeCategoryIds?: string[];
 };
 
 export async function loadEvaluateSnapshot(opts: {
@@ -52,10 +55,11 @@ export async function loadEvaluateSnapshot(opts: {
   });
   const ids = candidates.map((c) => c.id);
   const dayStart = istDayStart(opts.now);
-  const [rulesByPromo, limitsByPromo, usageByPromo] = await Promise.all([
+  const [rulesByPromo, limitsByPromo, usageByPromo, storeCategoryIds] = await Promise.all([
     dbListRulesForPromotions(ids),
     dbGetLimitsForPromotions(ids),
     dbCountUsageBatch({ promotionIds: ids, userId: opts.userId, since: dayStart }),
+    dbLoadPetStoreWalkinCategoryIds(),
   ]);
   const limitedRuleIds = [...rulesByPromo.values()]
     .flat()
@@ -66,7 +70,15 @@ export async function loadEvaluateSnapshot(opts: {
     userId: opts.userId,
     since: dayStart,
   });
-  return { candidates, rulesByPromo, limitsByPromo, usageByPromo, usageByRule, behaviour };
+  return {
+    candidates,
+    rulesByPromo,
+    limitsByPromo,
+    usageByPromo,
+    usageByRule,
+    behaviour,
+    storeCategoryIds,
+  };
 }
 
 function customerCopyFor(
@@ -233,6 +245,7 @@ export function evaluateAgainstSnapshot(
     usageByRule: snapshot.usageByRule,
     behaviour: snapshot.behaviour,
     req,
+    storeCategoryIds: snapshot.storeCategoryIds,
   });
 
   if (publishLetters && !vcfScore.hadVcfCandidates) {

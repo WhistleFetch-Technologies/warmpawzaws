@@ -519,6 +519,40 @@ export async function dbLoadServiceCategories(): Promise<
   }));
 }
 
+/** Catalogue rows for walk-in pet store (slug store / pet_store_walkin role). */
+export async function dbLoadPetStoreWalkinCategoryIds(): Promise<string[]> {
+  const res = await query(
+    `SELECT id::text AS id
+     FROM service_categories
+     WHERE lower(COALESCE(category_id, '')) = 'store'
+        OR 'pet_store_walkin' = ANY (COALESCE(vendor_roles, '{}'::text[]))`,
+    []
+  );
+  return [...new Set((res.rows || []).map((r) => String((r as { id: string }).id)).filter(Boolean))];
+}
+
+/** True when every listed vendor is pet_store_walkin (and at least one exists). */
+export async function dbAreAllVendorsPetStoreWalkin(vendorIds: string[]): Promise<boolean> {
+  const ids = [...new Set(vendorIds.map((id) => String(id || '').trim()).filter(Boolean))];
+  if (!ids.length) return false;
+  const res = await query(
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (
+              WHERE lower(COALESCE(r.name, '')) = 'pet_store_walkin'
+                 OR lower(COALESCE(v.role_id::text, '')) = 'pet_store_walkin'
+            )::int AS walkin
+     FROM vendors v
+     LEFT JOIN roles r ON r.id = v.role_id
+     WHERE v.id::text = ANY($1::text[])
+       AND (v.is_deleted IS NOT TRUE)`,
+    [ids]
+  );
+  const row = res.rows?.[0] as { total?: number; walkin?: number } | undefined;
+  const total = Number(row?.total || 0);
+  const walkin = Number(row?.walkin || 0);
+  return total > 0 && total === walkin && total === ids.length;
+}
+
 export async function dbLoadVendorRole(
   vendorId: string
 ): Promise<{ roleId: string | null; roleName: string | null } | null> {

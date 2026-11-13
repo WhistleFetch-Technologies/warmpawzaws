@@ -1,9 +1,11 @@
 import { persistIstDateTime, toDatetimeLocalIst, normalizePromoCategory } from '../dsl/category-aliases';
 import {
+  dbAreAllVendorsPetStoreWalkin,
   dbCreatePromotion,
   dbGetPromotion,
   dbListPromotions,
   dbListRules,
+  dbLoadPetStoreWalkinCategoryIds,
   dbUpdatePromotion,
   dbUpsertPrimaryRule,
   dbUpsertLimits,
@@ -11,6 +13,11 @@ import {
   dbUsageByPromotion,
   dbInsertAudit,
 } from '../repos/promo-engine.repo';
+import {
+  lockPetStoreWalkinCashbackRedeem,
+  payloadHasCashbackBenefit,
+  scopeIdsForLetter,
+} from '../vcf/pet-store-walkin-redeem';
 import { parseCustomerCopy, validateCustomerCopy } from '../customer-copy';
 import { summarizePublishScope } from '../vcf/publish-summary';
 import {
@@ -330,29 +337,72 @@ async function writePromotionRules(promotionId: string, payload: PromoDraftPaylo
   }
 }
 
-export async function createPromotionFromDraft(payload: PromoDraftPayload) {
-  const promo = await dbCreatePromotion({
-    name: payload.name,
-    code: payload.code || null,
-    status: payload.status || 'DRAFT',
-    priority: payload.priority,
-    start_at: payload.start_at,
-    end_at: payload.end_at,
-    stacking_policy: payload.stacking_policy,
-    funding_type: payload.funding_type,
-    funding_split: payload.funding_split,
-    budget_limit: payload.budget_limit,
-    commercial_campaign_id: payload.commercial_campaign_id,
-    service_categories: payload.service_categories,
-    metadata: payload.metadata,
+/** Lock walk-in Store cashback redeem away from Anywhere before persist. */
+export async function withPetStoreWalkinCashbackRedeem(
+  payload: PromoDraftPayload
+): Promise<PromoDraftPayload> {
+  const meta =
+    payload.metadata && typeof payload.metadata === 'object'
+      ? { ...(payload.metadata as Record<string, unknown>) }
+      : {};
+  const vcf = asRecord(meta.vcf);
+  if (!Object.keys(vcf).length) return payload;
+
+  const hasCashback = payloadHasCashbackBenefit({
+    benefitJson: payload.benefit_json as Array<{ type?: string; value?: unknown }> | undefined,
+    ranges: payload.ranges as
+      | Array<{ benefit_json?: Array<{ type?: string; value?: unknown }> }>
+      | undefined,
+    benefitMode: String(vcf.benefitMode || '') || null,
+  });
+  if (!hasCashback) return payload;
+
+  const storeCategoryIds = await dbLoadPetStoreWalkinCategoryIds();
+  const publish = asRecord(vcf.publish);
+  const publishVendorIds = scopeIdsForLetter(publish, 'V');
+  const publishVendorsAreWalkin =
+    String(publish.letter || '').toUpperCase() === 'V' &&
+    publishVendorIds.length > 0 &&
+    (await dbAreAllVendorsPetStoreWalkin(publishVendorIds));
+
+  const nextVcf = lockPetStoreWalkinCashbackRedeem({
+    vcf,
+    hasCashback,
+    storeCategoryIds,
+    serviceCategories: payload.service_categories,
+    publishVendorsAreWalkin,
   });
 
-  await writePromotionRules(promo.id, payload);
+  return {
+    ...payload,
+    metadata: { ...meta, vcf: nextVcf },
+  };
+}
 
-  if (payload.limits) {
+export async function createPromotionFromDraft(payload: PromoDraftPayload) {
+  const locked = await withPetStoreWalkinCashbackRedeem(payload);
+  const promo = await dbCreatePromotion({
+    name: locked.name,
+    code: locked.code || null,
+    status: locked.status || 'DRAFT',
+    priority: locked.priority,
+    start_at: locked.start_at,
+    end_at: locked.end_at,
+    stacking_policy: locked.stacking_policy,
+    funding_type: locked.funding_type,
+    funding_split: locked.funding_split,
+    budget_limit: locked.budget_limit,
+    commercial_campaign_id: locked.commercial_campaign_id,
+    service_categories: locked.service_categories,
+    metadata: locked.metadata,
+  });
+
+  await writePromotionRules(promo.id, locked);
+
+  if (locked.limits) {
     await dbUpsertLimits(promo.id, {
       promotion_id: promo.id,
-      ...payload.limits,
+      ...locked.limits,
     });
   }
 
@@ -366,25 +416,26 @@ export async function createPromotionFromDraft(payload: PromoDraftPayload) {
 }
 
 export async function updatePromotionFromDraft(id: string, payload: PromoDraftPayload) {
+  const locked = await withPetStoreWalkinCashbackRedeem(payload);
   const updated = await dbUpdatePromotion(id, {
-    name: payload.name,
-    code: payload.code || null,
-    priority: payload.priority,
-    start_at: payload.start_at,
-    end_at: payload.end_at,
-    stacking_policy: payload.stacking_policy,
-    funding_type: payload.funding_type,
-    funding_split: payload.funding_split,
-    budget_limit: payload.budget_limit,
-    commercial_campaign_id: payload.commercial_campaign_id || null,
-    service_categories: payload.service_categories || [],
-    metadata: payload.metadata || {},
+    name: locked.name,
+    code: locked.code || null,
+    priority: locked.priority,
+    start_at: locked.start_at,
+    end_at: locked.end_at,
+    stacking_policy: locked.stacking_policy,
+    funding_type: locked.funding_type,
+    funding_split: locked.funding_split,
+    budget_limit: locked.budget_limit,
+    commercial_campaign_id: locked.commercial_campaign_id || null,
+    service_categories: locked.service_categories || [],
+    metadata: locked.metadata || {},
   });
   if (!updated) return null;
 
-  await writePromotionRules(id, payload);
-  if (payload.limits) {
-    await dbUpsertLimits(id, { promotion_id: id, ...payload.limits });
+  await writePromotionRules(id, locked);
+  if (locked.limits) {
+    await dbUpsertLimits(id, { promotion_id: id, ...locked.limits });
   }
   return getPromotionDetail(id);
 }
