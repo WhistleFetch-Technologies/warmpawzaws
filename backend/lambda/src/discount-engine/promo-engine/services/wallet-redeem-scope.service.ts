@@ -6,7 +6,12 @@ import { query } from '../../../database/rds-connection';
 import type { PoolClient } from 'pg';
 import { redeemAllows } from '../vcf/redeem-allows';
 import { categoryIdFromVendorRole } from '../vcf/category-from-role';
-import { dbLoadServiceCategories, dbLoadVendorRole } from '../repos/promo-engine.repo';
+import {
+  dbLoadPetStoreWalkinCategoryIds,
+  dbLoadServiceCategories,
+  dbLoadVendorRole,
+} from '../repos/promo-engine.repo';
+import { isEarnedAtPetStoreWalkin } from '../vcf/pet-store-walkin-redeem';
 import type { SpendChannel } from '../vcf/types';
 import {
   parseWalletRedeemQuery,
@@ -20,20 +25,38 @@ async function enrichWalletRedeemPayment(
   payment: WalletRedeemPayment
 ): Promise<WalletRedeemPayment> {
   const ctx: WalletRedeemPayment = { ...payment };
-  if (ctx.vendorId && !ctx.categoryId) {
+  let roleName: string | null = null;
+  let roleId: string | null = null;
+  if (ctx.vendorId) {
     try {
       const vendor = await dbLoadVendorRole(String(ctx.vendorId));
       if (vendor) {
-        const catalogue = await dbLoadServiceCategories();
-        ctx.categoryId = categoryIdFromVendorRole({
-          roleId: vendor.roleId,
-          roleName: vendor.roleName,
-          categories: catalogue,
-        });
+        roleName = vendor.roleName;
+        roleId = vendor.roleId;
+        if (!ctx.categoryId) {
+          const catalogue = await dbLoadServiceCategories();
+          ctx.categoryId = categoryIdFromVendorRole({
+            roleId: vendor.roleId,
+            roleName: vendor.roleName,
+            categories: catalogue,
+          });
+        }
       }
     } catch {
-      // vendor/catalogue lookup is best-effort for letter C
+      // vendor/catalogue lookup is best-effort for letter C / walk-in detection
     }
+  }
+  try {
+    const storeCategoryIds = await dbLoadPetStoreWalkinCategoryIds();
+    ctx.isPetStoreWalkin = isEarnedAtPetStoreWalkin({
+      storeCategoryIds,
+      paymentCategoryId: ctx.categoryId,
+      paymentRoleName: roleName,
+      paymentRoleId: roleId,
+      paymentServiceCategory: ctx.serviceCategory,
+    });
+  } catch {
+    ctx.isPetStoreWalkin = Boolean(ctx.isPetStoreWalkin);
   }
   return ctx;
 }

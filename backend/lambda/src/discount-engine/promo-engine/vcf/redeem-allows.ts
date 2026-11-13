@@ -101,6 +101,11 @@ export type RedeemPayment = {
   ecommerceCategoryId?: string | null;
   /** Legacy category string for rows written before V/C/F */
   serviceCategory?: string | null;
+  /**
+   * Pet Store walk-in Pay Bill: only Same-vendor (V) cashback for this vendor unlocks.
+   * Anywhere (F) / category (C) / legacy open scopes from vet/grooming stay locked out.
+   */
+  isPetStoreWalkin?: boolean;
 };
 
 /**
@@ -110,6 +115,20 @@ export type RedeemPayment = {
  */
 export function redeemAllows(redeemScope: unknown, payment: RedeemPayment): boolean {
   const vcf = parseRedeem(redeemScope);
+
+  // Walk-in Store Pay Bill: only cashback earned for this exact vendor may be spent.
+  if (payment.isPetStoreWalkin) {
+    if (!vcf || vcf.letter !== 'V') return false;
+    if (vcf.channels?.length) {
+      const channel = payment.channel || null;
+      if (!channel || !vcf.channels.includes(channel)) return false;
+    }
+    const allowed = resolveRedeemVendorIds(vcf);
+    return Boolean(
+      allowed.length && payment.vendorId && allowed.includes(String(payment.vendorId))
+    );
+  }
+
   if (!vcf) {
     return legacyServicesAllow(redeemScope, normalizeCategory(payment.serviceCategory));
   }

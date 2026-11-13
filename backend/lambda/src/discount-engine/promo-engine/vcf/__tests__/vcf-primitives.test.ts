@@ -457,4 +457,41 @@ describe('stacked F + V cashback at checkout', () => {
     expect(redeemAllows(platform, { vendorId: 'vendor-b', channel: 'paybill' })).toBe(true);
     expect(redeemAllows(vendorScoped, { vendorId: 'vendor-b', channel: 'paybill' })).toBe(false);
   });
+
+  it('at pet store walk-in, only that vendor’s V cashback unlocks (not platform F)', () => {
+    expect(
+      redeemAllows(platform, {
+        vendorId: 'walkin-1',
+        channel: 'paybill',
+        isPetStoreWalkin: true,
+      })
+    ).toBe(false);
+    expect(
+      redeemAllows(
+        { letter: 'V' as const, vendorId: 'walkin-1', channels: allChannels },
+        { vendorId: 'walkin-1', channel: 'paybill', isPetStoreWalkin: true }
+      )
+    ).toBe(true);
+    expect(
+      redeemAllows(
+        { letter: 'V' as const, vendorId: 'walkin-2', channels: allChannels },
+        { vendorId: 'walkin-1', channel: 'paybill', isPetStoreWalkin: true }
+      )
+    ).toBe(false);
+    expect(
+      redeemAllows(
+        {
+          letter: 'C' as const,
+          categoryId: 'store-cat',
+          channels: ['paybill'] as Array<'paybill'>,
+        },
+        {
+          vendorId: 'walkin-1',
+          categoryId: 'store-cat',
+          channel: 'paybill',
+          isPetStoreWalkin: true,
+        }
+      )
+    ).toBe(false);
+  });
 });
